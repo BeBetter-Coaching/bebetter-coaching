@@ -23,29 +23,49 @@ _PERSIST_FILE = os.path.join(os.path.dirname(__file__), ".builder_state.json")
 # ---------------------------------------------------------------------------
 
 def _check_password() -> bool:
-    """Vraag om wachtwoord. Geeft True terug als correct ingelogd."""
-    # Lees wachtwoord uit Streamlit secrets (cloud) of omgevingsvariabele (lokaal)
+    """Vraag om wachtwoord met 'Onthoud mij' via cookie."""
     try:
-        import streamlit as st
         correct = st.secrets.get("APP_PASSWORD", "") or os.environ.get("APP_PASSWORD", "")
     except Exception:
         correct = os.environ.get("APP_PASSWORD", "")
 
     if not correct:
-        return True  # Geen wachtwoord ingesteld → altijd toegang (lokaal gebruik)
+        return True  # Geen wachtwoord ingesteld → lokaal gebruik
+
+    # Cookie-gebaseerde "onthoud mij"
+    try:
+        import extra_streamlit_components as stx
+        cookie_manager = stx.CookieManager(key="bb_cookie_mgr")
+        auth_cookie = cookie_manager.get("bb_auth")
+        if auth_cookie == "ok":
+            return True
+    except Exception:
+        cookie_manager = None
+        auth_cookie = None
 
     if st.session_state.get("authenticated"):
         return True
 
-    st.image("assets/logo_zwart.png", width=200)
-    st.markdown("## BeBetter Coaching — Inloggen")
-    pw = st.text_input("Wachtwoord", type="password", key="login_pw")
-    if st.button("Inloggen", type="primary"):
-        if pw == correct:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Onjuist wachtwoord.")
+    # Loginscherm
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image("assets/logo_zwart.png", width=180)
+        st.markdown("## BeBetter Coaching")
+        pw = st.text_input("Wachtwoord", type="password", key="login_pw")
+        onthoud = st.checkbox("Onthoud mij op dit apparaat", value=True, key="login_remember")
+        if st.button("Inloggen →", type="primary", use_container_width=True):
+            if pw == correct:
+                st.session_state["authenticated"] = True
+                if onthoud and cookie_manager:
+                    try:
+                        from datetime import datetime, timedelta
+                        expires = datetime.now() + timedelta(days=365)
+                        cookie_manager.set("bb_auth", "ok", expires_at=expires)
+                    except Exception:
+                        pass
+                st.rerun()
+            else:
+                st.error("Onjuist wachtwoord.")
     return False
 
 def _save_builder_state():
