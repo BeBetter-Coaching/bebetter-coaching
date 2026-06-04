@@ -1,0 +1,975 @@
+"""FinalSurge API client."""
+
+import os
+import re
+import subprocess
+import requests
+from datetime import date, timedelta
+from typing import Optional
+
+BASE_URL = "https://beta.finalsurge.com/api"
+TOKEN_FILE = os.path.expanduser("~/.fs_auth_token")
+
+_token: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Auth token management
+# ---------------------------------------------------------------------------
+
+class TokenNotFoundError(Exception):
+    pass
+
+
+def _read_cached_token() -> Optional[str]:
+    if os.path.exists(TOKEN_FILE):
+        token = open(TOKEN_FILE).read().strip()
+        return token if token else None
+    return None
+
+
+def save_token(token: str):
+    with open(TOKEN_FILE, "w") as f:
+        f.write(token.strip())
+    global _token
+    _token = token.strip()
+
+
+def get_token() -> str:
+    global _token
+    if _token:
+        return _token
+    cached = _read_cached_token()
+    if cached:
+        _token = cached
+        return _token
+    raise TokenNotFoundError("Geen auth-token gevonden.")
+
+
+def reset_session():
+    global _token
+    _token = None
+    if os.path.exists(TOKEN_FILE):
+        os.remove(TOKEN_FILE)
+
+
+def is_mac() -> bool:
+    import platform
+    return platform.system() == "Darwin"
+
+
+def is_windows() -> bool:
+    import platform
+    return platform.system() == "Windows"
+
+
+def try_get_token_via_applescript() -> Optional[str]:
+    """Alleen beschikbaar op macOS via AppleScript + Chrome."""
+    if not is_mac():
+        return None
+    script = """
+    tell application "Google Chrome"
+        repeat with w in windows
+            repeat with t in tabs of w
+                if URL of t contains "finalsurge.com" then
+                    return execute t javascript "localStorage.getItem('auth-token')"
+                end if
+            end repeat
+        end repeat
+    end tell
+    """
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=20
+        )
+        token = result.stdout.strip().strip('"')
+        if token and token != "null" and len(token) > 20:
+            return token
+    except Exception:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# HTTP helpers
+# ---------------------------------------------------------------------------
+
+def _headers() -> dict:
+    return {
+        "Authorization": f"Bearer {get_token()}",
+        "Content-Type": "application/json",
+    }
+
+
+def _get(path: str, params: dict = None) -> dict:
+    resp = requests.get(f"{BASE_URL}/{path}", params=params, headers=_headers())
+    if resp.status_code == 401:
+        raise TokenNotFoundError("Sessie verlopen — vernieuw je token.")
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _post(path: str, payload: dict, params: dict = None) -> dict:
+    resp = requests.post(f"{BASE_URL}/{path}", json=payload, params=params, headers=_headers())
+    if resp.status_code == 401:
+        raise TokenNotFoundError("Sessie verlopen — vernieuw je token.")
+    resp.raise_for_status()
+    return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Bekende activity type keys (gevonden via browser-interceptie)
+# ---------------------------------------------------------------------------
+
+ACTIVITY_TYPE_KEYS = {
+    "Run":           {"key": "00000001-0001-0001-0001-000000000001", "name": "Hardlopen"},
+    "Bike":          {"key": "00000002-0002-0002-0002-000000000002", "name": "Fiets"},
+    "Swim":          {"key": "00000003-0003-0003-0003-000000000003", "name": "Zwem"},
+    "CrossTraining": {"key": "00000004-0004-0004-0004-000000000004", "name": "Cross training"},
+    "Rest":          {"key": "00000006-0006-0006-0006-000000000006", "name": "Rust dag"},
+    "Strength":      {"key": "00000007-0007-0007-0007-000000000007", "name": "Kracht training"},
+}
+
+
+# ---------------------------------------------------------------------------
+# FinalSurge API calls
+# ---------------------------------------------------------------------------
+
+def get_coach_key() -> str:
+    data = _get("Settings")
+    return (data.get("data") or {}).get("user_key") or ""
+
+
+def get_raw_team_data() -> dict:
+    """
+    Geeft de ruwe TeamAthleteList response terug — alleen voor debug-doeleinden.
+    Gebruik dit om de exacte veldnamen van atleten te inspecteren.
+    """
+    return _get("TeamAthleteList")
+
+
+def _extract_athlete(a: dict, group_name: str, seen: set) -> Optional[dict]:
+    """Helper: bouw een atleet-dict uit een raw API-object."""
+    key = a.get("user_key")
+    if not key or key in seen:
+        return None
+    seen.add(key)
+    # FinalSurge slaat de coach↔atleet relatiesleutel op als "coachathlete_key"
+    # (let op: geen underscore tussen coach en athlete — zo heet het in de API)
+    coach_athlete_key = (
+        a.get("coachathlete_key")       # correct veld naam in FinalSurge API
+        or a.get("coach_athlete_key")   # alternatieve spelling als fallback
+        or a.get("key")
+        or key  # laatste fallback op user_key
+    )
+    return {
+        "user_key": key,
+        "coach_athlete_key": coach_athlete_key,
+        "name": f"{a.get('first_name', '')} {a.get('last_name', '')}".strip(),
+        "first_name": a.get("first_name", ""),
+        "group": group_name,
+        "_raw_keys": list(a.keys()),  # debug: welke velden heeft dit object?
+    }
+
+
+def get_athletes() -> list[dict]:
+    """Geeft alle atleten terug als platte lijst, met groepsnaam erbij."""
+    data = _get("TeamAthleteList")
+    top_groups = data.get("data") or []
+    seen = set()
+    result = []
+
+    for top in top_groups:
+        # Geneste structuur: top → groups[] → athletes[]
+        for group in top.get("groups", []):
+            group_name = group.get("name") or group.get("group_name") or "Overig"
+            for a in group.get("athletes", []):
+                athlete = _extract_athlete(a, group_name, seen)
+                if athlete:
+                    result.append(athlete)
+
+    # Fallback: als de geneste structuur geen atleten opleverde,
+    # probeer dan of de top-level items direct atleten zijn (platte structuur)
+    if not result:
+        for a in top_groups:
+            if a.get("user_key"):
+                athlete = _extract_athlete(a, "Overig", seen)
+                if athlete:
+                    result.append(athlete)
+
+    return result
+
+
+def get_athletes_by_group() -> dict[str, list[dict]]:
+    """Geeft atleten gegroepeerd per groepsnaam."""
+    athletes = get_athletes()
+    groups: dict[str, list[dict]] = {}
+    for a in athletes:
+        g = a.get("group", "Overig")
+        groups.setdefault(g, []).append(a)
+    return groups
+
+
+def get_workouts(user_key: str, start: date, end: date, ishistory: bool = False) -> list[dict]:
+    data = _get("WorkoutList", {
+        "scope": "USER",
+        "scopekey": user_key,
+        "startdate": start.isoformat(),
+        "enddate": end.isoformat(),
+        "ishistory": "true" if ishistory else "false",
+        "completedonly": "false",
+    })
+    return data.get("data") or []
+
+
+def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> list[dict]:
+    """
+    Haal trainingslog op voor de afgelopen X maanden.
+    Voor de meest recente `detail_weeks` weken worden ook lapdata opgehaald,
+    zodat de AI interval-tempo's kan onderscheiden van het overall gemiddelde.
+    """
+    end = date.today()
+    start = end - timedelta(days=months * 30)
+    detail_cutoff = end - timedelta(weeks=detail_weeks)
+
+    # Haal workouts op via beide modi en dedupliceer
+    try:
+        w_history = get_workouts(user_key, start, end, ishistory=True)
+    except Exception:
+        w_history = []
+    try:
+        w_planned = get_workouts(user_key, start, end, ishistory=False)
+    except Exception:
+        w_planned = []
+    seen_keys = set()
+    workouts = []
+    for w in w_history + w_planned:
+        k = w.get("key")
+        if k and k not in seen_keys:
+            seen_keys.add(k)
+            workouts.append(w)
+
+    if not workouts:
+        return []
+
+    result = []
+    for w in workouts:
+        date_str = (w.get("workout_date") or "")[:10]
+        if not date_str:
+            continue
+
+        activities = w.get("Activities") or []
+        act = activities[0] if activities else {}
+
+        def _safe_float(val):
+            try:
+                return round(float(val), 2) if val else None
+            except (ValueError, TypeError):
+                return None
+
+        # Workout description (bevat de geplande structuur, bijv. "5x 1000m Z4")
+        description = (w.get("description") or "").strip()
+        workout_name = (w.get("name") or "").strip()
+        # Als name en description hetzelfde zijn, bewaar maar één
+        if description == workout_name:
+            description = ""
+
+        entry = {
+            "date": date_str,
+            "workout_key": w.get("key") or "",
+            "name": workout_name or description or "Training",
+            "description": description,
+            "activity_type": (w.get("activity_type_name") or "Hardlopen"),
+            "planned_km":   _safe_float(act.get("planned_amount")),
+            "planned_min":  round(float(act.get("planned_duration")) / 60, 0) if act.get("planned_duration") else None,
+            "actual_km":    _safe_float(act.get("amount")),
+            "actual_min":   round(float(act.get("duration")) / 60, 0) if act.get("duration") else None,
+            "pace":         act.get("pace_display"),       # gemiddelde pace HELE run
+            "hr_avg":       act.get("hr_avg"),
+            "completed":    bool(w.get("has_actual_data")),
+            "is_race":      bool(w.get("is_race")),
+            "post_notes":   (w.get("post_workout_notes") or "").strip(),
+            "felt":         w.get("felt"),
+            "effort":       w.get("effort"),
+            "laps":         [],  # wordt ingevuld voor recente workouts
+        }
+
+        # Voor recente workouts: haal lapdata op voor interval-analyse
+        if date_str >= detail_cutoff.isoformat() and entry["completed"] and entry["workout_key"]:
+            try:
+                details = get_workout_details(entry["workout_key"], user_key)
+                detail_acts = details.get("Activities") or []
+                if detail_acts:
+                    raw_laps = detail_acts[0].get("Laps") or []
+                    # Comprimeer: bewaar alleen pace + afstand + hartslag per lap
+                    laps = []
+                    for lap in raw_laps[:30]:
+                        if not isinstance(lap, dict):
+                            continue
+                        laps.append({
+                            "dist": lap.get("distance_display") or lap.get("amount"),
+                            "pace": lap.get("pace_display"),
+                            "hr":   lap.get("hr_avg"),
+                        })
+                    entry["laps"] = laps
+            except Exception:
+                pass  # lapdata is bonus, nooit blokkerend
+
+        result.append(entry)
+
+    return sorted(result, key=lambda x: x["date"])
+
+
+def get_workout_details(workout_key: str, user_key: str) -> dict:
+    """Haal volledige workout details op (planned vs completed, activities, etc.)."""
+    data = _get("WorkoutPlannedCompleted", {
+        "key": workout_key,
+        "scope": "USER",
+        "scopekey": user_key,
+    })
+    return data.get("data") or {}
+
+
+def get_workout_builder(workout_key: str, user_key: str) -> list[dict]:
+    """
+    Haal de geplande workout structuur op (zones, intervallen, stappen).
+    Geeft een lijst van stappen terug, of een lege lijst als er geen structuur is.
+    """
+    try:
+        data = _get("WorkoutBuilderGet", {
+            "scope": "USER",
+            "scopekey": user_key,
+            "workout_key": workout_key,
+            "array": "true",
+            "newobject": "true",
+        })
+        options = (data.get("data") or {}).get("target_options") or []
+        if not options:
+            return []
+        # Neem de eerste target option (primaire workout structuur)
+        return options[0].get("steps") or []
+    except Exception:
+        return []
+
+
+def get_comments(workout_key: str, user_key: str) -> list[dict]:
+    data = _get("WorkoutComment", {
+        "scope": "USER",
+        "scopeKey": user_key,
+        "key": workout_key,
+    })
+    comments = data.get("data")
+    if not comments or not isinstance(comments, list):
+        return []
+    # Normaliseer: zorg dat 'comment' altijd de tekst bevat (veld heet 'text' in API)
+    for c in comments:
+        if "comment" not in c or not c["comment"]:
+            c["comment"] = c.get("text") or c.get("comment_text") or ""
+    return comments
+
+
+def post_comment(workout_key: str, user_key: str, comment: str,
+                 coach_athlete_key: str = None) -> dict:
+    result = _post("WorkoutCommentSave", {
+        "key": workout_key,
+        "comment_text": comment,
+        "comment_image": None,
+    })
+    # Na het posten direct markeren als gelezen zodat het getal in FinalSurge verdwijnt
+    mark_workout_comments_read(coach_athlete_key or user_key)
+    return result
+
+
+def mark_workout_comments_read(coach_athlete_key: str) -> None:
+    """
+    Reset de notificatieteller achter de atleet in FinalSurge.
+    Endpoint: CoachAthleteResetCounter?coach_athlete_key=<relatie-key>  (GET)
+    """
+    try:
+        _get("CoachAthleteResetCounter", {"coach_athlete_key": coach_athlete_key})
+    except Exception:
+        pass  # stil falen — teller blijft staan maar app werkt gewoon door
+
+
+def get_workouts_needing_feedback(
+    days_back: int = 1,
+    athlete_filter: list[str] = None,
+    include_data_only: bool = False,
+    include_planned_no_notes: bool = False,
+) -> list[dict]:
+    """
+    Geeft workouts terug op basis van filters.
+
+    athlete_filter: lijst van user_keys; None = alle atleten
+    include_data_only: als True, ook voltooide ongeplande workouts zonder athlete-input
+    include_planned_no_notes: als True, ook geplande voltooide workouts zonder athlete-input
+    """
+    end = date.today()
+    start = end - timedelta(days=days_back)
+    coach_key = get_coach_key()
+    athletes = get_athletes()
+
+    if athlete_filter:
+        athletes = [a for a in athletes if a["user_key"] in athlete_filter]
+
+    results = []
+
+    for athlete in athletes:
+        user_key = athlete["user_key"]
+        # Haal workouts op via beide modi en dedupliceer — voltooide workouts
+        # zitten soms alleen in ishistory=true, geplande alleen in ishistory=false.
+        try:
+            w_history  = get_workouts(user_key, start, end, ishistory=True)
+        except Exception:
+            w_history = []
+        try:
+            w_planned  = get_workouts(user_key, start, end, ishistory=False)
+        except Exception:
+            w_planned = []
+        seen_keys = set()
+        workouts = []
+        for w in w_history + w_planned:
+            k = w.get("key")
+            if k and k not in seen_keys:
+                seen_keys.add(k)
+                workouts.append(w)
+
+        for w in workouts:
+            post_notes = (w.get("post_workout_notes") or "").strip()
+            comment_count = w.get("CommentCount") or 0
+            has_data = bool(w.get("has_actual_data"))
+            felt = w.get("felt")        # bijv. "Good", "Bad"
+            effort = w.get("effort")    # RPE 1-10
+            workout_key = w.get("key")
+
+            if not workout_key:
+                continue
+
+            has_athlete_input = bool(post_notes or comment_count or felt or effort)
+            is_data_only = has_data and not has_athlete_input
+
+            today_str = date.today().isoformat()
+            workout_date_str = (w.get("workout_date") or "")[:10]
+            is_past = bool(workout_date_str) and workout_date_str < today_str
+            # Overgeslagen training: verleden datum, niet voltooid, geen notities
+            is_skipped = is_past and not has_data and not has_athlete_input
+
+            # Gepland? → activiteit heeft planned_amount/planned_duration of workout heeft beschrijving
+            activities_raw = w.get("Activities") or []
+            first_act_raw = activities_raw[0] if activities_raw else {}
+            is_planned_workout = bool(
+                first_act_raw.get("planned_amount") or
+                first_act_raw.get("planned_duration") or
+                (w.get("description") or "").strip()
+            )
+            # Geplande training voltooid zonder notities van de atleet
+            is_planned_no_notes = is_past and has_data and not has_athlete_input and is_planned_workout
+
+            # Sla over als er niks te doen is
+            if (
+                not has_athlete_input
+                and not (include_data_only and (is_data_only or is_skipped))
+                and not (include_planned_no_notes and is_planned_no_notes)
+            ):
+                continue
+
+            # Vandaag of toekomst zonder data/notities = gepland maar nog niet gedaan → niet tonen
+            if include_data_only and not has_athlete_input and not is_data_only and not is_past:
+                continue
+
+            # Check comments en onderscheid atleet vs coach
+            comments = get_comments(workout_key, user_key) if comment_count else []
+
+            def is_athlete_comment(c):
+                if "is_athlete" in c:
+                    return bool(c["is_athlete"])
+                return c.get("user_key") != coach_key
+
+            athlete_comments = [c for c in comments if is_athlete_comment(c)]
+            coach_comments = [c for c in comments if not is_athlete_comment(c)]
+
+            if (
+                not post_notes and not felt and not effort and not athlete_comments
+                and not (include_data_only and (is_data_only or is_skipped))
+                and not (include_planned_no_notes and is_planned_no_notes)
+            ):
+                continue
+
+            # Sorteer comments op timestamp zodat we zeker weten wie als laatste sprak
+            def _comment_ts(c):
+                return c.get("timestamp") or c.get("created_at") or ""
+            comments_sorted = sorted(comments, key=_comment_ts)
+
+            # Sla over als coach het laatste woord had (atleet heeft nog niet gereageerd)
+            # Uitzondering: als de laatste coach-comment van VÓÓR de trainingsdatum was
+            # (bijv. een succeswens) en er daarna post_notes zijn ingevuld, toon dan toch.
+            last_coach_ts = max(
+                (_comment_ts(c) for c in coach_comments), default=""
+            ) if coach_comments else ""
+            coach_responded_after_workout = (
+                bool(last_coach_ts) and last_coach_ts[:10] > workout_date_str
+            )
+            post_notes_need_response = bool(post_notes) and not coach_responded_after_workout
+
+            if coach_comments and not athlete_comments:
+                if not post_notes_need_response:
+                    continue
+            if coach_comments and athlete_comments and comments_sorted:
+                if not is_athlete_comment(comments_sorted[-1]):
+                    continue
+
+            details = get_workout_details(workout_key, user_key)
+
+            # Bouw volledige gespreksthread in chronologische volgorde
+            thread = []
+            # Voeg post_notes toe als eerste bericht van de atleet (alleen voor AI — niet weergeven)
+            if post_notes:
+                thread.append({
+                    "tekst": post_notes,
+                    "van": "atleet",
+                    "naam": athlete["first_name"],
+                    "timestamp": "",
+                    "_display": False,  # al apart weergegeven als "Post-workout notities"
+                })
+            for c in comments_sorted:
+                tekst = c.get("comment") or ""
+                if tekst.strip():
+                    thread.append({
+                        "tekst": tekst,
+                        "van": "atleet" if is_athlete_comment(c) else "coach",
+                        "naam": c.get("first_name") or ("jij" if not is_athlete_comment(c) else athlete["first_name"]),
+                        "timestamp": c.get("timestamp", ""),
+                    })
+
+            results.append({
+                "athlete_name": athlete["name"],
+                "athlete_first_name": athlete["first_name"],
+                "athlete_key": user_key,
+                "workout_key": workout_key,
+                "workout_name": w.get("name") or w.get("description") or "Training",
+                "workout_date": (w.get("workout_date") or "")[:10],
+                "post_notes": post_notes,
+                "felt": felt,
+                "effort": effort,
+                "athlete_comments": [
+                    c.get("comment", "") for c in athlete_comments if c.get("comment")
+                ],
+                "thread": thread,
+                "details": details,
+                "data_only": is_data_only,
+                "planned_no_notes": is_planned_no_notes,
+            })
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Workout aanmaken (voor schema-import)
+# ---------------------------------------------------------------------------
+
+def save_workout(
+    user_key: str,
+    workout_date: str,          # "YYYY-MM-DD"
+    name: str,
+    description: str = "",
+    activity_type: str = "Run",  # CSV-waarde: Run / Bike / Swim / CrossTraining / Rest
+    planned_distance_km: float = None,
+    planned_duration_min: float = None,
+) -> dict:
+    """
+    Maak een geplande workout aan op de kalender van de atleet.
+    activity_type: CSV-waarden zoals gedefinieerd in ACTIVITY_TYPE_KEYS.
+    Geeft de API-respons terug.
+    """
+    type_info = ACTIVITY_TYPE_KEYS.get(activity_type, ACTIVITY_TYPE_KEYS["Run"])
+
+    # Bouw planned waarden om
+    planned_duration_sec = int(planned_duration_min * 60) if planned_duration_min else None
+    planned_amount = round(float(planned_distance_km), 2) if planned_distance_km else None
+
+    payload = {
+        "key": None,
+        "workout_date": f"{workout_date}T00:00:00",
+        "order": 1,
+        "name": name,
+        "description": description,
+        "is_race": False,
+        "has_routes": False,
+        "has_attachments": False,
+        "Activity": {
+            "elevation_gain_type": "me",
+            "elevation_gain": None,
+            "elevation_loss_type": "me",
+            "elevation_loss": None,
+            "activity_type_key": type_info["key"],
+            "activity_type_name": type_info["name"],
+            "activity_sub_type_key": "",
+            "activity_sub_type_name": "",
+            "planned_duration": planned_duration_sec,
+            "planned_amount": planned_amount,
+            "planned_amount_type": "km",
+            "duration": None,
+            "amount": None,
+            "amount_type": "km",
+            "pace": None,
+            "pace_type": "km",
+            "hr_avg": None,
+            "hr_max": None,
+            "power_avg": None,
+            "power_max": None,
+            "cadence_avg": None,
+            "cadence_max": None,
+            "calories": None,
+        },
+        "felt": None,
+        "effort": None,
+        "post_workout_notes": None,
+        "save_to_library": False,
+        "save_to_library_key": "00000000-0000-0000-0000-000000000000",
+        "workout_time": "",
+        "race_place_overall": None,
+        "race_age_group": None,
+    }
+
+    resp = _post("WorkoutSave", payload, params={
+        "scope": "USER",
+        "scope_key": user_key,
+    })
+
+    # Valideer de response: FinalSurge geeft soms HTTP 200 maar success=False
+    if not resp.get("success", True):
+        msg = resp.get("message") or resp.get("error") or str(resp)
+        raise RuntimeError(f"WorkoutSave mislukt: {msg}")
+
+    return resp
+
+
+def save_workout_builder(
+    user_key: str,
+    workout_key: str,
+    target_options: list,
+) -> dict:
+    """
+    Sla de Workout Builder structuur op (zones, stappen, intervallen).
+    target_options: lijst zoals teruggegeven door generate_builder_steps().
+    """
+    return _post(
+        "WorkoutBuilderSave",
+        {"target_options": target_options},
+        params={
+            "scope": "USER",
+            "scopekey": user_key,   # WorkoutBuilderSave uses 'scopekey' (no underscore)
+            "workout_key": workout_key,
+        },
+    )
+
+
+def delete_workout(workout_key: str, user_key: str) -> dict:
+    """Verwijder een workout van de atleet."""
+    return _post("WorkoutDelete", {"key": workout_key}, params={
+        "scope": "USER",
+        "scope_key": user_key,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Schema-verloop
+# ---------------------------------------------------------------------------
+
+def get_athlete_zones(user_key: str) -> dict:
+    """
+    Haal zones op voor een atleet uit FinalSurge.
+    Geeft een dict terug met 'zone_type', 'zones_text', en debug-info.
+    """
+    try:
+        # Correct endpoint: ZoneList?user_key=... (geen scope/scopekey)
+        data = _get("ZoneList", {"user_key": user_key})
+        zones_raw = data.get("data") or []
+
+        if not zones_raw:
+            return {"error": "Geen zones gevonden (lege data)"}
+
+        # Zoek hardloop-zones (activity_type_key bevat "run" of type 1)
+        run_zones = None
+        for entry in (zones_raw if isinstance(zones_raw, list) else [zones_raw]):
+            atype = (
+                entry.get("activity_type_name") or
+                entry.get("activity_type_key") or
+                entry.get("sport") or ""
+            ).lower()
+            if "run" in atype or "hardlo" in atype:
+                run_zones = entry
+                break
+        if run_zones is None:
+            run_zones = zones_raw[0] if isinstance(zones_raw, list) else zones_raw
+
+        zone_type_raw = (
+            run_zones.get("zone_type") or
+            run_zones.get("type") or ""
+        ).upper()
+        # FinalSurge gebruikt "H" = Heart Rate, "P" = Pace
+        zone_type = "hartslag" if zone_type_raw in ("H", "HR", "HEART_RATE", "HEARTRATE") else "tempo"
+
+        # FinalSurge slaat zones op als losse velden: zone_1_name, zone_1_low, zone_1_high, ...
+        # Tempozones worden opgeslagen in seconden/km — omzetten naar min:sec
+        is_pace = (zone_type == "tempo")
+
+        def _fmt(val):
+            """Zet waarde om naar leesbare eenheid (sec→min:sec voor tempo)."""
+            if val is None:
+                return None
+            try:
+                v = float(val)
+            except (TypeError, ValueError):
+                return str(val)
+            if is_pace and v > 60:
+                m, s = divmod(int(round(v)), 60)
+                return f"{m}:{s:02d}"
+            return str(int(v)) if v == int(v) else str(round(v, 1))
+
+        lines = []
+        unit = "bpm" if zone_type == "hartslag" else "min/km"
+        for i in range(1, 11):
+            name = run_zones.get(f"zone_{i}_name")
+            low_raw = run_zones.get(f"zone_{i}_low")
+            high_raw = run_zones.get(f"zone_{i}_high")
+            if not name:
+                break
+            if low_raw is None and high_raw is None:
+                break
+            short_name = re.sub(r"^Zone\s*\d+\s*:\s*", "", name).strip()
+
+            # Voor tempozones: lage seconden = sneller, hoge seconden = langzamer
+            # FinalSurge: low = langzame grens (hoge seconden), high = snelle grens (lage seconden)
+            # Toon als "snel-langzaam min/km" (snelste grens eerst)
+            if is_pace and low_raw is not None and high_raw is not None:
+                try:
+                    l, h = float(low_raw), float(high_raw)
+                    fast, slow = (h, l) if l > h else (l, h)
+                    fast_s, slow_s = _fmt(fast), _fmt(slow)
+                    # Z1: sla langzame grens over als die > 10 min/km is (open grens)
+                    if slow_s and int(float(slow_raw if l > h else high_raw)) > 600:
+                        lines.append(f"Z{i} ({short_name}): >{fast_s} {unit}")
+                    else:
+                        lines.append(f"Z{i} ({short_name}): {fast_s}-{slow_s} {unit}")
+                except Exception:
+                    lines.append(f"Z{i} ({short_name}): {_fmt(low_raw)}-{_fmt(high_raw)} {unit}")
+            elif low_raw is not None and high_raw is not None:
+                lines.append(f"Z{i} ({short_name}): {_fmt(low_raw)}-{_fmt(high_raw)} {unit}")
+            elif high_raw is not None:
+                lines.append(f"Z{i} ({short_name}): <{_fmt(high_raw)} {unit}")
+            elif low_raw is not None:
+                lines.append(f"Z{i} ({short_name}): >{_fmt(low_raw)} {unit}")
+
+        if lines:
+            return {
+                "zone_type": zone_type,
+                "zones_text": "\n".join(lines),
+                "raw": run_zones,
+                "endpoint_used": "ZoneList",
+            }
+
+        return {"error": "Zones gevonden maar kon ze niet parsen", "raw": run_zones}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def get_calendar_labels(user_key: str, start: date, end: date) -> list[dict]:
+    """
+    Haal kalender-labels op voor een atleet in een bepaalde periode.
+    Labels zijn reminders van de coach (vakantie, verjaardag, etc.)
+    """
+    data = _get("CalendarLabelList", {
+        "scope": "USER",
+        "scopekey": user_key,
+        "startdate": start.isoformat(),
+        "enddate": end.isoformat(),
+    })
+    labels = data.get("data") or []
+    return [
+        {
+            "name": l.get("name", ""),
+            "start_date": (l.get("start_date") or "")[:10],
+            "end_date": (l.get("end_date") or "")[:10],
+            "color": l.get("back_color", ""),
+        }
+        for l in labels if l.get("name")
+    ]
+
+
+def get_schema_end_dates(horizon_days: int = 60) -> list[dict]:
+    """
+    Bepaal voor elke atleet wanneer het laatste geplande workout is.
+    Geeft een gesorteerde lijst terug (vroegste einddatum eerst).
+
+    horizon_days: hoe ver vooruit we kijken (standaard 180 dagen)
+    """
+    today = date.today()
+    end = today + timedelta(days=horizon_days)
+    athletes = get_athletes_by_group()
+
+    results = []
+    for group_name, members in athletes.items():
+        for athlete in members:
+            user_key = athlete["user_key"]
+            try:
+                workouts = get_workouts(user_key, today, end)
+            except Exception:
+                workouts = []
+
+            # Alleen structured workouts tellen — races en losse events worden uitgesloten.
+            # Zo voorkomt een race die ver in de toekomst staat dat het schema
+            # onterecht als "doorlopend" gezien wordt.
+            planned_dates = [
+                w["workout_date"][:10]
+                for w in workouts
+                if w.get("workout_date")
+                and w.get("has_structured_workout")
+                and not w.get("is_race")
+            ]
+
+            if planned_dates:
+                last_date_str = max(planned_dates)
+                last_date = date.fromisoformat(last_date_str)
+                days_left = (last_date - today).days
+            else:
+                last_date_str = None
+                last_date = None
+                days_left = None
+
+            results.append({
+                "name": athlete["name"],
+                "first_name": athlete["first_name"],
+                "user_key": user_key,
+                "group": group_name,
+                "last_date": last_date_str,
+                "days_left": days_left,
+            })
+
+    # Sorteer: eerst geen schema, dan kortst lopende, dan langst
+    def sort_key(r):
+        if r["days_left"] is None:
+            return -1
+        return r["days_left"]
+
+    results.sort(key=sort_key)
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Aankomende races
+# ---------------------------------------------------------------------------
+
+def detect_race_type(name: str, description: str = "") -> str:
+    """Detecteer het type race op basis van naam/omschrijving."""
+    text = (name + " " + description).lower()
+    if "hyrox" in text:
+        return "HYROX"
+    if any(x in text for x in ["marathon", "42km", "42,2"]) and "halve" not in text and "half" not in text:
+        return "Marathon"
+    if any(x in text for x in ["halve marathon", "half marathon", "21km", "21,1", "hm"]):
+        return "Halve marathon"
+    if any(x in text for x in ["10km", "10 km", "10k"]):
+        return "10 km"
+    if any(x in text for x in ["5km", "5 km", "5k"]):
+        return "5 km"
+    if any(x in text for x in ["triatlon", "triathlon", "ironman"]):
+        return "Triathlon"
+    if any(x in text for x in ["15km", "15 km"]):
+        return "15 km"
+    if any(x in text for x in ["cross", "veldloop"]):
+        return "Veldloop / Cross"
+    return "Race"
+
+
+def get_upcoming_races(days_ahead: int = 21, athlete_filter: list[str] = None) -> list[dict]:
+    """
+    Geeft een lijst van aankomende races (is_race=True) voor alle atleten.
+    days_ahead: hoeveel dagen vooruit kijken (standaard 21).
+    """
+    today = date.today()
+    end = today + timedelta(days=days_ahead)
+    athletes_by_group = get_athletes_by_group()
+
+    results = []
+    for group_name, members in athletes_by_group.items():
+        for athlete in members:
+            user_key = athlete["user_key"]
+            if athlete_filter and user_key not in athlete_filter:
+                continue
+            try:
+                workouts = get_workouts(user_key, today, end)
+            except Exception:
+                continue
+
+            for w in workouts:
+                if not w.get("is_race"):
+                    continue
+                workout_key = w.get("key") or w.get("workout_key")
+                if not workout_key:
+                    continue
+
+                workout_date = (w.get("workout_date") or "")[:10]
+                name = w.get("name") or w.get("description") or "Race"
+                description = w.get("description") or ""
+                race_type = detect_race_type(name, description)
+
+                # Bestaande comments ophalen
+                comment_count = w.get("CommentCount") or 0
+                comments = get_comments(workout_key, user_key) if comment_count else []
+
+                results.append({
+                    "athlete_name": athlete["name"],
+                    "athlete_first_name": athlete["first_name"],
+                    "athlete_key": user_key,
+                    "workout_key": workout_key,
+                    "workout_name": name,
+                    "workout_date": workout_date,
+                    "race_type": race_type,
+                    "description": description,
+                    "comments": comments,
+                    "group": group_name,
+                })
+
+    results.sort(key=lambda r: r["workout_date"])
+    return results
+
+
+def get_recent_race_context(user_key: str, race_name: str, weeks_back: int = 8) -> str:
+    """
+    Zoek in recente trainingen (post_workout_notes + comments) naar opmerkingen
+    over de aankomende race. Geeft relevante tekst terug als context voor de AI.
+    """
+    today = date.today()
+    start = today - timedelta(weeks=weeks_back)
+    coach_key = get_coach_key()
+
+    try:
+        workouts = get_workouts(user_key, start, today)
+    except Exception:
+        return ""
+
+    snippets = []
+    race_keywords = [w.lower() for w in race_name.split() if len(w) > 3]
+
+    for w in workouts:
+        notes = (w.get("post_workout_notes") or "").strip()
+        if notes and any(kw in notes.lower() for kw in race_keywords):
+            snippets.append(f"[{w.get('workout_date','')[:10]}] Notitie atleet: {notes[:300]}")
+
+        comment_count = w.get("CommentCount") or 0
+        if comment_count:
+            try:
+                comments = get_comments(w.get("key") or "", user_key)
+                for c in comments:
+                    tekst = (c.get("comment") or c.get("text") or "").strip()
+                    if tekst and any(kw in tekst.lower() for kw in race_keywords):
+                        is_coach = c.get("user_key") == coach_key
+                        label = "Coach" if is_coach else "Atleet"
+                        snippets.append(f"[{w.get('workout_date','')[:10]}] {label}: {tekst[:300]}")
+            except Exception:
+                pass
+
+    return "\n".join(snippets[:8])  # max 8 fragmenten

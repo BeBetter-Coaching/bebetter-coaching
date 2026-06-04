@@ -1,0 +1,12 @@
+.fs_auth_token
+.builder_state.json
+.feedback_skipped.json
+builder_debug.txt
+generate_pdf.py
+WERKINSTRUCTIE_WINDOWS.pdf
+BeBetter_Coach.command
+.env
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
