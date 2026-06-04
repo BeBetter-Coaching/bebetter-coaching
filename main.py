@@ -18,6 +18,36 @@ from pathlib import Path
 
 _PERSIST_FILE = os.path.join(os.path.dirname(__file__), ".builder_state.json")
 
+# ---------------------------------------------------------------------------
+# Wachtwoordbeveiliging
+# ---------------------------------------------------------------------------
+
+def _check_password() -> bool:
+    """Vraag om wachtwoord. Geeft True terug als correct ingelogd."""
+    # Lees wachtwoord uit Streamlit secrets (cloud) of omgevingsvariabele (lokaal)
+    try:
+        import streamlit as st
+        correct = st.secrets.get("APP_PASSWORD", "") or os.environ.get("APP_PASSWORD", "")
+    except Exception:
+        correct = os.environ.get("APP_PASSWORD", "")
+
+    if not correct:
+        return True  # Geen wachtwoord ingesteld → altijd toegang (lokaal gebruik)
+
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.image("assets/logo_zwart.png", width=200)
+    st.markdown("## BeBetter Coaching — Inloggen")
+    pw = st.text_input("Wachtwoord", type="password", key="login_pw")
+    if st.button("Inloggen", type="primary"):
+        if pw == correct:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Onjuist wachtwoord.")
+    return False
+
 def _save_builder_state():
     """Schrijf builder_intake, builder_plan, builder_step naar schijf."""
     state = {
@@ -360,6 +390,9 @@ def setup_screen():
     else:
         st.caption("**Windows:** open FinalSurge in Chrome → F12 → Application → Local Storage → https://beta.finalsurge.com → kopieer de waarde van **auth-token**")
 
+
+if not _check_password():
+    st.stop()
 
 if not is_authenticated():
     setup_screen()
