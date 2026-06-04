@@ -227,6 +227,20 @@ def get_athletes_by_group() -> dict[str, list[dict]]:
     return groups
 
 
+def _pace_to_float(pace_str) -> float:
+    """Converteer pace string (bijv. '3:12' of '3:12/km') naar float min/km. Hoger = langzamer."""
+    if not pace_str:
+        return float('inf')
+    try:
+        p = str(pace_str).split('/')[0].strip()
+        parts = p.split(':')
+        if len(parts) == 2:
+            return int(parts[0]) + int(parts[1]) / 60
+        return float(p)
+    except Exception:
+        return float('inf')
+
+
 def get_workouts(user_key: str, start: date, end: date, ishistory: bool = False) -> list[dict]:
     data = _get("WorkoutList", {
         "scope": "USER",
@@ -334,7 +348,67 @@ def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> l
 
         result.append(entry)
 
+    # Post-processing: voor race-entries, vervang data met de snelste activiteit op die dag.
+    # Reden: atleten doen wu → race → cd als losse activiteiten; de wu wordt soms
+    # ten onrechte als race-uitvoering gezien omdat het de eerste activiteit is.
+    from collections import defaultdict as _dd2
+    by_date: dict = _dd2(list)
+    for entry in result:
+        by_date[entry["date"]].append(entry)
+
+    for entry in result:
+        if not entry["is_race"] or not entry["completed"]:
+            continue
+        same_day = [
+            e for e in by_date[entry["date"]]
+            if e["completed"] and e["workout_key"] != entry["workout_key"]
+        ]
+        if not same_day:
+            continue
+        fastest = min(same_day, key=lambda e: _pace_to_float(e.get("pace")))
+        fastest_pace = _pace_to_float(fastest.get("pace"))
+        race_pace = _pace_to_float(entry.get("pace"))
+        # Vervang alleen als er een duidelijk snellere activiteit is (>15% sneller)
+        if fastest_pace < race_pace * 0.85:
+            entry["actual_km"] = fastest.get("actual_km") or entry["actual_km"]
+            entry["actual_min"] = fastest.get("actual_min") or entry["actual_min"]
+            entry["pace"] = fastest.get("pace") or entry["pace"]
+            entry["hr_avg"] = fastest.get("hr_avg") or entry["hr_avg"]
+            entry["laps"] = fastest.get("laps") or entry["laps"]
+            entry["_race_corrected"] = True  # markering voor debugging
+
     return sorted(result, key=lambda x: x["date"])
+
+
+def get_fastest_activity_on_day(user_key: str, race_date_str: str) -> dict:
+    """
+    Geeft de activity-data van de snelste voltooide activiteit op een specifieke dag.
+    Gebruikt in de feedback module om de echte race te identificeren (niet de warming-up).
+    """
+    try:
+        race_dt = date.fromisoformat(race_date_str[:10])
+    except Exception:
+        return {}
+    try:
+        day_workouts = get_workouts(user_key, race_dt, race_dt, ishistory=True)
+        if not day_workouts:
+            day_workouts = get_workouts(user_key, race_dt, race_dt, ishistory=False)
+    except Exception:
+        return {}
+
+    completed = [w for w in day_workouts if w.get("has_actual_data")]
+    if not completed:
+        return {}
+
+    def _act_pace(w):
+        acts = w.get("Activities") or []
+        if not acts:
+            return float('inf')
+        return _pace_to_float(acts[0].get("pace_display"))
+
+    fastest = min(completed, key=_act_pace)
+    acts = fastest.get("Activities") or []
+    return acts[0] if acts else {}
 
 
 def get_workout_details(workout_key: str, user_key: str) -> dict:

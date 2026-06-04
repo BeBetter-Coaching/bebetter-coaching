@@ -201,8 +201,24 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
 
     plan_description = details.get("description") or ""
     activities = details.get("Activities") or []
-    activity_summary = _format_activity(activities[0]) if activities else "Geen data beschikbaar."
 
+    # Voor race-workouts: controleer of er een snellere activiteit op dezelfde dag is.
+    # Atleten doen vaak wu → race → cd als losse activiteiten; de wu wordt soms
+    # ten onrechte gezien als de race-uitvoering (eerste activiteit van de dag).
+    workout_date = workout_data.get("workout_date", "")
+    is_race = workout_data.get("details", {}).get("is_race") or False
+    if athlete_key and workout_date and activities:
+        try:
+            fastest_act = _fs.get_fastest_activity_on_day(athlete_key, workout_date)
+            if fastest_act:
+                current_pace = _fs._pace_to_float(activities[0].get("pace_display") or "")
+                fastest_pace = _fs._pace_to_float(fastest_act.get("pace_display") or "")
+                if fastest_pace < current_pace * 0.85:
+                    activities = [fastest_act]
+        except Exception:
+            pass
+
+    activity_summary = _format_activity(activities[0]) if activities else "Geen data beschikbaar."
     laps = activities[0].get("Laps", []) if activities else []
     lap_summary = _format_laps(laps)
 
