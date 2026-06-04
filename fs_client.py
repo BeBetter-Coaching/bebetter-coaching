@@ -35,10 +35,26 @@ def save_token(token: str):
     _token = token.strip()
 
 
+def _read_streamlit_secret_token() -> Optional[str]:
+    """Lees FS_TOKEN uit Streamlit secrets als die beschikbaar zijn (cloud deployment)."""
+    try:
+        import streamlit as st
+        token = st.secrets.get("FS_TOKEN", "")
+        return token.strip() if token and token.strip() else None
+    except Exception:
+        return None
+
+
 def get_token() -> str:
     global _token
     if _token:
         return _token
+    # Probeer Streamlit secrets eerst (cloud)
+    secret = _read_streamlit_secret_token()
+    if secret:
+        _token = secret
+        return _token
+    # Dan lokaal opgeslagen token (Windows/Mac)
     cached = _read_cached_token()
     if cached:
         _token = cached
