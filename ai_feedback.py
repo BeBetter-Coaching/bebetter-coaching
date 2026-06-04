@@ -638,41 +638,46 @@ def generate_session_summary(coach_name: str, items: list[dict]) -> str:
     if not items:
         return ""
 
+    # Kort de feedback-teksten in zodat de prompt niet te lang wordt
     items_tekst = "\n\n".join(
-        f"Atleet: {it['athlete_name']}\nTraining: {it['workout_name']}\nFeedback gegeven:\n{it['feedback_text']}"
+        f"Atleet: {it['athlete_name']} | Training: {it['workout_name']}\n"
+        f"Feedback: {it['feedback_text'][:200]}{'…' if len(it['feedback_text']) > 200 else ''}"
         for it in items
     )
 
-    today = date.today().strftime("%-d %B %Y") if hasattr(date.today(), 'strftime') else str(date.today())
     try:
-        today = date.today().strftime("%d %B %Y").lstrip("0")
+        today = f"{date.today().day} {date.today().strftime('%B %Y')}"
     except Exception:
         today = str(date.today())
+
+    n = len(items)
+    namen = ", ".join(it["athlete_name"].split()[0] for it in items)
 
     prompt = f"""Schrijf een beknopte coaching handover voor {coach_name} over de feedback die vandaag gegeven is.
 
 Datum: {today}
 Coach: {coach_name}
+Aantal atleten deze sessie: {n} ({namen})
 
-Gegeven feedback deze sessie:
+Gegeven feedback:
 {items_tekst}
+
+BELANGRIJK: neem ALLE {n} atleten op in de samenvatting — sla niemand over.
 
 FORMAT (exact dit, geen kopjes, geen uitleg erbuiten):
 📋 Coaching update {today} — {coach_name}
 
-[Per atleet één regel: Naam: kern van de feedback + eventuele aandachtspunten voor volgende training]
-
-[Sluit af met één zin algemene opmerking als dat relevant is, anders weglaten]
+[Per atleet één regel: Voornaam: kern van de feedback + aandachtspunt voor volgende training indien relevant]
 
 Regels:
-- Maximaal 1 zin per atleet
+- Eén regel per atleet, ALLE {n} atleten vermelden
 - Alleen de essentie: wat was opvallend, wat moet de andere coach weten
 - Schrijf in het Nederlands, informeel
 - Geen streepjes als gedachtestreepje"""
 
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=300,
+        max_tokens=150 * n + 100,  # ~150 tokens per atleet + header
         messages=[{"role": "user", "content": prompt}],
     )
 
