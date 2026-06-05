@@ -1374,10 +1374,13 @@ Genereer de FinalSurge WorkoutBuilder JSON voor deze workout."""
         )
         raw = response.content[0].text.strip()
 
-        # Schrijf raw output naar debug-bestand
-        debug_path = os.path.expanduser("~/Documents/finalsurge-feedback/builder_debug.txt")
-        with open(debug_path, "w") as f:
-            f.write(f"=== PROMPT ===\n{prompt}\n\n=== RAW OUTPUT ===\n{raw}\n")
+        # Schrijf raw output naar debug-bestand (best-effort — werkt niet op cloud)
+        try:
+            debug_path = os.path.join(os.path.dirname(__file__), "builder_debug.txt")
+            with open(debug_path, "w") as f:
+                f.write(f"=== PROMPT ===\n{prompt}\n\n=== RAW OUTPUT ===\n{raw}\n")
+        except Exception:
+            pass
 
         # Strip markdown als die er toch omheen zit
         if raw.startswith("```"):
@@ -1440,9 +1443,12 @@ Genereer de FinalSurge WorkoutBuilder JSON voor deze workout."""
 
         return parsed.get("target_options", [])
     except Exception as e:
-        debug_path = os.path.expanduser("~/Documents/finalsurge-feedback/builder_debug.txt")
-        with open(debug_path, "a") as f:
-            f.write(f"\n=== PARSE ERROR ===\n{e}\n")
+        try:
+            debug_path = os.path.join(os.path.dirname(__file__), "builder_debug.txt")
+            with open(debug_path, "a") as f:
+                f.write(f"\n=== PARSE ERROR ===\n{e}\n")
+        except Exception:
+            pass
         return []
 
 
