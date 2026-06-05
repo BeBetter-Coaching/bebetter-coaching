@@ -1067,11 +1067,16 @@ def generate_plan(intake: dict) -> str:
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": content}],
     ))
-    return response.content[0].text.strip()
+    text = response.content[0].text if response.content else None
+    if not text:
+        raise ValueError("Lege respons van AI bij plan-generatie — probeer opnieuw.")
+    return text.strip()
 
 
 def generate_csv(plan_tekst: str, intake: dict) -> str:
     """Genereer de CSV op basis van het goedgekeurde schema (stap 4)."""
+    if not plan_tekst:
+        raise ValueError("Geen plan beschikbaar om CSV van te genereren.")
     prompt = build_csv_prompt(plan_tekst, intake)
 
     response = _api_call_with_retry(lambda: client.messages.create(
@@ -1080,7 +1085,10 @@ def generate_csv(plan_tekst: str, intake: dict) -> str:
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     ))
-    return response.content[0].text.strip()
+    text = response.content[0].text if response.content else None
+    if not text:
+        raise ValueError("Lege respons van AI bij CSV-generatie — probeer opnieuw.")
+    return text.strip()
 
 
 # ---------------------------------------------------------------------------
