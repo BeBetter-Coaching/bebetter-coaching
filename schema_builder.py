@@ -1571,6 +1571,7 @@ def import_to_finalsurge(
                             user_key=athlete_key,
                             workout_key=workout_key,
                             target_options=builder_steps,
+                            workout_name=w.get("name", ""),
                         )
                     except Exception as be:
                         builder_errors.append(f"{w['date']} {w['name']} (builder opslaan): {be}")

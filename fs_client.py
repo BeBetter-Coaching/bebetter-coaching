@@ -739,20 +739,29 @@ def save_workout_builder(
     user_key: str,
     workout_key: str,
     target_options: list,
+    workout_name: str = "",
 ) -> dict:
     """
     Sla de Workout Builder structuur op (zones, stappen, intervallen).
     target_options: lijst zoals teruggegeven door generate_builder_steps().
     """
-    return _post(
+    resp = _post(
         "WorkoutBuilderSave",
-        {"target_options": target_options},
+        {
+            "target_options": target_options,
+            "workout_name": workout_name,
+        },
         params={
             "scope": "USER",
-            "scopekey": user_key,   # WorkoutBuilderSave uses 'scopekey' (no underscore)
+            "scopekey": user_key,
             "workout_key": workout_key,
         },
     )
+    # FinalSurge kan HTTP 200 geven maar success=False — vang dit op
+    if isinstance(resp, dict) and resp.get("success") is False:
+        msg = resp.get("message") or resp.get("error") or str(resp)
+        raise RuntimeError(f"WorkoutBuilderSave afgewezen door FinalSurge: {msg}")
+    return resp
 
 
 def delete_workout(workout_key: str, user_key: str) -> dict:
