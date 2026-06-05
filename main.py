@@ -1151,37 +1151,34 @@ elif page == "backfill_builder":
     # ── Scan knop ─────────────────────────────────────────────────────────
     if st.button("🔍 Scan trainingen", type="primary", key="btn_bf_scan"):
         st.session_state.pop("bf_results", None)
-        with st.spinner("Trainingen ophalen en controleren op builder structuur…"):
+        with st.spinner("Trainingen ophalen…"):
             try:
                 workouts_raw = fs_client.get_workouts(bf_athlete_key, bf_start, bf_end, ishistory=False)
                 results = []
-                progress = st.progress(0)
-                to_check = [w for w in workouts_raw if (w.get("description") or "").strip() and not w.get("has_actual_data")]
-                for idx, w in enumerate(to_check):
-                    wk = w.get("key") or ""
+                type_map = {"Hardlopen": "Run", "Fiets": "Bike", "Zwem": "Swim",
+                            "Run": "Run", "Bike": "Bike", "Swim": "Swim"}
+                for w in workouts_raw:
                     desc = (w.get("description") or "").strip()
-                    # Controleer of er al een builder is
-                    has_builder = False
-                    if wk:
-                        try:
-                            steps = fs_client.get_workout_builder(wk, bf_athlete_key)
-                            has_builder = bool(steps)
-                        except Exception:
-                            pass
-                    if not has_builder and desc:
-                        act_type = w.get("activity_type_name") or "Hardlopen"
-                        # Normaliseer naar CSV activity type
-                        type_map = {"Hardlopen": "Run", "Fiets": "Bike", "Zwem": "Swim"}
-                        activity_type = type_map.get(act_type, "Run")
-                        results.append({
-                            "date": (w.get("workout_date") or "")[:10],
-                            "name": w.get("name") or desc[:50],
-                            "description": desc,
-                            "workout_key": wk,
-                            "activity_type": activity_type,
-                        })
-                    progress.progress((idx + 1) / max(len(to_check), 1))
-                progress.empty()
+                    if not desc:
+                        continue  # geen beschrijving → niets te doen
+                    if w.get("has_actual_data"):
+                        continue  # al voltooid → overslaan
+                    if w.get("has_structured_workout"):
+                        continue  # heeft al een builder structuur ✅
+                    wk = w.get("key") or ""
+                    if not wk:
+                        continue
+                    act_type = w.get("activity_type_name") or "Run"
+                    activity_type = type_map.get(act_type, "Run")
+                    if activity_type not in ("Run", "Bike", "Swim"):
+                        continue  # builder alleen voor run/bike/swim
+                    results.append({
+                        "date": (w.get("workout_date") or "")[:10],
+                        "name": w.get("name") or desc[:50],
+                        "description": desc,
+                        "workout_key": wk,
+                        "activity_type": activity_type,
+                    })
                 st.session_state["bf_results"] = results
                 st.session_state["bf_athlete_key_saved"] = bf_athlete_key
                 st.session_state["bf_zone_type_saved"] = bf_zone_type
