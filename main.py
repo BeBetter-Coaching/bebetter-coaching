@@ -553,6 +553,20 @@ if page == "home":
         if st.button("Open →", type="primary", key="btn_races", use_container_width=True):
             go_to("races")
 
+    # Tweede rij kaarten
+    st.markdown("<br>", unsafe_allow_html=True)
+    col5, col6, col7, col8 = st.columns(4, gap="large")
+    with col5:
+        st.markdown("""
+        <div class="bb-card">
+            <div class="bb-card-icon">🔧</div>
+            <p class="bb-card-title">Builder bijvullen</p>
+            <p class="bb-card-desc">Vul de workout builder automatisch in voor bestaande trainingen die al een beschrijving hebben maar nog geen structuur.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open →", type="primary", key="btn_backfill", use_container_width=True):
+            go_to("backfill_builder")
+
     # Debug expander (alleen zichtbaar als je hem openklapt)
     with st.expander("🔧 Debug: coach_athlete_key controle", expanded=False):
         st.caption("Gebruik dit om te controleren of de juiste coach_athlete_key wordt gebruikt voor het resetten van notificaties.")
@@ -1094,6 +1108,186 @@ elif page == "feedback":
                     if st.button("🔄 Opnieuw genereren", key="btn_regen_summary"):
                         st.session_state.pop("session_summary", None)
                         st.rerun()
+
+
+# ===========================================================================
+# PAGINA: BUILDER BIJVULLEN
+# ===========================================================================
+
+elif page == "backfill_builder":
+    module_header("Builder bijvullen", "🔧")
+
+    st.markdown("""
+    Scan de geplande trainingen van een atleet op een bepaalde periode.
+    Trainingen met een beschrijving maar **zonder workout builder structuur** worden hier getoond.
+    Selecteer welke je wil bijvullen en de app doet de rest.
+    """)
+
+    # ── Atleet + periode selectie ─────────────────────────────────────────
+    all_athletes = sorted(
+        [a for members in athletes_by_group.values() for a in members],
+        key=lambda x: x["name"],
+    )
+    athlete_options = {a["name"]: a["user_key"] for a in all_athletes}
+    zone_type_options = {a["user_key"]: a for a in all_athletes}
+
+    col_a, col_d1, col_d2 = st.columns([2, 1, 1])
+    with col_a:
+        selected_name = st.selectbox("Atleet", options=list(athlete_options.keys()), key="bf_athlete")
+        bf_athlete_key = athlete_options[selected_name]
+    with col_d1:
+        bf_start = st.date_input("Van", value=date.today(), key="bf_start")
+    with col_d2:
+        bf_end = st.date_input("Tot", value=date.today() + timedelta(days=84), key="bf_end")
+
+    zone_type_radio = st.radio(
+        "Zone-type voor builder",
+        options=["tempo (min/km)", "hartslag (bpm)"],
+        horizontal=True,
+        key="bf_zone_type",
+    )
+    bf_zone_type = "pace" if "tempo" in zone_type_radio else "heart_rate"
+
+    # ── Scan knop ─────────────────────────────────────────────────────────
+    if st.button("🔍 Scan trainingen", type="primary", key="btn_bf_scan"):
+        st.session_state.pop("bf_results", None)
+        with st.spinner("Trainingen ophalen en controleren op builder structuur…"):
+            try:
+                workouts_raw = fs_client.get_workouts(bf_athlete_key, bf_start, bf_end, ishistory=False)
+                results = []
+                progress = st.progress(0)
+                to_check = [w for w in workouts_raw if (w.get("description") or "").strip() and not w.get("has_actual_data")]
+                for idx, w in enumerate(to_check):
+                    wk = w.get("key") or ""
+                    desc = (w.get("description") or "").strip()
+                    # Controleer of er al een builder is
+                    has_builder = False
+                    if wk:
+                        try:
+                            steps = fs_client.get_workout_builder(wk, bf_athlete_key)
+                            has_builder = bool(steps)
+                        except Exception:
+                            pass
+                    if not has_builder and desc:
+                        act_type = w.get("activity_type_name") or "Hardlopen"
+                        # Normaliseer naar CSV activity type
+                        type_map = {"Hardlopen": "Run", "Fiets": "Bike", "Zwem": "Swim"}
+                        activity_type = type_map.get(act_type, "Run")
+                        results.append({
+                            "date": (w.get("workout_date") or "")[:10],
+                            "name": w.get("name") or desc[:50],
+                            "description": desc,
+                            "workout_key": wk,
+                            "activity_type": activity_type,
+                        })
+                    progress.progress((idx + 1) / max(len(to_check), 1))
+                progress.empty()
+                st.session_state["bf_results"] = results
+                st.session_state["bf_athlete_key"] = bf_athlete_key
+                st.session_state["bf_zone_type"] = bf_zone_type
+            except Exception as e:
+                st.error(f"Fout bij scannen: {e}")
+
+    # ── Resultaten ────────────────────────────────────────────────────────
+    bf_results = st.session_state.get("bf_results")
+    if bf_results is not None:
+        if not bf_results:
+            st.success("✅ Alle trainingen in deze periode hebben al een workout builder structuur.")
+        else:
+            st.markdown(f"**{len(bf_results)} trainingen gevonden zonder builder structuur:**")
+            st.markdown("---")
+
+            # Selectie checkboxen
+            if "bf_selected" not in st.session_state:
+                st.session_state["bf_selected"] = set(range(len(bf_results)))
+
+            col_all, col_none = st.columns([1, 1])
+            with col_all:
+                if st.button("✅ Alles selecteren", key="bf_sel_all"):
+                    st.session_state["bf_selected"] = set(range(len(bf_results)))
+                    st.rerun()
+            with col_none:
+                if st.button("☐ Niets selecteren", key="bf_sel_none"):
+                    st.session_state["bf_selected"] = set()
+                    st.rerun()
+
+            for idx, w in enumerate(bf_results):
+                col_cb, col_date, col_name = st.columns([0.5, 1, 5])
+                checked = idx in st.session_state.get("bf_selected", set())
+                with col_cb:
+                    new_val = st.checkbox("", value=checked, key=f"bf_cb_{idx}", label_visibility="collapsed")
+                    if new_val and idx not in st.session_state["bf_selected"]:
+                        st.session_state["bf_selected"].add(idx)
+                        st.rerun()
+                    elif not new_val and idx in st.session_state["bf_selected"]:
+                        st.session_state["bf_selected"].discard(idx)
+                        st.rerun()
+                with col_date:
+                    try:
+                        dt = date.fromisoformat(w["date"])
+                        _dag_nl = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
+                        dag = _dag_nl[dt.weekday()]
+                        st.caption(f"{dag} {dt.day}/{dt.month}")
+                    except Exception:
+                        st.caption(w["date"])
+                with col_name:
+                    st.markdown(f"**{w['name']}**")
+                    with st.expander("Beschrijving bekijken"):
+                        st.text(w["description"][:500])
+
+            st.markdown("---")
+            selected = st.session_state.get("bf_selected", set())
+            n_sel = len(selected)
+
+            if n_sel > 0:
+                if st.button(f"🔧 Vul builder voor {n_sel} training(en)", type="primary", key="btn_bf_fill"):
+                    to_fill = [bf_results[i] for i in sorted(selected)]
+                    bf_key = st.session_state.get("bf_athlete_key", bf_athlete_key)
+                    bf_zt = st.session_state.get("bf_zone_type", bf_zone_type)
+
+                    progress2 = st.progress(0)
+                    status = st.empty()
+                    filled = 0
+                    fill_errors = []
+
+                    for idx2, w in enumerate(to_fill):
+                        status.markdown(f"Builder genereren: **{w['name']}** ({idx2+1}/{len(to_fill)})")
+                        try:
+                            steps = schema_builder.generate_builder_steps(
+                                workout_name=w["name"],
+                                description=w["description"],
+                                zone_type=bf_zt,
+                                activity_type=w.get("activity_type", "Run"),
+                                op_tijd=False,
+                            )
+                            if steps and w["workout_key"]:
+                                fs_client.save_workout_builder(
+                                    user_key=bf_key,
+                                    workout_key=w["workout_key"],
+                                    target_options=steps,
+                                    workout_name=w["name"],
+                                )
+                                filled += 1
+                            else:
+                                fill_errors.append(f"{w['date']} {w['name']}: geen stappen gegenereerd")
+                        except Exception as fe:
+                            fill_errors.append(f"{w['date']} {w['name']}: {fe}")
+                        progress2.progress((idx2 + 1) / len(to_fill))
+
+                    progress2.empty()
+                    status.empty()
+
+                    if fill_errors:
+                        st.warning(f"✅ {filled} gelukt, {len(fill_errors)} mislukt.")
+                        with st.expander("Fouten bekijken"):
+                            for err in fill_errors:
+                                st.code(err)
+                    else:
+                        st.success(f"🎉 {filled} workout builders succesvol bijgevuld! Controleer in FinalSurge.")
+                        st.session_state.pop("bf_results", None)
+                        st.session_state.pop("bf_selected", None)
+            else:
+                st.info("Selecteer minimaal 1 training.")
 
 
 # ===========================================================================
