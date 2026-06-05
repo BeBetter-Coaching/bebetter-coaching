@@ -1183,8 +1183,8 @@ elif page == "backfill_builder":
                     progress.progress((idx + 1) / max(len(to_check), 1))
                 progress.empty()
                 st.session_state["bf_results"] = results
-                st.session_state["bf_athlete_key"] = bf_athlete_key
-                st.session_state["bf_zone_type"] = bf_zone_type
+                st.session_state["bf_athlete_key_saved"] = bf_athlete_key
+                st.session_state["bf_zone_type_saved"] = bf_zone_type
             except Exception as e:
                 st.error(f"Fout bij scannen: {e}")
 
@@ -1242,8 +1242,8 @@ elif page == "backfill_builder":
             if n_sel > 0:
                 if st.button(f"🔧 Vul builder voor {n_sel} training(en)", type="primary", key="btn_bf_fill"):
                     to_fill = [bf_results[i] for i in sorted(selected)]
-                    bf_key = st.session_state.get("bf_athlete_key", bf_athlete_key)
-                    bf_zt = st.session_state.get("bf_zone_type", bf_zone_type)
+                    bf_key = st.session_state.get("bf_athlete_key_saved", bf_athlete_key)
+                    bf_zt = st.session_state.get("bf_zone_type_saved", bf_zone_type)
 
                     progress2 = st.progress(0)
                     status = st.empty()
