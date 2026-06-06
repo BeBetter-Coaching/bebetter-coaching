@@ -1153,10 +1153,28 @@ elif page == "backfill_builder":
         st.session_state.pop("bf_results", None)
         with st.spinner("Trainingen ophalen…"):
             try:
-                workouts_raw = fs_client.get_workouts(bf_athlete_key, bf_start, bf_end, ishistory=False)
+                w1 = fs_client.get_workouts(bf_athlete_key, bf_start, bf_end, ishistory=False)
+                w2 = fs_client.get_workouts(bf_athlete_key, bf_start, bf_end, ishistory=True)
+                seen = set()
+                workouts_raw = []
+                for w in w1 + w2:
+                    k = w.get("key")
+                    if k and k not in seen:
+                        seen.add(k)
+                        workouts_raw.append(w)
             except Exception as e:
                 st.error(f"Fout bij ophalen trainingen: {e}")
                 workouts_raw = []
+
+        with st.expander(f"🔍 Debug: {len(workouts_raw)} workouts opgehaald"):
+            for w in workouts_raw[:5]:
+                st.json({
+                    "key": w.get("key"),
+                    "name": w.get("name"),
+                    "workout_date": w.get("workout_date"),
+                    "has_actual_data": w.get("has_actual_data"),
+                    "activity_type_name": w.get("activity_type_name"),
+                })
 
         if workouts_raw:
             type_map = {"Hardlopen": "Run", "Fiets": "Bike", "Zwem": "Swim",
