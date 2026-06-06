@@ -1161,33 +1161,38 @@ elif page == "backfill_builder":
         if workouts_raw:
             type_map = {"Hardlopen": "Run", "Fiets": "Bike", "Zwem": "Swim",
                         "Run": "Run", "Bike": "Bike", "Swim": "Swim"}
-            # Filter kandidaten: beschrijving aanwezig, niet voltooid, run/bike/swim
+            # Filter kandidaten: heeft naam + geplande data, niet voltooid, run/bike/swim
+            # Beschrijving zit NIET in WorkoutList — die halen we later op per workout
             candidates = []
             for w in workouts_raw:
-                desc = (w.get("description") or "").strip()
-                if not desc or w.get("has_actual_data"):
-                    continue
+                if w.get("has_actual_data"):
+                    continue  # al voltooid
                 wk = w.get("key") or ""
-                if not wk:
+                name = (w.get("name") or "").strip()
+                if not wk or not name:
                     continue
+                acts = w.get("Activities") or []
+                act = acts[0] if acts else {}
+                has_planned = bool(act.get("planned_amount") or act.get("planned_duration"))
+                if not has_planned:
+                    continue  # geen geplande data → waarschijnlijk geen schema-training
                 act_type = w.get("activity_type_name") or "Run"
                 activity_type = type_map.get(act_type, "Run")
                 if activity_type not in ("Run", "Bike", "Swim"):
                     continue
-                candidates.append((w, wk, desc, activity_type))
+                candidates.append((w, wk, name, activity_type))
 
-            st.info(f"{len(candidates)} trainingen met beschrijving gevonden — builder controleren…")
+            st.info(f"{len(candidates)} geplande trainingen gevonden — builder controleren…")
             progress = st.progress(0)
             status_txt = st.empty()
             results = []
-            for idx, (w, wk, desc, activity_type) in enumerate(candidates):
-                name = w.get("name") or desc[:50]
+            for idx, (w, wk, name, activity_type) in enumerate(candidates):
                 status_txt.caption(f"Controleren: {name} ({idx+1}/{len(candidates)})")
                 if not fs_client.has_real_builder(wk, bf_athlete_key):
                     results.append({
                         "date": (w.get("workout_date") or "")[:10],
                         "name": name,
-                        "description": desc,
+                        "description": "",  # wordt opgehaald bij bijvullen
                         "workout_key": wk,
                         "activity_type": activity_type,
                     })
@@ -1242,8 +1247,6 @@ elif page == "backfill_builder":
                         st.caption(w["date"])
                 with col_name:
                     st.markdown(f"**{w['name']}**")
-                    with st.expander("Beschrijving bekijken"):
-                        st.text(w["description"][:500])
 
             st.markdown("---")
             selected = st.session_state.get("bf_selected", set())
@@ -1263,9 +1266,20 @@ elif page == "backfill_builder":
                     for idx2, w in enumerate(to_fill):
                         status.markdown(f"Builder genereren: **{w['name']}** ({idx2+1}/{len(to_fill)})")
                         try:
+                            # Haal beschrijving op via details (zit niet in WorkoutList)
+                            desc = w.get("description", "")
+                            if not desc and w["workout_key"]:
+                                try:
+                                    details = fs_client.get_workout_details(w["workout_key"], bf_key)
+                                    desc = (details.get("description") or "").strip()
+                                except Exception:
+                                    pass
+                            if not desc:
+                                fill_errors.append(f"{w['date']} {w['name']}: geen beschrijving gevonden")
+                                continue
                             steps = schema_builder.generate_builder_steps(
                                 workout_name=w["name"],
-                                description=w["description"],
+                                description=desc,
                                 zone_type=bf_zt,
                                 activity_type=w.get("activity_type", "Run"),
                                 op_tijd=False,
