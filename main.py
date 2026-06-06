@@ -1161,9 +1161,7 @@ elif page == "backfill_builder":
         if workouts_raw:
             type_map = {"Hardlopen": "Run", "Fiets": "Bike", "Zwem": "Swim",
                         "Run": "Run", "Bike": "Bike", "Swim": "Swim"}
-            # Filter kandidaten: heeft naam + geplande data, niet voltooid, run/bike/swim
-            # Beschrijving zit NIET in WorkoutList — die halen we later op per workout
-            candidates = []
+            results = []
             for w in workouts_raw:
                 if w.get("has_actual_data"):
                     continue  # al voltooid
@@ -1171,34 +1169,17 @@ elif page == "backfill_builder":
                 name = (w.get("name") or "").strip()
                 if not wk or not name:
                     continue
-                acts = w.get("Activities") or []
-                act = acts[0] if acts else {}
-                has_planned = bool(act.get("planned_amount") or act.get("planned_duration"))
-                if not has_planned:
-                    continue  # geen geplande data → waarschijnlijk geen schema-training
                 act_type = w.get("activity_type_name") or "Run"
                 activity_type = type_map.get(act_type, "Run")
                 if activity_type not in ("Run", "Bike", "Swim"):
                     continue
-                candidates.append((w, wk, name, activity_type))
-
-            st.info(f"{len(candidates)} geplande trainingen gevonden — builder controleren…")
-            progress = st.progress(0)
-            status_txt = st.empty()
-            results = []
-            for idx, (w, wk, name, activity_type) in enumerate(candidates):
-                status_txt.caption(f"Controleren: {name} ({idx+1}/{len(candidates)})")
-                if not fs_client.has_real_builder(wk, bf_athlete_key):
-                    results.append({
-                        "date": (w.get("workout_date") or "")[:10],
-                        "name": name,
-                        "description": "",  # wordt opgehaald bij bijvullen
-                        "workout_key": wk,
-                        "activity_type": activity_type,
-                    })
-                progress.progress((idx + 1) / len(candidates))
-            progress.empty()
-            status_txt.empty()
+                results.append({
+                    "date": (w.get("workout_date") or "")[:10],
+                    "name": name,
+                    "description": "",  # wordt opgehaald bij bijvullen
+                    "workout_key": wk,
+                    "activity_type": activity_type,
+                })
             st.session_state["bf_results"] = results
             st.session_state["bf_athlete_key_saved"] = bf_athlete_key
             st.session_state["bf_zone_type_saved"] = bf_zone_type
@@ -1207,7 +1188,7 @@ elif page == "backfill_builder":
     bf_results = st.session_state.get("bf_results")
     if bf_results is not None:
         if not bf_results:
-            st.success("✅ Alle trainingen in deze periode hebben al een workout builder structuur.")
+            st.info("Geen geplande trainingen gevonden in deze periode (of alles is al voltooid).")
         else:
             st.markdown(f"**{len(bf_results)} trainingen gevonden zonder builder structuur:**")
             st.markdown("---")
