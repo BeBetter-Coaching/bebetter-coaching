@@ -443,6 +443,41 @@ def get_workout_builder(workout_key: str, user_key: str) -> list[dict]:
         return []
 
 
+def has_real_builder(workout_key: str, user_key: str) -> bool:
+    """
+    Controleer of een workout een echte WorkoutBuilder structuur heeft met zone-targets.
+    FinalSurge retourneert altijd een target_options structuur, ook zonder echte builder.
+    Een 'echte' builder heeft stappen met targetType != 'open'.
+    """
+    try:
+        data = _get("WorkoutBuilderGet", {
+            "scope": "USER",
+            "scopekey": user_key,
+            "workout_key": workout_key,
+            "array": "true",
+            "newobject": "true",
+        })
+        options = (data.get("data") or {}).get("target_options") or []
+        if not options:
+            return False
+        steps = options[0].get("steps") or []
+        if not steps:
+            return False
+        # Controleer of er stappen zijn met echte zone-targets (niet alleen 'open')
+        for step in steps:
+            for t in (step.get("target") or []):
+                if t.get("targetType") not in ("open", "", None):
+                    return True
+            # Ook inner steps van repeat-blokken controleren
+            for inner in (step.get("data") or []):
+                for t in (inner.get("target") or []):
+                    if t.get("targetType") not in ("open", "", None):
+                        return True
+        return False
+    except Exception:
+        return False
+
+
 def get_comments(workout_key: str, user_key: str) -> list[dict]:
     data = _get("WorkoutComment", {
         "scope": "USER",

@@ -1154,36 +1154,49 @@ elif page == "backfill_builder":
         with st.spinner("Trainingen ophalen…"):
             try:
                 workouts_raw = fs_client.get_workouts(bf_athlete_key, bf_start, bf_end, ishistory=False)
-                results = []
-                type_map = {"Hardlopen": "Run", "Fiets": "Bike", "Zwem": "Swim",
-                            "Run": "Run", "Bike": "Bike", "Swim": "Swim"}
-                for w in workouts_raw:
-                    desc = (w.get("description") or "").strip()
-                    if not desc:
-                        continue  # geen beschrijving → niets te doen
-                    if w.get("has_actual_data"):
-                        continue  # al voltooid → overslaan
-                    if w.get("has_structured_workout"):
-                        continue  # heeft al een builder structuur ✅
-                    wk = w.get("key") or ""
-                    if not wk:
-                        continue
-                    act_type = w.get("activity_type_name") or "Run"
-                    activity_type = type_map.get(act_type, "Run")
-                    if activity_type not in ("Run", "Bike", "Swim"):
-                        continue  # builder alleen voor run/bike/swim
+            except Exception as e:
+                st.error(f"Fout bij ophalen trainingen: {e}")
+                workouts_raw = []
+
+        if workouts_raw:
+            type_map = {"Hardlopen": "Run", "Fiets": "Bike", "Zwem": "Swim",
+                        "Run": "Run", "Bike": "Bike", "Swim": "Swim"}
+            # Filter kandidaten: beschrijving aanwezig, niet voltooid, run/bike/swim
+            candidates = []
+            for w in workouts_raw:
+                desc = (w.get("description") or "").strip()
+                if not desc or w.get("has_actual_data"):
+                    continue
+                wk = w.get("key") or ""
+                if not wk:
+                    continue
+                act_type = w.get("activity_type_name") or "Run"
+                activity_type = type_map.get(act_type, "Run")
+                if activity_type not in ("Run", "Bike", "Swim"):
+                    continue
+                candidates.append((w, wk, desc, activity_type))
+
+            st.info(f"{len(candidates)} trainingen met beschrijving gevonden — builder controleren…")
+            progress = st.progress(0)
+            status_txt = st.empty()
+            results = []
+            for idx, (w, wk, desc, activity_type) in enumerate(candidates):
+                name = w.get("name") or desc[:50]
+                status_txt.caption(f"Controleren: {name} ({idx+1}/{len(candidates)})")
+                if not fs_client.has_real_builder(wk, bf_athlete_key):
                     results.append({
                         "date": (w.get("workout_date") or "")[:10],
-                        "name": w.get("name") or desc[:50],
+                        "name": name,
                         "description": desc,
                         "workout_key": wk,
                         "activity_type": activity_type,
                     })
-                st.session_state["bf_results"] = results
-                st.session_state["bf_athlete_key_saved"] = bf_athlete_key
-                st.session_state["bf_zone_type_saved"] = bf_zone_type
-            except Exception as e:
-                st.error(f"Fout bij scannen: {e}")
+                progress.progress((idx + 1) / len(candidates))
+            progress.empty()
+            status_txt.empty()
+            st.session_state["bf_results"] = results
+            st.session_state["bf_athlete_key_saved"] = bf_athlete_key
+            st.session_state["bf_zone_type_saved"] = bf_zone_type
 
     # ── Resultaten ────────────────────────────────────────────────────────
     bf_results = st.session_state.get("bf_results")
