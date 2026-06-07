@@ -1177,26 +1177,26 @@ elif page == "backfill_builder":
                 })
 
         if workouts_raw:
-            type_map = {"Hardlopen": "Run", "Fiets": "Bike", "Zwem": "Swim",
-                        "Run": "Run", "Bike": "Bike", "Swim": "Swim"}
             results = []
-            for w in workouts_raw:
-                if w.get("has_actual_data"):
-                    continue  # al voltooid
+            seen_nd = set()
+            for w in sorted(workouts_raw, key=lambda x: (x.get("workout_date") or "")[:10]):
                 wk = w.get("key") or ""
                 name = (w.get("name") or "").strip()
-                if not wk or not name:
+                workout_date = (w.get("workout_date") or "")[:10]
+                if not wk or not name or not workout_date:
                     continue
-                act_type = w.get("activity_type_name") or "Run"
-                activity_type = type_map.get(act_type, "Run")
-                if activity_type not in ("Run", "Bike", "Swim"):
+                if workout_date < bf_start.isoformat():
                     continue
+                nd = (workout_date, name)
+                if nd in seen_nd:
+                    continue
+                seen_nd.add(nd)
                 results.append({
-                    "date": (w.get("workout_date") or "")[:10],
+                    "date": workout_date,
                     "name": name,
-                    "description": "",  # wordt opgehaald bij bijvullen
+                    "description": "",
                     "workout_key": wk,
-                    "activity_type": activity_type,
+                    "activity_type": "Run",
                 })
             st.session_state["bf_results"] = results
             st.session_state["bf_athlete_key_saved"] = bf_athlete_key
