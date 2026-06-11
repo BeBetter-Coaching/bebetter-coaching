@@ -757,7 +757,23 @@ if page == "home":
     # ── Dagoverzicht — voortgangsmonitor ──
     st.markdown('<p class="bb-section-label">Dagoverzicht</p>', unsafe_allow_html=True)
 
+    # Auto-laden: haal dag­stats op als ze nog niet geladen zijn of van gisteren
     day_stats = st.session_state.get("day_stats")
+    _today_str = date.today().isoformat()
+    if day_stats is None or day_stats.get("loaded_at") != _today_str:
+        with st.spinner("Dagstatus ophalen…"):
+            try:
+                _fb = fs_client.get_workouts_needing_feedback(days_back=3)
+                _races = fs_client.get_upcoming_races(days_ahead=14)
+                st.session_state["day_stats"] = {
+                    "feedback_pending": len(_fb),
+                    "races_coming": len(_races),
+                    "loaded_at": _today_str,
+                }
+                day_stats = st.session_state["day_stats"]
+            except Exception:
+                pass  # Toon lege staat als het mislukt
+
     n_posted_today = len(st.session_state.get("session_feedback_log", []))
 
     col_day, col_refresh = st.columns([5, 1])
@@ -770,7 +786,7 @@ if page == "home":
                     st.session_state["day_stats"] = {
                         "feedback_pending": len(_fb),
                         "races_coming": len(_races),
-                        "loaded_at": date.today().isoformat(),
+                        "loaded_at": _today_str,
                     }
                     st.rerun()
                 except Exception as e:
