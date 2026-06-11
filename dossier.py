@@ -100,7 +100,9 @@ def _analyse_log(log: list[dict]) -> dict:
     scores_8w: list[float] = []
     n_vol = n_deels = n_gemist = 0
     week_km: dict[str, float] = {}
+    week_scores: dict[str, list[float]] = {}
     trend_rows = []
+    eff_rows = []
     races = []
 
     for e in log:
@@ -115,6 +117,7 @@ def _analyse_log(log: list[dict]) -> dict:
         if d >= cutoff_8w and is_planned and not e.get("is_race"):
             score = _workout_score(e)
             scores_8w.append(score)
+            week_scores.setdefault(_week_label(d), []).append(score)
             if score >= 0.9:
                 n_vol += 1
             elif score > 0:
@@ -125,6 +128,20 @@ def _analyse_log(log: list[dict]) -> dict:
         if e.get("completed"):
             wk = _week_label(d)
             week_km[wk] = week_km.get(wk, 0.0) + float(e.get("actual_km") or 0)
+
+            # Conditie-index: snelheid per hartslag (m/min per bpm × 100).
+            # Stijgende lijn = zelfde tempo bij lagere HF = fitter.
+            hr = e.get("hr_avg")
+            pace_min = fs_client._pace_to_float(e.get("pace"))
+            if hr and pace_min != float("inf") and not e.get("is_race"):
+                try:
+                    # meters per minuut gedeeld door hartslag, ×100
+                    # typisch bereik hardlopen: ~70 (rustig) tot ~200 (snel)
+                    eff = (1000 / pace_min) / float(hr) * 100
+                    if 40 < eff < 300:  # filter sensorruis / wandelingen
+                        eff_rows.append({"datum": d, "Conditie-index": round(eff, 1)})
+                except (ValueError, TypeError, ZeroDivisionError):
+                    pass
 
             felt = e.get("felt")
             effort = e.get("effort")
@@ -164,17 +181,28 @@ def _analyse_log(log: list[dict]) -> dict:
                     "VDOT": vdot if vdot else "—",
                 })
 
-    # Weekvolume als dataframe (laatste 8 weken, ook lege weken tonen)
+    # Weekvolume + compliance per week (laatste 8 weken, ook lege weken tonen)
     week_rows = []
+    compl_rows = []
     for w_ago in range(7, -1, -1):
         d = today - timedelta(weeks=w_ago)
         wk = _week_label(d)
         week_rows.append({"week": wk, "km": round(week_km.get(wk, 0.0), 1)})
+        ws = week_scores.get(wk)
+        compl_rows.append({
+            "week": wk,
+            "Compliance %": round(sum(ws) / len(ws) * 100) if ws else None,
+        })
     df_weeks = pd.DataFrame(week_rows).set_index("week")
+    df_compl = pd.DataFrame(compl_rows).set_index("week")
 
     df_trend = None
     if trend_rows:
         df_trend = pd.DataFrame(trend_rows).set_index("datum").sort_index()
+
+    df_eff = None
+    if len(eff_rows) >= 3:  # pas tonen als er genoeg punten zijn voor een trend
+        df_eff = pd.DataFrame(eff_rows).set_index("datum").sort_index()
 
     compliance = (
         round(sum(scores_8w) / len(scores_8w) * 100)
@@ -187,7 +215,9 @@ def _analyse_log(log: list[dict]) -> dict:
         "n_deels": n_deels,
         "n_gemist": n_gemist,
         "df_weeks": df_weeks,
+        "df_compl": df_compl,
         "df_trend": df_trend,
+        "df_eff": df_eff,
         "races": races,
         "km_4w": round(sum(
             r["km"] for r in week_rows[-4:]
@@ -347,6 +377,19 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
             st.line_chart(analyse["df_trend"], height=220)
         else:
             st.caption("Nog geen gevoel/RPE-scores in deze periode.")
+
+    c_compl, c_eff = st.columns(2)
+    with c_compl:
+        st.markdown("**Compliance per week (%)**")
+        st.bar_chart(analyse["df_compl"], height=220)
+    with c_eff:
+        st.markdown("**Conditie-index** — tempo per hartslag")
+        if analyse["df_eff"] is not None:
+            st.line_chart(analyse["df_eff"], height=220)
+            st.caption("Stijgende lijn = zelfde tempo bij lagere hartslag = fitter. "
+                       "Races niet meegerekend.")
+        else:
+            st.caption("Te weinig trainingen met hartslag én tempo voor een trend.")
 
     # ── Races ──
     if analyse["races"]:
