@@ -144,11 +144,24 @@ def _analyse_log(log: list[dict]) -> dict:
                 trend_rows.append(row)
 
             if e.get("is_race"):
+                vdot = None
+                km = e.get("actual_km")
+                mins = e.get("actual_min")
+                if km and mins and float(km) >= 1.5:
+                    try:
+                        import schema_builder
+                        vdot = round(schema_builder.calculate_vdot(
+                            float(km) * 1000, float(mins) * 60
+                        ), 1)
+                    except Exception:
+                        vdot = None
                 races.append({
                     "Datum": e["date"],
                     "Race": e.get("name") or "Race",
-                    "Afstand": f"{e['actual_km']} km" if e.get("actual_km") else "—",
+                    "Afstand": f"{km} km" if km else "—",
+                    "Tijd": f"{int(mins)//60}:{int(mins)%60:02d}" if mins else "—",
                     "Pace": e.get("pace") or "—",
+                    "VDOT": vdot if vdot else "—",
                 })
 
     # Weekvolume als dataframe (laatste 8 weken, ook lege weken tonen)
@@ -340,8 +353,27 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
         st.markdown("**🏁 Recente races**")
         st.table(pd.DataFrame(analyse["races"]))
 
+        # Zones-advies op basis van de recentste race met VDOT
+        _laatste = next(
+            (r for r in sorted(analyse["races"], key=lambda x: x["Datum"], reverse=True)
+             if r["VDOT"] != "—"),
+            None,
+        )
+        if _laatste:
+            with st.expander(f"💡 Zones-advies op basis van {_laatste['Race']} (VDOT {_laatste['VDOT']})"):
+                st.caption(
+                    "Tempozones volgens Jack Daniels bij deze racevorm. Vergelijk met de "
+                    "huidige zones hieronder — wijkt het duidelijk af, dan zijn de zones "
+                    "in FinalSurge toe aan een update."
+                )
+                try:
+                    import schema_builder
+                    st.code(schema_builder.vdot_to_zones_text(float(_laatste["VDOT"])))
+                except Exception:
+                    st.caption("Kon geen zones berekenen.")
+
     # ── Zones ──
-    with st.expander("🎯 Zones in FinalSurge"):
+    with st.expander("🎯 Huidige zones in FinalSurge"):
         zones = data["zones"]
         if zones.get("zones_text"):
             st.caption(f"Type: {zones.get('zone_type', '?')}")
