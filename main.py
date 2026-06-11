@@ -57,11 +57,11 @@ def _check_password() -> bool:
     col1, col2, col3 = st.columns([1, 1.4, 1])
     with col2:
         try:
-            _logo_login = _logo_b64("assets/logo_zwart.png")
+            _logo_login = _logo_b64("assets/logo_wit.png")
             st.markdown(f"""
             <div style="text-align:center; padding: 3rem 0 1.6rem 0;">
                 <img src="data:image/png;base64,{_logo_login}" style="width:210px; max-width:70%;" />
-                <p style="color:#5B6B82; font-size:0.74rem; font-weight:700; letter-spacing:0.2em;
+                <p style="color:#8FA8CE; font-size:0.74rem; font-weight:700; letter-spacing:0.2em;
                           text-transform:uppercase; margin-top:0.9rem;">Coach Dashboard</p>
                 <div style="height:3px; background:linear-gradient(90deg,#2876FB,#5EE6EB);
                             border-radius:2px; max-width:120px; margin:1.1rem auto 0 auto;"></div>
@@ -168,25 +168,27 @@ st.set_page_config(
 st.markdown("""
 <style>
 /* ════════════════════════════════════════════════════════════
-   BeBetter Coaching — Premium Design System
+   BeBetter Coaching — Kinetic Dark Design System
+   Page bg     : #081830   Surface       : #0E2547
+   Surface-2   : #10294E   Rand          : #1E3A66
    Navy        : #0B1F3A   Primair blauw : #2876FB
-   Cyan accent : #5EE6EB   Donkerblauw   : #1E56B8
-   Achtergrond : #F6F8FC   Kaart         : #FFFFFF
-   Rand        : #E3E9F2   Subtekst      : #5B6B82
+   Cyan accent : #5EE6EB   Tekst         : #EAF2FF
+   Subtekst    : #8FA8CE   Gedimd        : #5B7396
    ════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 html, body, [data-testid="stAppViewContainer"], .stMarkdown, button, input, textarea, select {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
+.bb-disp { font-family: 'Archivo Black', 'Inter', sans-serif !important; }
 
-/* ── App achtergrond met subtiele gloed ── */
+/* ── App achtergrond: diep navy met gloed ── */
 [data-testid="stAppViewContainer"] {
     background:
-        radial-gradient(1100px 480px at 88% -8%, rgba(94,230,235,0.10), transparent 60%),
-        radial-gradient(900px 420px at -8% 2%, rgba(40,118,251,0.07), transparent 55%),
-        #F6F8FC;
+        radial-gradient(1100px 520px at 88% -8%, rgba(94,230,235,0.07), transparent 60%),
+        radial-gradient(900px 460px at -8% 4%, rgba(40,118,251,0.10), transparent 55%),
+        #081830;
 }
 
 /* ── Streamlit chrome verbergen ── */
@@ -196,10 +198,11 @@ header[data-testid="stHeader"] { background: transparent !important; }
 .block-container { padding-top: 1.2rem !important; max-width: 1260px; }
 
 /* ── Typografie ── */
-h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spacing: -0.015em !important; }
-[data-testid="stCaptionContainer"], .stCaption { color: #5B6B82 !important; }
+h1, h2, h3 { color: #EAF2FF !important; font-weight: 800 !important; letter-spacing: -0.015em !important; }
+[data-testid="stCaptionContainer"], .stCaption { color: #8FA8CE !important; }
+[data-testid="stMarkdownContainer"] { color: #C9D8F0; }
 
-/* ── Entrance animaties ── */
+/* ── Animaties ── */
 @keyframes bbFadeUp {
     from { opacity: 0; transform: translateY(16px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -209,29 +212,37 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
     100% { background-position: 200% 0; }
 }
 @keyframes bbPulseGlow {
-    0%, 100% { opacity: 0.55; }
+    0%, 100% { opacity: 0.45; }
     50%      { opacity: 1; }
 }
+@keyframes bbMarquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+}
+@keyframes bbPopIn {
+    0%   { opacity: 0; transform: scale(0.6); }
+    70%  { transform: scale(1.08); }
+    100% { opacity: 1; transform: scale(1); }
+}
 
-/* ══ HERO BANNER (home) ══ */
+/* ══ HERO (home) ══ */
 .bb-hero {
     position: relative;
-    background: linear-gradient(130deg, #0B1F3A 0%, #122E5C 48%, #1E56B8 100%);
-    background-size: cover;
-    background-position: center 30%;
+    background: linear-gradient(130deg, #0B1F3A 0%, #0E2547 55%, #10294E 100%);
+    border: 1px solid #1E3A66;
     border-radius: 22px;
-    padding: 2.5rem 2.8rem 2.3rem 2.8rem;
-    margin-bottom: 2rem;
+    padding: 2.6rem 2.8rem 2.4rem 2.8rem;
+    margin-bottom: 0;
     overflow: hidden;
-    box-shadow: 0 20px 50px rgba(11,31,58,0.30);
+    box-shadow: 0 24px 60px rgba(2,10,26,0.55);
     animation: bbFadeUp 0.5s ease both;
 }
 .bb-hero::before {
     content: "";
     position: absolute;
-    top: -120px; right: -80px;
-    width: 420px; height: 420px;
-    background: radial-gradient(circle, rgba(94,230,235,0.22), transparent 65%);
+    top: -140px; right: -90px;
+    width: 460px; height: 460px;
+    background: radial-gradient(circle, rgba(94,230,235,0.14), transparent 65%);
     pointer-events: none;
     animation: bbPulseGlow 6s ease-in-out infinite;
 }
@@ -249,27 +260,64 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
     color: #5EE6EB;
     font-size: 0.72rem;
     font-weight: 700;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.30em;
     text-transform: uppercase;
-    margin: 0 0 0.4rem 0;
+    margin: 0 0 1rem 0;
 }
 .bb-hero-title {
+    font-family: 'Archivo Black', sans-serif;
     color: #FFFFFF;
-    font-size: 2rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
+    font-size: 3.1rem;
+    line-height: 0.98;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-transform: uppercase;
+}
+.bb-hero-title-outline {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 3.1rem;
+    line-height: 0.98;
+    letter-spacing: -0.01em;
     margin: 0 0 0.3rem 0;
+    text-transform: uppercase;
+    color: transparent;
+    -webkit-text-stroke: 1.6px #5EE6EB;
 }
 .bb-hero-sub {
-    color: #9FB6D9;
+    color: #8FA8CE;
     font-size: 0.95rem;
     font-weight: 500;
-    margin: 0;
+    margin: 0.9rem 0 0 0;
+    max-width: 460px;
 }
-.bb-kpi-row { display: flex; gap: 0.9rem; margin-top: 1.6rem; flex-wrap: wrap; }
+.bb-hero-watermark {
+    position: absolute;
+    right: 200px; top: 14px;
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 9rem;
+    line-height: 1;
+    color: #10294E;
+    user-select: none;
+    pointer-events: none;
+    z-index: 1;
+}
+.bb-hero-photo {
+    position: absolute;
+    right: 2.2rem; top: 50%;
+    transform: translateY(-50%) rotate(3deg);
+    width: 168px;
+    border-radius: 14px;
+    border: 1px solid #2C4A7E;
+    box-shadow: 0 18px 40px rgba(2,10,26,0.6), -6px 6px 0 rgba(94,230,235,0.18);
+    z-index: 2;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.bb-hero-photo:hover { transform: translateY(-50%) rotate(0deg) scale(1.04); }
+
+.bb-kpi-row { display: flex; gap: 0.9rem; margin-top: 1.5rem; flex-wrap: wrap; }
 .bb-kpi {
-    background: rgba(11,31,58,0.35);
-    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(8,24,48,0.55);
+    border: 1px solid #1E3A66;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-radius: 14px;
@@ -279,12 +327,16 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
 }
 .bb-kpi:hover {
     transform: translateY(-3px) scale(1.03);
-    background: rgba(40,118,251,0.30);
-    border-color: rgba(94,230,235,0.45);
+    background: rgba(40,118,251,0.18);
+    border-color: rgba(94,230,235,0.50);
 }
-.bb-kpi-value { color: #FFFFFF; font-size: 1.55rem; font-weight: 800; margin: 0; line-height: 1.2; }
+.bb-kpi-value {
+    font-family: 'Archivo Black', sans-serif;
+    color: #FFFFFF; font-size: 1.55rem; margin: 0; line-height: 1.2;
+    animation: bbPopIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.25s both;
+}
 .bb-kpi-label {
-    color: #8FA8CE;
+    color: #5B7396;
     font-size: 0.66rem;
     font-weight: 700;
     letter-spacing: 0.14em;
@@ -292,12 +344,36 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
     margin: 0;
 }
 
+/* ══ MARQUEE ══ */
+.bb-marquee {
+    overflow: hidden;
+    border-top: 1px solid #16335E;
+    border-bottom: 1px solid #16335E;
+    background: #0B1F3A;
+    border-radius: 0 0 14px 14px;
+    margin: 0 0 1.8rem 0;
+    padding: 0.55rem 0;
+    animation: bbFadeUp 0.5s ease 0.1s both;
+}
+.bb-marquee-inner {
+    display: flex;
+    white-space: nowrap;
+    animation: bbMarquee 22s linear infinite;
+    will-change: transform;
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    color: #5EE6EB;
+    text-transform: uppercase;
+}
+.bb-marquee:hover .bb-marquee-inner { animation-play-state: paused; }
+
 /* ── Sectie-label ── */
 .bb-section-label {
     font-size: 0.72rem;
     font-weight: 800;
-    color: #5B6B82;
-    letter-spacing: 0.18em;
+    color: #5B7396;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
     margin: 0.4rem 0 0.9rem 0;
 }
@@ -305,20 +381,19 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
 /* ══ MODULE CARDS ══ */
 .bb-card {
     position: relative;
-    background: #FFFFFF;
-    border: 1px solid #E3E9F2;
+    background: #0E2547;
+    border: 1px solid #1E3A66;
     border-radius: 16px;
     padding: 1.6rem 1.5rem 1.4rem 1.5rem;
     min-height: 210px;
     display: flex;
     flex-direction: column;
     gap: 0.7rem;
-    box-shadow: 0 1px 3px rgba(15,42,75,0.05), 0 8px 24px rgba(15,42,75,0.05);
+    box-shadow: 0 8px 24px rgba(2,10,26,0.35);
     transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease, border-color 0.22s ease;
     overflow: hidden;
     animation: bbFadeUp 0.5s ease both;
 }
-/* Gestaffelde entrance per kolom */
 [data-testid="stColumn"]:nth-of-type(1) .bb-card { animation-delay: 0.05s; }
 [data-testid="stColumn"]:nth-of-type(2) .bb-card { animation-delay: 0.12s; }
 [data-testid="stColumn"]:nth-of-type(3) .bb-card { animation-delay: 0.19s; }
@@ -335,35 +410,36 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
 }
 .bb-card:hover {
     transform: translateY(-6px);
-    box-shadow: 0 4px 12px rgba(40,118,251,0.10), 0 22px 48px rgba(40,118,251,0.16);
-    border-color: #BBD3FA;
+    box-shadow: 0 6px 16px rgba(94,230,235,0.08), 0 26px 52px rgba(2,10,26,0.55);
+    border-color: #5EE6EB;
 }
 .bb-card:hover::before { opacity: 1; animation: bbShimmer 2.5s linear infinite; }
 .bb-card-icon {
     width: 48px; height: 48px;
     display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(135deg, #EAF2FF 0%, #EFFCFD 100%);
-    border: 1px solid #DCE8FB;
+    background: linear-gradient(135deg, #10294E 0%, #122E5C 100%);
+    border: 1px solid #2C4A7E;
     border-radius: 13px;
     font-size: 1.4rem;
     line-height: 1;
-    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease, border-color 0.25s ease;
 }
 .bb-card:hover .bb-card-icon {
     transform: scale(1.12) rotate(-6deg);
-    box-shadow: 0 6px 16px rgba(40,118,251,0.20);
+    border-color: #5EE6EB;
+    box-shadow: 0 6px 18px rgba(94,230,235,0.25);
 }
 .bb-card-title {
-    font-size: 0.98rem;
-    font-weight: 800;
-    color: #0B1F3A;
-    letter-spacing: 0.03em;
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 0.95rem;
+    color: #FFFFFF;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     margin: 0;
 }
 .bb-card-desc {
     font-size: 0.84rem;
-    color: #5B6B82;
+    color: #8FA8CE;
     line-height: 1.6;
     flex-grow: 1;
     margin: 0;
@@ -371,11 +447,11 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
 
 /* ══ DAGOVERZICHT ══ */
 .bb-day-panel {
-    background: #FFFFFF;
-    border: 1px solid #E3E9F2;
+    background: #0E2547;
+    border: 1px solid #1E3A66;
     border-radius: 16px;
     padding: 1.4rem 1.6rem 1.3rem 1.6rem;
-    box-shadow: 0 1px 3px rgba(15,42,75,0.05), 0 8px 24px rgba(15,42,75,0.05);
+    box-shadow: 0 8px 24px rgba(2,10,26,0.35);
     margin-bottom: 1.6rem;
     animation: bbFadeUp 0.5s ease 0.08s both;
 }
@@ -383,34 +459,38 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
 .bb-stat {
     flex: 1;
     min-width: 150px;
-    background: linear-gradient(135deg, #F8FAFE, #F2F7FF);
-    border: 1px solid #E3E9F2;
+    background: #10294E;
+    border: 1px solid #1E3A66;
     border-radius: 13px;
     padding: 0.95rem 1.2rem;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .bb-stat:hover {
     transform: translateY(-3px);
-    box-shadow: 0 8px 20px rgba(15,42,75,0.10);
+    border-color: #2C4A7E;
+    box-shadow: 0 10px 24px rgba(2,10,26,0.45);
 }
-.bb-stat.done { background: linear-gradient(135deg, #F0FBF4, #E8F8EE); border-color: #CDEBD8; }
-.bb-stat.attention {
-    background: linear-gradient(135deg, #FFF8F0, #FFF3E5);
-    border-color: #F5DFC2;
+.bb-stat.done { background: rgba(29,158,117,0.10); border-color: rgba(93,202,165,0.35); }
+.bb-stat.done .bb-stat-value { color: #5DCAA5; }
+.bb-stat.attention { background: rgba(239,159,39,0.08); border-color: rgba(250,199,117,0.35); }
+.bb-stat.attention .bb-stat-value { color: #FAC775; }
+.bb-stat-value {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 1.5rem; color: #FFFFFF; margin: 0; line-height: 1.2;
+    animation: bbPopIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s both;
 }
-.bb-stat.attention .bb-stat-value { color: #C2410C; }
-.bb-stat-value { font-size: 1.5rem; font-weight: 800; color: #0B1F3A; margin: 0; line-height: 1.2; }
 .bb-stat-label {
     font-size: 0.66rem;
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: #5B6B82;
+    color: #5B7396;
     margin: 0.1rem 0 0 0;
 }
 .bb-progress-track {
     height: 9px;
-    background: #ECF1F8;
+    background: #081830;
+    border: 1px solid #16335E;
     border-radius: 6px;
     overflow: hidden;
     margin-top: 1rem;
@@ -425,23 +505,23 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
 }
 .bb-card-soon {
     display: inline-block;
-    background: #F1F6FF;
-    color: #2876FB;
+    background: rgba(40,118,251,0.15);
+    color: #5EE6EB;
     font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     padding: 0.2rem 0.7rem;
     border-radius: 20px;
-    border: 1px solid #E3E9F2;
+    border: 1px solid #2C4A7E;
 }
 
 /* ── Dividers ── */
-.bb-divider { border: none; border-top: 1px solid #E3E9F2; margin: 1.6rem 0; }
+.bb-divider { border: none; border-top: 1px solid #1E3A66; margin: 1.6rem 0; }
 
 /* ── Tagline ── */
 .bb-tagline {
-    color: #5B6B82;
+    color: #5B7396;
     font-size: 0.78rem;
     letter-spacing: 0.16em;
     text-transform: uppercase;
@@ -455,16 +535,16 @@ div[data-testid="stButton"] button {
     transition: all 0.15s ease !important;
 }
 div[data-testid="stButton"] button[kind="secondary"] {
-    background: #FFFFFF !important;
-    border: 1.5px solid #E3E9F2 !important;
-    color: #0B1F3A !important;
-    box-shadow: 0 1px 2px rgba(15,42,75,0.05) !important;
+    background: #0E2547 !important;
+    border: 1.5px solid #1E3A66 !important;
+    color: #EAF2FF !important;
+    box-shadow: 0 1px 2px rgba(2,10,26,0.4) !important;
 }
 div[data-testid="stButton"] button[kind="secondary"]:hover {
-    border-color: #2876FB !important;
-    color: #2876FB !important;
+    border-color: #5EE6EB !important;
+    color: #5EE6EB !important;
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(40,118,251,0.12) !important;
+    box-shadow: 0 4px 14px rgba(94,230,235,0.15) !important;
 }
 div[data-testid="stButton"] button[kind="primary"] {
     background: linear-gradient(135deg, #2876FB, #1E56B8) !important;
@@ -472,11 +552,11 @@ div[data-testid="stButton"] button[kind="primary"] {
     border: none !important;
     font-weight: 700 !important;
     letter-spacing: 0.03em !important;
-    box-shadow: 0 4px 14px rgba(40,118,251,0.30) !important;
+    box-shadow: 0 4px 16px rgba(40,118,251,0.35) !important;
 }
 div[data-testid="stButton"] button[kind="primary"]:hover {
     background: linear-gradient(135deg, #3D85FF, #2876FB) !important;
-    box-shadow: 0 6px 20px rgba(40,118,251,0.40) !important;
+    box-shadow: 0 6px 22px rgba(94,230,235,0.30) !important;
     transform: translateY(-1px);
 }
 
@@ -485,38 +565,39 @@ div[data-testid="stButton"] button[kind="primary"]:hover {
 [data-testid="stTextArea"] textarea,
 [data-testid="stNumberInput"] input,
 [data-testid="stDateInput"] input {
-    background: #FFFFFF !important;
+    background: #0E2547 !important;
+    color: #EAF2FF !important;
     border-radius: 10px !important;
 }
 [data-testid="stTextInput"] > div > div,
 [data-testid="stTextArea"] > div > div,
 [data-testid="stNumberInput"] > div > div,
 [data-testid="stDateInput"] > div > div {
-    background: #FFFFFF !important;
+    background: #0E2547 !important;
     border-radius: 10px !important;
-    border-color: #E3E9F2 !important;
+    border-color: #1E3A66 !important;
 }
 div[data-baseweb="select"] > div {
-    background: #FFFFFF !important;
+    background: #0E2547 !important;
     border-radius: 10px !important;
-    border-color: #E3E9F2 !important;
+    border-color: #1E3A66 !important;
 }
 
 /* ══ EXPANDERS ══ */
 [data-testid="stExpander"] {
-    background: #FFFFFF;
-    border: 1px solid #E8EDF5 !important;
+    background: #0E2547;
+    border: 1px solid #1E3A66 !important;
     border-radius: 12px !important;
-    box-shadow: 0 1px 4px rgba(15,42,75,0.04);
+    box-shadow: 0 1px 6px rgba(2,10,26,0.35);
     overflow: hidden;
 }
-[data-testid="stExpander"] summary { font-weight: 600; }
+[data-testid="stExpander"] summary { font-weight: 600; color: #EAF2FF !important; }
 
-/* ══ ALERTS (info/success/warning/error) ══ */
+/* ══ ALERTS ══ */
 [data-testid="stAlert"] {
     border-radius: 12px !important;
     border: none !important;
-    box-shadow: 0 1px 4px rgba(15,42,75,0.05);
+    box-shadow: 0 1px 6px rgba(2,10,26,0.3);
 }
 
 /* ══ PROGRESS BAR ══ */
@@ -536,34 +617,36 @@ div[data-baseweb="select"] > div {
 .module-header-icon {
     width: 44px; height: 44px;
     display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(135deg, #EAF2FF 0%, #EFFCFD 100%);
-    border: 1px solid #DCE8FB;
+    background: linear-gradient(135deg, #10294E 0%, #122E5C 100%);
+    border: 1px solid #2C4A7E;
     border-radius: 12px;
     font-size: 1.25rem;
     line-height: 1;
     flex-shrink: 0;
 }
 .module-header-title {
-    font-size: 1.35rem;
-    font-weight: 800;
-    color: #0B1F3A;
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 1.3rem;
+    color: #FFFFFF;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
     margin: 0;
 }
 
 /* ── Sidebar ── */
 [data-testid="stSidebar"] {
-    background: #FFFFFF !important;
-    border-right: 1px solid #E3E9F2 !important;
+    background: #0B1F3A !important;
+    border-right: 1px solid #1E3A66 !important;
 }
 
 /* ── Gradient accent lijn ── */
 .bb-hero-accent {
     height: 4px;
-    background: linear-gradient(90deg, #2876FB, #5EE6EB);
+    background: linear-gradient(90deg, #2876FB 25%, #5EE6EB 50%, #2876FB 75%);
+    background-size: 200% 100%;
     border-radius: 2px;
     margin-bottom: 1.6rem;
+    animation: bbShimmer 5s linear infinite;
 }
 
 /* ── Schema bouwen — stap-indicator ── */
@@ -576,10 +659,10 @@ div[data-baseweb="select"] > div {
     font-size: 0.82rem;
     font-weight: 600;
     letter-spacing: 0.04em;
-    background: #FFFFFF;
-    color: #5B6B82;
-    border: 1.5px solid #E3E9F2;
-    box-shadow: 0 1px 2px rgba(15,42,75,0.04);
+    background: #0E2547;
+    color: #5B7396;
+    border: 1.5px solid #1E3A66;
+    box-shadow: 0 1px 2px rgba(2,10,26,0.3);
     transition: all 0.15s ease;
 }
 .bb-step-pill.active {
@@ -587,27 +670,27 @@ div[data-baseweb="select"] > div {
     color: #FFFFFF;
     border-color: transparent;
     font-weight: 800;
-    box-shadow: 0 4px 14px rgba(40,118,251,0.30);
+    box-shadow: 0 4px 16px rgba(40,118,251,0.35);
 }
 .bb-step-pill.done {
-    background: #EAF2FF;
-    color: #2876FB;
-    border-color: #BBD3FA;
+    background: rgba(40,118,251,0.14);
+    color: #5EE6EB;
+    border-color: #2C4A7E;
 }
 
 /* ── Intake sectiekaart ── */
 .bb-intake-section {
-    background: #FFFFFF;
-    border: 1px solid #E3E9F2;
+    background: #0E2547;
+    border: 1px solid #1E3A66;
     border-radius: 14px;
     padding: 1.2rem 1.4rem 1rem 1.4rem;
     margin-bottom: 1rem;
-    box-shadow: 0 1px 4px rgba(15,42,75,0.04);
+    box-shadow: 0 1px 6px rgba(2,10,26,0.3);
 }
 .bb-intake-label {
     font-size: 0.74rem;
     font-weight: 800;
-    color: #2876FB;
+    color: #5EE6EB;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     margin-bottom: 0.6rem;
@@ -617,20 +700,20 @@ div[data-baseweb="select"] > div {
 .bb-week-header {
     font-size: 0.76rem;
     font-weight: 700;
-    color: #0B1F3A;
+    color: #EAF2FF;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    background: linear-gradient(90deg, #EAF2FF, #F6FAFF);
+    background: linear-gradient(90deg, #10294E, #0E2547);
     border-radius: 8px;
     padding: 0.35rem 0.8rem;
     margin: 0.7rem 0 0.25rem 0;
-    border-left: 3px solid #2876FB;
+    border-left: 3px solid #5EE6EB;
 }
 .bb-training-row {
     display: flex;
     align-items: center;
     padding: 0.3rem 0;
-    border-bottom: 1px solid #F1F6FF;
+    border-bottom: 1px solid #122E5C;
     gap: 0.5rem;
     font-size: 0.88rem;
 }
@@ -682,7 +765,7 @@ def is_authenticated() -> bool:
 def setup_screen():
     col_logo, col_spacer = st.columns([1, 3])
     with col_logo:
-        st.image("assets/logo_zwart.png", width=220)
+        st.image("assets/logo_wit.png", width=220)
 
     st.markdown("<hr class='bb-divider'>", unsafe_allow_html=True)
     st.subheader("Verbinding instellen")
@@ -784,7 +867,7 @@ def module_header(title: str, icon: str):
         </div>
         """, unsafe_allow_html=True)
     with col_logo:
-        st.image("assets/logo_zwart.png", width=130)
+        st.image("assets/logo_wit.png", width=130)
     st.markdown("")
 
 
@@ -807,24 +890,22 @@ if page == "home":
     _uur = _dt.now().hour
     groet = "Goedemorgen" if _uur < 12 else ("Goedemiddag" if _uur < 18 else "Goedenavond")
 
-    # Teamfoto als hero-achtergrond (donkere overlay links zodat tekst leesbaar blijft)
+    # Teamfoto als ingelijst accent rechts in de hero
     _team_b64 = _team_photo_b64()
-    if _team_b64:
-        hero_bg = (
-            "background: "
-            "linear-gradient(100deg, rgba(11,31,58,0.96) 0%, rgba(15,40,80,0.88) 42%, "
-            "rgba(11,31,58,0.30) 78%, rgba(11,31,58,0.15) 100%), "
-            f"url(data:image/jpeg;base64,{_team_b64});"
-        )
-    else:
-        hero_bg = ""
+    foto_html = (
+        f'<img class="bb-hero-photo" src="data:image/jpeg;base64,{_team_b64}" />'
+        if _team_b64 else ""
+    )
 
     st.markdown(f"""
-    <div class="bb-hero" style="{hero_bg}">
+    <div class="bb-hero">
+      <div class="bb-hero-watermark">{n_athletes}</div>
+      {foto_html}
       <div class="bb-hero-content">
-        <img src="data:image/png;base64,{logo_wit_b64}" style="height:52px; margin-bottom:1.3rem;" />
-        <p class="bb-hero-kicker">Coach Dashboard · {datum_str}</p>
-        <p class="bb-hero-title">{groet}, coach</p>
+        <img src="data:image/png;base64,{logo_wit_b64}" style="height:44px; margin-bottom:1.2rem;" />
+        <p class="bb-hero-kicker">{groet} · Coach Dashboard · {datum_str}</p>
+        <p class="bb-hero-title">Zij lopen.</p>
+        <p class="bb-hero-title-outline">Jij stuurt.</p>
         <p class="bb-hero-sub">Direct verbonden met FinalSurge — AI-ondersteund coachen voor elke atleet.</p>
         <div class="bb-kpi-row">
             <div class="bb-kpi">
@@ -840,6 +921,12 @@ if page == "home":
                 <p class="bb-kpi-label">Modules</p>
             </div>
         </div>
+      </div>
+    </div>
+    <div class="bb-marquee">
+      <div class="bb-marquee-inner">
+        <span style="padding-right:48px">PR's worden hier gemaakt&nbsp;&nbsp;✦&nbsp;&nbsp;Elke atleet gezien&nbsp;&nbsp;✦&nbsp;&nbsp;Feedback met impact&nbsp;&nbsp;✦&nbsp;&nbsp;Data + gevoel&nbsp;&nbsp;✦&nbsp;&nbsp;Schema op maat&nbsp;&nbsp;✦&nbsp;&nbsp;</span>
+        <span style="padding-right:48px">PR's worden hier gemaakt&nbsp;&nbsp;✦&nbsp;&nbsp;Elke atleet gezien&nbsp;&nbsp;✦&nbsp;&nbsp;Feedback met impact&nbsp;&nbsp;✦&nbsp;&nbsp;Data + gevoel&nbsp;&nbsp;✦&nbsp;&nbsp;Schema op maat&nbsp;&nbsp;✦&nbsp;&nbsp;</span>
       </div>
     </div>
     """, unsafe_allow_html=True)
@@ -914,7 +1001,7 @@ if page == "home":
                 <div class="bb-progress-track">
                     <div class="bb-progress-fill" style="width:{pct}%"></div>
                 </div>
-                <p style="font-size:0.72rem; color:#5B6B82; margin:0.45rem 0 0 0;">
+                <p style="font-size:0.72rem; color:#8FA8CE; margin:0.45rem 0 0 0;">
                     Dagvoortgang feedback: <b>{pct}%</b> &nbsp;·&nbsp; status van {day_stats.get('loaded_at','')}
                     {" · schema-tegel: laad schema-overzicht voor actuele data" if _schema_data is None else ""}
                 </p>
@@ -923,7 +1010,7 @@ if page == "home":
         else:
             st.markdown("""
             <div class="bb-day-panel">
-                <p style="color:#5B6B82; font-size:0.9rem; margin:0;">
+                <p style="color:#8FA8CE; font-size:0.9rem; margin:0;">
                     Klik op <b>🔄 Ververs</b> om de dagstatus op te halen: hoeveel atleten wachten op feedback
                     en welke races eraan komen.
                 </p>
@@ -1041,7 +1128,7 @@ if page == "home":
     st.markdown("""
     <hr class="bb-divider">
     <div style="text-align:center; padding-bottom: 1rem;">
-        <p style="color:#5B6B82; font-size:0.72rem; font-weight:600; letter-spacing:0.16em; text-transform:uppercase; margin-bottom:0.8rem;">
+        <p style="color:#8FA8CE; font-size:0.72rem; font-weight:600; letter-spacing:0.16em; text-transform:uppercase; margin-bottom:0.8rem;">
             Iedere training telt &nbsp;·&nbsp; Iedere loper telt
         </p>
         <div style="height:3px; background:linear-gradient(90deg,#2876FB,#5EE6EB);
@@ -1117,7 +1204,7 @@ elif page == "feedback":
 
     # Sidebar alleen op feedback pagina
     with st.sidebar:
-        st.image("assets/logo_zwart.png", width=160)
+        st.image("assets/logo_wit.png", width=160)
         st.markdown("<hr class='bb-divider'>", unsafe_allow_html=True)
         st.header("Filters")
 
@@ -1910,7 +1997,7 @@ elif page == "intake":
             doel_kort = (ik.get("doel") or "—").split("\n")[0][:70]
             st.markdown(
                 f"• **{ik.get('athlete_name', '?')}** — {doel_kort} "
-                f"<span style='color:#5B6B82; font-size:0.78rem'>(bijgewerkt {ik.get('updated_at', '?')})</span>",
+                f"<span style='color:#8FA8CE; font-size:0.78rem'>(bijgewerkt {ik.get('updated_at', '?')})</span>",
                 unsafe_allow_html=True,
             )
 
@@ -2964,7 +3051,7 @@ elif page == "builder":
             with chat_container:
                 if not chat_history:
                     st.markdown(
-                        "<div style='color:#4D4D4D;font-size:0.85rem;padding:0.5rem 0;'>"
+                        "<div style='color:#C9D8F0;font-size:0.85rem;padding:0.5rem 0;'>"
                         "Nog geen gesprek. Stel een vraag hieronder.</div>",
                         unsafe_allow_html=True,
                     )
@@ -3139,12 +3226,12 @@ elif page == "builder":
                         datum = f"{dt.day}/{dt.month}"
                     except Exception:
                         dag, datum = "", w["date"]
-                    col_dag.markdown(f"<span style='color:#4D4D4D;font-size:0.82rem'>{dag} {datum}</span>", unsafe_allow_html=True)
+                    col_dag.markdown(f"<span style='color:#C9D8F0;font-size:0.82rem'>{dag} {datum}</span>", unsafe_allow_html=True)
                     col_icon.markdown(_type_icon.get(w.get("activity_type", "Run"), "🏃"))
-                    style = "color:#4D4D4D;" if included else "color:#aaa;text-decoration:line-through;"
+                    style = "color:#C9D8F0;" if included else "color:#5B7396;text-decoration:line-through;"
                     col_name.markdown(f"<span style='{style}'>{w['name']}</span>", unsafe_allow_html=True)
                     km = round(w["planned_km"], 1) if w.get("planned_km") else ""
-                    col_km.markdown(f"<span style='color:#4D4D4D;font-size:0.82rem'>{km} km</span>" if km else "", unsafe_allow_html=True)
+                    col_km.markdown(f"<span style='color:#C9D8F0;font-size:0.82rem'>{km} km</span>" if km else "", unsafe_allow_html=True)
         else:
             st.warning("Geen trainingen herkend in de CSV. Controleer de ruwe CSV hieronder.")
 
