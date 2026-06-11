@@ -519,6 +519,25 @@ h1, h2, h3 { color: #EAF2FF !important; font-weight: 800 !important; letter-spac
     padding: 0.28rem 0.85rem;
     white-space: nowrap;
 }
+.bb-mrow.featured {
+    border-color: #2876FB;
+    background: linear-gradient(100deg, #0E2547 55%, rgba(40,118,251,0.16) 100%);
+}
+.bb-mrow.featured .bb-mrow-num { -webkit-text-stroke-color: #2876FB; }
+.bb-mrow-feat {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #FFFFFF;
+    background: linear-gradient(135deg, #2876FB, #1E56B8);
+    border-radius: 999px;
+    padding: 0.22rem 0.7rem;
+    margin-left: 0.7rem;
+    vertical-align: 2px;
+    white-space: nowrap;
+}
 
 /* ══ DAGOVERZICHT ══ */
 .bb-day-panel {
@@ -1094,25 +1113,27 @@ if page == "home":
 
     st.markdown('<p class="bb-section-label">Modules</p>', unsafe_allow_html=True)
 
-    # ── Startlijst: modules als genummerde regels ──
+    # ── Startlijst: modules in proces-volgorde (atleet-levenscyclus) ──
     _modules = [
-        ("01", "📋", "Feedback", "Atleten reageren op hun training — de AI schrijft een concept in jouw stijl. Jij keurt goed en post met één klik.", "Dagelijks", "btn_feedback", "feedback_groups", "primary"),
-        ("02", "📅", "Schema-verloop", "Zie in één oogopslag wiens schema afloopt en wie komende week een nieuw plan nodig heeft.", "Wekelijks", "btn_schema", "schema", "secondary"),
-        ("03", "🔨", "Schema bouwen", "Genereer een trainingsplan op doel, niveau en datum. Direct importeren in FinalSurge, inclusief workout builder.", "Planning", "btn_builder", "builder", "secondary"),
-        ("04", "🏁", "Races", "Aankomende races in één overzicht. De AI schrijft een persoonlijke succeswens — jij post met één klik.", "Racedag", "btn_races", "races", "secondary"),
-        ("05", "🔧", "Builder bijvullen", "Vul de workout builder automatisch voor bestaande trainingen met beschrijving maar zonder structuur.", "Onderhoud", "btn_backfill", "backfill_builder", "secondary"),
-        ("06", "📝", "Intake", "Leg de intake van een atleet vast. Wordt bewaard en automatisch ingeladen bij het bouwen van een schema.", "Nieuwe atleet", "btn_intake", "intake", "secondary"),
+        ("01", "📝", "Intake", "Hier begint alles — leg doel, niveau en achtergrond van een nieuwe atleet vast. Wordt automatisch ingeladen bij het bouwen.", "Nieuwe atleet", "btn_intake", "intake", "secondary", False),
+        ("02", "🔨", "Schema bouwen", "Genereer een trainingsplan op doel, niveau en datum. Direct importeren in FinalSurge, inclusief workout builder.", "Planning", "btn_builder", "builder", "secondary", False),
+        ("03", "🔧", "Builder bijvullen", "Vul de workout builder automatisch voor bestaande trainingen met beschrijving maar zonder structuur.", "Onderhoud", "btn_backfill", "backfill_builder", "secondary", False),
+        ("04", "📋", "Feedback", "Atleten reageren op hun training — de AI schrijft een concept in jouw stijl. Jij keurt goed en post met één klik.", "Dagelijks", "btn_feedback", "feedback_groups", "primary", True),
+        ("05", "🏁", "Races", "Het hoogtepunt — aankomende races in één overzicht, met raceplan en persoonlijke succeswens.", "Racedag", "btn_races", "races", "secondary", False),
+        ("06", "📅", "Schema-verloop", "De bewaking: wiens schema loopt af? Daarna begint de cyclus opnieuw bij schema bouwen.", "Wekelijks", "btn_schema", "schema", "secondary", False),
     ]
 
-    for _i, (_num, _icon, _titel, _desc, _tag, _btn_key, _page, _btn_type) in enumerate(_modules):
+    for _i, (_num, _icon, _titel, _desc, _tag, _btn_key, _page, _btn_type, _featured) in enumerate(_modules):
         c_row, c_btn = st.columns([8.6, 1.4], vertical_alignment="center")
         with c_row:
+            _feat_cls = " featured" if _featured else ""
+            _feat_badge = '<span class="bb-mrow-feat">★ Meest gebruikt</span>' if _featured else ""
             st.markdown(f"""
-            <div class="bb-mrow" style="animation-delay:{0.05 + _i * 0.06:.2f}s">
+            <div class="bb-mrow{_feat_cls}" style="animation-delay:{0.05 + _i * 0.06:.2f}s">
                 <span class="bb-mrow-num">{_num}</span>
                 <span class="bb-mrow-icon">{_icon}</span>
                 <div class="bb-mrow-body">
-                    <p class="bb-mrow-title">{_titel}</p>
+                    <p class="bb-mrow-title">{_titel}{_feat_badge}</p>
                     <p class="bb-mrow-desc">{_desc}</p>
                 </div>
                 <span class="bb-mrow-tag">{_tag}</span>
