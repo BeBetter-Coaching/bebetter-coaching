@@ -47,6 +47,10 @@ def _read_cached_token() -> Optional[str]:
 def save_token(token: str):
     with open(TOKEN_FILE, "w") as f:
         f.write(token.strip())
+    try:
+        os.chmod(TOKEN_FILE, 0o600)  # alleen eigenaar mag lezen
+    except Exception:
+        pass
     global _token
     _token = token.strip()
 

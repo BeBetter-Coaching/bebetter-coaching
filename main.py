@@ -10,10 +10,16 @@ import ai_feedback
 import schema_builder
 import intake_store
 import base64
+import html as _html_mod
 import io
 import json
 import os
 from pathlib import Path
+
+
+def _esc(s) -> str:
+    """HTML-escape voor strings die in unsafe_allow_html-blokken belanden."""
+    return _html_mod.escape(str(s or ""))
 
 # ---------------------------------------------------------------------------
 # Persistentie — GitHub-backed via intake_store, werkt op alle apparaten.
@@ -27,6 +33,7 @@ from pathlib import Path
 def _check_password() -> bool:
     """Vraag om wachtwoord; onthoud via URL-token (bookmarkbaar, werkt altijd)."""
     import hashlib
+    import hmac
     try:
         correct = st.secrets.get("APP_PASSWORD", "") or os.environ.get("APP_PASSWORD", "")
     except Exception:
@@ -40,7 +47,7 @@ def _check_password() -> bool:
 
     # Check URL-token (remember me = bookmark met ?k=... in URL)
     _qp = st.query_params.get("k", "")
-    if _qp and _qp == _token(correct):
+    if _qp and hmac.compare_digest(_qp, _token(correct)):
         return True
 
     if st.session_state.get("authenticated"):
@@ -67,13 +74,19 @@ def _check_password() -> bool:
             onthoud = st.checkbox("Onthoud mij op dit apparaat", value=True)
             submitted = st.form_submit_button("Inloggen →", type="primary", use_container_width=True)
         if submitted:
-            import hmac
+            import time
+            # Brute-force rem: oplopende vertraging na elke foute poging.
+            # Kost legitieme gebruikers niets — alleen het foute-wachtwoord pad.
+            _fails = st.session_state.get("_login_fails", 0)
             if hmac.compare_digest(pw.encode(), correct.encode()):
                 st.session_state["authenticated"] = True
+                st.session_state["_login_fails"] = 0
                 if onthoud:
                     st.query_params["k"] = _token(correct)
                 st.rerun()
             else:
+                st.session_state["_login_fails"] = _fails + 1
+                time.sleep(min(2 ** _fails, 30))  # 1s, 2s, 4s … max 30s
                 st.error("Onjuist wachtwoord.")
     return False
 
@@ -1273,8 +1286,8 @@ elif page == "feedback_groups":
                 st.markdown(f"""
                 <div class="bb-card">
                     <div class="bb-card-icon">{icon}</div>
-                    <p class="bb-card-title">{grp}</p>
-                    <p class="bb-card-desc">{desc}</p>
+                    <p class="bb-card-title">{_esc(grp)}</p>
+                    <p class="bb-card-desc">{_esc(desc)}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 st.markdown("")
@@ -3108,7 +3121,7 @@ elif page == "builder":
         intake = st.session_state.get("builder_intake", {})
         naam = intake.get("naam", "")
 
-        st.markdown(f"<div class='bb-intake-label'>Stap 2 — Plan voor {naam}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='bb-intake-label'>Stap 2 — Plan voor {_esc(naam)}</div>", unsafe_allow_html=True)
 
         # Auto-genereren als we hier net zijn aangekomen
         if st.session_state.get("builder_plan") is None:
@@ -3250,7 +3263,7 @@ elif page == "builder":
         plan = st.session_state.get("builder_plan", "")
         naam = intake.get("naam", "")
 
-        st.markdown(f"<div class='bb-intake-label'>Stap 3 — CSV voor {naam}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='bb-intake-label'>Stap 3 — CSV voor {_esc(naam)}</div>", unsafe_allow_html=True)
 
         # Auto-genereren als we hier net zijn aangekomen
         if st.session_state.get("builder_csv") is None:
@@ -3332,7 +3345,7 @@ elif page == "builder":
                     week_label = f"Week {disp_num}{date_range}{km_str}"
                 else:
                     week_label = f"Week {wk[-2:]}{km_str}"
-                st.markdown(f"<div class='bb-week-header'>{week_label}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='bb-week-header'>{_esc(week_label)}</div>", unsafe_allow_html=True)
                 for idx, w in week_items:
                     included = idx not in st.session_state["builder_excluded"]
                     col_cb, col_dag, col_icon, col_name, col_km = st.columns([0.5, 0.8, 0.5, 5, 1.2])
