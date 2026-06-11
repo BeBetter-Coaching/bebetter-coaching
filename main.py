@@ -778,6 +778,22 @@ if page == "home":
             pct = int(n_posted_today / total_tasks * 100) if total_tasks else 100
             fb_cls = "done" if fb_pending == 0 else "attention"
             race_cls = "done" if races_coming == 0 else ""
+
+            # Schema-tegel: gebruik al geladen schema_data als die beschikbaar is
+            _on_hold_keys = set(intake_store.load_on_hold().keys())
+            _schema_data = st.session_state.get("schema_data")
+            if _schema_data is not None:
+                schema_aflopen = sum(
+                    1 for r in _schema_data
+                    if r.get("user_key") not in _on_hold_keys
+                    and (r["days_left"] is None or r["days_left"] <= 14)
+                )
+                schema_val = str(schema_aflopen)
+                schema_cls = "done" if schema_aflopen == 0 else "attention"
+            else:
+                schema_val = "—"
+                schema_cls = ""
+
             st.markdown(f"""
             <div class="bb-day-panel">
                 <div class="bb-stat-row">
@@ -789,6 +805,10 @@ if page == "home":
                         <p class="bb-stat-value">{n_posted_today}</p>
                         <p class="bb-stat-label">Vandaag gepost</p>
                     </div>
+                    <div class="bb-stat {schema_cls}">
+                        <p class="bb-stat-value">{schema_val}</p>
+                        <p class="bb-stat-label">Schema's aflopen (&le;14d)</p>
+                    </div>
                     <div class="bb-stat {race_cls}">
                         <p class="bb-stat-value">{races_coming}</p>
                         <p class="bb-stat-label">Races komende 14 dagen</p>
@@ -799,6 +819,7 @@ if page == "home":
                 </div>
                 <p style="font-size:0.72rem; color:#5B6B82; margin:0.45rem 0 0 0;">
                     Dagvoortgang feedback: <b>{pct}%</b> &nbsp;·&nbsp; status van {day_stats.get('loaded_at','')}
+                    {" · schema-tegel: laad schema-overzicht voor actuele data" if _schema_data is None else ""}
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -2049,6 +2070,13 @@ elif page == "schema":
 
     module_header("Schema-verloop", "📅")
 
+    # On-hold opslaan in session state voor snelle lokale updates
+    if "schema_on_hold" not in st.session_state:
+        st.session_state["schema_on_hold"] = intake_store.load_on_hold()
+
+    on_hold: dict = st.session_state["schema_on_hold"]
+    on_hold_keys: set = set(on_hold.keys())
+
     threshold = st.slider(
         "Toon atleten waarvan schema afloopt binnen … dagen",
         min_value=1, max_value=14, value=14, step=1,
@@ -2061,7 +2089,9 @@ elif page == "schema":
             if st.button("📥 Laad schema-overzicht", type="primary", key="schema_load"):
                 with st.spinner("Schema-einddatums ophalen voor alle atleten… (±30 sec)"):
                     try:
-                        st.session_state["schema_data"] = fs_client.get_schema_end_dates(horizon_days=60)
+                        st.session_state["schema_data"] = fs_client.get_schema_end_dates(
+                            horizon_days=60, on_hold_keys=on_hold_keys
+                        )
                     except TokenNotFoundError:
                         fs_client.reset_session()
                         st.rerun()
@@ -2093,16 +2123,60 @@ elif page == "schema":
         n_bijna  = sum(1 for r in schema_data if r["days_left"] is not None and 7 < r["days_left"] <= 14)
         n_geen   = sum(1 for r in schema_data if r["days_left"] is None)
 
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("❌ Geen schema", n_geen)
         c2.metric("🔴 Urgent  (≤7d)", n_urgent)
         c3.metric("🟠 Bijna  (8–14d)", n_bijna)
         c4.metric("Totaal atleten", len(schema_data))
+        c5.metric("⏸ Op hold", len(on_hold))
 
         st.markdown("---")
 
         filtered = [r for r in schema_data if r["days_left"] is None or r["days_left"] <= threshold]
         rest     = [r for r in schema_data if r["days_left"] is not None and r["days_left"] > threshold]
+
+        def _render_athlete_row(r, show_build_btn=True):
+            c0, c1, c2, c3, c4, c5 = st.columns([2.5, 2, 1, 2, 1.5, 1.5])
+            c0.write(r["name"])
+            c1.write(r["last_date"] or "—")
+            c2.write(str(r["days_left"]) if r["days_left"] is not None else "—")
+            c3.write(_status(r["days_left"]))
+            with c4:
+                if show_build_btn and st.button("🔨 Schema", key=f"quick_build_{r['user_key']}"):
+                    st.session_state["builder_client_type"] = "🔄 Bestaande klant"
+                    st.session_state["builder_athlete"] = r["name"]
+                    st.session_state["builder_naam"] = r["first_name"]
+                    st.session_state["builder_step"] = 1
+                    for k in ["builder_plan", "builder_csv", "builder_intake",
+                              "builder_workouts", "builder_chat_history"]:
+                        st.session_state.pop(k, None)
+                    go_to("builder")
+            with c5:
+                if st.button("⏸ Hold", key=f"hold_{r['user_key']}"):
+                    st.session_state[f"hold_form_{r['user_key']}"] = True
+
+            # On-hold formulier inline tonen
+            if st.session_state.get(f"hold_form_{r['user_key']}"):
+                with st.form(key=f"hold_form_submit_{r['user_key']}"):
+                    reden = st.text_input("Reden (bijv. knieblessure, vakantie)", key=f"hold_reden_{r['user_key']}")
+                    submitted = st.form_submit_button("Op hold zetten")
+                    if submitted:
+                        on_hold[r["user_key"]] = {
+                            "naam": r["name"],
+                            "reden": reden,
+                            "since": date.today().isoformat(),
+                        }
+                        ok, err = intake_store.save_on_hold(on_hold)
+                        st.session_state["schema_on_hold"] = on_hold
+                        st.session_state.pop(f"hold_form_{r['user_key']}", None)
+                        # Verwijder uit schema_data cache
+                        st.session_state["schema_data"] = [
+                            x for x in st.session_state.get("schema_data", [])
+                            if x["user_key"] != r["user_key"]
+                        ]
+                        if not ok:
+                            st.warning(f"Opgeslagen lokaal (GitHub: {err})")
+                        st.rerun()
 
         if filtered:
             st.markdown(f"### Aandacht nodig — afloopt binnen {threshold} dagen of geen schema")
@@ -2113,44 +2187,49 @@ elif page == "schema":
 
             for group_name, members in groups_shown.items():
                 st.markdown(f"**{group_name}**")
-                hdr = st.columns([3, 2, 1, 2, 2])
+                hdr = st.columns([2.5, 2, 1, 2, 1.5, 1.5])
                 hdr[0].markdown("*Atleet*")
                 hdr[1].markdown("*Schema tot*")
                 hdr[2].markdown("*Dagen*")
                 hdr[3].markdown("*Status*")
                 hdr[4].markdown("")
+                hdr[5].markdown("")
                 for r in members:
-                    c0, c1, c2, c3, c4 = st.columns([3, 2, 1, 2, 2])
-                    c0.write(r["name"])
-                    c1.write(r["last_date"] or "—")
-                    c2.write(str(r["days_left"]) if r["days_left"] is not None else "—")
-                    c3.write(_status(r["days_left"]))
-                    with c4:
-                        if st.button("🔨 Bouw schema", key=f"quick_build_{r['user_key']}"):
-                            # Pre-fill builder met atleetgegevens
-                            st.session_state["builder_client_type"] = "🔄 Bestaande klant"
-                            st.session_state["builder_athlete"] = r["name"]
-                            st.session_state["builder_naam"] = r["first_name"]
-                            st.session_state["builder_step"] = 1
-                            for k in ["builder_plan", "builder_csv", "builder_intake",
-                                      "builder_workouts", "builder_chat_history"]:
-                                st.session_state.pop(k, None)
-                            go_to("builder")
+                    _render_athlete_row(r)
                 st.markdown("")
         else:
             st.success(f"✅ Alle atleten hebben een schema dat nog meer dan {threshold} dagen loopt.")
 
         if rest:
             with st.expander(f"🟢 Voldoende schema — {len(rest)} atleten (meer dan {threshold} dagen)"):
-                hdr = st.columns([3, 2, 1])
+                hdr = st.columns([2.5, 2, 1, 2, 1.5, 1.5])
                 hdr[0].markdown("*Atleet*")
                 hdr[1].markdown("*Schema tot*")
                 hdr[2].markdown("*Dagen*")
+                hdr[3].markdown("*Status*")
+                hdr[4].markdown("")
+                hdr[5].markdown("")
                 for r in rest:
-                    c0, c1, c2 = st.columns([3, 2, 1])
-                    c0.write(r["name"])
-                    c1.write(r["last_date"] or "—")
-                    c2.write(str(r["days_left"]))
+                    _render_athlete_row(r)
+
+        # ── Op hold sectie ──
+        if on_hold:
+            st.markdown("---")
+            st.markdown("### ⏸ Op hold")
+            st.caption("Deze atleten worden buiten beschouwing gelaten in het schema-overzicht en de dagoverzicht-tegel.")
+            for uk, info in list(on_hold.items()):
+                c0, c1, c2, c3 = st.columns([3, 2, 3, 1.5])
+                c0.write(info.get("naam", uk))
+                c1.write(f"Sinds {info.get('since', '—')}")
+                c2.write(info.get("reden") or "—")
+                with c3:
+                    if st.button("↩️ Terugzetten", key=f"unhold_{uk}"):
+                        on_hold.pop(uk, None)
+                        intake_store.save_on_hold(on_hold)
+                        st.session_state["schema_on_hold"] = on_hold
+                        # Invalideer cache zodat atleet terugkomt bij volgende laad
+                        st.session_state.pop("schema_data", None)
+                        st.rerun()
 
 
 # ===========================================================================

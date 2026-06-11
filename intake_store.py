@@ -17,6 +17,10 @@ _FILE_PATH = "intakes.json"
 _API_URL = f"https://api.github.com/repos/{_REPO}/contents/{_FILE_PATH}"
 _LOCAL_FILE = os.path.join(os.path.dirname(__file__), ".intakes.json")
 
+_ON_HOLD_FILE_PATH = "on_hold.json"
+_ON_HOLD_API_URL = f"https://api.github.com/repos/{_REPO}/contents/{_ON_HOLD_FILE_PATH}"
+_ON_HOLD_LOCAL_FILE = os.path.join(os.path.dirname(__file__), ".on_hold.json")
+
 
 def _gh_token() -> str:
     """GitHub token uit Streamlit secrets of omgevingsvariabele."""
@@ -99,3 +103,59 @@ def save_intakes(intakes: dict) -> tuple[bool, str]:
 def is_cloud_backed() -> bool:
     """True als intakes in GitHub worden opgeslagen (permanent)."""
     return bool(_gh_token())
+
+
+# ---------------------------------------------------------------------------
+# On-hold opslag
+# ---------------------------------------------------------------------------
+
+def load_on_hold() -> dict:
+    """Laad on-hold atleten. Dict: user_key → {naam, reden, since}."""
+    token = _gh_token()
+    if token:
+        try:
+            resp = requests.get(_ON_HOLD_API_URL, headers=_gh_headers(token), timeout=10)
+            if resp.status_code == 200:
+                content = base64.b64decode(resp.json()["content"]).decode("utf-8")
+                return json.loads(content)
+            if resp.status_code == 404:
+                return {}
+        except Exception:
+            pass
+    try:
+        if os.path.exists(_ON_HOLD_LOCAL_FILE):
+            with open(_ON_HOLD_LOCAL_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def save_on_hold(on_hold: dict) -> tuple[bool, str]:
+    """Sla on-hold atleten op. Geeft (gelukt, foutmelding) terug."""
+    payload_json = json.dumps(on_hold, ensure_ascii=False, indent=2)
+    token = _gh_token()
+    if token:
+        try:
+            sha = None
+            resp = requests.get(_ON_HOLD_API_URL, headers=_gh_headers(token), timeout=10)
+            if resp.status_code == 200:
+                sha = resp.json().get("sha")
+            body = {
+                "message": "Update on_hold via app",
+                "content": base64.b64encode(payload_json.encode("utf-8")).decode("ascii"),
+            }
+            if sha:
+                body["sha"] = sha
+            put = requests.put(_ON_HOLD_API_URL, headers=_gh_headers(token), json=body, timeout=15)
+            if put.status_code in (200, 201):
+                return True, ""
+            return False, f"GitHub API: {put.status_code} — {put.text[:200]}"
+        except Exception as e:
+            return False, str(e)
+    try:
+        with open(_ON_HOLD_LOCAL_FILE, "w") as f:
+            f.write(payload_json)
+        return True, ""
+    except Exception as e:
+        return False, str(e)

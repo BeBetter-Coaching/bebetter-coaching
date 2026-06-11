@@ -933,29 +933,38 @@ def get_calendar_labels(user_key: str, start: date, end: date) -> list[dict]:
     ]
 
 
-def get_schema_end_dates(horizon_days: int = 60) -> list[dict]:
+_MIN_SCHEMA_WORKOUTS = 4  # minder dan 4 geplande trainingen = "los schema", niet tellen
+
+
+def get_schema_end_dates(
+    horizon_days: int = 60,
+    on_hold_keys: set | None = None,
+) -> list[dict]:
     """
     Bepaal voor elke atleet wanneer het laatste geplande workout is.
     Geeft een gesorteerde lijst terug (vroegste einddatum eerst).
 
-    horizon_days: hoe ver vooruit we kijken (standaard 180 dagen)
+    horizon_days : hoe ver vooruit we kijken
+    on_hold_keys : user_keys van atleten die buiten beschouwing blijven
     """
     today = date.today()
     end = today + timedelta(days=horizon_days)
     athletes = get_athletes_by_group()
+    skip = set(on_hold_keys or [])
 
     results = []
     for group_name, members in athletes.items():
         for athlete in members:
             user_key = athlete["user_key"]
+            if user_key in skip:
+                continue
             try:
                 workouts = get_workouts(user_key, today, end)
             except Exception:
                 workouts = []
 
             # Alleen structured workouts tellen — races en losse events worden uitgesloten.
-            # Zo voorkomt een race die ver in de toekomst staat dat het schema
-            # onterecht als "doorlopend" gezien wordt.
+            # Minder dan _MIN_SCHEMA_WORKOUTS = "los schema" (losse trainingen, geen echt schema).
             planned_dates = [
                 w["workout_date"][:10]
                 for w in workouts
@@ -964,7 +973,7 @@ def get_schema_end_dates(horizon_days: int = 60) -> list[dict]:
                 and not w.get("is_race")
             ]
 
-            if planned_dates:
+            if len(planned_dates) >= _MIN_SCHEMA_WORKOUTS:
                 last_date_str = max(planned_dates)
                 last_date = date.fromisoformat(last_date_str)
                 days_left = (last_date - today).days
