@@ -16,10 +16,9 @@ import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Intake persistentie — bewaar/herstel intake + plan over herstarts heen
+# Persistentie — GitHub-backed via intake_store, werkt op alle apparaten.
+# Session-gecachet zodat er niet bij elke rerun een GitHub-call gebeurt.
 # ---------------------------------------------------------------------------
-
-_PERSIST_FILE = os.path.join(os.path.dirname(__file__), ".builder_state.json")
 
 # ---------------------------------------------------------------------------
 # Wachtwoordbeveiliging
@@ -79,7 +78,7 @@ def _check_password() -> bool:
     return False
 
 def _save_builder_state():
-    """Schrijf builder_intake, builder_plan, builder_step naar schijf."""
+    """Bewaar builder_intake, builder_plan, builder_step (GitHub-backed)."""
     state = {
         "builder_step":   st.session_state.get("builder_step", 1),
         "builder_intake": st.session_state.get("builder_intake"),
@@ -91,58 +90,56 @@ def _save_builder_state():
         intake_copy.pop("uploaded_images", None)
         state["builder_intake"] = intake_copy
     try:
-        with open(_PERSIST_FILE, "w") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
+        intake_store.save_builder_state(state)
     except Exception:
         pass
 
 def _load_builder_state():
-    """Herstel builder-state vanuit schijf als session state leeg is."""
+    """Herstel builder-state als session state leeg is. Eén GitHub-call per sessie."""
+    if st.session_state.get("_builder_state_checked"):
+        return
+    st.session_state["_builder_state_checked"] = True
     # Intake al in memory → niets doen, laat stap-navigatie intact
     if "builder_intake" in st.session_state:
         return
-    if not os.path.exists(_PERSIST_FILE):
-        return
     try:
-        with open(_PERSIST_FILE) as f:
-            state = json.load(f)
-        if state.get("builder_intake"):
-            st.session_state["builder_intake"] = state["builder_intake"]
-            st.session_state["builder_fields_loaded"] = False  # velden nog laden
-        if state.get("builder_plan") is not None:
-            st.session_state["builder_plan"] = state["builder_plan"]
-        # Als intake aanwezig is maar stap=1, ga direct naar stap 2
-        saved_step = state.get("builder_step", 1)
-        if state.get("builder_intake") and saved_step == 1:
-            saved_step = 2
-        st.session_state["builder_step"] = saved_step
+        state = intake_store.load_builder_state()
     except Exception:
-        pass
+        return
+    if not state:
+        return
+    if state.get("builder_intake"):
+        st.session_state["builder_intake"] = state["builder_intake"]
+        st.session_state["builder_fields_loaded"] = False  # velden nog laden
+    if state.get("builder_plan") is not None:
+        st.session_state["builder_plan"] = state["builder_plan"]
+    # Als intake aanwezig is maar stap=1, ga direct naar stap 2
+    saved_step = state.get("builder_step", 1)
+    if state.get("builder_intake") and saved_step == 1:
+        saved_step = 2
+    st.session_state["builder_step"] = saved_step
 
 def _clear_builder_state():
-    """Verwijder de persistente state (na handmatig reset)."""
+    """Wis de persistente builder-state (na handmatig reset)."""
     try:
-        os.remove(_PERSIST_FILE)
+        intake_store.clear_builder_state()
     except Exception:
         pass
-
-_SKIPPED_FILE = os.path.join(os.path.dirname(__file__), ".feedback_skipped.json")
 
 def _load_skipped() -> dict:
-    """Laad overgeslagen workout_keys met timestamp."""
-    try:
-        if os.path.exists(_SKIPPED_FILE):
-            with open(_SKIPPED_FILE) as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {}
+    """Overgeslagen workout_keys met timestamp — gedeeld tussen beide coaches."""
+    if "_skipped_cache" not in st.session_state:
+        try:
+            st.session_state["_skipped_cache"] = intake_store.load_skipped()
+        except Exception:
+            st.session_state["_skipped_cache"] = {}
+    return st.session_state["_skipped_cache"]
 
 def _save_skipped(skipped: dict):
-    """Sla overgeslagen workouts op."""
+    """Sla overgeslagen workouts op (cache + GitHub write-through)."""
+    st.session_state["_skipped_cache"] = skipped
     try:
-        with open(_SKIPPED_FILE, "w") as f:
-            json.dump(skipped, f, ensure_ascii=False)
+        intake_store.save_skipped(skipped)
     except Exception:
         pass
 
