@@ -445,6 +445,81 @@ h1, h2, h3 { color: #EAF2FF !important; font-weight: 800 !important; letter-spac
     margin: 0;
 }
 
+/* ══ MODULE STARTLIJST ══ */
+.bb-mrow {
+    display: flex;
+    align-items: center;
+    gap: 1.4rem;
+    background: #0E2547;
+    border: 1px solid #1E3A66;
+    border-radius: 14px;
+    padding: 1.05rem 1.5rem;
+    transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.22s ease, box-shadow 0.22s ease;
+    animation: bbFadeUp 0.45s ease both;
+    overflow: hidden;
+    position: relative;
+}
+.bb-mrow::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, #2876FB, #5EE6EB);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+.bb-mrow:hover {
+    transform: translateX(8px);
+    border-color: #5EE6EB;
+    box-shadow: -8px 0 24px rgba(94,230,235,0.10), 0 14px 34px rgba(2,10,26,0.5);
+}
+.bb-mrow:hover::before { opacity: 1; }
+.bb-mrow-num {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 2.1rem;
+    line-height: 1;
+    color: transparent;
+    -webkit-text-stroke: 1.3px #2C4A7E;
+    flex-shrink: 0;
+    width: 64px;
+    transition: -webkit-text-stroke-color 0.2s ease;
+}
+.bb-mrow:hover .bb-mrow-num { -webkit-text-stroke-color: #5EE6EB; }
+.bb-mrow-icon {
+    font-size: 1.45rem;
+    flex-shrink: 0;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.bb-mrow:hover .bb-mrow-icon { transform: scale(1.25) rotate(-8deg); }
+.bb-mrow-body { flex-grow: 1; min-width: 0; }
+.bb-mrow-title {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 0.95rem;
+    color: #FFFFFF;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 0 0 0.15rem 0;
+}
+.bb-mrow-desc {
+    font-size: 0.82rem;
+    color: #8FA8CE;
+    line-height: 1.5;
+    margin: 0;
+}
+.bb-mrow-tag {
+    flex-shrink: 0;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #5EE6EB;
+    background: rgba(94,230,235,0.08);
+    border: 1px solid rgba(94,230,235,0.25);
+    border-radius: 999px;
+    padding: 0.28rem 0.85rem;
+    white-space: nowrap;
+}
+
 /* ══ DAGOVERZICHT ══ */
 .bb-day-panel {
     background: #0E2547;
@@ -1019,77 +1094,33 @@ if page == "home":
 
     st.markdown('<p class="bb-section-label">Modules</p>', unsafe_allow_html=True)
 
-    # Vier kaarten
-    col1, col2, col3, col4 = st.columns(4, gap="medium")
+    # ── Startlijst: modules als genummerde regels ──
+    _modules = [
+        ("01", "📋", "Feedback", "Atleten reageren op hun training — de AI schrijft een concept in jouw stijl. Jij keurt goed en post met één klik.", "Dagelijks", "btn_feedback", "feedback_groups", "primary"),
+        ("02", "📅", "Schema-verloop", "Zie in één oogopslag wiens schema afloopt en wie komende week een nieuw plan nodig heeft.", "Wekelijks", "btn_schema", "schema", "secondary"),
+        ("03", "🔨", "Schema bouwen", "Genereer een trainingsplan op doel, niveau en datum. Direct importeren in FinalSurge, inclusief workout builder.", "Planning", "btn_builder", "builder", "secondary"),
+        ("04", "🏁", "Races", "Aankomende races in één overzicht. De AI schrijft een persoonlijke succeswens — jij post met één klik.", "Racedag", "btn_races", "races", "secondary"),
+        ("05", "🔧", "Builder bijvullen", "Vul de workout builder automatisch voor bestaande trainingen met beschrijving maar zonder structuur.", "Onderhoud", "btn_backfill", "backfill_builder", "secondary"),
+        ("06", "📝", "Intake", "Leg de intake van een atleet vast. Wordt bewaard en automatisch ingeladen bij het bouwen van een schema.", "Nieuwe atleet", "btn_intake", "intake", "secondary"),
+    ]
 
-    with col1:
-        st.markdown("""
-        <div class="bb-card">
-            <div class="bb-card-icon">📋</div>
-            <p class="bb-card-title">Feedback</p>
-            <p class="bb-card-desc">Atleten reageren op hun training — jij nog niet. De AI schrijft een concept in jouw stijl. Jij keurt goed en post met één klik.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Open →", type="primary", key="btn_feedback", use_container_width=True):
-            go_to("feedback_groups")
-
-    with col2:
-        st.markdown("""
-        <div class="bb-card">
-            <div class="bb-card-icon">📅</div>
-            <p class="bb-card-title">Schema-verloop</p>
-            <p class="bb-card-desc">Bekijk in één oogopslag wanneer schema's van je atleten aflopen. Zo weet je precies wie komende week een nieuw plan nodig heeft.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Open →", type="primary", key="btn_schema", use_container_width=True):
-            go_to("schema")
-
-    with col3:
-        st.markdown("""
-        <div class="bb-card">
-            <div class="bb-card-icon">🔨</div>
-            <p class="bb-card-title">Schema bouwen</p>
-            <p class="bb-card-desc">Genereer een trainingsplan op basis van doel, niveau en datum. Importeer het direct in FinalSurge inclusief workout builder.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Open →", type="primary", key="btn_builder", use_container_width=True):
-            go_to("builder")
-
-    with col4:
-        st.markdown("""
-        <div class="bb-card">
-            <div class="bb-card-icon">🏁</div>
-            <p class="bb-card-title">Races</p>
-            <p class="bb-card-desc">Aankomende races van je atleten in één overzicht. De AI schrijft een persoonlijke succeswens — jij post met één klik.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Open →", type="primary", key="btn_races", use_container_width=True):
-            go_to("races")
-
-    # Tweede rij kaarten
-    st.markdown("<br>", unsafe_allow_html=True)
-    col5, col6, col7, col8 = st.columns(4, gap="medium")
-    with col5:
-        st.markdown("""
-        <div class="bb-card">
-            <div class="bb-card-icon">🔧</div>
-            <p class="bb-card-title">Builder bijvullen</p>
-            <p class="bb-card-desc">Vul de workout builder automatisch in voor bestaande trainingen die al een beschrijving hebben maar nog geen structuur.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Open →", type="primary", key="btn_backfill", use_container_width=True):
-            go_to("backfill_builder")
-
-    with col6:
-        st.markdown("""
-        <div class="bb-card">
-            <div class="bb-card-icon">📝</div>
-            <p class="bb-card-title">Intake</p>
-            <p class="bb-card-desc">Leg de intake van een atleet vast in de app. De gegevens worden bewaard en automatisch ingeladen bij het bouwen van een schema.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Open →", type="primary", key="btn_intake", use_container_width=True):
-            go_to("intake")
+    for _i, (_num, _icon, _titel, _desc, _tag, _btn_key, _page, _btn_type) in enumerate(_modules):
+        c_row, c_btn = st.columns([8.6, 1.4], vertical_alignment="center")
+        with c_row:
+            st.markdown(f"""
+            <div class="bb-mrow" style="animation-delay:{0.05 + _i * 0.06:.2f}s">
+                <span class="bb-mrow-num">{_num}</span>
+                <span class="bb-mrow-icon">{_icon}</span>
+                <div class="bb-mrow-body">
+                    <p class="bb-mrow-title">{_titel}</p>
+                    <p class="bb-mrow-desc">{_desc}</p>
+                </div>
+                <span class="bb-mrow-tag">{_tag}</span>
+            </div>
+            """, unsafe_allow_html=True)
+        with c_btn:
+            if st.button("Open →", type=_btn_type, key=_btn_key, use_container_width=True):
+                go_to(_page)
 
     # Debug expander (alleen zichtbaar als je hem openklapt)
     with st.expander("🔧 Debug: coach_athlete_key controle", expanded=False):
