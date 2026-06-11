@@ -571,9 +571,18 @@ def get_workouts_needing_feedback(
     athlete_filter: list[str] = None,
     include_data_only: bool = False,
     include_planned_no_notes: bool = False,
-) -> list[dict]:
+    exclude_groups: set | None = None,
+    return_stats: bool = False,
+) -> list[dict] | tuple[list[dict], dict]:
     """
     Geeft workouts terug die coaching-aandacht nodig hebben.
+
+    exclude_groups: groepsnamen (case-insensitief) die volledig worden
+                    overgeslagen, bijv. {"los schema"} — die atleten
+                    krijgen geen feedback.
+    return_stats:   geef ook statistieken terug als tweede waarde:
+                    {"posted_today": n} = aantal workouts waarop vandaag
+                    een coach-comment is gepost (door wie dan ook).
 
     Drie parallelle fasen om latency te minimaliseren:
       1. Alle atleten-workouts tegelijk ophalen (2×parallel per atleet)
@@ -587,6 +596,10 @@ def get_workouts_needing_feedback(
     athletes = get_athletes()
     if athlete_filter:
         athletes = [a for a in athletes if a["user_key"] in athlete_filter]
+    if exclude_groups:
+        _excl = {g.strip().lower() for g in exclude_groups}
+        athletes = [a for a in athletes
+                    if (a.get("group") or "").strip().lower() not in _excl]
 
     def _is_athlete_comment(c: dict) -> bool:
         if "is_athlete" in c:
@@ -666,6 +679,16 @@ def get_workouts_needing_feedback(
         return cand
 
     with_comments = _parallel_per_athlete(candidates, _fetch_comments)
+
+    # Vandaag gepost: workouts met ≥1 coach-comment van vandaag — geldt voor
+    # beide coaches (zelfde account) en blijft kloppen over sessies/apparaten heen
+    posted_today = sum(
+        1 for cand in with_comments
+        if any(
+            not _is_athlete_comment(c) and _ts(c)[:10] == today_str
+            for c in cand["_comments"]
+        )
+    )
 
     # ── Comment-gebaseerde filter ──────────────────────────────────────────
     detail_candidates: list[dict] = []
@@ -754,6 +777,8 @@ def get_workouts_needing_feedback(
             "planned_no_notes": cand["is_planned_no_notes"],
         })
 
+    if return_stats:
+        return results, {"posted_today": posted_today}
     return results
 
 

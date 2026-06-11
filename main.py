@@ -1069,7 +1069,10 @@ if page == "home":
     st.markdown('<p class="bb-section-label">Dagoverzicht</p>', unsafe_allow_html=True)
 
     day_stats = st.session_state.get("day_stats")
-    n_posted_today = len(st.session_state.get("session_feedback_log", []))
+    # Gepost vandaag: FinalSurge-telling (alle coaches/apparaten, bij laatste
+    # ververs) of de eigen sessie-teller als die hoger is (posts ná de ververs)
+    _api_posted = (day_stats or {}).get("posted_today", 0)
+    n_posted_today = max(_api_posted, len(st.session_state.get("session_feedback_log", [])))
 
     col_day, col_refresh = st.columns([5, 1])
     with col_refresh:
@@ -1078,12 +1081,18 @@ if page == "home":
                 try:
                     from concurrent.futures import ThreadPoolExecutor as _TPE
                     with _TPE(max_workers=2) as _pool:
-                        _fb_fut = _pool.submit(fs_client.get_workouts_needing_feedback, 3)
+                        # "Los schema"-groep krijgt geen feedback → niet meetellen
+                        _fb_fut = _pool.submit(
+                            fs_client.get_workouts_needing_feedback,
+                            3, None, False, False,
+                            {"los schema"}, True,
+                        )
                         _races_fut = _pool.submit(fs_client.get_upcoming_races, 14)
-                        _fb = _fb_fut.result()
+                        _fb, _fb_stats = _fb_fut.result()
                         _races = _races_fut.result()
                     st.session_state["day_stats"] = {
                         "feedback_pending": len(_fb),
+                        "posted_today": _fb_stats.get("posted_today", 0),
                         "races_coming": len(_races),
                         "loaded_at": date.today().isoformat(),
                     }
