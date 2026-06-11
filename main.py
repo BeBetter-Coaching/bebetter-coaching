@@ -757,36 +757,20 @@ if page == "home":
     # ── Dagoverzicht — voortgangsmonitor ──
     st.markdown('<p class="bb-section-label">Dagoverzicht</p>', unsafe_allow_html=True)
 
-    # Auto-laden: haal dag­stats op als ze nog niet geladen zijn of van gisteren
     day_stats = st.session_state.get("day_stats")
-    _today_str = date.today().isoformat()
-    if day_stats is None or day_stats.get("loaded_at") != _today_str:
-        with st.spinner("Dagstatus ophalen…"):
-            try:
-                _fb = fs_client.get_workouts_needing_feedback(days_back=3)
-                _races = fs_client.get_upcoming_races(days_ahead=14)
-                st.session_state["day_stats"] = {
-                    "feedback_pending": len(_fb),
-                    "races_coming": len(_races),
-                    "loaded_at": _today_str,
-                }
-                day_stats = st.session_state["day_stats"]
-            except Exception:
-                pass  # Toon lege staat als het mislukt
-
     n_posted_today = len(st.session_state.get("session_feedback_log", []))
 
     col_day, col_refresh = st.columns([5, 1])
     with col_refresh:
         if st.button("🔄 Ververs", key="btn_day_refresh", use_container_width=True):
-            with st.spinner("Dagstatus ophalen uit FinalSurge…"):
+            with st.spinner("Dagstatus ophalen…"):
                 try:
                     _fb = fs_client.get_workouts_needing_feedback(days_back=3)
                     _races = fs_client.get_upcoming_races(days_ahead=14)
                     st.session_state["day_stats"] = {
                         "feedback_pending": len(_fb),
                         "races_coming": len(_races),
-                        "loaded_at": _today_str,
+                        "loaded_at": date.today().isoformat(),
                     }
                     st.rerun()
                 except Exception as e:
@@ -808,7 +792,8 @@ if page == "home":
                 schema_aflopen = sum(
                     1 for r in _schema_data
                     if r.get("user_key") not in _on_hold_keys
-                    and (r["days_left"] is None or r["days_left"] <= 14)
+                    and r["days_left"] is not None
+                    and r["days_left"] <= 14
                 )
                 schema_val = str(schema_aflopen)
                 schema_cls = "done" if schema_aflopen == 0 else "attention"
