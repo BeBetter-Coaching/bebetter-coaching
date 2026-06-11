@@ -6,6 +6,7 @@ import fs_client
 from fs_client import TokenNotFoundError
 import ai_feedback
 import schema_builder
+import intake_store
 import base64
 import io
 import json
@@ -274,7 +275,7 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
     border: 1px solid #E3E9F2;
     border-radius: 16px;
     padding: 1.6rem 1.5rem 1.4rem 1.5rem;
-    height: 225px;
+    min-height: 210px;
     display: flex;
     flex-direction: column;
     gap: 0.7rem;
@@ -320,10 +321,49 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
     line-height: 1.6;
     flex-grow: 1;
     margin: 0;
+}
+
+/* ══ DAGOVERZICHT ══ */
+.bb-day-panel {
+    background: #FFFFFF;
+    border: 1px solid #E3E9F2;
+    border-radius: 16px;
+    padding: 1.4rem 1.6rem 1.3rem 1.6rem;
+    box-shadow: 0 1px 3px rgba(15,42,75,0.05), 0 8px 24px rgba(15,42,75,0.05);
+    margin-bottom: 1.6rem;
+}
+.bb-stat-row { display: flex; gap: 0.9rem; flex-wrap: wrap; margin-top: 0.4rem; }
+.bb-stat {
+    flex: 1;
+    min-width: 150px;
+    background: linear-gradient(135deg, #F8FAFE, #F2F7FF);
+    border: 1px solid #E3E9F2;
+    border-radius: 13px;
+    padding: 0.95rem 1.2rem;
+}
+.bb-stat.done { background: linear-gradient(135deg, #F0FBF4, #E8F8EE); border-color: #CDEBD8; }
+.bb-stat.attention { background: linear-gradient(135deg, #FFF8F0, #FFF3E5); border-color: #F5DFC2; }
+.bb-stat-value { font-size: 1.5rem; font-weight: 800; color: #0B1F3A; margin: 0; line-height: 1.2; }
+.bb-stat-label {
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #5B6B82;
+    margin: 0.1rem 0 0 0;
+}
+.bb-progress-track {
+    height: 9px;
+    background: #ECF1F8;
+    border-radius: 6px;
     overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 4;
-    -webkit-box-orient: vertical;
+    margin-top: 1rem;
+}
+.bb-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #2876FB, #5EE6EB);
+    border-radius: 6px;
+    transition: width 0.4s ease;
 }
 .bb-card-soon {
     display: inline-block;
@@ -701,12 +741,76 @@ if page == "home":
                 <p class="bb-kpi-label">Groepen</p>
             </div>
             <div class="bb-kpi">
-                <p class="bb-kpi-value">5</p>
+                <p class="bb-kpi-value">6</p>
                 <p class="bb-kpi-label">Modules</p>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Dagoverzicht — voortgangsmonitor ──
+    st.markdown('<p class="bb-section-label">Dagoverzicht</p>', unsafe_allow_html=True)
+
+    day_stats = st.session_state.get("day_stats")
+    n_posted_today = len(st.session_state.get("session_feedback_log", []))
+
+    col_day, col_refresh = st.columns([5, 1])
+    with col_refresh:
+        if st.button("🔄 Ververs", key="btn_day_refresh", use_container_width=True):
+            with st.spinner("Dagstatus ophalen uit FinalSurge…"):
+                try:
+                    _fb = fs_client.get_workouts_needing_feedback(days_back=3)
+                    _races = fs_client.get_upcoming_races(days_ahead=14)
+                    st.session_state["day_stats"] = {
+                        "feedback_pending": len(_fb),
+                        "races_coming": len(_races),
+                        "loaded_at": date.today().isoformat(),
+                    }
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Fout: {e}")
+
+    with col_day:
+        if day_stats:
+            fb_pending = day_stats.get("feedback_pending", 0)
+            races_coming = day_stats.get("races_coming", 0)
+            total_tasks = fb_pending + n_posted_today
+            pct = int(n_posted_today / total_tasks * 100) if total_tasks else 100
+            fb_cls = "done" if fb_pending == 0 else "attention"
+            race_cls = "done" if races_coming == 0 else ""
+            st.markdown(f"""
+            <div class="bb-day-panel">
+                <div class="bb-stat-row">
+                    <div class="bb-stat {fb_cls}">
+                        <p class="bb-stat-value">{fb_pending}</p>
+                        <p class="bb-stat-label">Wachten op feedback</p>
+                    </div>
+                    <div class="bb-stat done">
+                        <p class="bb-stat-value">{n_posted_today}</p>
+                        <p class="bb-stat-label">Vandaag gepost</p>
+                    </div>
+                    <div class="bb-stat {race_cls}">
+                        <p class="bb-stat-value">{races_coming}</p>
+                        <p class="bb-stat-label">Races komende 14 dagen</p>
+                    </div>
+                </div>
+                <div class="bb-progress-track">
+                    <div class="bb-progress-fill" style="width:{pct}%"></div>
+                </div>
+                <p style="font-size:0.72rem; color:#5B6B82; margin:0.45rem 0 0 0;">
+                    Dagvoortgang feedback: <b>{pct}%</b> &nbsp;·&nbsp; status van {day_stats.get('loaded_at','')}
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="bb-day-panel">
+                <p style="color:#5B6B82; font-size:0.9rem; margin:0;">
+                    Klik op <b>🔄 Ververs</b> om de dagstatus op te halen: hoeveel atleten wachten op feedback
+                    en welke races eraan komen.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
 
     st.markdown('<p class="bb-section-label">Modules</p>', unsafe_allow_html=True)
 
@@ -770,6 +874,17 @@ if page == "home":
         """, unsafe_allow_html=True)
         if st.button("Open →", type="primary", key="btn_backfill", use_container_width=True):
             go_to("backfill_builder")
+
+    with col6:
+        st.markdown("""
+        <div class="bb-card">
+            <div class="bb-card-icon">📝</div>
+            <p class="bb-card-title">Intake</p>
+            <p class="bb-card-desc">Leg de intake van een atleet vast in de app. De gegevens worden bewaard en automatisch ingeladen bij het bouwen van een schema.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open →", type="primary", key="btn_intake", use_container_width=True):
+            go_to("intake")
 
     # Debug expander (alleen zichtbaar als je hem openklapt)
     with st.expander("🔧 Debug: coach_athlete_key controle", expanded=False):
@@ -1518,6 +1633,171 @@ elif page == "backfill_builder":
 
 
 # ===========================================================================
+# PAGINA: INTAKE
+# ===========================================================================
+
+elif page == "intake":
+    module_header("Intake", "📝")
+
+    # Intakes laden (gecached per sessie)
+    if "intakes" not in st.session_state:
+        st.session_state["intakes"] = intake_store.load_intakes()
+    intakes = st.session_state["intakes"]
+
+    if not intake_store.is_cloud_backed():
+        st.warning("⚠️ GH_TOKEN niet ingesteld in secrets — intakes worden alleen lokaal opgeslagen "
+                   "en kunnen verloren gaan bij een herstart van de cloud-app.")
+
+    # ── Atleet kiezen ────────────────────────────────────────────────────
+    all_athletes = sorted(
+        [a for members in athletes_by_group.values() for a in members],
+        key=lambda x: x["name"],
+    )
+    athlete_options = {a["name"]: a["user_key"] for a in all_athletes}
+
+    sel_col, status_col = st.columns([3, 2])
+    with sel_col:
+        ik_athlete_name = st.selectbox("Atleet *", options=list(athlete_options.keys()), key="ik_athlete")
+        ik_athlete_key = athlete_options[ik_athlete_name]
+    with status_col:
+        existing_ik = intakes.get(ik_athlete_key)
+        if existing_ik:
+            st.success(f"✅ Intake aanwezig — laatst bijgewerkt {existing_ik.get('updated_at', '?')}")
+        else:
+            st.info("Nog geen intake voor deze atleet.")
+
+    # Prefill widget-keys éénmalig per atleet-wissel
+    if st.session_state.get("ik_loaded_for") != ik_athlete_key:
+        _src = intakes.get(ik_athlete_key, {})
+        st.session_state["ik_naam"]            = _src.get("naam", ik_athlete_name.split()[0])
+        st.session_state["ik_leeftijd"]        = _src.get("leeftijd", "")
+        st.session_state["ik_horloge"]         = _src.get("horloge", "")
+        st.session_state["ik_doel"]            = _src.get("doel", "")
+        st.session_state["ik_dagen"]           = _src.get("trainingsdagen", "")
+        st.session_state["ik_volume"]          = _src.get("huidig_volume", "")
+        st.session_state["ik_tijd"]            = _src.get("tijd_per_training", "")
+        st.session_state["ik_referentie"]      = _src.get("referentie_prestatie", "")
+        st.session_state["ik_langste"]         = _src.get("langste_afstand", "")
+        st.session_state["ik_blessure"]        = _src.get("blessurehistorie", "")
+        st.session_state["ik_andere"]          = _src.get("andere_sporten", "")
+        st.session_state["ik_wat_werkte"]      = _src.get("wat_werkte", "")
+        st.session_state["ik_wat_niet"]        = _src.get("wat_niet_werkte", "")
+        st.session_state["ik_coach_notitie"]   = _src.get("coach_notitie", "")
+        st.session_state["ik_notities"]        = _src.get("notities", "")
+        st.session_state["ik_kwaliteit"]       = _src.get("kwaliteitservaring", "Enige ervaring")
+        st.session_state["ik_herstel"]         = _src.get("herstelcapaciteit", "Normaal")
+        st.session_state["ik_werkdruk"]        = _src.get("werkdruk", "Normaal")
+        st.session_state["ik_ondergrond"]      = _src.get("loopondergrond", ["Weg"])
+        st.session_state["ik_op_tijd"]         = _src.get("op_tijd", False)
+        st.session_state["ik_loaded_for"]      = ik_athlete_key
+
+    st.markdown("<hr class='bb-divider'>", unsafe_allow_html=True)
+
+    # ── Formulier ────────────────────────────────────────────────────────
+    col_l, col_r = st.columns(2, gap="large")
+
+    with col_l:
+        st.markdown("<div class='bb-intake-label'>Persoonlijk & doel</div>", unsafe_allow_html=True)
+        naam = st.text_input("Roepnaam (in coaching-tekst)", key="ik_naam")
+        c1, c2 = st.columns(2)
+        with c1:
+            leeftijd = st.text_input("Leeftijd", key="ik_leeftijd", placeholder="bijv. 34")
+        with c2:
+            horloge = st.text_input("Horloge / GPS", key="ik_horloge", placeholder="bijv. Garmin 255")
+        doel = st.text_area("Doelstelling", key="ik_doel", height=70,
+                            placeholder="bijv. 10km in sub 55min")
+        referentie = st.text_input("Recente referentieprestatie", key="ik_referentie",
+                                   placeholder="bijv. 5km in 22:30 (vorige maand)")
+        langste = st.text_input("Langste afstand recent", key="ik_langste",
+                                placeholder="bijv. 14km (3 weken geleden)")
+
+    with col_r:
+        st.markdown("<div class='bb-intake-label'>Training & beschikbaarheid</div>", unsafe_allow_html=True)
+        volume = st.text_input("Huidig wekelijks volume", key="ik_volume", placeholder="bijv. 25-30 km/week")
+        dagen = st.text_input("Trainingsdagen", key="ik_dagen", placeholder="bijv. ma / wo / vr / zo")
+        tijd = st.text_input("Tijd per training", key="ik_tijd",
+                             placeholder="bijv. ma: 45min, wo: 60min, zo: 90min")
+        kwaliteit = st.radio("Ervaring intervals/tempo",
+                             options=["Weinig/geen", "Enige ervaring", "Regelmatig"],
+                             horizontal=True, key="ik_kwaliteit")
+        op_tijd = st.checkbox("Schema op tijd (minuten) i.p.v. kilometers", key="ik_op_tijd")
+
+    st.markdown("<hr class='bb-divider'>", unsafe_allow_html=True)
+    st.markdown("<div class='bb-intake-label'>Atleetprofiel</div>", unsafe_allow_html=True)
+    cp1, cp2, cp3 = st.columns(3)
+    with cp1:
+        herstel = st.radio("Herstelcapaciteit", options=["Langzaam", "Normaal", "Snel"],
+                           horizontal=True, key="ik_herstel")
+    with cp2:
+        werkdruk = st.radio("Werkdruk buiten sport", options=["Laag", "Normaal", "Hoog"],
+                            horizontal=True, key="ik_werkdruk")
+    with cp3:
+        ondergrond = st.multiselect("Loopondergrond", options=["Weg", "Trail", "Baan", "Loopband"],
+                                    key="ik_ondergrond")
+
+    ca, cb = st.columns(2)
+    with ca:
+        blessure = st.text_input("Blessurehistorie", key="ik_blessure",
+                                 placeholder="bijv. linkerknie (2023)")
+        wat_werkte = st.text_input("Wat werkte goed", key="ik_wat_werkte")
+    with cb:
+        andere = st.text_input("Andere sporten / verplichtingen", key="ik_andere",
+                               placeholder="bijv. HYROX 2x/week")
+        wat_niet = st.text_input("Wat werkte niet", key="ik_wat_niet")
+
+    coach_notitie = st.text_area("⭐ Coach notitie — jouw kennis over deze atleet",
+                                 key="ik_coach_notitie", height=80)
+    notities = st.text_area("Vrije notities (intake-gesprek)", key="ik_notities", height=110,
+                            placeholder="Alles wat verder ter sprake kwam…")
+
+    # ── Opslaan / verwijderen ────────────────────────────────────────────
+    col_save, col_del, _sp = st.columns([2, 2, 3])
+    with col_save:
+        if st.button("💾 Intake opslaan", type="primary", key="btn_ik_save", use_container_width=True):
+            intakes[ik_athlete_key] = {
+                "athlete_name": ik_athlete_name,
+                "naam": naam, "leeftijd": leeftijd, "horloge": horloge,
+                "doel": doel, "referentie_prestatie": referentie, "langste_afstand": langste,
+                "huidig_volume": volume, "trainingsdagen": dagen, "tijd_per_training": tijd,
+                "kwaliteitservaring": kwaliteit, "op_tijd": op_tijd,
+                "herstelcapaciteit": herstel, "werkdruk": werkdruk,
+                "loopondergrond": ondergrond,
+                "blessurehistorie": blessure, "andere_sporten": andere,
+                "wat_werkte": wat_werkte, "wat_niet_werkte": wat_niet,
+                "coach_notitie": coach_notitie, "notities": notities,
+                "updated_at": date.today().isoformat(),
+            }
+            ok, err = intake_store.save_intakes(intakes)
+            if ok:
+                st.session_state["intakes"] = intakes
+                st.success(f"✅ Intake voor {ik_athlete_name} opgeslagen!")
+            else:
+                st.error(f"Opslaan mislukt: {err}")
+    with col_del:
+        if existing_ik and st.button("🗑️ Intake verwijderen", key="btn_ik_del", use_container_width=True):
+            intakes.pop(ik_athlete_key, None)
+            ok, err = intake_store.save_intakes(intakes)
+            if ok:
+                st.session_state["intakes"] = intakes
+                st.session_state.pop("ik_loaded_for", None)
+                st.rerun()
+            else:
+                st.error(f"Verwijderen mislukt: {err}")
+
+    # ── Overzicht bestaande intakes ──────────────────────────────────────
+    if intakes:
+        st.markdown("<hr class='bb-divider'>", unsafe_allow_html=True)
+        st.markdown("<div class='bb-intake-label'>Opgeslagen intakes</div>", unsafe_allow_html=True)
+        for ak, ik in sorted(intakes.items(), key=lambda x: x[1].get("athlete_name", "")):
+            doel_kort = (ik.get("doel") or "—").split("\n")[0][:70]
+            st.markdown(
+                f"• **{ik.get('athlete_name', '?')}** — {doel_kort} "
+                f"<span style='color:#5B6B82; font-size:0.78rem'>(bijgewerkt {ik.get('updated_at', '?')})</span>",
+                unsafe_allow_html=True,
+            )
+
+
+# ===========================================================================
 # ===========================================================================
 # PAGINA: RACES & SUCCESWENSEN
 # ===========================================================================
@@ -1950,7 +2230,7 @@ elif page == "builder":
             st.session_state["builder_tijd_per_training"] = _existing.get("tijd_per_training", "")
             st.session_state["builder_langste_afstand"]   = _existing.get("langste_afstand", "")
             st.session_state["builder_blessure"]          = _existing.get("blessurehistorie", "")
-            st.session_state["builder_andere_sporten"]    = _existing.get("andere_sporten", "")
+            st.session_state["builder_andere"]            = _existing.get("andere_sporten", "")
             st.session_state["builder_coach_notitie"]     = _existing.get("coach_notitie", "")
             st.session_state["builder_wat_werkte"]        = _existing.get("wat_werkte", "")
             st.session_state["builder_wat_niet_werkte"]   = _existing.get("wat_niet_werkte", "")
@@ -1983,6 +2263,40 @@ elif page == "builder":
             athlete_key_selected = athlete_options[selected_athlete_name]
             if "builder_naam" not in st.session_state:
                 st.session_state["builder_naam"] = selected_athlete_name.split()[0] if selected_athlete_name else ""
+
+            # ── Koppeling met intake-module: gegevens automatisch inladen ──
+            if "intakes" not in st.session_state:
+                st.session_state["intakes"] = intake_store.load_intakes()
+            _saved_ik = st.session_state["intakes"].get(athlete_key_selected)
+            if _saved_ik:
+                if st.button(
+                    f"📥 Intake van {_saved_ik.get('naam') or selected_athlete_name.split()[0]} laden "
+                    f"(bijgewerkt {_saved_ik.get('updated_at', '?')})",
+                    key="btn_load_intake",
+                    use_container_width=True,
+                ):
+                    st.session_state["builder_naam"]              = _saved_ik.get("naam", "")
+                    st.session_state["builder_doel"]              = _saved_ik.get("doel", "")
+                    st.session_state["builder_volume"]            = _saved_ik.get("huidig_volume", "")
+                    st.session_state["builder_dagen"]             = _saved_ik.get("trainingsdagen", "")
+                    st.session_state["builder_referentie"]        = _saved_ik.get("referentie_prestatie", "")
+                    st.session_state["builder_tijd_per_training"] = _saved_ik.get("tijd_per_training", "")
+                    st.session_state["builder_langste_afstand"]   = _saved_ik.get("langste_afstand", "")
+                    st.session_state["builder_blessure"]          = _saved_ik.get("blessurehistorie", "")
+                    st.session_state["builder_andere"]            = _saved_ik.get("andere_sporten", "")
+                    st.session_state["builder_coach_notitie"]     = _saved_ik.get("coach_notitie", "")
+                    st.session_state["builder_wat_werkte"]        = _saved_ik.get("wat_werkte", "")
+                    st.session_state["builder_wat_niet_werkte"]   = _saved_ik.get("wat_niet_werkte", "")
+                    st.session_state["builder_kwaliteitservaring"] = _saved_ik.get("kwaliteitservaring", "Enige ervaring")
+                    st.session_state["builder_herstelcapaciteit"] = _saved_ik.get("herstelcapaciteit", "Normaal")
+                    st.session_state["builder_werkdruk"]          = _saved_ik.get("werkdruk", "Normaal")
+                    st.session_state["builder_ondergrond"]        = _saved_ik.get("loopondergrond", ["Weg"]) or ["Weg"]
+                    st.session_state["builder_op_tijd"]           = _saved_ik.get("op_tijd", False)
+                    st.session_state["builder_leeftijd"]          = _saved_ik.get("leeftijd", "")
+                    st.session_state["builder_horloge"]           = _saved_ik.get("horloge", "")
+                    # Voorkom dat de sync-blok dit overschrijft
+                    st.session_state["builder_fields_loaded"] = True
+                    st.rerun()
             naam = st.text_input("Naam in coaching-tekst *", key="builder_naam", placeholder="bijv. Lisa")
             doel = st.text_area(
                 "Doelstelling *", key="builder_doel", height=70,
