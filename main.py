@@ -33,14 +33,22 @@ def _check_password() -> bool:
     if not correct:
         return True  # Geen wachtwoord ingesteld → lokaal gebruik
 
-    # Cookie-gebaseerde "onthoud mij" via streamlit-cookies-controller
+    # Cookie-gebaseerde "onthoud mij"
+    # extra_streamlit_components heeft een timing-bug: get() geeft None op de
+    # eerste render. We doen één geforceerde tweede render om de cookie te laden.
+    cookie_manager = None
     try:
-        from streamlit_cookies_controller import CookieController
-        _cookies = CookieController(key="bb_cookie_ctrl")
-        if _cookies.get("bb_auth") == "ok":
+        import extra_streamlit_components as stx
+        cookie_manager = stx.CookieManager(key="bb_cookie_mgr")
+        auth_cookie = cookie_manager.get("bb_auth")
+        if auth_cookie is None and not st.session_state.get("_cookie_init"):
+            # Eerste render — cookie nog niet geladen door de browser-component.
+            st.session_state["_cookie_init"] = True
+            st.rerun()
+        if auth_cookie == "ok":
             return True
     except Exception:
-        _cookies = None
+        cookie_manager = None
 
     if st.session_state.get("authenticated"):
         return True
@@ -66,9 +74,11 @@ def _check_password() -> bool:
         if st.button("Inloggen →", type="primary", use_container_width=True):
             if pw == correct:
                 st.session_state["authenticated"] = True
-                if onthoud and _cookies:
+                if onthoud and cookie_manager:
                     try:
-                        _cookies.set("bb_auth", "ok", max_age=365 * 24 * 3600)
+                        from datetime import datetime, timedelta
+                        expires = datetime.now() + timedelta(days=365)
+                        cookie_manager.set("bb_auth", "ok", expires_at=expires)
                     except Exception:
                         pass
                 st.rerun()
