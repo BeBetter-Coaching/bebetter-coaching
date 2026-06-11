@@ -9,6 +9,7 @@ from fs_client import TokenNotFoundError
 import ai_feedback
 import schema_builder
 import intake_store
+import dossier
 import base64
 import html as _html_mod
 import io
@@ -1061,7 +1062,7 @@ if page == "home":
                 <p class="bb-kpi-label">Groepen</p>
             </div>
             <div class="bb-kpi">
-                <p class="bb-kpi-value">6</p>
+                <p class="bb-kpi-value">7</p>
                 <p class="bb-kpi-label">Modules</p>
             </div>
         </div>
@@ -1203,6 +1204,7 @@ if page == "home":
         ("04", "📋", "Feedback", "Atleten reageren op hun training — de AI schrijft een concept in jouw stijl. Jij keurt goed en post met één klik.", "Dagelijks", "btn_feedback", "feedback_groups", "primary", True),
         ("05", "🏁", "Races", "Het hoogtepunt — aankomende races in één overzicht, met raceplan en persoonlijke succeswens.", "Racedag", "btn_races", "races", "secondary", False),
         ("06", "📅", "Schema-verloop", "De bewaking: wiens schema loopt af? Daarna begint de cyclus opnieuw bij schema bouwen.", "Wekelijks", "btn_schema", "schema", "secondary", False),
+        ("07", "👤", "Atleet-dossiers", "Alles per atleet op één plek: intake, notities, compliance, trends, races en zones.", "Overzicht", "btn_atleten", "atleten", "secondary", False),
     ]
 
     for _i, (_num, _icon, _titel, _desc, _tag, _btn_key, _page, _btn_type, _featured) in enumerate(_modules):
@@ -2556,6 +2558,72 @@ elif page == "schema":
                         # Invalideer cache zodat atleet terugkomt bij volgende laad
                         st.session_state.pop("schema_data", None)
                         st.rerun()
+
+
+# ===========================================================================
+# PAGINA: ATLETEN — overzicht voor dossiers
+# ===========================================================================
+
+elif page == "atleten":
+
+    module_header("Atleet-dossiers", "👤")
+
+    st.caption("Klik op een atleet voor het volledige dossier: intake, notities, trends, races en zones. "
+               "📝 = intake aanwezig · ⏸ = op hold")
+
+    if st.session_state.get("intakes") is None:
+        st.session_state["intakes"] = intake_store.load_intakes()
+    _intakes_all = st.session_state["intakes"]
+    if "schema_on_hold" not in st.session_state:
+        st.session_state["schema_on_hold"] = intake_store.load_on_hold()
+    _oh = st.session_state["schema_on_hold"]
+
+    for group_name, members in athletes_by_group.items():
+        st.markdown(f'<p class="bb-section-label">{_esc(group_name)} — {len(members)}</p>',
+                    unsafe_allow_html=True)
+        cols = st.columns(3)
+        for a_i, a in enumerate(sorted(members, key=lambda x: x["name"])):
+            badges = []
+            if a["user_key"] in _intakes_all:
+                badges.append("📝")
+            if a["user_key"] in _oh:
+                badges.append("⏸")
+            label = a["name"] + (("  " + " ".join(badges)) if badges else "")
+            with cols[a_i % 3]:
+                if st.button(label, key=f"dos_{a['user_key']}", use_container_width=True):
+                    st.session_state["dossier_user_key"] = a["user_key"]
+                    go_to("dossier")
+
+
+# ===========================================================================
+# PAGINA: DOSSIER — alles over één atleet
+# ===========================================================================
+
+elif page == "dossier":
+
+    _dkey = st.session_state.get("dossier_user_key")
+    _datleet = next((a for a in _all_athletes if a["user_key"] == _dkey), None)
+
+    if not _datleet:
+        module_header("Atleet-dossier", "👤")
+        st.warning("Geen atleet geselecteerd.")
+        if st.button("→ Naar atletenoverzicht", key="to_atleten"):
+            go_to("atleten")
+    else:
+        module_header(_datleet["name"], "👤")
+        if st.button("← Alle atleten", key="back_atleten"):
+            go_to("atleten")
+
+        if st.session_state.get("intakes") is None:
+            st.session_state["intakes"] = intake_store.load_intakes()
+        if "schema_on_hold" not in st.session_state:
+            st.session_state["schema_on_hold"] = intake_store.load_on_hold()
+
+        dossier.render_dossier(
+            _datleet,
+            st.session_state["intakes"].get(_dkey),
+            st.session_state["schema_on_hold"].get(_dkey),
+        )
 
 
 # ===========================================================================

@@ -163,6 +163,23 @@ def save_skipped(skipped: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Coach-notities per atleet
+# ---------------------------------------------------------------------------
+
+_NOTES_LOCAL = os.path.join(_BASE_DIR, ".notes.json")
+
+
+def load_notes() -> dict:
+    """Laad coach-notities. Dict: user_key → lijst van {datum, coach, tekst}."""
+    return _load_json("notes.json", _NOTES_LOCAL)
+
+
+def save_notes(notes: dict) -> tuple[bool, str]:
+    """Sla coach-notities op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("notes.json", _NOTES_LOCAL, notes, "Update notes via app")
+
+
+# ---------------------------------------------------------------------------
 # Builder-state (half afgemaakt schema)
 # ---------------------------------------------------------------------------
 
