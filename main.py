@@ -24,37 +24,29 @@ _PERSIST_FILE = os.path.join(os.path.dirname(__file__), ".builder_state.json")
 # ---------------------------------------------------------------------------
 
 def _check_password() -> bool:
-    """Vraag om wachtwoord met 'Onthoud mij' via cookie."""
+    """Vraag om wachtwoord; onthoud via URL-token (bookmarkbaar, werkt altijd)."""
+    import hashlib
     try:
         correct = st.secrets.get("APP_PASSWORD", "") or os.environ.get("APP_PASSWORD", "")
     except Exception:
         correct = os.environ.get("APP_PASSWORD", "")
 
     if not correct:
-        return True  # Geen wachtwoord ingesteld → lokaal gebruik
+        return True
 
-    # Cookie-gebaseerde "onthoud mij"
-    # extra_streamlit_components heeft een timing-bug: get() geeft None op de
-    # eerste render. We doen één geforceerde tweede render om de cookie te laden.
-    cookie_manager = None
-    try:
-        import extra_streamlit_components as stx
-        cookie_manager = stx.CookieManager(key="bb_cookie_mgr")
-        auth_cookie = cookie_manager.get("bb_auth")
-        if auth_cookie is None and not st.session_state.get("_cookie_init"):
-            # Eerste render — cookie nog niet geladen door de browser-component.
-            st.session_state["_cookie_init"] = True
-            st.rerun()
-        if auth_cookie == "ok":
-            return True
-    except Exception:
-        cookie_manager = None
+    def _token(pw: str) -> str:
+        return hashlib.sha256(f"bb-coaching-2025-{pw}".encode()).hexdigest()[:28]
+
+    # Check URL-token (remember me = bookmark met ?k=... in URL)
+    _qp = st.query_params.get("k", "")
+    if _qp and _qp == _token(correct):
+        return True
 
     if st.session_state.get("authenticated"):
         return True
 
-    # Loginscherm
-    col1, col2, col3 = st.columns([1, 1.4, 1])
+    # Loginscherm — col-verdeling ruim zodat het op mobiel past
+    col1, col2, col3 = st.columns([0.3, 2.4, 0.3])
     with col2:
         try:
             _logo_login = _logo_b64("assets/logo_wit.png")
@@ -69,18 +61,15 @@ def _check_password() -> bool:
             """, unsafe_allow_html=True)
         except Exception:
             st.markdown("## BeBetter Coaching")
-        pw = st.text_input("Wachtwoord", type="password", key="login_pw")
-        onthoud = st.checkbox("Onthoud mij op dit apparaat", value=True, key="login_remember")
-        if st.button("Inloggen →", type="primary", use_container_width=True):
+        with st.form("bb_login", enter_to_submit=True):
+            pw = st.text_input("Wachtwoord", type="password")
+            onthoud = st.checkbox("Onthoud mij op dit apparaat", value=True)
+            submitted = st.form_submit_button("Inloggen →", type="primary", use_container_width=True)
+        if submitted:
             if pw == correct:
                 st.session_state["authenticated"] = True
-                if onthoud and cookie_manager:
-                    try:
-                        from datetime import datetime, timedelta
-                        expires = datetime.now() + timedelta(days=365)
-                        cookie_manager.set("bb_auth", "ok", expires_at=expires)
-                    except Exception:
-                        pass
+                if onthoud:
+                    st.query_params["k"] = _token(correct)
                 st.rerun()
             else:
                 st.error("Onjuist wachtwoord.")
@@ -810,6 +799,53 @@ div[data-baseweb="select"] > div {
     border-bottom: 1px solid #122E5C;
     gap: 0.5rem;
     font-size: 0.88rem;
+}
+
+/* ══ RESPONSIVE ══ */
+@media (max-width: 900px) {
+    .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
+    .bb-hero { padding: 1.8rem 1.5rem 1.6rem 1.5rem; }
+    .bb-hero-title { font-size: 2.2rem; }
+    .bb-hero-title-outline { font-size: 2.2rem; }
+    .bb-hero-watermark { display: none !important; }
+    .bb-kpi { padding: 0.65rem 1rem; min-width: 90px; }
+    .bb-kpi-value { font-size: 1.25rem; }
+    .bb-mrow { padding: 0.85rem 1rem; gap: 0.9rem; }
+    .bb-mrow-num { font-size: 1.7rem; width: 48px; }
+}
+
+@media (max-width: 640px) {
+    .block-container {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        padding-top: 0.5rem !important;
+    }
+    .bb-hero {
+        padding: 1.2rem 1rem 1.1rem 1rem;
+        border-radius: 14px;
+    }
+    .bb-hero-photo { display: none !important; }
+    .bb-hero-title { font-size: 1.65rem; }
+    .bb-hero-title-outline { font-size: 1.65rem; }
+    .bb-hero-kicker { font-size: 0.60rem; letter-spacing: 0.16em; }
+    .bb-hero-sub { font-size: 0.82rem; }
+    .bb-kpi-row { gap: 0.4rem; margin-top: 1rem; }
+    .bb-kpi { padding: 0.5rem 0.7rem; min-width: 70px; border-radius: 10px; }
+    .bb-kpi-value { font-size: 1.05rem; }
+    .bb-kpi-label { font-size: 0.56rem; letter-spacing: 0.1em; }
+    .bb-marquee-inner { font-size: 0.65rem; letter-spacing: 0.1em; }
+    .bb-mrow { padding: 0.7rem 0.8rem; gap: 0.5rem; border-radius: 10px; }
+    .bb-mrow-num { display: none !important; }
+    .bb-mrow-desc { display: none !important; }
+    .bb-mrow-tag { display: none !important; }
+    .bb-mrow-feat { font-size: 0.52rem; padding: 0.18rem 0.5rem; }
+    .bb-mrow-icon { font-size: 1.1rem; }
+    .bb-mrow-title { font-size: 0.82rem; letter-spacing: 0.04em; }
+    .bb-stat { min-width: 110px; padding: 0.75rem 0.9rem; }
+    .bb-stat-value { font-size: 1.2rem; }
+    .bb-day-panel { padding: 0.9rem 0.85rem; border-radius: 12px; }
+    .bb-section-label { font-size: 0.64rem; }
+    .module-header-title { font-size: 1.1rem; }
 }
 </style>
 """, unsafe_allow_html=True)
