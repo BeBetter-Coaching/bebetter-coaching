@@ -1078,6 +1078,38 @@ if page == "home":
     # ── Dagoverzicht — voortgangsmonitor ──
     st.markdown('<p class="bb-section-label">Dagoverzicht</p>', unsafe_allow_html=True)
 
+    def _fetch_day_stats():
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        with _TPE(max_workers=2) as _pool:
+            # "Los schema"-groep krijgt geen feedback → niet meetellen
+            _fb_fut = _pool.submit(
+                fs_client.get_workouts_needing_feedback,
+                3, None, False, False,
+                {"los schema"}, True,
+            )
+            _races_fut = _pool.submit(fs_client.get_upcoming_races, 14)
+            _fb, _fb_stats = _fb_fut.result()
+            _races = _races_fut.result()
+        st.session_state["day_stats"] = {
+            "feedback_pending": len(_fb),
+            "posted_today": _fb_stats.get("posted_today", 0),
+            "races_coming": len(_races),
+            "loaded_at": date.today().isoformat(),
+        }
+
+    # Auto-laden bij eerste bezoek deze sessie (één poging — bij een fout
+    # blijft de Ververs-knop als handmatige weg)
+    if (
+        st.session_state.get("day_stats") is None
+        and not st.session_state.get("_day_stats_attempted")
+    ):
+        st.session_state["_day_stats_attempted"] = True
+        with st.spinner("Dagstatus ophalen…"):
+            try:
+                _fetch_day_stats()
+            except Exception:
+                pass
+
     day_stats = st.session_state.get("day_stats")
     # Gepost vandaag: FinalSurge-telling (alle coaches/apparaten, bij laatste
     # ververs) of de eigen sessie-teller als die hoger is (posts ná de ververs)
@@ -1089,23 +1121,7 @@ if page == "home":
         if st.button("🔄 Ververs", key="btn_day_refresh", use_container_width=True):
             with st.spinner("Dagstatus ophalen…"):
                 try:
-                    from concurrent.futures import ThreadPoolExecutor as _TPE
-                    with _TPE(max_workers=2) as _pool:
-                        # "Los schema"-groep krijgt geen feedback → niet meetellen
-                        _fb_fut = _pool.submit(
-                            fs_client.get_workouts_needing_feedback,
-                            3, None, False, False,
-                            {"los schema"}, True,
-                        )
-                        _races_fut = _pool.submit(fs_client.get_upcoming_races, 14)
-                        _fb, _fb_stats = _fb_fut.result()
-                        _races = _races_fut.result()
-                    st.session_state["day_stats"] = {
-                        "feedback_pending": len(_fb),
-                        "posted_today": _fb_stats.get("posted_today", 0),
-                        "races_coming": len(_races),
-                        "loaded_at": date.today().isoformat(),
-                    }
+                    _fetch_day_stats()
                     st.rerun()
                 except Exception as e:
                     st.error(f"Fout: {e}")
@@ -1171,8 +1187,8 @@ if page == "home":
             st.markdown("""
             <div class="bb-day-panel">
                 <p style="color:#8FA8CE; font-size:0.9rem; margin:0;">
-                    Klik op <b>🔄 Ververs</b> om de dagstatus op te halen: hoeveel atleten wachten op feedback
-                    en welke races eraan komen.
+                    Dagstatus kon niet automatisch geladen worden — klik op <b>🔄 Ververs</b> om het
+                    opnieuw te proberen.
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -1494,7 +1510,9 @@ elif page == "feedback":
             s = int(float(s))
             return f"{s//60}:{s%60:02d}"
 
-        for i, workout in enumerate(workouts):
+        @st.fragment
+        def _feedback_card(i: int, workout: dict):
+            """Eén feedback-kaart — herrendert geïsoleerd, niet de hele pagina."""
             wk = workout["workout_key"]
             posted = st.session_state.get(f"posted_{wk}", False)
             is_data_only = workout.get("data_only", False)
@@ -1525,7 +1543,7 @@ elif page == "feedback":
 
                 if posted:
                     st.markdown("---")
-                    continue
+                    return
 
                 col_left, col_right = st.columns(2)
 
@@ -1611,13 +1629,13 @@ elif page == "feedback":
                                         else:
                                             fb = ai_feedback.generate_feedback(workout)
                                         st.session_state[f"feedback_{wk}"] = fb
-                                        st.rerun()
+                                        st.rerun(scope="fragment")
                                     except Exception as e:
                                         st.error(f"Fout: {e}")
                         with col_zelf:
                             if st.button("✏️ Zelf schrijven", key=f"zelf_btn_{i}"):
                                 st.session_state[f"zelf_{wk}"] = True
-                                st.rerun()
+                                st.rerun(scope="fragment")
                         with col_skip_early:
                             if st.button("⏭️ Overslaan", key=f"skip_early_{i}"):
                                 _skipped = _load_skipped()
@@ -1660,7 +1678,7 @@ elif page == "feedback":
                         with col_annul_z:
                             if st.button("↩️ Terug", key=f"annul_zelf_{i}"):
                                 st.session_state.pop(f"zelf_{wk}", None)
-                                st.rerun()
+                                st.rerun(scope="fragment")
                     else:
                         edited = st.text_area(
                             "Pas aan waar nodig:",
@@ -1700,9 +1718,12 @@ elif page == "feedback":
                         with col_regen:
                             if st.button("🔄 Opnieuw", key=f"regen_{i}"):
                                 st.session_state[f"feedback_{wk}"] = None
-                                st.rerun()
+                                st.rerun(scope="fragment")
 
                 st.markdown("---")
+
+        for i, workout in enumerate(workouts):
+            _feedback_card(i, workout)
 
         # ── Sessie-samenvatting ───────────────────────────────────────────────
         session_log = st.session_state.get("session_feedback_log", [])
