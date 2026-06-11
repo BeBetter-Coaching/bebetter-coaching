@@ -1081,7 +1081,10 @@ if page == "home":
 
     def _fetch_day_stats():
         from concurrent.futures import ThreadPoolExecutor as _TPE
-        with _TPE(max_workers=2) as _pool:
+        if "schema_on_hold" not in st.session_state:
+            st.session_state["schema_on_hold"] = intake_store.load_on_hold()
+        _oh_keys = set(st.session_state["schema_on_hold"].keys())
+        with _TPE(max_workers=3) as _pool:
             # "Los schema"-groep krijgt geen feedback → niet meetellen
             _fb_fut = _pool.submit(
                 fs_client.get_workouts_needing_feedback,
@@ -1089,12 +1092,21 @@ if page == "home":
                 {"los schema"}, True,
             )
             _races_fut = _pool.submit(fs_client.get_upcoming_races, 14)
+            _alerts_fut = _pool.submit(
+                fs_client.get_compliance_alerts,
+                7, _oh_keys, {"los schema"},
+            )
             _fb, _fb_stats = _fb_fut.result()
             _races = _races_fut.result()
+            try:
+                _alerts = _alerts_fut.result()
+            except Exception:
+                _alerts = []
         st.session_state["day_stats"] = {
             "feedback_pending": len(_fb),
             "posted_today": _fb_stats.get("posted_today", 0),
             "races_coming": len(_races),
+            "compliance_alerts": _alerts,
             "loaded_at": date.today().isoformat(),
         }
 
@@ -1155,6 +1167,9 @@ if page == "home":
                 schema_val = "—"
                 schema_cls = ""
 
+            _alerts = day_stats.get("compliance_alerts", [])
+            _alert_cls = "done" if not _alerts else "attention"
+
             st.markdown(f"""
             <div class="bb-day-panel">
                 <div class="bb-stat-row">
@@ -1165,6 +1180,10 @@ if page == "home":
                     <div class="bb-stat done">
                         <p class="bb-stat-value">{n_posted_today}</p>
                         <p class="bb-stat-label">Vandaag gepost</p>
+                    </div>
+                    <div class="bb-stat {_alert_cls}">
+                        <p class="bb-stat-value">{len(_alerts)}</p>
+                        <p class="bb-stat-label">Afhakers deze week</p>
                     </div>
                     <div class="bb-stat {schema_cls}">
                         <p class="bb-stat-value">{schema_val}</p>
@@ -1184,6 +1203,22 @@ if page == "home":
                 </p>
             </div>
             """, unsafe_allow_html=True)
+
+            if _alerts:
+                with st.expander(f"⚠️ {len(_alerts)} atleten met gemiste of halve trainingen (laatste 7 dagen)"):
+                    st.caption("≥2 geplande trainingen gemist of voor minder dan de helft uitgevoerd. "
+                               "Trainingen van vandaag tellen niet mee.")
+                    for _al in _alerts:
+                        c_al, c_btn_al = st.columns([4, 1], vertical_alignment="center")
+                        with c_al:
+                            st.markdown(
+                                f"**{_al['name']}** ({_al['group']}) — "
+                                f"{_al['n_low']} van {_al['n_planned']} geplande trainingen gemist/half"
+                            )
+                        with c_btn_al:
+                            if st.button("Dossier →", key=f"al_dos_{_al['user_key']}", use_container_width=True):
+                                st.session_state["dossier_user_key"] = _al["user_key"]
+                                go_to("dossier")
         else:
             st.markdown("""
             <div class="bb-day-panel">

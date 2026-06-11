@@ -1101,6 +1101,71 @@ def get_schema_end_dates(
     return results
 
 
+def get_compliance_alerts(
+    days_back: int = 7,
+    on_hold_keys: set | None = None,
+    exclude_groups: set | None = None,
+    score_threshold: float = 0.5,
+    min_low: int = 2,
+) -> list[dict]:
+    """
+    Vind atleten die de afgelopen week ≥ min_low geplande trainingen hebben
+    gemist of grotendeels niet hebben uitgevoerd (volume < score_threshold
+    van gepland). Vroege waarschuwing voor blessure of motivatieverlies.
+
+    Trainingen van vandaag tellen niet mee (kunnen nog gedaan worden).
+    """
+    today = date.today()
+    start = today - timedelta(days=days_back)
+    end = today - timedelta(days=1)
+    skip = set(on_hold_keys or [])
+    excl = {g.strip().lower() for g in (exclude_groups or set())}
+
+    athletes = [
+        a for a in get_athletes()
+        if a["user_key"] not in skip
+        and (a.get("group") or "").strip().lower() not in excl
+    ]
+
+    def _check(a: dict) -> dict | None:
+        workouts = get_workouts_deduped(a["user_key"], start, end)
+        planned = 0
+        low = 0
+        for w in workouts:
+            if w.get("is_race"):
+                continue
+            act = (w.get("Activities") or [{}])[0]
+            p_km = float(act.get("planned_amount") or 0)
+            p_sec = float(act.get("planned_duration") or 0)
+            if not (p_km or p_sec or (w.get("description") or "").strip()):
+                continue
+            planned += 1
+            if not w.get("has_actual_data"):
+                score = 0.0
+            elif p_km:
+                score = min(float(act.get("amount") or 0) / p_km, 1.0)
+            elif p_sec:
+                score = min(float(act.get("duration") or 0) / p_sec, 1.0)
+            else:
+                score = 1.0  # gepland zonder doelvolume → gedaan is gedaan
+            if score < score_threshold:
+                low += 1
+        if planned and low >= min_low:
+            return {
+                "name": a["name"],
+                "first_name": a["first_name"],
+                "user_key": a["user_key"],
+                "group": a.get("group", ""),
+                "n_planned": planned,
+                "n_low": low,
+            }
+        return None
+
+    alerts = _parallel_per_athlete(athletes, _check)
+    alerts.sort(key=lambda r: -r["n_low"])
+    return alerts
+
+
 # ---------------------------------------------------------------------------
 # Aankomende races
 # ---------------------------------------------------------------------------
