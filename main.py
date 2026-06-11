@@ -824,7 +824,7 @@ if page == "home":
       <div class="bb-hero-content">
         <img src="data:image/png;base64,{logo_wit_b64}" style="height:52px; margin-bottom:1.3rem;" />
         <p class="bb-hero-kicker">Coach Dashboard · {datum_str}</p>
-        <p class="bb-hero-title">{groet}, Jip</p>
+        <p class="bb-hero-title">{groet}, coach</p>
         <p class="bb-hero-sub">Direct verbonden met FinalSurge — AI-ondersteund coachen voor elke atleet.</p>
         <div class="bb-kpi-row">
             <div class="bb-kpi">
