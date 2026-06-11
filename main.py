@@ -2621,15 +2621,30 @@ elif page == "builder":
                 "Startdatum schema *",
                 value=date.today() + timedelta(days=(7 - date.today().weekday())),
                 key="builder_startdatum",
+                format="DD/MM/YYYY",
             )
+
+            # Aantal weken OF vaste einddatum — twee ingangen
+            c_wk, c_of = st.columns([3, 1])
+            with c_wk:
+                weken_keuze = st.number_input(
+                    "Aantal weken schema", min_value=1, max_value=52, value=8, step=1,
+                    key="builder_weken_keuze",
+                    help="De app berekent de einddatum automatisch op basis van de startdatum.",
+                )
+            with c_of:
+                st.markdown("<div style='padding-top:1.8rem; color:#8FA8CE; font-size:0.8rem;'>of kies datum:</div>", unsafe_allow_html=True)
+
+            _einddatum_auto = startdatum + timedelta(weeks=int(weken_keuze))
             c_datum1, c_datum2 = st.columns(2)
             with c_datum1:
                 schema_einddatum = st.date_input(
                     "Schema eindigt op",
-                    value=None,
+                    value=_einddatum_auto,
                     key="builder_schema_einddatum",
                     min_value=date.today(),
-                    help="Laat leeg als het schema doorloopt tot aan de hoofdrace.",
+                    format="DD/MM/YYYY",
+                    help="Automatisch berekend op basis van startdatum + weken. Pas aan als gewenst.",
                 )
             with c_datum2:
                 wedstrijddatum = st.date_input(
@@ -2637,6 +2652,7 @@ elif page == "builder":
                     value=None,
                     key="builder_wedstrijddatum",
                     min_value=date.today(),
+                    format="DD/MM/YYYY",
                     help="De uiteindelijke wedstrijddatum. Mag verder weg liggen dan het schema.",
                 )
             schema_target = schema_einddatum or wedstrijddatum
@@ -2645,9 +2661,9 @@ elif page == "builder":
                 if weken_berekend > 20:
                     st.warning(f"⚠️ {weken_berekend} weken is erg lang — overweeg dit schema in 2 blokken te splitsen.")
                 else:
-                    st.caption(f"📅 {weken_berekend} weken schema")
+                    st.caption(f"📅 {weken_berekend} weken schema · eindigt {schema_einddatum.day}/{schema_einddatum.month}/{schema_einddatum.year}")
                 if wedstrijddatum and schema_einddatum and wedstrijddatum > schema_einddatum:
-                    st.caption(f"🎯 Hoofddoel: {wedstrijddatum.day} {wedstrijddatum.strftime('%B %Y')} ({(wedstrijddatum - schema_einddatum).days // 7} weken na dit schema)")
+                    st.caption(f"🎯 Hoofddoel: {wedstrijddatum.day}/{wedstrijddatum.month}/{wedstrijddatum.year} ({(wedstrijddatum - schema_einddatum).days // 7} weken na dit schema)")
             race_prioriteit = st.radio(
                 "Race prioriteit",
                 options=["A-race (volledig pieken)", "B-race (lichte taper)", "C-race (geen taper)"],

@@ -847,7 +847,8 @@ CSV REGELS (OVERRIDE):
 
 WORKOUT BUILDER REGELS (OVERRIDE):
 - durationType: "TIME" (niet "DISTANCE")
-- duration: "HH:MM:SS" formaat (bijv. "00:45:00" voor 45 min, "00:03:00" voor 3 min)
+- duration: "MM:SS" formaat voor tijden onder 60 min (bijv. "45:00" voor 45 min, "03:00" voor 3 min, "10:00" voor 10 min)
+- duration: "H:MM:SS" formaat alleen als de tijd 60 min of meer is (bijv. "1:30:00" voor 90 min)
 - durationDist: null
 - targetIsTimeBased: true (in elk target-object)
 
@@ -1359,7 +1360,9 @@ def generate_builder_steps(
     target = "hr" if zone_type in ("heart_rate", "hartslag", "hr") else "pace"
 
     tijdnotitie = (
-        "\n\nLET OP — SCHEMA OP TIJD: gebruik durationType 'TIME' en duration 'HH:MM:SS'. durationDist = null."
+        "\n\nLET OP — SCHEMA OP TIJD: gebruik durationType 'TIME'. "
+        "duration formaat: MM:SS voor tijden onder 60 min (bijv. '45:00', '03:00', '10:00'). "
+        "Alleen H:MM:SS als de tijd 60 min of meer is. durationDist = null."
         if op_tijd else ""
     )
 
@@ -1427,6 +1430,15 @@ Genereer de FinalSurge WorkoutBuilder JSON voor deze workout."""
                 },
             ]
 
+        def _fix_duration(step: dict) -> None:
+            """Zet 'HH:MM:SS' om naar 'MM:SS' voor tijden onder 60 min (FinalSurge toont anders '00:MM:SS')."""
+            if step.get("durationType") != "TIME":
+                return
+            dur = step.get("duration") or ""
+            parts = dur.split(":")
+            if len(parts) == 3 and parts[0] == "00":
+                step["duration"] = f"{parts[1]}:{parts[2]}"
+
         def _fix_step_targets(step: dict) -> None:
             """Zorg dat elke stap een geldige niet-lege target array heeft."""
             t = step.get("target")
@@ -1445,9 +1457,11 @@ Genereer de FinalSurge WorkoutBuilder JSON voor deze workout."""
                     step["data"] = step.pop("steps")
                 # Fix targets op repeat-blok zelf
                 _fix_step_targets(step)
+                _fix_duration(step)
                 # Fix targets op alle inner steps
                 for inner in step.get("data", []):
                     _fix_step_targets(inner)
+                    _fix_duration(inner)
 
         return parsed.get("target_options", [])
     except Exception as e:
