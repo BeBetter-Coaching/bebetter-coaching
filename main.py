@@ -33,16 +33,14 @@ def _check_password() -> bool:
     if not correct:
         return True  # Geen wachtwoord ingesteld → lokaal gebruik
 
-    # Cookie-gebaseerde "onthoud mij"
+    # Cookie-gebaseerde "onthoud mij" via streamlit-cookies-controller
     try:
-        import extra_streamlit_components as stx
-        cookie_manager = stx.CookieManager(key="bb_cookie_mgr")
-        auth_cookie = cookie_manager.get("bb_auth")
-        if auth_cookie == "ok":
+        from streamlit_cookies_controller import CookieController
+        _cookies = CookieController(key="bb_cookie_ctrl")
+        if _cookies.get("bb_auth") == "ok":
             return True
     except Exception:
-        cookie_manager = None
-        auth_cookie = None
+        _cookies = None
 
     if st.session_state.get("authenticated"):
         return True
@@ -68,11 +66,9 @@ def _check_password() -> bool:
         if st.button("Inloggen →", type="primary", use_container_width=True):
             if pw == correct:
                 st.session_state["authenticated"] = True
-                if onthoud and cookie_manager:
+                if onthoud and _cookies:
                     try:
-                        from datetime import datetime, timedelta
-                        expires = datetime.now() + timedelta(days=365)
-                        cookie_manager.set("bb_auth", "ok", expires_at=expires)
+                        _cookies.set("bb_auth", "ok", max_age=365 * 24 * 3600)
                     except Exception:
                         pass
                 st.rerun()
