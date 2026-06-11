@@ -245,13 +245,19 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     felt = workout_data.get("felt")
     effort = workout_data.get("effort")
 
+    # FinalSurge: felt = 1-5 waarbij 1=Geweldig en 5=Vreselijk (lager = beter)
+    # effort = 1-10 waarbij 10=Max inspanning
+    _FELT_LABELS = {"1": "Geweldig", "2": "Goed", "3": "Normaal", "4": "Slecht", "5": "Vreselijk"}
+
     athlete_input_parts = []
     if felt or effort:
         rating_parts = []
         if felt:
-            rating_parts.append(f"Gevoel: {felt}")
+            felt_key = str(felt).split(".")[0]  # "2.0" → "2"
+            felt_label = _FELT_LABELS.get(felt_key, str(felt))
+            rating_parts.append(f"Gevoel: {felt_label} ({felt_key}/5 — schaal 1=Geweldig t/m 5=Vreselijk)")
         if effort:
-            rating_parts.append(f"Inspanning: {effort}/10")
+            rating_parts.append(f"Inspanning (RPE): {effort}/10 (1=zeer makkelijk, 10=maximaal)")
         athlete_input_parts.append(" | ".join(rating_parts))
     if post_notes:
         athlete_input_parts.append(post_notes)

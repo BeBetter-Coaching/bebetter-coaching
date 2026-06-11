@@ -1503,7 +1503,10 @@ elif page == "feedback":
                     felt = workout.get("felt")
                     effort = workout.get("effort")
                     if felt or effort:
-                        felt_str = f"😊 Gevoel: **{felt}**" if felt else ""
+                        _FELT_ICONS = {"1": "😄 Geweldig", "2": "🙂 Goed", "3": "😐 Normaal", "4": "😕 Slecht", "5": "😣 Vreselijk"}
+                        felt_key = str(felt).split(".")[0] if felt else ""
+                        felt_label = _FELT_ICONS.get(felt_key, str(felt)) if felt else ""
+                        felt_str = f"Gevoel: **{felt_label}**" if felt else ""
                         effort_str = f"💪 Inspanning: **{effort}/10**" if effort else ""
                         st.info("  ·  ".join(filter(None, [felt_str, effort_str])))
 
