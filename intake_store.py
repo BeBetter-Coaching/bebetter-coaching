@@ -6,6 +6,8 @@ privé repo BeBetter-Coaching/bebetter-data via de GitHub API.
 Lokaal (zonder GH_TOKEN) wordt een JSON-bestand naast de app gebruikt.
 """
 
+from __future__ import annotations
+
 import base64
 import json
 import os

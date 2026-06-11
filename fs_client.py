@@ -1,16 +1,31 @@
 """FinalSurge API client."""
 
+from __future__ import annotations
+
 import os
 import re
 import subprocess
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from typing import Optional
 
 BASE_URL = "https://beta.finalsurge.com/api"
 TOKEN_FILE = os.path.expanduser("~/.fs_auth_token")
 
+# Connect-timeout 5s, read-timeout 30s — voorkomt dat de app oneindig hangt
+_TIMEOUT = (5, 30)
+# Max parallelle requests bij per-atleet loops
+_MAX_WORKERS = 8
+
 _token: Optional[str] = None
+_coach_key: Optional[str] = None
+
+# Gedeelde sessie: hergebruikt TCP/TLS-verbindingen (sneller) en is thread-safe
+_session = requests.Session()
+_session.mount("https://", requests.adapters.HTTPAdapter(
+    pool_connections=_MAX_WORKERS, pool_maxsize=_MAX_WORKERS * 2
+))
 
 
 # ---------------------------------------------------------------------------
@@ -23,7 +38,8 @@ class TokenNotFoundError(Exception):
 
 def _read_cached_token() -> Optional[str]:
     if os.path.exists(TOKEN_FILE):
-        token = open(TOKEN_FILE).read().strip()
+        with open(TOKEN_FILE) as f:
+            token = f.read().strip()
         return token if token else None
     return None
 
@@ -63,8 +79,9 @@ def get_token() -> str:
 
 
 def reset_session():
-    global _token
+    global _token, _coach_key
     _token = None
+    _coach_key = None
     if os.path.exists(TOKEN_FILE):
         os.remove(TOKEN_FILE)
 
@@ -119,7 +136,8 @@ def _headers() -> dict:
 
 
 def _get(path: str, params: dict = None) -> dict:
-    resp = requests.get(f"{BASE_URL}/{path}", params=params, headers=_headers())
+    resp = _session.get(f"{BASE_URL}/{path}", params=params, headers=_headers(),
+                        timeout=_TIMEOUT)
     if resp.status_code == 401:
         raise TokenNotFoundError("Sessie verlopen — vernieuw je token.")
     resp.raise_for_status()
@@ -127,7 +145,8 @@ def _get(path: str, params: dict = None) -> dict:
 
 
 def _post(path: str, payload: dict, params: dict = None) -> dict:
-    resp = requests.post(f"{BASE_URL}/{path}", json=payload, params=params, headers=_headers())
+    resp = _session.post(f"{BASE_URL}/{path}", json=payload, params=params,
+                         headers=_headers(), timeout=_TIMEOUT)
     if resp.status_code == 401:
         raise TokenNotFoundError("Sessie verlopen — vernieuw je token.")
     resp.raise_for_status()
@@ -153,8 +172,12 @@ ACTIVITY_TYPE_KEYS = {
 # ---------------------------------------------------------------------------
 
 def get_coach_key() -> str:
+    global _coach_key
+    if _coach_key:
+        return _coach_key
     data = _get("Settings")
-    return (data.get("data") or {}).get("user_key") or ""
+    _coach_key = (data.get("data") or {}).get("user_key") or ""
+    return _coach_key
 
 
 def get_raw_team_data() -> dict:
@@ -253,17 +276,12 @@ def get_workouts(user_key: str, start: date, end: date, ishistory: bool = False)
     return data.get("data") or []
 
 
-def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> list[dict]:
+def get_workouts_deduped(user_key: str, start: date, end: date) -> list[dict]:
     """
-    Haal trainingslog op voor de afgelopen X maanden.
-    Voor de meest recente `detail_weeks` weken worden ook lapdata opgehaald,
-    zodat de AI interval-tempo's kan onderscheiden van het overall gemiddelde.
+    Haal workouts op via beide modi (history + planned) en dedupliceer op key.
+    Voltooide workouts zitten soms alleen in ishistory=true, geplande alleen
+    in ishistory=false — beide opvragen is dus nodig voor een compleet beeld.
     """
-    end = date.today()
-    start = end - timedelta(days=months * 30)
-    detail_cutoff = end - timedelta(weeks=detail_weeks)
-
-    # Haal workouts op via beide modi en dedupliceer
     try:
         w_history = get_workouts(user_key, start, end, ishistory=True)
     except Exception:
@@ -279,7 +297,36 @@ def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> l
         if k and k not in seen_keys:
             seen_keys.add(k)
             workouts.append(w)
+    return workouts
 
+
+def _parallel_per_athlete(athletes: list[dict], fetch_fn) -> list:
+    """
+    Voer fetch_fn(athlete) parallel uit voor alle atleten.
+    Geeft de niet-None resultaten terug in dezelfde volgorde als de input.
+    """
+    results: dict[int, object] = {}
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+        futures = {pool.submit(fetch_fn, a): i for i, a in enumerate(athletes)}
+        for fut in as_completed(futures):
+            try:
+                results[futures[fut]] = fut.result()
+            except Exception:
+                results[futures[fut]] = None
+    return [results[i] for i in range(len(athletes)) if results.get(i) is not None]
+
+
+def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> list[dict]:
+    """
+    Haal trainingslog op voor de afgelopen X maanden.
+    Voor de meest recente `detail_weeks` weken worden ook lapdata opgehaald,
+    zodat de AI interval-tempo's kan onderscheiden van het overall gemiddelde.
+    """
+    end = date.today()
+    start = end - timedelta(days=months * 30)
+    detail_cutoff = end - timedelta(weeks=detail_weeks)
+
+    workouts = get_workouts_deduped(user_key, start, end)
     if not workouts:
         return []
 
@@ -538,33 +585,23 @@ def get_workouts_needing_feedback(
     if athlete_filter:
         athletes = [a for a in athletes if a["user_key"] in athlete_filter]
 
+    # Workouts van alle atleten parallel ophalen — dit zijn veruit de meeste calls
+    _prefetched = dict(_parallel_per_athlete(
+        athletes,
+        lambda a: (a["user_key"], get_workouts_deduped(a["user_key"], start, end)),
+    ))
+
     results = []
 
     for athlete in athletes:
         user_key = athlete["user_key"]
-        # Haal workouts op via beide modi en dedupliceer — voltooide workouts
-        # zitten soms alleen in ishistory=true, geplande alleen in ishistory=false.
-        try:
-            w_history  = get_workouts(user_key, start, end, ishistory=True)
-        except Exception:
-            w_history = []
-        try:
-            w_planned  = get_workouts(user_key, start, end, ishistory=False)
-        except Exception:
-            w_planned = []
-        seen_keys = set()
-        workouts = []
-        for w in w_history + w_planned:
-            k = w.get("key")
-            if k and k not in seen_keys:
-                seen_keys.add(k)
-                workouts.append(w)
+        workouts = _prefetched.get(user_key, [])
 
         for w in workouts:
             post_notes = (w.get("post_workout_notes") or "").strip()
             comment_count = w.get("CommentCount") or 0
             has_data = bool(w.get("has_actual_data"))
-            felt = w.get("felt")        # bijv. "Good", "Bad"
+            felt = w.get("felt")        # 1-5: 1=Geweldig … 5=Vreselijk
             effort = w.get("effort")    # RPE 1-10
             workout_key = w.get("key")
 
@@ -952,44 +989,47 @@ def get_schema_end_dates(
     athletes = get_athletes_by_group()
     skip = set(on_hold_keys or [])
 
-    results = []
-    for group_name, members in athletes.items():
-        for athlete in members:
-            user_key = athlete["user_key"]
-            if user_key in skip:
-                continue
-            try:
-                workouts = get_workouts(user_key, today, end)
-            except Exception:
-                workouts = []
+    todo = [
+        {**athlete, "_group": group_name}
+        for group_name, members in athletes.items()
+        for athlete in members
+        if athlete["user_key"] not in skip
+    ]
 
-            # Alleen structured workouts tellen — races en losse events worden uitgesloten.
-            # Minder dan _MIN_SCHEMA_WORKOUTS = "los schema" (losse trainingen, geen echt schema).
-            planned_dates = [
-                w["workout_date"][:10]
-                for w in workouts
-                if w.get("workout_date")
-                and w.get("has_structured_workout")
-                and not w.get("is_race")
-            ]
+    def _fetch(athlete: dict) -> dict:
+        user_key = athlete["user_key"]
+        try:
+            workouts = get_workouts(user_key, today, end)
+        except Exception:
+            workouts = []
 
-            if len(planned_dates) >= _MIN_SCHEMA_WORKOUTS:
-                last_date_str = max(planned_dates)
-                last_date = date.fromisoformat(last_date_str)
-                days_left = (last_date - today).days
-            else:
-                last_date_str = None
-                last_date = None
-                days_left = None
+        # Alleen structured workouts tellen — races en losse events worden uitgesloten.
+        # Minder dan _MIN_SCHEMA_WORKOUTS = "los schema" (losse trainingen, geen echt schema).
+        planned_dates = [
+            w["workout_date"][:10]
+            for w in workouts
+            if w.get("workout_date")
+            and w.get("has_structured_workout")
+            and not w.get("is_race")
+        ]
 
-            results.append({
-                "name": athlete["name"],
-                "first_name": athlete["first_name"],
-                "user_key": user_key,
-                "group": group_name,
-                "last_date": last_date_str,
-                "days_left": days_left,
-            })
+        if len(planned_dates) >= _MIN_SCHEMA_WORKOUTS:
+            last_date_str = max(planned_dates)
+            days_left = (date.fromisoformat(last_date_str) - today).days
+        else:
+            last_date_str = None
+            days_left = None
+
+        return {
+            "name": athlete["name"],
+            "first_name": athlete["first_name"],
+            "user_key": user_key,
+            "group": athlete["_group"],
+            "last_date": last_date_str,
+            "days_left": days_left,
+        }
+
+    results = _parallel_per_athlete(todo, _fetch)
 
     # Sorteer: eerst geen schema, dan kortst lopende, dan langst
     def sort_key(r):
@@ -1036,46 +1076,52 @@ def get_upcoming_races(days_ahead: int = 21, athlete_filter: list[str] = None) -
     end = today + timedelta(days=days_ahead)
     athletes_by_group = get_athletes_by_group()
 
-    results = []
-    for group_name, members in athletes_by_group.items():
-        for athlete in members:
-            user_key = athlete["user_key"]
-            if athlete_filter and user_key not in athlete_filter:
+    todo = [
+        {**athlete, "_group": group_name}
+        for group_name, members in athletes_by_group.items()
+        for athlete in members
+        if not athlete_filter or athlete["user_key"] in athlete_filter
+    ]
+
+    def _fetch(athlete: dict) -> list[dict]:
+        user_key = athlete["user_key"]
+        try:
+            workouts = get_workouts(user_key, today, end)
+        except Exception:
+            return []
+
+        races = []
+        for w in workouts:
+            if not w.get("is_race"):
                 continue
-            try:
-                workouts = get_workouts(user_key, today, end)
-            except Exception:
+            workout_key = w.get("key") or w.get("workout_key")
+            if not workout_key:
                 continue
 
-            for w in workouts:
-                if not w.get("is_race"):
-                    continue
-                workout_key = w.get("key") or w.get("workout_key")
-                if not workout_key:
-                    continue
+            workout_date = (w.get("workout_date") or "")[:10]
+            name = w.get("name") or w.get("description") or "Race"
+            description = w.get("description") or ""
+            race_type = detect_race_type(name, description)
 
-                workout_date = (w.get("workout_date") or "")[:10]
-                name = w.get("name") or w.get("description") or "Race"
-                description = w.get("description") or ""
-                race_type = detect_race_type(name, description)
+            # Bestaande comments ophalen
+            comment_count = w.get("CommentCount") or 0
+            comments = get_comments(workout_key, user_key) if comment_count else []
 
-                # Bestaande comments ophalen
-                comment_count = w.get("CommentCount") or 0
-                comments = get_comments(workout_key, user_key) if comment_count else []
+            races.append({
+                "athlete_name": athlete["name"],
+                "athlete_first_name": athlete["first_name"],
+                "athlete_key": user_key,
+                "workout_key": workout_key,
+                "workout_name": name,
+                "workout_date": workout_date,
+                "race_type": race_type,
+                "description": description,
+                "comments": comments,
+                "group": athlete["_group"],
+            })
+        return races
 
-                results.append({
-                    "athlete_name": athlete["name"],
-                    "athlete_first_name": athlete["first_name"],
-                    "athlete_key": user_key,
-                    "workout_key": workout_key,
-                    "workout_name": name,
-                    "workout_date": workout_date,
-                    "race_type": race_type,
-                    "description": description,
-                    "comments": comments,
-                    "group": group_name,
-                })
-
+    results = [race for races in _parallel_per_athlete(todo, _fetch) for race in races]
     results.sort(key=lambda r: r["workout_date"])
     return results
 

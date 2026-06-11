@@ -1,5 +1,7 @@
 """Claude API integratie voor het genereren van coach feedback."""
 
+from __future__ import annotations
+
 import anthropic
 from datetime import date
 

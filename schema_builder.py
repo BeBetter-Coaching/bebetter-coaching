@@ -1,5 +1,7 @@
 """Schema bouwen — AI trainingsplan generator voor BeBetter Coaching."""
 
+from __future__ import annotations
+
 import re
 import io
 import csv

@@ -1,5 +1,7 @@
 """BeBetter Coaching — Coach App."""
 
+from __future__ import annotations
+
 import streamlit as st
 from datetime import date, timedelta
 import fs_client
@@ -66,7 +68,8 @@ def _check_password() -> bool:
             onthoud = st.checkbox("Onthoud mij op dit apparaat", value=True)
             submitted = st.form_submit_button("Inloggen →", type="primary", use_container_width=True)
         if submitted:
-            if pw == correct:
+            import hmac
+            if hmac.compare_digest(pw.encode(), correct.encode()):
                 st.session_state["authenticated"] = True
                 if onthoud:
                     st.query_params["k"] = _token(correct)
@@ -855,6 +858,7 @@ div[data-baseweb="select"] > div {
 # Hulpfunctie: logo als base64 voor HTML embedding
 # ---------------------------------------------------------------------------
 
+@st.cache_data(show_spinner=False)
 def _logo_b64(path: str) -> str:
     data = Path(path).read_bytes()
     return base64.b64encode(data).decode()
@@ -1072,8 +1076,12 @@ if page == "home":
         if st.button("🔄 Ververs", key="btn_day_refresh", use_container_width=True):
             with st.spinner("Dagstatus ophalen…"):
                 try:
-                    _fb = fs_client.get_workouts_needing_feedback(days_back=3)
-                    _races = fs_client.get_upcoming_races(days_ahead=14)
+                    from concurrent.futures import ThreadPoolExecutor as _TPE
+                    with _TPE(max_workers=2) as _pool:
+                        _fb_fut = _pool.submit(fs_client.get_workouts_needing_feedback, 3)
+                        _races_fut = _pool.submit(fs_client.get_upcoming_races, 14)
+                        _fb = _fb_fut.result()
+                        _races = _races_fut.result()
                     st.session_state["day_stats"] = {
                         "feedback_pending": len(_fb),
                         "races_coming": len(_races),
@@ -1093,7 +1101,10 @@ if page == "home":
             race_cls = "done" if races_coming == 0 else ""
 
             # Schema-tegel: gebruik al geladen schema_data als die beschikbaar is
-            _on_hold_keys = set(intake_store.load_on_hold().keys())
+            # On-hold via session state — geen GitHub-call bij elke render
+            if "schema_on_hold" not in st.session_state:
+                st.session_state["schema_on_hold"] = intake_store.load_on_hold()
+            _on_hold_keys = set(st.session_state["schema_on_hold"].keys())
             _schema_data = st.session_state.get("schema_data")
             if _schema_data is not None:
                 schema_aflopen = sum(
@@ -2362,7 +2373,7 @@ elif page == "schema":
     with col_load:
         if "schema_data" not in st.session_state:
             if st.button("📥 Laad schema-overzicht", type="primary", key="schema_load"):
-                with st.spinner("Schema-einddatums ophalen voor alle atleten… (±30 sec)"):
+                with st.spinner("Schema-einddatums ophalen voor alle atleten…"):
                     try:
                         st.session_state["schema_data"] = fs_client.get_schema_end_dates(
                             horizon_days=60, on_hold_keys=on_hold_keys
