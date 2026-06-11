@@ -815,6 +815,44 @@ div[data-baseweb="select"] > div {
     font-size: 0.88rem;
 }
 
+/* ══ DAGSTATUS-TEGELS (klikbare knoppen) ══ */
+.st-key-bb_day_tiles [data-testid="stButton"] button[kind="secondary"] {
+    background: #10294E !important;
+    border: 1.5px solid #1E3A66 !important;
+    border-radius: 13px !important;
+    padding: 0.85rem 1.1rem !important;
+    min-height: 96px;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    box-shadow: none !important;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+.st-key-bb_day_tiles [data-testid="stButton"] button[kind="secondary"]:hover {
+    transform: translateY(-3px);
+    border-color: #5EE6EB !important;
+    box-shadow: 0 10px 24px rgba(2,10,26,0.45) !important;
+}
+.st-key-bb_day_tiles [data-testid="stButton"] button p {
+    color: #5B7396 !important;
+    font-size: 0.66rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    line-height: 1.5;
+    margin: 0;
+    text-align: left;
+}
+.st-key-bb_day_tiles [data-testid="stButton"] button p strong {
+    display: block;
+    font-family: 'Archivo Black', sans-serif !important;
+    font-size: 1.5rem !important;
+    font-weight: 400 !important;
+    color: #FFFFFF;
+    letter-spacing: 0;
+    line-height: 1.25;
+    margin-bottom: 0.15rem;
+}
+
 /* ══ RESPONSIVE ══ */
 @media (max-width: 900px) {
     .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -857,6 +895,11 @@ div[data-baseweb="select"] > div {
     .bb-mrow-title { font-size: 0.82rem; letter-spacing: 0.04em; }
     .bb-stat { min-width: 110px; padding: 0.75rem 0.9rem; }
     .bb-stat-value { font-size: 1.2rem; }
+    .st-key-bb_day_tiles [data-testid="stButton"] button[kind="secondary"] {
+        min-height: 60px;
+        padding: 0.55rem 0.8rem !important;
+    }
+    .st-key-bb_day_tiles [data-testid="stButton"] button p strong { font-size: 1.15rem !important; }
     .bb-day-panel { padding: 0.9rem 0.85rem; border-radius: 12px; }
     .bb-section-label { font-size: 0.64rem; }
     .module-header-title { font-size: 1.1rem; }
@@ -1170,31 +1213,59 @@ if page == "home":
             _alerts = day_stats.get("compliance_alerts", [])
             _alert_cls = "done" if not _alerts else "attention"
 
+            # Tegels zijn klikbare knoppen — kleur per status via dynamische CSS
+            _TILE_COLORS = {"done": "#5DCAA5", "attention": "#FAC775", "": "#FFFFFF"}
+            _tile_states = {
+                "tile_fb": fb_cls,
+                "tile_posted": "done",
+                "tile_alerts": _alert_cls,
+                "tile_schema": schema_cls,
+                "tile_races": race_cls,
+            }
+            _tile_css = "\n".join(
+                f".st-key-{_k} [data-testid='stButton'] button[kind='secondary'] p strong "
+                f"{{ color: {_TILE_COLORS.get(_v, '#FFFFFF')} !important; }}"
+                + (
+                    f"\n.st-key-{_k} [data-testid='stButton'] button[kind='secondary'] "
+                    f"{{ border-color: {_TILE_COLORS[_v]}66 !important; }}"
+                    if _v else ""
+                )
+                for _k, _v in _tile_states.items()
+            )
+            st.markdown(f"<style>{_tile_css}</style>", unsafe_allow_html=True)
+
+            def _open_feedback_alle():
+                st.session_state.pop("workouts", None)
+                st.session_state.pop("last_filter", None)
+                go_to("feedback")
+
+            with st.container(key="bb_day_tiles"):
+                t1, t2, t3, t4, t5 = st.columns(5)
+                with t1:
+                    if st.button(f"**{fb_pending}**  \nWachten op feedback",
+                                 key="tile_fb", use_container_width=True):
+                        _open_feedback_alle()
+                with t2:
+                    if st.button(f"**{n_posted_today}**  \nVandaag gepost",
+                                 key="tile_posted", use_container_width=True):
+                        _open_feedback_alle()
+                with t3:
+                    if st.button(f"**{len(_alerts)}**  \nAfhakers deze week",
+                                 key="tile_alerts", use_container_width=True):
+                        st.session_state["_alerts_open"] = True
+                        st.rerun()
+                with t4:
+                    if st.button(f"**{schema_val}**  \nSchema's aflopen ≤14d",
+                                 key="tile_schema", use_container_width=True):
+                        go_to("schema")
+                with t5:
+                    if st.button(f"**{races_coming}**  \nRaces komende 14 dgn",
+                                 key="tile_races", use_container_width=True):
+                        go_to("races")
+
             st.markdown(f"""
-            <div class="bb-day-panel">
-                <div class="bb-stat-row">
-                    <div class="bb-stat {fb_cls}">
-                        <p class="bb-stat-value">{fb_pending}</p>
-                        <p class="bb-stat-label">Wachten op feedback</p>
-                    </div>
-                    <div class="bb-stat done">
-                        <p class="bb-stat-value">{n_posted_today}</p>
-                        <p class="bb-stat-label">Vandaag gepost</p>
-                    </div>
-                    <div class="bb-stat {_alert_cls}">
-                        <p class="bb-stat-value">{len(_alerts)}</p>
-                        <p class="bb-stat-label">Afhakers deze week</p>
-                    </div>
-                    <div class="bb-stat {schema_cls}">
-                        <p class="bb-stat-value">{schema_val}</p>
-                        <p class="bb-stat-label">Schema's aflopen (&le;14d)</p>
-                    </div>
-                    <div class="bb-stat {race_cls}">
-                        <p class="bb-stat-value">{races_coming}</p>
-                        <p class="bb-stat-label">Races komende 14 dagen</p>
-                    </div>
-                </div>
-                <div class="bb-progress-track">
+            <div class="bb-day-panel" style="padding:0.9rem 1.6rem 1rem 1.6rem; margin-top:0.3rem;">
+                <div class="bb-progress-track" style="margin-top:0;">
                     <div class="bb-progress-fill" style="width:{pct}%"></div>
                 </div>
                 <p style="font-size:0.72rem; color:#8FA8CE; margin:0.45rem 0 0 0;">
@@ -1205,7 +1276,11 @@ if page == "home":
             """, unsafe_allow_html=True)
 
             if _alerts:
-                with st.expander(f"⚠️ {len(_alerts)} atleten met gemiste of halve trainingen (laatste 7 dagen)"):
+                _alerts_open = st.session_state.pop("_alerts_open", False)
+                with st.expander(
+                    f"⚠️ {len(_alerts)} atleten met gemiste of halve trainingen (laatste 7 dagen)",
+                    expanded=_alerts_open,
+                ):
                     st.caption("≥2 geplande trainingen gemist of voor minder dan de helft uitgevoerd. "
                                "Trainingen van vandaag tellen niet mee.")
                     for _al in _alerts:
