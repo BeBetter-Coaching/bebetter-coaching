@@ -279,18 +279,20 @@ def get_workouts(user_key: str, start: date, end: date, ishistory: bool = False)
 def get_workouts_deduped(user_key: str, start: date, end: date) -> list[dict]:
     """
     Haal workouts op via beide modi (history + planned) en dedupliceer op key.
-    Voltooide workouts zitten soms alleen in ishistory=true, geplande alleen
-    in ishistory=false — beide opvragen is dus nodig voor een compleet beeld.
+    History en planned worden tegelijk opgehaald om latency te halveren.
     """
-    try:
-        w_history = get_workouts(user_key, start, end, ishistory=True)
-    except Exception:
-        w_history = []
-    try:
-        w_planned = get_workouts(user_key, start, end, ishistory=False)
-    except Exception:
-        w_planned = []
-    seen_keys = set()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_hist = pool.submit(get_workouts, user_key, start, end, True)
+        fut_plan = pool.submit(get_workouts, user_key, start, end, False)
+        try:
+            w_history = fut_hist.result()
+        except Exception:
+            w_history = []
+        try:
+            w_planned = fut_plan.result()
+        except Exception:
+            w_planned = []
+    seen_keys: set[str] = set()
     workouts = []
     for w in w_history + w_planned:
         k = w.get("key")
@@ -571,157 +573,186 @@ def get_workouts_needing_feedback(
     include_planned_no_notes: bool = False,
 ) -> list[dict]:
     """
-    Geeft workouts terug op basis van filters.
+    Geeft workouts terug die coaching-aandacht nodig hebben.
 
-    athlete_filter: lijst van user_keys; None = alle atleten
-    include_data_only: als True, ook voltooide ongeplande workouts zonder athlete-input
-    include_planned_no_notes: als True, ook geplande voltooide workouts zonder athlete-input
+    Drie parallelle fasen om latency te minimaliseren:
+      1. Alle atleten-workouts tegelijk ophalen (2×parallel per atleet)
+      2. Comments ophalen voor pre-gefilterde candidates
+      3. Workout-details ophalen voor definitief geselecteerde workouts
     """
     end = date.today()
     start = end - timedelta(days=days_back)
-    coach_key = get_coach_key()
+    today_str = date.today().isoformat()
+    coach_key = get_coach_key()  # gecachet na eerste call
     athletes = get_athletes()
-
     if athlete_filter:
         athletes = [a for a in athletes if a["user_key"] in athlete_filter]
 
-    # Workouts van alle atleten parallel ophalen — dit zijn veruit de meeste calls
-    _prefetched = dict(_parallel_per_athlete(
+    def _is_athlete_comment(c: dict) -> bool:
+        if "is_athlete" in c:
+            return bool(c["is_athlete"])
+        return c.get("user_key") != coach_key
+
+    def _ts(c: dict) -> str:
+        return c.get("timestamp") or c.get("created_at") or ""
+
+    # ── Fase 1: workouts parallel ophalen ──────────────────────────────────
+    prefetched = dict(_parallel_per_athlete(
         athletes,
         lambda a: (a["user_key"], get_workouts_deduped(a["user_key"], start, end)),
     ))
 
-    results = []
-
+    # ── Pre-filter op workout-data (geen API-calls nodig) ──────────────────
+    candidates: list[dict] = []
     for athlete in athletes:
         user_key = athlete["user_key"]
-        workouts = _prefetched.get(user_key, [])
-
-        for w in workouts:
+        for w in prefetched.get(user_key, []):
             post_notes = (w.get("post_workout_notes") or "").strip()
             comment_count = w.get("CommentCount") or 0
             has_data = bool(w.get("has_actual_data"))
-            felt = w.get("felt")        # 1-5: 1=Geweldig … 5=Vreselijk
-            effort = w.get("effort")    # RPE 1-10
+            felt = w.get("felt")
+            effort = w.get("effort")
             workout_key = w.get("key")
-
             if not workout_key:
                 continue
 
             has_athlete_input = bool(post_notes or comment_count or felt or effort)
             is_data_only = has_data and not has_athlete_input
 
-            today_str = date.today().isoformat()
             workout_date_str = (w.get("workout_date") or "")[:10]
             is_past = bool(workout_date_str) and workout_date_str < today_str
-            # Overgeslagen training: verleden datum, niet voltooid, geen notities
             is_skipped = is_past and not has_data and not has_athlete_input
 
-            # Gepland? → activiteit heeft planned_amount/planned_duration of workout heeft beschrijving
-            activities_raw = w.get("Activities") or []
-            first_act_raw = activities_raw[0] if activities_raw else {}
+            first_act = (w.get("Activities") or [{}])[0]
             is_planned_workout = bool(
-                first_act_raw.get("planned_amount") or
-                first_act_raw.get("planned_duration") or
+                first_act.get("planned_amount") or
+                first_act.get("planned_duration") or
                 (w.get("description") or "").strip()
             )
-            # Geplande training voltooid zonder notities van de atleet
             is_planned_no_notes = is_past and has_data and not has_athlete_input and is_planned_workout
 
-            # Sla over als er niks te doen is
             if (
                 not has_athlete_input
                 and not (include_data_only and (is_data_only or is_skipped))
                 and not (include_planned_no_notes and is_planned_no_notes)
             ):
                 continue
-
-            # Vandaag of toekomst zonder data/notities = gepland maar nog niet gedaan → niet tonen
             if include_data_only and not has_athlete_input and not is_data_only and not is_past:
                 continue
 
-            # Check comments en onderscheid atleet vs coach
-            comments = get_comments(workout_key, user_key) if comment_count else []
-
-            def is_athlete_comment(c):
-                if "is_athlete" in c:
-                    return bool(c["is_athlete"])
-                return c.get("user_key") != coach_key
-
-            athlete_comments = [c for c in comments if is_athlete_comment(c)]
-            coach_comments = [c for c in comments if not is_athlete_comment(c)]
-
-            if (
-                not post_notes and not felt and not effort and not athlete_comments
-                and not (include_data_only and (is_data_only or is_skipped))
-                and not (include_planned_no_notes and is_planned_no_notes)
-            ):
-                continue
-
-            # Sorteer comments op timestamp zodat we zeker weten wie als laatste sprak
-            def _comment_ts(c):
-                return c.get("timestamp") or c.get("created_at") or ""
-            comments_sorted = sorted(comments, key=_comment_ts)
-
-            # Sla over als coach het laatste woord had (atleet heeft nog niet gereageerd)
-            # Uitzondering: als de laatste coach-comment van VÓÓR de trainingsdatum was
-            # (bijv. een succeswens) en er daarna post_notes zijn ingevuld, toon dan toch.
-            last_coach_ts = max(
-                (_comment_ts(c) for c in coach_comments), default=""
-            ) if coach_comments else ""
-            coach_responded_after_workout = (
-                bool(last_coach_ts) and last_coach_ts[:10] > workout_date_str
-            )
-            post_notes_need_response = bool(post_notes) and not coach_responded_after_workout
-
-            if coach_comments and not athlete_comments:
-                if not post_notes_need_response:
-                    continue
-            if coach_comments and athlete_comments and comments_sorted:
-                if not is_athlete_comment(comments_sorted[-1]):
-                    continue
-
-            details = get_workout_details(workout_key, user_key)
-
-            # Bouw volledige gespreksthread in chronologische volgorde
-            thread = []
-            # Voeg post_notes toe als eerste bericht van de atleet (alleen voor AI — niet weergeven)
-            if post_notes:
-                thread.append({
-                    "tekst": post_notes,
-                    "van": "atleet",
-                    "naam": athlete["first_name"],
-                    "timestamp": "",
-                    "_display": False,  # al apart weergegeven als "Post-workout notities"
-                })
-            for c in comments_sorted:
-                tekst = c.get("comment") or ""
-                if tekst.strip():
-                    thread.append({
-                        "tekst": tekst,
-                        "van": "atleet" if is_athlete_comment(c) else "coach",
-                        "naam": c.get("first_name") or ("jij" if not is_athlete_comment(c) else athlete["first_name"]),
-                        "timestamp": c.get("timestamp", ""),
-                    })
-
-            results.append({
-                "athlete_name": athlete["name"],
-                "athlete_first_name": athlete["first_name"],
-                "athlete_key": user_key,
+            candidates.append({
+                "athlete": athlete,
+                "w": w,
                 "workout_key": workout_key,
-                "workout_name": w.get("name") or w.get("description") or "Training",
-                "workout_date": (w.get("workout_date") or "")[:10],
+                "workout_date_str": workout_date_str,
                 "post_notes": post_notes,
+                "comment_count": comment_count,
                 "felt": felt,
                 "effort": effort,
-                "athlete_comments": [
-                    c.get("comment", "") for c in athlete_comments if c.get("comment")
-                ],
-                "thread": thread,
-                "details": details,
-                "data_only": is_data_only,
-                "planned_no_notes": is_planned_no_notes,
+                "has_athlete_input": has_athlete_input,
+                "is_data_only": is_data_only,
+                "is_skipped": is_skipped,
+                "is_planned_no_notes": is_planned_no_notes,
             })
+
+    # ── Fase 2: comments parallel ophalen ─────────────────────────────────
+    def _fetch_comments(cand: dict) -> dict:
+        if cand["comment_count"]:
+            cand["_comments"] = get_comments(
+                cand["workout_key"], cand["athlete"]["user_key"]
+            )
+        else:
+            cand["_comments"] = []
+        return cand
+
+    with_comments = _parallel_per_athlete(candidates, _fetch_comments)
+
+    # ── Comment-gebaseerde filter ──────────────────────────────────────────
+    detail_candidates: list[dict] = []
+    for cand in with_comments:
+        comments = cand["_comments"]
+        comments_sorted = sorted(comments, key=_ts)
+        athlete_comments = [c for c in comments if _is_athlete_comment(c)]
+        coach_comments   = [c for c in comments if not _is_athlete_comment(c)]
+        post_notes = cand["post_notes"]
+        workout_date_str = cand["workout_date_str"]
+
+        if (
+            not post_notes and not cand["felt"] and not cand["effort"]
+            and not athlete_comments
+            and not (include_data_only and (cand["is_data_only"] or cand["is_skipped"]))
+            and not (include_planned_no_notes and cand["is_planned_no_notes"])
+        ):
+            continue
+
+        last_coach_ts = max((_ts(c) for c in coach_comments), default="") if coach_comments else ""
+        coach_responded_after = bool(last_coach_ts) and last_coach_ts[:10] > workout_date_str
+        post_notes_need_response = bool(post_notes) and not coach_responded_after
+
+        if coach_comments and not athlete_comments:
+            if not post_notes_need_response:
+                continue
+        if coach_comments and athlete_comments and comments_sorted:
+            if not _is_athlete_comment(comments_sorted[-1]):
+                continue
+
+        cand["_athlete_comments"] = athlete_comments
+        cand["_comments_sorted"] = comments_sorted
+        detail_candidates.append(cand)
+
+    # ── Fase 3: workout-details parallel ophalen ───────────────────────────
+    def _fetch_details(cand: dict) -> dict:
+        cand["_details"] = get_workout_details(
+            cand["workout_key"], cand["athlete"]["user_key"]
+        )
+        return cand
+
+    final = _parallel_per_athlete(detail_candidates, _fetch_details)
+
+    # ── Resultaten bouwen ─────────────────────────────────────────────────
+    results = []
+    for cand in final:
+        athlete = cand["athlete"]
+        post_notes = cand["post_notes"]
+        athlete_comments = cand["_athlete_comments"]
+        comments_sorted = cand["_comments_sorted"]
+
+        thread: list[dict] = []
+        if post_notes:
+            thread.append({
+                "tekst": post_notes,
+                "van": "atleet",
+                "naam": athlete["first_name"],
+                "timestamp": "",
+                "_display": False,
+            })
+        for c in comments_sorted:
+            tekst = c.get("comment") or ""
+            if tekst.strip():
+                is_coach = not _is_athlete_comment(c)
+                thread.append({
+                    "tekst": tekst,
+                    "van": "coach" if is_coach else "atleet",
+                    "naam": c.get("first_name") or ("jij" if is_coach else athlete["first_name"]),
+                    "timestamp": c.get("timestamp", ""),
+                })
+
+        results.append({
+            "athlete_name": athlete["name"],
+            "athlete_first_name": athlete["first_name"],
+            "athlete_key": athlete["user_key"],
+            "workout_key": cand["workout_key"],
+            "workout_name": cand["w"].get("name") or cand["w"].get("description") or "Training",
+            "workout_date": cand["workout_date_str"],
+            "post_notes": post_notes,
+            "felt": cand["felt"],
+            "effort": cand["effort"],
+            "athlete_comments": [c.get("comment", "") for c in athlete_comments if c.get("comment")],
+            "thread": thread,
+            "details": cand.get("_details", {}),
+            "data_only": cand["is_data_only"],
+            "planned_no_notes": cand["is_planned_no_notes"],
+        })
 
     return results
 
