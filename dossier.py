@@ -72,13 +72,33 @@ def _week_label(d: date) -> str:
     return f"{iso[0]}-W{iso[1]:02d}"
 
 
+def _workout_score(e: dict) -> float:
+    """
+    Compliance-score 0–1 voor een geplande training.
+
+    Niet binair: een halve training of een vervangende (kracht)training
+    waarbij nauwelijks gepland volume is gedraaid, scoort laag — FinalSurge
+    zet 'completed' namelijk al op ja zodra er íéts aan data op de geplande
+    workout staat.
+    """
+    if not e.get("completed"):
+        return 0.0
+    planned_km = float(e.get("planned_km") or 0)
+    planned_min = float(e.get("planned_min") or 0)
+    if planned_km:
+        return min(float(e.get("actual_km") or 0) / planned_km, 1.0)
+    if planned_min:
+        return min(float(e.get("actual_min") or 0) / planned_min, 1.0)
+    return 1.0  # gepland zonder doelvolume (bijv. losse beschrijving) → gedaan is gedaan
+
+
 def _analyse_log(log: list[dict]) -> dict:
     """Bereken compliance, weekvolume en gevoel/RPE-trend uit het log."""
     today = date.today()
     cutoff_8w = today - timedelta(weeks=8)
 
-    planned_8w = 0
-    completed_of_planned_8w = 0
+    scores_8w: list[float] = []
+    n_vol = n_deels = n_gemist = 0
     week_km: dict[str, float] = {}
     trend_rows = []
     races = []
@@ -93,9 +113,14 @@ def _analyse_log(log: list[dict]) -> dict:
 
         is_planned = bool(e.get("planned_km") or e.get("planned_min") or e.get("description"))
         if d >= cutoff_8w and is_planned and not e.get("is_race"):
-            planned_8w += 1
-            if e.get("completed"):
-                completed_of_planned_8w += 1
+            score = _workout_score(e)
+            scores_8w.append(score)
+            if score >= 0.9:
+                n_vol += 1
+            elif score > 0:
+                n_deels += 1
+            else:
+                n_gemist += 1
 
         if e.get("completed"):
             wk = _week_label(d)
@@ -139,14 +164,15 @@ def _analyse_log(log: list[dict]) -> dict:
         df_trend = pd.DataFrame(trend_rows).set_index("datum").sort_index()
 
     compliance = (
-        round(completed_of_planned_8w / planned_8w * 100)
-        if planned_8w else None
+        round(sum(scores_8w) / len(scores_8w) * 100)
+        if scores_8w else None
     )
 
     return {
         "compliance": compliance,
-        "planned_8w": planned_8w,
-        "completed_8w": completed_of_planned_8w,
+        "n_vol": n_vol,
+        "n_deels": n_deels,
+        "n_gemist": n_gemist,
         "df_weeks": df_weeks,
         "df_trend": df_trend,
         "races": races,
@@ -286,8 +312,11 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
         m2.metric(
             "Compliance (8 wkn)",
             f"{analyse['compliance']}%",
-            f"{analyse['completed_8w']}/{analyse['planned_8w']} trainingen",
+            f"{analyse['n_vol']} volledig · {analyse['n_deels']} deels · {analyse['n_gemist']} gemist",
             delta_color="off",
+            help="Per geplande training: uitgevoerd volume t.o.v. gepland volume "
+                 "(km of tijd). Een halve training telt als 50%, een vervangende "
+                 "training zonder gepland volume telt laag mee.",
         )
     else:
         m2.metric("Compliance (8 wkn)", "—", "geen geplande trainingen", delta_color="off")
