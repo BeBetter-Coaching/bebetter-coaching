@@ -163,6 +163,23 @@ def save_skipped(skipped: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Afgehandelde afhaker-meldingen
+# ---------------------------------------------------------------------------
+
+_ALERTS_LOCAL = os.path.join(_BASE_DIR, ".alerts_handled.json")
+
+
+def load_alerts_handled() -> dict:
+    """Afgehandelde afhakers. Dict: user_key → {datum, coach}."""
+    return _load_json("alerts_handled.json", _ALERTS_LOCAL)
+
+
+def save_alerts_handled(handled: dict) -> tuple[bool, str]:
+    """Sla afgehandelde afhakers op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("alerts_handled.json", _ALERTS_LOCAL, handled, "Update alerts_handled via app")
+
+
+# ---------------------------------------------------------------------------
 # Coach-notities per atleet
 # ---------------------------------------------------------------------------
 

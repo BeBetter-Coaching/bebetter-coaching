@@ -1210,7 +1210,21 @@ if page == "home":
                 schema_val = "—"
                 schema_cls = ""
 
-            _alerts = day_stats.get("compliance_alerts", [])
+            # Afgehandelde afhakers (gedeeld tussen coaches) — 7 dagen gedempt,
+            # daarna komt de atleet vanzelf terug als het patroon aanhoudt
+            if "_alerts_handled" not in st.session_state:
+                try:
+                    st.session_state["_alerts_handled"] = intake_store.load_alerts_handled()
+                except Exception:
+                    st.session_state["_alerts_handled"] = {}
+            _handled = st.session_state["_alerts_handled"]
+            _handled_cutoff = (date.today() - timedelta(days=7)).isoformat()
+
+            _alerts = [
+                a for a in day_stats.get("compliance_alerts", [])
+                if (_handled.get(a["user_key"]) or {}).get("datum", "") < _handled_cutoff
+                or a["user_key"] not in _handled
+            ]
             _alert_cls = "done" if not _alerts else "attention"
 
             # Tegels zijn klikbare knoppen — kleur per status via dynamische CSS
@@ -1282,14 +1296,34 @@ if page == "home":
                     expanded=_alerts_open,
                 ):
                     st.caption("≥2 geplande trainingen gemist of voor minder dan de helft uitgevoerd. "
-                               "Trainingen van vandaag tellen niet mee.")
+                               "Trainingen van vandaag tellen niet mee. "
+                               "**Afgehandeld** verbergt de atleet 7 dagen uit deze lijst — voor beide coaches.")
                     for _al in _alerts:
-                        c_al, c_btn_al = st.columns([4, 1], vertical_alignment="center")
+                        c_al, c_done_al, c_btn_al = st.columns([3.4, 1.1, 1.1], vertical_alignment="center")
                         with c_al:
                             st.markdown(
                                 f"**{_al['name']}** ({_al['group']}) — "
                                 f"{_al['n_low']} van {_al['n_planned']} geplande trainingen gemist/half"
                             )
+                        with c_done_al:
+                            if st.button("✓ Afgehandeld", key=f"al_done_{_al['user_key']}",
+                                         use_container_width=True,
+                                         help="Bijv. contact gehad of bewust rustig aan — 7 dagen niet meer tonen"):
+                                _handled[_al["user_key"]] = {
+                                    "datum": date.today().isoformat(),
+                                    "naam": _al["name"],
+                                }
+                                # Oude vermeldingen (>30 dagen) opruimen
+                                _prune = (date.today() - timedelta(days=30)).isoformat()
+                                for _hk in list(_handled.keys()):
+                                    if (_handled[_hk] or {}).get("datum", "") < _prune:
+                                        del _handled[_hk]
+                                st.session_state["_alerts_handled"] = _handled
+                                try:
+                                    intake_store.save_alerts_handled(_handled)
+                                except Exception:
+                                    pass
+                                st.rerun()
                         with c_btn_al:
                             if st.button("Dossier →", key=f"al_dos_{_al['user_key']}", use_container_width=True):
                                 st.session_state["dossier_user_key"] = _al["user_key"]
