@@ -47,10 +47,21 @@ def _check_password() -> bool:
         return True
 
     # Loginscherm
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1, 1.4, 1])
     with col2:
-        st.image("assets/logo_zwart.png", width=180)
-        st.markdown("## BeBetter Coaching")
+        try:
+            _logo_login = _logo_b64("assets/logo_zwart.png")
+            st.markdown(f"""
+            <div style="text-align:center; padding: 3rem 0 1.6rem 0;">
+                <img src="data:image/png;base64,{_logo_login}" style="width:210px; max-width:70%;" />
+                <p style="color:#5B6B82; font-size:0.74rem; font-weight:700; letter-spacing:0.2em;
+                          text-transform:uppercase; margin-top:0.9rem;">Coach Dashboard</p>
+                <div style="height:3px; background:linear-gradient(90deg,#2876FB,#5EE6EB);
+                            border-radius:2px; max-width:120px; margin:1.1rem auto 0 auto;"></div>
+            </div>
+            """, unsafe_allow_html=True)
+        except Exception:
+            st.markdown("## BeBetter Coaching")
         pw = st.text_input("Wachtwoord", type="password", key="login_pw")
         onthoud = st.checkbox("Onthoud mij op dit apparaat", value=True, key="login_remember")
         if st.button("Inloggen →", type="primary", use_container_width=True):
@@ -149,55 +160,169 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* ── BeBetter Coaching brand kleuren ──────────────────────────
-   Primair blauw : #2876FB
-   Cyan accent   : #5EE6EB
-   Navy tekst    : #0F2A4B
-   Donkerblauw   : #3167C3
-   Achtergrond   : #F7F9FC
-   Sectie bg     : #F1F6FF
-   Rand           : #E6EBF2
-   Subtekst      : #4D4D4D
-──────────────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════
+   BeBetter Coaching — Premium Design System
+   Navy        : #0B1F3A   Primair blauw : #2876FB
+   Cyan accent : #5EE6EB   Donkerblauw   : #1E56B8
+   Achtergrond : #F6F8FC   Kaart         : #FFFFFF
+   Rand        : #E3E9F2   Subtekst      : #5B6B82
+   ════════════════════════════════════════════════════════════ */
 
-.block-container { padding-top: 1rem !important; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
-/* ── Landingspagina cards ── */
-.bb-card {
-    background: #FFFFFF;
-    border: 1.5px solid #E6EBF2;
+html, body, [data-testid="stAppViewContainer"], .stMarkdown, button, input, textarea, select {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+/* ── App achtergrond met subtiele gloed ── */
+[data-testid="stAppViewContainer"] {
+    background:
+        radial-gradient(1100px 480px at 88% -8%, rgba(94,230,235,0.10), transparent 60%),
+        radial-gradient(900px 420px at -8% 2%, rgba(40,118,251,0.07), transparent 55%),
+        #F6F8FC;
+}
+
+/* ── Streamlit chrome verbergen ── */
+#MainMenu, footer, [data-testid="stDecoration"] { display: none !important; }
+header[data-testid="stHeader"] { background: transparent !important; }
+
+.block-container { padding-top: 1.2rem !important; max-width: 1260px; }
+
+/* ── Typografie ── */
+h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spacing: -0.015em !important; }
+[data-testid="stCaptionContainer"], .stCaption { color: #5B6B82 !important; }
+
+/* ══ HERO BANNER (home) ══ */
+.bb-hero {
+    position: relative;
+    background: linear-gradient(130deg, #0B1F3A 0%, #122E5C 48%, #1E56B8 100%);
+    border-radius: 22px;
+    padding: 2.5rem 2.8rem 2.3rem 2.8rem;
+    margin-bottom: 2rem;
+    overflow: hidden;
+    box-shadow: 0 20px 50px rgba(11,31,58,0.25);
+}
+.bb-hero::before {
+    content: "";
+    position: absolute;
+    top: -120px; right: -80px;
+    width: 420px; height: 420px;
+    background: radial-gradient(circle, rgba(94,230,235,0.22), transparent 65%);
+    pointer-events: none;
+}
+.bb-hero::after {
+    content: "";
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #2876FB, #5EE6EB);
+}
+.bb-hero-kicker {
+    color: #5EE6EB;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin: 0 0 0.4rem 0;
+}
+.bb-hero-title {
+    color: #FFFFFF;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 0 0 0.3rem 0;
+}
+.bb-hero-sub {
+    color: #9FB6D9;
+    font-size: 0.95rem;
+    font-weight: 500;
+    margin: 0;
+}
+.bb-kpi-row { display: flex; gap: 0.9rem; margin-top: 1.6rem; flex-wrap: wrap; }
+.bb-kpi {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.13);
+    backdrop-filter: blur(8px);
     border-radius: 14px;
-    padding: 1.8rem 1.6rem 1.6rem 1.6rem;
-    height: 220px;
+    padding: 0.85rem 1.5rem;
+    min-width: 120px;
+}
+.bb-kpi-value { color: #FFFFFF; font-size: 1.55rem; font-weight: 800; margin: 0; line-height: 1.2; }
+.bb-kpi-label {
+    color: #8FA8CE;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 0;
+}
+
+/* ── Sectie-label ── */
+.bb-section-label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #5B6B82;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin: 0.4rem 0 0.9rem 0;
+}
+
+/* ══ MODULE CARDS ══ */
+.bb-card {
+    position: relative;
+    background: #FFFFFF;
+    border: 1px solid #E3E9F2;
+    border-radius: 16px;
+    padding: 1.6rem 1.5rem 1.4rem 1.5rem;
+    height: 225px;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-    box-shadow: 0 2px 12px rgba(40,118,251,0.06);
-    transition: box-shadow 0.2s, border-color 0.2s;
+    gap: 0.7rem;
+    box-shadow: 0 1px 3px rgba(15,42,75,0.05), 0 8px 24px rgba(15,42,75,0.05);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
     overflow: hidden;
 }
-.bb-card:hover {
-    box-shadow: 0 6px 24px rgba(40,118,251,0.13);
-    border-color: #2876FB;
+.bb-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #2876FB, #5EE6EB);
+    opacity: 0;
+    transition: opacity 0.18s ease;
 }
-.bb-card-icon { font-size: 1.8rem; line-height: 1; }
+.bb-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(40,118,251,0.10), 0 18px 40px rgba(40,118,251,0.13);
+    border-color: #BBD3FA;
+}
+.bb-card:hover::before { opacity: 1; }
+.bb-card-icon {
+    width: 48px; height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #EAF2FF 0%, #EFFCFD 100%);
+    border: 1px solid #DCE8FB;
+    border-radius: 13px;
+    font-size: 1.4rem;
+    line-height: 1;
+}
 .bb-card-title {
-    font-size: 1rem;
+    font-size: 0.98rem;
     font-weight: 800;
-    color: #0F2A4B;
-    letter-spacing: 0.04em;
+    color: #0B1F3A;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     margin: 0;
 }
 .bb-card-desc {
-    font-size: 0.85rem;
-    color: #4D4D4D;
-    line-height: 1.55;
+    font-size: 0.84rem;
+    color: #5B6B82;
+    line-height: 1.6;
     flex-grow: 1;
     margin: 0;
     overflow: hidden;
     display: -webkit-box;
-    -webkit-line-clamp: 5;
+    -webkit-line-clamp: 4;
     -webkit-box-orient: vertical;
 }
 .bb-card-soon {
@@ -210,130 +335,197 @@ st.markdown("""
     text-transform: uppercase;
     padding: 0.2rem 0.7rem;
     border-radius: 20px;
-    border: 1px solid #E6EBF2;
+    border: 1px solid #E3E9F2;
 }
 
 /* ── Dividers ── */
-.bb-divider {
-    border: none;
-    border-top: 1.5px solid #E6EBF2;
-    margin: 1.5rem 0;
-}
+.bb-divider { border: none; border-top: 1px solid #E3E9F2; margin: 1.6rem 0; }
 
-/* ── Tagline / subtekst ── */
+/* ── Tagline ── */
 .bb-tagline {
-    color: #4D4D4D;
-    font-size: 0.8rem;
-    letter-spacing: 0.14em;
+    color: #5B6B82;
+    font-size: 0.78rem;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     margin: 0;
 }
 
-/* ── Primaire knoppen ── */
+/* ══ KNOPPEN ══ */
+div[data-testid="stButton"] button {
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    transition: all 0.15s ease !important;
+}
+div[data-testid="stButton"] button[kind="secondary"] {
+    background: #FFFFFF !important;
+    border: 1.5px solid #E3E9F2 !important;
+    color: #0B1F3A !important;
+    box-shadow: 0 1px 2px rgba(15,42,75,0.05) !important;
+}
+div[data-testid="stButton"] button[kind="secondary"]:hover {
+    border-color: #2876FB !important;
+    color: #2876FB !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(40,118,251,0.12) !important;
+}
 div[data-testid="stButton"] button[kind="primary"] {
-    background: linear-gradient(135deg, #2876FB, #3167C3) !important;
+    background: linear-gradient(135deg, #2876FB, #1E56B8) !important;
     color: #FFFFFF !important;
     border: none !important;
     font-weight: 700 !important;
-    letter-spacing: 0.04em !important;
-    border-radius: 8px !important;
-    box-shadow: 0 2px 8px rgba(40,118,251,0.25) !important;
+    letter-spacing: 0.03em !important;
+    box-shadow: 0 4px 14px rgba(40,118,251,0.30) !important;
 }
 div[data-testid="stButton"] button[kind="primary"]:hover {
-    background: linear-gradient(135deg, #3167C3, #2876FB) !important;
-    box-shadow: 0 4px 16px rgba(40,118,251,0.35) !important;
+    background: linear-gradient(135deg, #3D85FF, #2876FB) !important;
+    box-shadow: 0 6px 20px rgba(40,118,251,0.40) !important;
+    transform: translateY(-1px);
+}
+
+/* ══ INVOERVELDEN ══ */
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea,
+[data-testid="stNumberInput"] input,
+[data-testid="stDateInput"] input {
+    background: #FFFFFF !important;
+    border-radius: 10px !important;
+}
+[data-testid="stTextInput"] > div > div,
+[data-testid="stTextArea"] > div > div,
+[data-testid="stNumberInput"] > div > div,
+[data-testid="stDateInput"] > div > div {
+    background: #FFFFFF !important;
+    border-radius: 10px !important;
+    border-color: #E3E9F2 !important;
+}
+div[data-baseweb="select"] > div {
+    background: #FFFFFF !important;
+    border-radius: 10px !important;
+    border-color: #E3E9F2 !important;
+}
+
+/* ══ EXPANDERS ══ */
+[data-testid="stExpander"] {
+    background: #FFFFFF;
+    border: 1px solid #E8EDF5 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 4px rgba(15,42,75,0.04);
+    overflow: hidden;
+}
+[data-testid="stExpander"] summary { font-weight: 600; }
+
+/* ══ ALERTS (info/success/warning/error) ══ */
+[data-testid="stAlert"] {
+    border-radius: 12px !important;
+    border: none !important;
+    box-shadow: 0 1px 4px rgba(15,42,75,0.05);
+}
+
+/* ══ PROGRESS BAR ══ */
+[data-testid="stProgress"] > div > div > div {
+    background: linear-gradient(90deg, #2876FB, #5EE6EB) !important;
+    border-radius: 6px;
 }
 
 /* ── Module header balk ── */
 .module-header {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 2px solid #E6EBF2;
-    margin-bottom: 1.5rem;
+    gap: 0.9rem;
+    padding-bottom: 0.7rem;
+    margin-bottom: 1.2rem;
+}
+.module-header-icon {
+    width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #EAF2FF 0%, #EFFCFD 100%);
+    border: 1px solid #DCE8FB;
+    border-radius: 12px;
+    font-size: 1.25rem;
+    line-height: 1;
+    flex-shrink: 0;
 }
 .module-header-title {
-    font-size: 1.4rem;
+    font-size: 1.35rem;
     font-weight: 800;
-    color: #0F2A4B;
+    color: #0B1F3A;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
     margin: 0;
 }
 
 /* ── Sidebar ── */
 [data-testid="stSidebar"] {
-    background-color: #F1F6FF !important;
-    border-right: 1.5px solid #E6EBF2 !important;
+    background: #FFFFFF !important;
+    border-right: 1px solid #E3E9F2 !important;
 }
 
-/* ── Gradient accent lijn bovenaan header ── */
+/* ── Gradient accent lijn ── */
 .bb-hero-accent {
     height: 4px;
     background: linear-gradient(90deg, #2876FB, #5EE6EB);
     border-radius: 2px;
-    margin-bottom: 2rem;
+    margin-bottom: 1.6rem;
 }
 
 /* ── Schema bouwen — stap-indicator ── */
-.bb-step-row {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-}
+.bb-step-row { display: flex; gap: 0.6rem; margin-bottom: 1.6rem; }
 .bb-step-pill {
     flex: 1;
     text-align: center;
-    padding: 0.45rem 0.5rem;
-    border-radius: 8px;
+    padding: 0.55rem 0.5rem;
+    border-radius: 10px;
     font-size: 0.82rem;
     font-weight: 600;
     letter-spacing: 0.04em;
-    background: #E6EBF2;
-    color: #4D4D4D;
-    border: 1.5px solid #E6EBF2;
+    background: #FFFFFF;
+    color: #5B6B82;
+    border: 1.5px solid #E3E9F2;
+    box-shadow: 0 1px 2px rgba(15,42,75,0.04);
+    transition: all 0.15s ease;
 }
 .bb-step-pill.active {
-    background: #2876FB;
+    background: linear-gradient(135deg, #2876FB, #1E56B8);
     color: #FFFFFF;
-    border-color: #2876FB;
+    border-color: transparent;
     font-weight: 800;
+    box-shadow: 0 4px 14px rgba(40,118,251,0.30);
 }
 .bb-step-pill.done {
-    background: #F1F6FF;
+    background: #EAF2FF;
     color: #2876FB;
-    border-color: #2876FB;
+    border-color: #BBD3FA;
 }
 
 /* ── Intake sectiekaart ── */
 .bb-intake-section {
-    background: #F7F9FC;
-    border: 1.5px solid #E6EBF2;
-    border-radius: 12px;
+    background: #FFFFFF;
+    border: 1px solid #E3E9F2;
+    border-radius: 14px;
     padding: 1.2rem 1.4rem 1rem 1.4rem;
     margin-bottom: 1rem;
+    box-shadow: 0 1px 4px rgba(15,42,75,0.04);
 }
 .bb-intake-label {
-    font-size: 0.78rem;
-    font-weight: 700;
+    font-size: 0.74rem;
+    font-weight: 800;
     color: #2876FB;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     margin-bottom: 0.6rem;
 }
 
 /* ── Week-groep in CSV preview ── */
 .bb-week-header {
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     font-weight: 700;
-    color: #4D4D4D;
+    color: #0B1F3A;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    background: #F1F6FF;
-    border-radius: 6px;
-    padding: 0.25rem 0.7rem;
-    margin: 0.6rem 0 0.2rem 0;
+    background: linear-gradient(90deg, #EAF2FF, #F6FAFF);
+    border-radius: 8px;
+    padding: 0.35rem 0.8rem;
+    margin: 0.7rem 0 0.25rem 0;
     border-left: 3px solid #2876FB;
 }
 .bb-training-row {
@@ -469,12 +661,12 @@ def module_header(title: str, icon: str):
     with col_title:
         st.markdown(f"""
         <div class="module-header">
-            <span style="font-size:1.6rem">{icon}</span>
+            <span class="module-header-icon">{icon}</span>
             <p class="module-header-title">{title}</p>
         </div>
         """, unsafe_allow_html=True)
     with col_logo:
-        st.image("assets/logo_zwart.png", width=140)
+        st.image("assets/logo_zwart.png", width=130)
     st.markdown("")
 
 
@@ -483,28 +675,40 @@ def module_header(title: str, icon: str):
 # ===========================================================================
 
 if page == "home":
-    # Gradient accent lijn + logo
-    logo_b64 = _logo_b64("assets/logo_zwart.png")
+    # ── Hero banner met KPI's ──
+    logo_wit_b64 = _logo_b64("assets/logo_wit.png")
+    n_athletes = sum(len(m) for m in athletes_by_group.values())
+    n_groups = len(athletes_by_group)
+    _maanden = ["januari", "februari", "maart", "april", "mei", "juni",
+                "juli", "augustus", "september", "oktober", "november", "december"]
+    _dagen = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
+    _vandaag = date.today()
+    datum_str = f"{_dagen[_vandaag.weekday()]} {_vandaag.day} {_maanden[_vandaag.month - 1]} {_vandaag.year}"
+
     st.markdown(f"""
-    <div class="bb-hero-accent"></div>
-    <div style="text-align:center; padding: 1rem 0 0.5rem 0;">
-        <img src="data:image/png;base64,{logo_b64}"
-             style="width: 280px; max-width: 75%; margin-bottom: 0.6rem;" />
-        <p class="bb-tagline">Coach dashboard</p>
+    <div class="bb-hero">
+        <img src="data:image/png;base64,{logo_wit_b64}" style="height:52px; margin-bottom:1.3rem;" />
+        <p class="bb-hero-kicker">Coach Dashboard · {datum_str}</p>
+        <p class="bb-hero-title">Welkom terug, Jip</p>
+        <p class="bb-hero-sub">Direct verbonden met FinalSurge — AI-ondersteund coachen voor elke atleet.</p>
+        <div class="bb-kpi-row">
+            <div class="bb-kpi">
+                <p class="bb-kpi-value">{n_athletes}</p>
+                <p class="bb-kpi-label">Atleten</p>
+            </div>
+            <div class="bb-kpi">
+                <p class="bb-kpi-value">{n_groups}</p>
+                <p class="bb-kpi-label">Groepen</p>
+            </div>
+            <div class="bb-kpi">
+                <p class="bb-kpi-value">5</p>
+                <p class="bb-kpi-label">Modules</p>
+            </div>
+        </div>
     </div>
-    <hr class="bb-divider">
     """, unsafe_allow_html=True)
 
-    # Welkomsttekst
-    st.markdown("""
-    <div style="text-align:center; max-width: 620px; margin: 0 auto 2.5rem auto;">
-        <p style="color:#4D4D4D; font-size:1.05rem; line-height:1.75;">
-            Welkom, Jip. Kies hieronder een module om te starten.
-            De app verbindt direct met FinalSurge en gebruikt AI om jou als coach
-            sneller en slimmer te laten werken.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<p class="bb-section-label">Modules</p>', unsafe_allow_html=True)
 
     # Vier kaarten
     col1, col2, col3, col4 = st.columns(4, gap="medium")
@@ -555,7 +759,7 @@ if page == "home":
 
     # Tweede rij kaarten
     st.markdown("<br>", unsafe_allow_html=True)
-    col5, col6, col7, col8 = st.columns(4, gap="large")
+    col5, col6, col7, col8 = st.columns(4, gap="medium")
     with col5:
         st.markdown("""
         <div class="bb-card">
@@ -601,14 +805,14 @@ if page == "home":
                     st.error(f"Fout: {e}")
 
     # Footer
-    st.markdown(f"""
+    st.markdown("""
     <hr class="bb-divider">
-    <div style="text-align:center;">
-        <p style="color:#4D4D4D; font-size:0.75rem; letter-spacing:0.1em; text-transform:uppercase;">
-            Iedere training telt &nbsp;·&nbsp; Iedere loper telt &nbsp;·&nbsp; {date.today().strftime('%d %B %Y')}
+    <div style="text-align:center; padding-bottom: 1rem;">
+        <p style="color:#5B6B82; font-size:0.72rem; font-weight:600; letter-spacing:0.16em; text-transform:uppercase; margin-bottom:0.8rem;">
+            Iedere training telt &nbsp;·&nbsp; Iedere loper telt
         </p>
-        <div style="height:4px; background:linear-gradient(90deg,#2876FB,#5EE6EB);
-                    border-radius:2px; max-width:200px; margin:0.8rem auto 0 auto;"></div>
+        <div style="height:3px; background:linear-gradient(90deg,#2876FB,#5EE6EB);
+                    border-radius:2px; max-width:160px; margin:0 auto;"></div>
     </div>
     """, unsafe_allow_html=True)
 
