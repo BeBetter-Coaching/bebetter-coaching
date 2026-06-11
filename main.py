@@ -199,15 +199,32 @@ header[data-testid="stHeader"] { background: transparent !important; }
 h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spacing: -0.015em !important; }
 [data-testid="stCaptionContainer"], .stCaption { color: #5B6B82 !important; }
 
+/* ── Entrance animaties ── */
+@keyframes bbFadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes bbShimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+@keyframes bbPulseGlow {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 1; }
+}
+
 /* ══ HERO BANNER (home) ══ */
 .bb-hero {
     position: relative;
     background: linear-gradient(130deg, #0B1F3A 0%, #122E5C 48%, #1E56B8 100%);
+    background-size: cover;
+    background-position: center 30%;
     border-radius: 22px;
     padding: 2.5rem 2.8rem 2.3rem 2.8rem;
     margin-bottom: 2rem;
     overflow: hidden;
-    box-shadow: 0 20px 50px rgba(11,31,58,0.25);
+    box-shadow: 0 20px 50px rgba(11,31,58,0.30);
+    animation: bbFadeUp 0.5s ease both;
 }
 .bb-hero::before {
     content: "";
@@ -216,14 +233,18 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
     width: 420px; height: 420px;
     background: radial-gradient(circle, rgba(94,230,235,0.22), transparent 65%);
     pointer-events: none;
+    animation: bbPulseGlow 6s ease-in-out infinite;
 }
 .bb-hero::after {
     content: "";
     position: absolute;
     bottom: 0; left: 0; right: 0;
     height: 3px;
-    background: linear-gradient(90deg, #2876FB, #5EE6EB);
+    background: linear-gradient(90deg, #2876FB 25%, #5EE6EB 50%, #2876FB 75%);
+    background-size: 200% 100%;
+    animation: bbShimmer 5s linear infinite;
 }
+.bb-hero-content { position: relative; z-index: 2; }
 .bb-hero-kicker {
     color: #5EE6EB;
     font-size: 0.72rem;
@@ -247,12 +268,19 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
 }
 .bb-kpi-row { display: flex; gap: 0.9rem; margin-top: 1.6rem; flex-wrap: wrap; }
 .bb-kpi {
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.13);
-    backdrop-filter: blur(8px);
+    background: rgba(11,31,58,0.35);
+    border: 1px solid rgba(255,255,255,0.16);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border-radius: 14px;
     padding: 0.85rem 1.5rem;
     min-width: 120px;
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+.bb-kpi:hover {
+    transform: translateY(-3px) scale(1.03);
+    background: rgba(40,118,251,0.30);
+    border-color: rgba(94,230,235,0.45);
 }
 .bb-kpi-value { color: #FFFFFF; font-size: 1.55rem; font-weight: 800; margin: 0; line-height: 1.2; }
 .bb-kpi-label {
@@ -286,24 +314,31 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
     flex-direction: column;
     gap: 0.7rem;
     box-shadow: 0 1px 3px rgba(15,42,75,0.05), 0 8px 24px rgba(15,42,75,0.05);
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease, border-color 0.22s ease;
     overflow: hidden;
+    animation: bbFadeUp 0.5s ease both;
 }
+/* Gestaffelde entrance per kolom */
+[data-testid="stColumn"]:nth-of-type(1) .bb-card { animation-delay: 0.05s; }
+[data-testid="stColumn"]:nth-of-type(2) .bb-card { animation-delay: 0.12s; }
+[data-testid="stColumn"]:nth-of-type(3) .bb-card { animation-delay: 0.19s; }
+[data-testid="stColumn"]:nth-of-type(4) .bb-card { animation-delay: 0.26s; }
 .bb-card::before {
     content: "";
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 3px;
-    background: linear-gradient(90deg, #2876FB, #5EE6EB);
+    background: linear-gradient(90deg, #2876FB 25%, #5EE6EB 50%, #2876FB 75%);
+    background-size: 200% 100%;
     opacity: 0;
-    transition: opacity 0.18s ease;
+    transition: opacity 0.2s ease;
 }
 .bb-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 4px 12px rgba(40,118,251,0.10), 0 18px 40px rgba(40,118,251,0.13);
+    transform: translateY(-6px);
+    box-shadow: 0 4px 12px rgba(40,118,251,0.10), 0 22px 48px rgba(40,118,251,0.16);
     border-color: #BBD3FA;
 }
-.bb-card:hover::before { opacity: 1; }
+.bb-card:hover::before { opacity: 1; animation: bbShimmer 2.5s linear infinite; }
 .bb-card-icon {
     width: 48px; height: 48px;
     display: flex; align-items: center; justify-content: center;
@@ -312,6 +347,11 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
     border-radius: 13px;
     font-size: 1.4rem;
     line-height: 1;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+}
+.bb-card:hover .bb-card-icon {
+    transform: scale(1.12) rotate(-6deg);
+    box-shadow: 0 6px 16px rgba(40,118,251,0.20);
 }
 .bb-card-title {
     font-size: 0.98rem;
@@ -337,6 +377,7 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
     padding: 1.4rem 1.6rem 1.3rem 1.6rem;
     box-shadow: 0 1px 3px rgba(15,42,75,0.05), 0 8px 24px rgba(15,42,75,0.05);
     margin-bottom: 1.6rem;
+    animation: bbFadeUp 0.5s ease 0.08s both;
 }
 .bb-stat-row { display: flex; gap: 0.9rem; flex-wrap: wrap; margin-top: 0.4rem; }
 .bb-stat {
@@ -346,9 +387,18 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
     border: 1px solid #E3E9F2;
     border-radius: 13px;
     padding: 0.95rem 1.2rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.bb-stat:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(15,42,75,0.10);
 }
 .bb-stat.done { background: linear-gradient(135deg, #F0FBF4, #E8F8EE); border-color: #CDEBD8; }
-.bb-stat.attention { background: linear-gradient(135deg, #FFF8F0, #FFF3E5); border-color: #F5DFC2; }
+.bb-stat.attention {
+    background: linear-gradient(135deg, #FFF8F0, #FFF3E5);
+    border-color: #F5DFC2;
+}
+.bb-stat.attention .bb-stat-value { color: #C2410C; }
 .bb-stat-value { font-size: 1.5rem; font-weight: 800; color: #0B1F3A; margin: 0; line-height: 1.2; }
 .bb-stat-label {
     font-size: 0.66rem;
@@ -367,9 +417,11 @@ h1, h2, h3 { color: #0B1F3A !important; font-weight: 800 !important; letter-spac
 }
 .bb-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #2876FB, #5EE6EB);
+    background: linear-gradient(90deg, #2876FB 25%, #5EE6EB 50%, #2876FB 75%);
+    background-size: 200% 100%;
     border-radius: 6px;
-    transition: width 0.4s ease;
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+    animation: bbShimmer 3s linear infinite;
 }
 .bb-card-soon {
     display: inline-block;
@@ -595,6 +647,26 @@ def _logo_b64(path: str) -> str:
     return base64.b64encode(data).decode()
 
 
+@st.cache_data(show_spinner=False)
+def _team_photo_b64() -> str | None:
+    """Teamfoto voor de hero — verkleind en gecachet. None als er geen foto is."""
+    for naam in ("team.jpg", "team.jpeg", "team.png"):
+        p = Path("assets") / naam
+        if p.exists():
+            try:
+                from PIL import Image
+                img = Image.open(p)
+                img = img.convert("RGB")
+                if img.width > 1600:
+                    img = img.resize((1600, int(img.height * 1600 / img.width)))
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=80)
+                return base64.b64encode(buf.getvalue()).decode()
+            except Exception:
+                return None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
@@ -721,7 +793,7 @@ def module_header(title: str, icon: str):
 # ===========================================================================
 
 if page == "home":
-    # ── Hero banner met KPI's ──
+    # ── Hero banner met teamfoto + KPI's ──
     logo_wit_b64 = _logo_b64("assets/logo_wit.png")
     n_athletes = sum(len(m) for m in athletes_by_group.values())
     n_groups = len(athletes_by_group)
@@ -731,11 +803,28 @@ if page == "home":
     _vandaag = date.today()
     datum_str = f"{_dagen[_vandaag.weekday()]} {_vandaag.day} {_maanden[_vandaag.month - 1]} {_vandaag.year}"
 
+    from datetime import datetime as _dt
+    _uur = _dt.now().hour
+    groet = "Goedemorgen" if _uur < 12 else ("Goedemiddag" if _uur < 18 else "Goedenavond")
+
+    # Teamfoto als hero-achtergrond (donkere overlay links zodat tekst leesbaar blijft)
+    _team_b64 = _team_photo_b64()
+    if _team_b64:
+        hero_bg = (
+            "background: "
+            "linear-gradient(100deg, rgba(11,31,58,0.96) 0%, rgba(15,40,80,0.88) 42%, "
+            "rgba(11,31,58,0.30) 78%, rgba(11,31,58,0.15) 100%), "
+            f"url(data:image/jpeg;base64,{_team_b64});"
+        )
+    else:
+        hero_bg = ""
+
     st.markdown(f"""
-    <div class="bb-hero">
+    <div class="bb-hero" style="{hero_bg}">
+      <div class="bb-hero-content">
         <img src="data:image/png;base64,{logo_wit_b64}" style="height:52px; margin-bottom:1.3rem;" />
         <p class="bb-hero-kicker">Coach Dashboard · {datum_str}</p>
-        <p class="bb-hero-title">Welkom terug, Jip</p>
+        <p class="bb-hero-title">{groet}, Jip</p>
         <p class="bb-hero-sub">Direct verbonden met FinalSurge — AI-ondersteund coachen voor elke atleet.</p>
         <div class="bb-kpi-row">
             <div class="bb-kpi">
@@ -751,6 +840,7 @@ if page == "home":
                 <p class="bb-kpi-label">Modules</p>
             </div>
         </div>
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
