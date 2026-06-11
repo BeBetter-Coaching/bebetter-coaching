@@ -157,6 +157,14 @@ def _save_skipped(skipped: dict):
     except Exception:
         pass
 
+def _day_stats_mark_done(posted: bool):
+    """Houd de dagstatus-tegels live bij na posten/overslaan van feedback."""
+    _ds = st.session_state.get("day_stats")
+    if _ds:
+        _ds["feedback_pending"] = max(0, _ds.get("feedback_pending", 0) - 1)
+        if posted:
+            _ds["posted_today"] = _ds.get("posted_today", 0) + 1
+
 st.set_page_config(
     page_title="BeBetter Coaching",
     page_icon="assets/logo_zwart.png",
@@ -1145,16 +1153,22 @@ if page == "home":
                 _alerts = _alerts_fut.result()
             except Exception:
                 _alerts = []
+        from datetime import datetime as _dtn
         st.session_state["day_stats"] = {
             "feedback_pending": len(_fb),
             "posted_today": _fb_stats.get("posted_today", 0),
             "races_coming": len(_races),
             "compliance_alerts": _alerts,
             "loaded_at": date.today().isoformat(),
+            "loaded_ts": _dtn.now().strftime("%H:%M"),
         }
 
-    # Auto-laden bij eerste bezoek deze sessie (één poging — bij een fout
-    # blijft de Ververs-knop als handmatige weg)
+    # Auto-laden bij eerste bezoek deze sessie of bij een nieuwe dag
+    # (één poging — bij een fout blijft de Ververs-knop als handmatige weg)
+    _ds_oud = st.session_state.get("day_stats")
+    if _ds_oud is not None and _ds_oud.get("loaded_at") != date.today().isoformat():
+        st.session_state["day_stats"] = None
+        st.session_state.pop("_day_stats_attempted", None)
     if (
         st.session_state.get("day_stats") is None
         and not st.session_state.get("_day_stats_attempted")
@@ -1283,7 +1297,7 @@ if page == "home":
                     <div class="bb-progress-fill" style="width:{pct}%"></div>
                 </div>
                 <p style="font-size:0.72rem; color:#8FA8CE; margin:0.45rem 0 0 0;">
-                    Dagvoortgang feedback: <b>{pct}%</b> &nbsp;·&nbsp; status van {day_stats.get('loaded_at','')}
+                    Dagvoortgang feedback: <b>{pct}%</b> &nbsp;·&nbsp; status van {day_stats.get('loaded_at','')} {day_stats.get('loaded_ts','')} — ververs voor de actuele stand
                     {" · schema-tegel: laad schema-overzicht voor actuele data" if _schema_data is None else ""}
                 </p>
             </div>
@@ -1573,6 +1587,9 @@ elif page == "feedback":
                     athlete_filter=athlete_filter,
                     include_data_only=include_data_only,
                     include_planned_no_notes=include_planned_no_notes,
+                    # Los schema krijgt geen feedback — alleen tonen als een
+                    # atleet expliciet in de zijbalk is aangevinkt
+                    exclude_groups=None if athlete_filter else {"los schema"},
                 )
                 st.session_state["workouts"] = workouts
                 for w in workouts:
@@ -1788,6 +1805,7 @@ elif page == "feedback":
                                 _skipped[wk] = date.today().isoformat()
                                 _save_skipped(_skipped)
                                 st.session_state[f"posted_{wk}"] = True
+                                _day_stats_mark_done(posted=False)
                                 st.rerun()
 
                     elif st.session_state.get(f"zelf_{wk}"):
@@ -1810,6 +1828,7 @@ elif page == "feedback":
                                         )
                                         st.session_state[f"posted_{wk}"] = True
                                         st.session_state.pop(f"zelf_{wk}", None)
+                                        _day_stats_mark_done(posted=True)
                                         _session_log = st.session_state.setdefault("session_feedback_log", [])
                                         _session_log.append({
                                             "athlete_name": workout["athlete_name"],
@@ -1844,6 +1863,7 @@ elif page == "feedback":
                                         coach_athlete_key=COACH_ATHLETE_KEY.get(workout["athlete_key"]),
                                     )
                                     st.session_state[f"posted_{wk}"] = True
+                                    _day_stats_mark_done(posted=True)
                                     # Sla op voor sessie-samenvatting
                                     _session_log = st.session_state.setdefault("session_feedback_log", [])
                                     _session_log.append({
@@ -1860,6 +1880,7 @@ elif page == "feedback":
                                 _skipped[wk] = date.today().isoformat()
                                 _save_skipped(_skipped)
                                 st.session_state[f"posted_{wk}"] = True
+                                _day_stats_mark_done(posted=False)
                                 st.rerun()
                         with col_regen:
                             if st.button("🔄 Opnieuw", key=f"regen_{i}"):
