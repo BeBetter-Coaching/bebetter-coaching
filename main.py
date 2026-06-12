@@ -165,6 +165,76 @@ def _day_stats_mark_done(posted: bool):
         if posted:
             _ds["posted_today"] = _ds.get("posted_today", 0) + 1
 
+def _laps_chart(details: dict):
+    """
+    Compacte pace/HF-grafiek per km uit de lapdata van een workout.
+    Pure weergave van al opgehaalde data — geen extra API- of AI-kosten.
+    Geeft None terug als er te weinig bruikbare laps zijn.
+    """
+    acts = (details or {}).get("Activities") or []
+    raw_laps = (acts[0].get("Laps") or []) if acts else []
+    rows = []
+    for i, lap in enumerate(raw_laps[:30], start=1):
+        if not isinstance(lap, dict):
+            continue
+        pace_f = fs_client._pace_to_float(lap.get("pace_display"))
+        if pace_f == float("inf") or pace_f <= 0 or pace_f > 15:
+            continue
+        rows.append({
+            "km": i,
+            "Pace": round(pace_f, 3),
+            "pace_label": str(lap.get("pace_display") or ""),
+            "HF": lap.get("hr_avg"),
+        })
+    if len(rows) < 2:
+        return None
+
+    import altair as alt
+    import pandas as pd
+
+    df = pd.DataFrame(rows)
+    # Vega-expressie: 5.75 → "5:45" op de pace-as
+    _pace_fmt = ("floor(datum.value) + ':' + "
+                 "(min(59, round((datum.value % 1) * 60)) < 10 ? '0' : '') + "
+                 "min(59, round((datum.value % 1) * 60))")
+    base = alt.Chart(df).encode(
+        x=alt.X("km:O", title=None, axis=alt.Axis(labelAngle=0)),
+    )
+    pace_line = base.mark_line(
+        color="#5EE6EB", strokeWidth=2.5,
+        point=alt.OverlayMarkDef(color="#5EE6EB", size=30),
+    ).encode(
+        y=alt.Y("Pace:Q",
+                scale=alt.Scale(zero=False, reverse=True),  # omhoog = sneller
+                axis=alt.Axis(title="pace", labelExpr=_pace_fmt, grid=False)),
+        tooltip=[
+            alt.Tooltip("km:O", title="km"),
+            alt.Tooltip("pace_label:N", title="pace"),
+            alt.Tooltip("HF:Q", title="HF"),
+        ],
+    )
+    layers = [pace_line]
+    if df["HF"].notna().any():
+        hr_line = base.mark_line(
+            color="#FAC775", strokeWidth=1.8, strokeDash=[5, 3],
+            point=alt.OverlayMarkDef(color="#FAC775", size=24),
+        ).encode(
+            y=alt.Y("HF:Q", scale=alt.Scale(zero=False),
+                    axis=alt.Axis(title="HF (bpm)", grid=False)),
+            tooltip=[
+                alt.Tooltip("km:O", title="km"),
+                alt.Tooltip("pace_label:N", title="pace"),
+                alt.Tooltip("HF:Q", title="HF"),
+            ],
+        )
+        layers.append(hr_line)
+    return (
+        alt.layer(*layers)
+        .resolve_scale(y="independent")
+        .properties(height=170)
+        .configure_view(strokeWidth=0)
+    )
+
 st.set_page_config(
     page_title="BeBetter Coaching",
     page_icon="assets/logo_zwart.png",
@@ -1770,6 +1840,12 @@ elif page == "feedback":
                                 cols[0].markdown(label)
                                 cols[1].markdown(actual)
                                 cols[2].markdown(planned)
+
+                    # Verloop per km — pace (cyaan, omhoog = sneller) + HF (amber)
+                    _chart = _laps_chart(details)
+                    if _chart is not None:
+                        st.markdown("**Verloop per km:**")
+                        st.altair_chart(_chart, use_container_width=True)
 
                 with col_right:
                     st.markdown("**Jouw reactie (concept):**")
