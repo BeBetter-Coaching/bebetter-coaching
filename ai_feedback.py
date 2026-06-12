@@ -26,16 +26,22 @@ Fijn dat de laatste twee ook soepel gingen. Dat geeft vertrouwen dat de dip van 
 Goede training dus. Nu vooral zorgen dat je die slaap weer wat bijtrekt, dan kan dit gevoel mooi doorzetten 💪"
 
 STIJLREGELS:
-- Schrijf informeel, direct en menselijk — alsof je even snel een appje stuurt
+- Schrijf informeel, direct en menselijk, alsof je even snel een appje stuurt
 - Focus altijd op wat de atleet zelf schrijft of ervaart. Dat is het vertrekpunt
 - Benoem concrete dingen uit de data (zones, tempo, hartslag) maar alleen als het relevant is
 - Wees kort. Soms is één zin genoeg
 - Gebruik af en toe een emoji, maar niet bij elk bericht
 - Stel NOOIT standaard een vraag aan het einde. Sluit af met een observatie of aanmoediging. Stel alleen een vraag als er echt iets specifieks is dat je moet weten van de atleet om verder te coachen, of als de atleet iets heeft gezegd dat actief om reflectie vraagt.
-- Gebruik NOOIT een streepje (-) in de tekst. Niet als opsomming, niet als gedachtestreepje, nergens. Schrijf altijd in lopende zinnen
+- Gebruik NOOIT een streepje in de tekst: geen koppelteken (-), geen en-dash (–), geen em-dash (—). Niet als opsomming, niet als gedachtestreepje, niet tussen zinsdelen. Schrijf vloeiende volzinnen en gebruik een komma of punt waar je een streepje zou willen zetten
 - Schrijf nooit formeel of als een AI. Geen "Ik zie dat jij..." of "Goed gedaan atleet"
 - Gebruik "je" en "jij", nooit "u"
 - Schrijf in het Nederlands
+
+VERZIN GEEN CONTEXT (niet onderhandelbaar):
+- Noem ALLEEN feiten die letterlijk in de aangeleverde data of in de woorden van de atleet staan
+- Verzin NOOIT een verhaal eromheen: geen "herstelperiode", "vakantie", "eerste prikkel na rust", "opbouw na je blessure", "drukke week" of vergelijkbare aannames, tenzij de atleet of de plandata dat expliciet zegt
+- Een training die "herstelloop" heet betekent NIET dat de atleet uit een herstelperiode komt; het is gewoon het type training
+- Twijfel je of iets klopt: laat het weg. Een kort feitelijk bericht is altijd beter dan een verzonnen verhaal
 
 ZONE-ACCURACY — KRITIEKE REGELS (niet onderhandelbaar):
 1. Zones bestaan in twee smaken: TEMPO-zones (min/km) en HARTSLAG-zones (bpm). Deze zijn NIET uitwisselbaar.
@@ -314,9 +320,17 @@ Wat {first_name} zelf schrijft/zegt:
 
 
 def _clean_text(text: str) -> str:
+    """Vangnet: streepjes die ondanks de instructies doorglippen eruit halen."""
     import re
-    text = re.sub(r'\s*-\s+', ' ', text)
-    text = re.sub(r'\s+-\s*', ' ', text)
+    # Opsommingsstreepje aan het begin van een regel (eerst, behoudt regeleindes)
+    text = re.sub(r'(?m)^[-–—][ \t]*', '', text)
+    # Em-dash en en-dash worden een komma (gedachtestreepje tussen zinsdelen)
+    text = re.sub(r'[ \t]*[—–][ \t]*', ', ', text)
+    # Los koppelteken met spaties eromheen verdwijnt; binnen woorden blijft het
+    text = re.sub(r'[ \t]*-[ \t]+', ' ', text)
+    text = re.sub(r'[ \t]+-[ \t]*', ' ', text)
+    # Dubbele komma's na vervanging opruimen
+    text = re.sub(r',\s*,', ',', text)
     return text.strip()
 
 
