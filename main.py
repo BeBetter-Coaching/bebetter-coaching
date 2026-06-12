@@ -157,6 +157,36 @@ def _save_skipped(skipped: dict):
     except Exception:
         pass
 
+def _filter_skipped(workouts: list) -> list:
+    """
+    Filter overgeslagen workouts eruit — tenzij de atleet ná het overslaan
+    opnieuw heeft gereageerd, dan komt de workout terug (en uit de skiplijst).
+    Gedeeld door de feedbackpagina én de dagstatus-telling zodat beide
+    hetzelfde aantal zien.
+    """
+    _skipped = _load_skipped()
+    if not _skipped:
+        return workouts
+    filtered = []
+    _updated = False
+    for w in workouts:
+        wk_key = w.get("workout_key", "")
+        if wk_key not in _skipped:
+            filtered.append(w)
+            continue
+        skip_ts = _skipped[wk_key]
+        new_athlete_msg = any(
+            m.get("van") == "atleet" and m.get("timestamp", "") > skip_ts
+            for m in w.get("thread", [])
+        )
+        if new_athlete_msg:
+            del _skipped[wk_key]
+            _updated = True
+            filtered.append(w)
+    if _updated:
+        _save_skipped(_skipped)
+    return filtered
+
 def _day_stats_mark_done(posted: bool):
     """Houd de dagstatus-tegels live bij na posten/overslaan van feedback."""
     _ds = st.session_state.get("day_stats")
@@ -1248,6 +1278,7 @@ if page == "home":
                 fs_client.get_schema_end_dates, 60, _oh_keys,
             )
             _fb, _fb_stats = _fb_fut.result()
+            _fb = _filter_skipped(_fb)  # zelfde filter als de feedbackpagina
             _races = _races_fut.result()
             try:
                 _alerts = _alerts_fut.result()
@@ -1709,32 +1740,8 @@ elif page == "feedback":
 
     workouts = st.session_state.get("workouts", [])
 
-    # Filter overgeslagen workouts — tenzij atleet daarna gereageerd heeft
-    _skipped = _load_skipped()
-    if _skipped:
-        filtered = []
-        _skipped_updated = False
-        for w in workouts:
-            wk_key = w.get("workout_key", "")
-            if wk_key not in _skipped:
-                filtered.append(w)
-                continue
-            skip_ts = _skipped[wk_key]
-            # Check: heeft atleet na het overslaan gereageerd? (nieuwe comment na skip_ts)
-            thread = w.get("thread", [])
-            new_athlete_msg = any(
-                m.get("van") == "atleet" and m.get("timestamp", "") > skip_ts
-                for m in thread
-            )
-            if new_athlete_msg:
-                # Atleet heeft gereageerd — verwijder uit skip-lijst en toon weer
-                del _skipped[wk_key]
-                _skipped_updated = True
-                filtered.append(w)
-            # else: blijft overgeslagen
-        if _skipped_updated:
-            _save_skipped(_skipped)
-        workouts = filtered
+    # Filter overgeslagen workouts — zelfde filter als de dagstatus-tegel
+    workouts = _filter_skipped(workouts)
 
     if not workouts:
         st.success("✅ Geen openstaande workouts gevonden voor de huidige filters.")

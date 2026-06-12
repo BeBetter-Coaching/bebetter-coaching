@@ -747,26 +747,30 @@ def check_dossier_signal(workout_data: dict) -> str | None:
     teksten = [workout_data.get("post_notes") or ""]
     teksten += workout_data.get("athlete_comments") or []
     tekst = "\n".join(t for t in teksten if t and t.strip()).strip()
-    if not tekst:
-        return None  # zonder eigen woorden valt er niets te noteren
 
-    felt_extreem = False
+    _FELT_NL = {1: "Geweldig", 2: "Goed", 3: "Normaal", 4: "Slecht", 5: "Vreselijk"}
+    felt_num = None
     try:
         felt = workout_data.get("felt")
-        felt_extreem = int(float(felt)) in (1, 4, 5) if felt else False
+        felt_num = int(float(felt)) if felt else None
     except (ValueError, TypeError):
         pass
+    felt_extreem = felt_num in (1, 4, 5)
+
+    # Geen tekst maar wél een uiterste score (1 of 5): feitelijke notitie
+    # zonder AI-call — een mega offday zonder toelichting is óók een signaal
+    if not tekst:
+        if felt_num in (1, 5):
+            return (f"Scoorde '{_FELT_NL[felt_num]}' op gevoel, zonder toelichting. "
+                    f"Mogelijk even navragen wat er speelde.")
+        return None
 
     tekst_lc = tekst.lower()
     heeft_signaalwoord = any(_re.search(p, tekst_lc) for p in _SIGNAAL_PATRONEN)
     if not (felt_extreem or heeft_signaalwoord):
         return None
 
-    _FELT_LABELS = {1: "Geweldig", 2: "Goed", 3: "Normaal", 4: "Slecht", 5: "Vreselijk"}
-    try:
-        felt_str = _FELT_LABELS.get(int(float(workout_data.get("felt") or 0)), "onbekend")
-    except (ValueError, TypeError):
-        felt_str = "onbekend"
+    felt_str = _FELT_NL.get(felt_num, "onbekend")
 
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
