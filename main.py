@@ -1212,7 +1212,7 @@ if page == "home":
                 3, None, False, False,
                 {"los schema"}, True,
             )
-            _races_fut = _pool.submit(fs_client.get_upcoming_races, 14)
+            _races_fut = _pool.submit(fs_client.get_upcoming_races, 7)
             _alerts_fut = _pool.submit(
                 fs_client.get_compliance_alerts,
                 7, _oh_keys, {"los schema"},
@@ -1362,7 +1362,7 @@ if page == "home":
                                       "verlengen of on hold zetten"):
                         go_to("schema")
                 with t5:
-                    if st.button(f"**{races_coming}**  \nRaces komende 14 dgn",
+                    if st.button(f"**{races_coming}**  \nRaces komende 7 dgn",
                                  key="tile_races", use_container_width=True):
                         go_to("races")
 
