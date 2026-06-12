@@ -1716,7 +1716,18 @@ elif page == "feedback":
             st.rerun()
     else:
         pending = [i for i, w in enumerate(workouts) if not st.session_state.get(f"posted_{w['workout_key']}")]
-        st.markdown(f"**{len(pending)} workout(s)** wachten op jouw reactie.")
+        _n_done = len(workouts) - len(pending)
+
+        c_info, c_verberg = st.columns([3, 2], vertical_alignment="center")
+        with c_info:
+            st.markdown(f"**{len(pending)} open** · {_n_done} afgehandeld deze sessie")
+        with c_verberg:
+            verberg_gedaan = st.toggle(
+                "Verberg afgehandelde", value=True, key="fb_verberg_gedaan",
+                help="Geposte en overgeslagen kaarten verdwijnen — de volgende atleet staat direct bovenaan",
+            )
+        if workouts:
+            st.progress(_n_done / len(workouts))
 
         if pending:
             if st.button("⚡ Genereer alle concepten (AI)", type="primary"):
@@ -1756,7 +1767,7 @@ elif page == "feedback":
             is_planned_no_notes = workout.get("planned_no_notes", False)
 
             with st.container():
-                col_h, col_s = st.columns([5, 1])
+                col_h, col_dos, col_s = st.columns([4.4, 0.8, 0.8])
                 with col_h:
                     if posted:
                         icon = "✅"
@@ -1774,6 +1785,11 @@ elif page == "feedback":
                         tag = ""
                     st.subheader(f"{icon} {workout['athlete_name']} — {workout['workout_name']}{tag}")
                     st.caption(f"📅 {workout['workout_date']}")
+                with col_dos:
+                    if st.button("👤 Dossier", key=f"dos_fb_{i}",
+                                 help="Open het atleet-dossier (intake, notities, trends)"):
+                        st.session_state["dossier_user_key"] = workout["athlete_key"]
+                        go_to("dossier")
                 with col_s:
                     if posted:
                         st.success("Gepost")
@@ -1970,7 +1986,12 @@ elif page == "feedback":
                 st.markdown("---")
 
         for i, workout in enumerate(workouts):
+            if verberg_gedaan and st.session_state.get(f"posted_{workout['workout_key']}"):
+                continue
             _feedback_card(i, workout)
+
+        if verberg_gedaan and _n_done and not pending:
+            st.success("🎉 Alles afgehandeld — sterke ronde!")
 
         # ── Sessie-samenvatting ───────────────────────────────────────────────
         session_log = st.session_state.get("session_feedback_log", [])
@@ -2924,6 +2945,35 @@ elif page == "schema":
         if filtered:
             st.markdown(f"### Aandacht nodig — afloopt binnen {threshold} dagen of geen schema")
 
+            # Bulk: meerdere atleten in één keer on hold (bijv. einde seizoen)
+            with st.expander("⏸ Meerdere atleten tegelijk on hold"):
+                _bulk_opts = {r["name"]: r for r in filtered}
+                with st.form("bulk_hold_form"):
+                    _bulk_sel = st.multiselect("Atleten", list(_bulk_opts.keys()))
+                    _bulk_reden = st.text_input("Reden (geldt voor alle geselecteerden)",
+                                                placeholder="bijv. winterstop, traint tijdelijk los")
+                    if st.form_submit_button("Zet geselecteerde on hold", type="primary"):
+                        if not _bulk_sel:
+                            st.warning("Selecteer eerst één of meer atleten.")
+                        else:
+                            for _bn in _bulk_sel:
+                                _br = _bulk_opts[_bn]
+                                on_hold[_br["user_key"]] = {
+                                    "naam": _br["name"],
+                                    "reden": _bulk_reden,
+                                    "since": date.today().isoformat(),
+                                }
+                            ok, err = intake_store.save_on_hold(on_hold)
+                            st.session_state["schema_on_hold"] = on_hold
+                            _sel_keys = {_bulk_opts[n]["user_key"] for n in _bulk_sel}
+                            st.session_state["schema_data"] = [
+                                x for x in st.session_state.get("schema_data", [])
+                                if x["user_key"] not in _sel_keys
+                            ]
+                            if not ok:
+                                st.warning(f"Opgeslagen lokaal (GitHub: {err})")
+                            st.rerun()
+
             groups_shown: dict[str, list] = {}
             for r in filtered:
                 groups_shown.setdefault(r["group"], []).append(r)
@@ -2993,6 +3043,22 @@ elif page == "atleten":
         st.session_state["schema_on_hold"] = intake_store.load_on_hold()
     _oh = st.session_state["schema_on_hold"]
 
+    # ── Recent bekeken dossiers ──
+    _recents = st.session_state.get("recent_dossiers", [])
+    if _recents:
+        _rec_atleten = [a for k in _recents for a in _all_athletes if a["user_key"] == k]
+        if _rec_atleten:
+            st.markdown('<p class="bb-section-label">🕘 Recent bekeken</p>', unsafe_allow_html=True)
+            cols_r = st.columns(min(len(_rec_atleten), 5))
+            for r_i, a in enumerate(_rec_atleten[:5]):
+                with cols_r[r_i]:
+                    if st.button(a["name"], key=f"rec_{a['user_key']}", use_container_width=True):
+                        st.session_state["dossier_user_key"] = a["user_key"]
+                        go_to("dossier")
+
+    _zoek = st.text_input("🔍 Zoek atleet", key="atleten_zoek",
+                          placeholder="Typ een naam…", label_visibility="collapsed").strip().lower()
+
     # ── Nieuwe klanten: intake gedaan, nog niet in FinalSurge ──
     _wachtend = {k: v for k, v in _intakes_all.items() if k.startswith("nieuw:")}
     if _wachtend:
@@ -3010,6 +3076,10 @@ elif page == "atleten":
                     go_to("intake")
 
     for group_name, members in athletes_by_group.items():
+        if _zoek:
+            members = [a for a in members if _zoek in a["name"].lower()]
+            if not members:
+                continue
         st.markdown(f'<p class="bb-section-label">{_esc(group_name)} — {len(members)}</p>',
                     unsafe_allow_html=True)
         cols = st.columns(3)
@@ -3044,6 +3114,13 @@ elif page == "dossier":
         module_header(_datleet["name"], "👤")
         if st.button("← Alle atleten", key="back_atleten"):
             go_to("atleten")
+
+        # Bijhouden voor "Recent bekeken" op de atleten-pagina
+        _rec = st.session_state.setdefault("recent_dossiers", [])
+        if _dkey in _rec:
+            _rec.remove(_dkey)
+        _rec.insert(0, _dkey)
+        del _rec[5:]
 
         if st.session_state.get("intakes") is None:
             st.session_state["intakes"] = intake_store.load_intakes()
