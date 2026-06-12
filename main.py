@@ -2162,23 +2162,105 @@ elif page == "intake":
         st.warning("⚠️ GH_TOKEN niet ingesteld in secrets — intakes worden alleen lokaal opgeslagen "
                    "en kunnen verloren gaan bij een herstart van de cloud-app.")
 
-    # ── Atleet kiezen ────────────────────────────────────────────────────
+    # ── Voor wie is deze intake? ─────────────────────────────────────────
     all_athletes = sorted(
         [a for members in athletes_by_group.values() for a in members],
         key=lambda x: x["name"],
     )
     athlete_options = {a["name"]: a["user_key"] for a in all_athletes}
 
-    sel_col, status_col = st.columns([3, 2])
-    with sel_col:
-        ik_athlete_name = st.selectbox("Atleet *", options=list(athlete_options.keys()), key="ik_athlete")
-        ik_athlete_key = athlete_options[ik_athlete_name]
-    with status_col:
-        existing_ik = intakes.get(ik_athlete_key)
+    _MODE_NIEUW = "🆕 Nieuwe klant"
+    _MODE_BESTAAND = "Bestaande atleet (in FinalSurge)"
+    _NIEUW_START = "➕ Nieuwe intake starten…"
+
+    ik_mode = st.radio(
+        "Voor wie is deze intake?",
+        [_MODE_NIEUW, _MODE_BESTAAND],
+        horizontal=True,
+        key="ik_mode",
+        help="Een intake gebeurt meestal vóórdat de klant in FinalSurge staat. "
+             "Kies 'Nieuwe klant', sla de intake op, en koppel hem later aan het "
+             "FinalSurge-account. 'Bestaande atleet' is voor een verlenging of update.",
+    )
+
+    # Nieuwe-klant-intakes herkennen we aan de sleutel-prefix "nieuw:"
+    _nieuwe_intakes = {k: v for k, v in intakes.items() if k.startswith("nieuw:")}
+
+    if ik_mode == _MODE_NIEUW:
+        _naam_naar_key = {
+            v.get("athlete_name", k[6:]): k for k, v in sorted(_nieuwe_intakes.items())
+        }
+        sel_col, status_col = st.columns([3, 2])
+        with sel_col:
+            _sel = st.selectbox(
+                "Intake",
+                options=[_NIEUW_START] + list(_naam_naar_key.keys()),
+                key="ik_nieuw_sel",
+            )
+            if _sel == _NIEUW_START:
+                _naam_nieuw = st.text_input(
+                    "Naam nieuwe klant *", key="ik_nieuw_naam",
+                    placeholder="bijv. Sanne de Vries",
+                )
+                ik_athlete_name = (_naam_nieuw or "").strip()
+                ik_athlete_key = "nieuw:" + ik_athlete_name.lower().replace(" ", "_")
+            else:
+                ik_athlete_name = _sel
+                ik_athlete_key = _naam_naar_key[_sel]
+        with status_col:
+            existing_ik = intakes.get(ik_athlete_key) if ik_athlete_name else None
+            if existing_ik:
+                st.success(f"✅ Intake aanwezig — laatst bijgewerkt {existing_ik.get('updated_at', '?')}")
+                st.caption("Nog niet gekoppeld aan FinalSurge.")
+            elif ik_athlete_name:
+                st.info("Nieuwe klant — intake wordt los opgeslagen, koppelen kan later.")
+
+        if not ik_athlete_name:
+            st.info("Vul de naam van de nieuwe klant in om te beginnen.")
+            st.stop()
+
+        # ── Koppelen zodra de klant in FinalSurge staat ──
         if existing_ik:
-            st.success(f"✅ Intake aanwezig — laatst bijgewerkt {existing_ik.get('updated_at', '?')}")
-        else:
-            st.info("Nog geen intake voor deze atleet.")
+            with st.expander("🔗 Klant staat inmiddels in FinalSurge? Koppel de intake aan het account"):
+                st.caption("Na het koppelen verschijnt de intake in het atleet-dossier en "
+                           "wordt hij automatisch gebruikt bij het bouwen van een schema.")
+                c_kop, c_btn_kop = st.columns([3, 1], vertical_alignment="bottom")
+                with c_kop:
+                    _koppel_naam = st.selectbox("FinalSurge-atleet",
+                                                list(athlete_options.keys()), key="ik_koppel_sel")
+                with c_btn_kop:
+                    if st.button("Koppel →", type="primary", key="btn_ik_koppel", use_container_width=True):
+                        _doel_key = athlete_options[_koppel_naam]
+                        if _doel_key in intakes:
+                            st.error(f"{_koppel_naam} heeft al een intake. Verwijder die eerst "
+                                     "(in het atleet-dossier) of werk die bij.")
+                        else:
+                            intakes[_doel_key] = {
+                                **existing_ik,
+                                "athlete_name": _koppel_naam,
+                                "gekoppeld_op": date.today().isoformat(),
+                            }
+                            intakes.pop(ik_athlete_key, None)
+                            ok, err = intake_store.save_intakes(intakes)
+                            if ok:
+                                st.session_state["intakes"] = intakes
+                                st.session_state.pop("ik_loaded_for", None)
+                                st.success(f"✅ Intake gekoppeld aan {_koppel_naam}!")
+                                st.rerun()
+                            else:
+                                st.error(f"Koppelen mislukt: {err}")
+
+    else:
+        sel_col, status_col = st.columns([3, 2])
+        with sel_col:
+            ik_athlete_name = st.selectbox("Atleet *", options=list(athlete_options.keys()), key="ik_athlete")
+            ik_athlete_key = athlete_options[ik_athlete_name]
+        with status_col:
+            existing_ik = intakes.get(ik_athlete_key)
+            if existing_ik:
+                st.success(f"✅ Intake aanwezig — laatst bijgewerkt {existing_ik.get('updated_at', '?')}")
+            else:
+                st.info("Nog geen intake voor deze atleet.")
 
     # Prefill widget-keys éénmalig per atleet-wissel
     if st.session_state.get("ik_loaded_for") != ik_athlete_key:
@@ -2742,6 +2824,22 @@ elif page == "atleten":
     if "schema_on_hold" not in st.session_state:
         st.session_state["schema_on_hold"] = intake_store.load_on_hold()
     _oh = st.session_state["schema_on_hold"]
+
+    # ── Nieuwe klanten: intake gedaan, nog niet in FinalSurge ──
+    _wachtend = {k: v for k, v in _intakes_all.items() if k.startswith("nieuw:")}
+    if _wachtend:
+        st.markdown('<p class="bb-section-label">🆕 Nieuwe klanten — wachten op FinalSurge-account</p>',
+                    unsafe_allow_html=True)
+        cols_n = st.columns(3)
+        for n_i, (_nk, _nv) in enumerate(sorted(_wachtend.items())):
+            with cols_n[n_i % 3]:
+                if st.button(f"{_nv.get('athlete_name', _nk[6:])}  📝",
+                             key=f"nieuw_{_nk}", use_container_width=True,
+                             help="Intake openen — koppelen kan daar zodra het FinalSurge-account bestaat"):
+                    st.session_state["ik_mode"] = "🆕 Nieuwe klant"
+                    st.session_state["ik_nieuw_sel"] = _nv.get("athlete_name", _nk[6:])
+                    st.session_state.pop("ik_loaded_for", None)
+                    go_to("intake")
 
     for group_name, members in athletes_by_group.items():
         st.markdown(f'<p class="bb-section-label">{_esc(group_name)} — {len(members)}</p>',

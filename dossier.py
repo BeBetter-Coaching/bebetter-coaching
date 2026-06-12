@@ -279,6 +279,32 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
                     st.markdown(f"**{k}:** {v}")
             else:
                 st.caption("Intake aanwezig maar zonder ingevulde velden.")
+
+            # Verwijderen met bevestigingsstap
+            if not st.session_state.get(f"_del_intake_vraag_{user_key}"):
+                if st.button("🗑 Intake verwijderen", key=f"del_intake_{user_key}"):
+                    st.session_state[f"_del_intake_vraag_{user_key}"] = True
+                    st.rerun()
+            else:
+                st.warning("Intake definitief verwijderen?")
+                c_ja, c_nee = st.columns(2)
+                with c_ja:
+                    if st.button("Ja, verwijder", type="primary", key=f"del_intake_ja_{user_key}"):
+                        _alle = st.session_state.get("intakes")
+                        if _alle is None:
+                            _alle = intake_store.load_intakes()
+                        _alle.pop(user_key, None)
+                        ok, err = intake_store.save_intakes(_alle)
+                        st.session_state["intakes"] = _alle
+                        st.session_state.pop(f"_del_intake_vraag_{user_key}", None)
+                        st.session_state.pop("ik_loaded_for", None)
+                        if not ok:
+                            st.error(f"Verwijderen mislukt: {err}")
+                        st.rerun()
+                with c_nee:
+                    if st.button("Annuleer", key=f"del_intake_nee_{user_key}"):
+                        st.session_state.pop(f"_del_intake_vraag_{user_key}", None)
+                        st.rerun()
         else:
             st.caption("Geen intake opgeslagen voor deze atleet. Vul er één in via de Intake-module.")
 
