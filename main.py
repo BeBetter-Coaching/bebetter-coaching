@@ -1233,9 +1233,11 @@ if page == "home":
         # Schema-overzicht meteen klaarzetten voor de schema-pagina
         if _schema_rows is not None:
             st.session_state["schema_data"] = _schema_rows
+        # Actie nodig = geen actief schema (None), verlopen (<0) of ≤7 dagen.
+        # Bewuste uitzonderingen horen op on hold — die zijn al uitgefilterd.
         _schema_urgent = sum(
             1 for r in (_schema_rows or [])
-            if r["days_left"] is not None and r["days_left"] <= 7
+            if r["days_left"] is None or r["days_left"] <= 7
         )
         from datetime import datetime as _dtn
         st.session_state["day_stats"] = {
@@ -1354,9 +1356,10 @@ if page == "home":
                         st.session_state["_alerts_open"] = True
                         st.rerun()
                 with t4:
-                    if st.button(f"**{schema_val}**  \nSchema's aflopen ≤7d",
+                    if st.button(f"**{schema_val}**  \nSchema-actie nodig",
                                  key="tile_schema", use_container_width=True,
-                                 help="Verlopen of binnen 7 dagen aflopend — verlengen of on hold zetten"):
+                                 help="Geen actief schema, verlopen, of loopt binnen 7 dagen af — "
+                                      "verlengen of on hold zetten"):
                         go_to("schema")
                 with t5:
                     if st.button(f"**{races_coming}**  \nRaces komende 14 dgn",
