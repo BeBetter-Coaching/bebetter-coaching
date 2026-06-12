@@ -175,8 +175,14 @@ def _filter_skipped(workouts: list) -> list:
             filtered.append(w)
             continue
         skip_ts = _skipped[wk_key]
+        # Alleen een reactie van een LATERE DAG dan de skip haalt de workout
+        # terug. Volledige tijdstempels zijn hier onbruikbaar: de skip is een
+        # kale datum en "2026-06-12T09:14" > "2026-06-12" is als tekst waar,
+        # waardoor een reactie van eerder die dag de skip direct ongedaan
+        # maakte en de workout bleef terugkomen.
         new_athlete_msg = any(
-            m.get("van") == "atleet" and m.get("timestamp", "") > skip_ts
+            m.get("van") == "atleet"
+            and (m.get("timestamp") or "")[:10] > skip_ts[:10]
             for m in w.get("thread", [])
         )
         if new_athlete_msg:
