@@ -1135,7 +1135,7 @@ if page == "home":
         if "schema_on_hold" not in st.session_state:
             st.session_state["schema_on_hold"] = intake_store.load_on_hold()
         _oh_keys = set(st.session_state["schema_on_hold"].keys())
-        with _TPE(max_workers=3) as _pool:
+        with _TPE(max_workers=4) as _pool:
             # "Los schema"-groep krijgt geen feedback → niet meetellen
             _fb_fut = _pool.submit(
                 fs_client.get_workouts_needing_feedback,
@@ -1147,18 +1147,33 @@ if page == "home":
                 fs_client.get_compliance_alerts,
                 7, _oh_keys, {"los schema"},
             )
+            _schema_fut = _pool.submit(
+                fs_client.get_schema_end_dates, 60, _oh_keys,
+            )
             _fb, _fb_stats = _fb_fut.result()
             _races = _races_fut.result()
             try:
                 _alerts = _alerts_fut.result()
             except Exception:
                 _alerts = []
+            try:
+                _schema_rows = _schema_fut.result()
+            except Exception:
+                _schema_rows = None
+        # Schema-overzicht meteen klaarzetten voor de schema-pagina
+        if _schema_rows is not None:
+            st.session_state["schema_data"] = _schema_rows
+        _schema_urgent = sum(
+            1 for r in (_schema_rows or [])
+            if r["days_left"] is not None and r["days_left"] <= 7
+        )
         from datetime import datetime as _dtn
         st.session_state["day_stats"] = {
             "feedback_pending": len(_fb),
             "posted_today": _fb_stats.get("posted_today", 0),
             "races_coming": len(_races),
             "compliance_alerts": _alerts,
+            "schema_urgent": _schema_urgent,
             "loaded_at": date.today().isoformat(),
             "loaded_ts": _dtn.now().strftime("%H:%M"),
         }
@@ -1205,24 +1220,10 @@ if page == "home":
             fb_cls = "done" if fb_pending == 0 else "attention"
             race_cls = "done" if races_coming == 0 else ""
 
-            # Schema-tegel: gebruik al geladen schema_data als die beschikbaar is
-            # On-hold via session state — geen GitHub-call bij elke render
-            if "schema_on_hold" not in st.session_state:
-                st.session_state["schema_on_hold"] = intake_store.load_on_hold()
-            _on_hold_keys = set(st.session_state["schema_on_hold"].keys())
-            _schema_data = st.session_state.get("schema_data")
-            if _schema_data is not None:
-                schema_aflopen = sum(
-                    1 for r in _schema_data
-                    if r.get("user_key") not in _on_hold_keys
-                    and r["days_left"] is not None
-                    and r["days_left"] <= 14
-                )
-                schema_val = str(schema_aflopen)
-                schema_cls = "done" if schema_aflopen == 0 else "attention"
-            else:
-                schema_val = "—"
-                schema_cls = ""
+            # Schema-tegel: urgent = afloopt binnen 7 dagen of al verlopen
+            _schema_urgent = day_stats.get("schema_urgent", 0)
+            schema_val = str(_schema_urgent)
+            schema_cls = "done" if _schema_urgent == 0 else "attention"
 
             # Afgehandelde afhakers (gedeeld tussen coaches) — 7 dagen gedempt,
             # daarna komt de atleet vanzelf terug als het patroon aanhoudt
@@ -1283,8 +1284,9 @@ if page == "home":
                         st.session_state["_alerts_open"] = True
                         st.rerun()
                 with t4:
-                    if st.button(f"**{schema_val}**  \nSchema's aflopen ≤14d",
-                                 key="tile_schema", use_container_width=True):
+                    if st.button(f"**{schema_val}**  \nSchema's aflopen ≤7d",
+                                 key="tile_schema", use_container_width=True,
+                                 help="Verlopen of binnen 7 dagen aflopend — verlengen of on hold zetten"):
                         go_to("schema")
                 with t5:
                     if st.button(f"**{races_coming}**  \nRaces komende 14 dgn",
@@ -1298,7 +1300,6 @@ if page == "home":
                 </div>
                 <p style="font-size:0.72rem; color:#8FA8CE; margin:0.45rem 0 0 0;">
                     Dagvoortgang feedback: <b>{pct}%</b> &nbsp;·&nbsp; status van {day_stats.get('loaded_at','')} {day_stats.get('loaded_ts','')} — ververs voor de actuele stand
-                    {" · schema-tegel: laad schema-overzicht voor actuele data" if _schema_data is None else ""}
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -2772,20 +2773,24 @@ elif page == "schema":
         def _status(days_left):
             if days_left is None:
                 return "❌ Geen schema"
+            if days_left < 0:
+                return "⚫ Verlopen"
             if days_left <= 7:
                 return "🔴 Urgent"
             if days_left <= 14:
                 return "🟠 Bijna"
             return "🟢 OK"
 
-        n_urgent = sum(1 for r in schema_data if r["days_left"] is not None and r["days_left"] <= 7)
+        n_verlopen = sum(1 for r in schema_data if r["days_left"] is not None and r["days_left"] < 0)
+        n_urgent = sum(1 for r in schema_data if r["days_left"] is not None and 0 <= r["days_left"] <= 7)
         n_bijna  = sum(1 for r in schema_data if r["days_left"] is not None and 7 < r["days_left"] <= 14)
         n_geen   = sum(1 for r in schema_data if r["days_left"] is None)
 
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("❌ Geen schema", n_geen)
-        c2.metric("🔴 Urgent  (≤7d)", n_urgent)
-        c3.metric("🟠 Bijna  (8–14d)", n_bijna)
+        c0, c1, c2, c3, c4, c5 = st.columns(6)
+        c0.metric("⚫ Verlopen", n_verlopen)
+        c1.metric("🔴 Urgent  (≤7d)", n_urgent)
+        c2.metric("🟠 Bijna  (8–14d)", n_bijna)
+        c3.metric("❌ Geen schema", n_geen)
         c4.metric("Totaal atleten", len(schema_data))
         c5.metric("⏸ Op hold", len(on_hold))
 

@@ -1043,8 +1043,13 @@ def get_schema_end_dates(
 
     horizon_days : hoe ver vooruit we kijken
     on_hold_keys : user_keys van atleten die buiten beschouwing blijven
+
+    Kijkt ook 21 dagen terug: een atleet met een echt schema dat net is
+    afgelopen krijgt een negatieve days_left ("verlopen") in plaats van
+    onzichtbaar te worden.
     """
     today = date.today()
+    start = today - timedelta(days=21)
     end = today + timedelta(days=horizon_days)
     athletes = get_athletes_by_group()
     skip = set(on_hold_keys or [])
@@ -1059,7 +1064,7 @@ def get_schema_end_dates(
     def _fetch(athlete: dict) -> dict:
         user_key = athlete["user_key"]
         try:
-            workouts = get_workouts(user_key, today, end)
+            workouts = get_workouts(user_key, start, end)
         except Exception:
             workouts = []
 
