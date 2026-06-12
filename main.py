@@ -165,6 +165,33 @@ def _day_stats_mark_done(posted: bool):
         if posted:
             _ds["posted_today"] = _ds.get("posted_today", 0) + 1
 
+def _auto_dossier_note(workout: dict):
+    """
+    Zet automatisch een 🤖-notitie in het dossier als het atleet-bericht
+    een uitschieter is (blessure, dip, doorbraak). Best-effort: een fout
+    mag het posten nooit blokkeren. Max één notitie per workout.
+    """
+    try:
+        samenvatting = ai_feedback.check_dossier_signal(workout)
+        if not samenvatting:
+            return
+        notes = dossier._notes()
+        athlete_notes = notes.get(workout["athlete_key"], [])
+        wk = workout["workout_key"]
+        if any(n.get("bron") == wk for n in athlete_notes):
+            return  # al genoteerd voor deze workout
+        athlete_notes.insert(0, {
+            "datum": date.today().isoformat(),
+            "coach": "🤖 Auto",
+            "tekst": f"{samenvatting} (uit: {workout.get('workout_name', 'training')}, "
+                     f"{workout.get('workout_date', '')})",
+            "bron": wk,
+        })
+        notes[workout["athlete_key"]] = athlete_notes
+        dossier._save_notes(notes)
+    except Exception:
+        pass
+
 def _laps_chart(details: dict):
     """
     Compacte pace/HF-grafiek per km uit de lapdata van een workout.
@@ -1925,6 +1952,7 @@ elif page == "feedback":
                                         st.session_state[f"posted_{wk}"] = True
                                         st.session_state.pop(f"zelf_{wk}", None)
                                         _day_stats_mark_done(posted=True)
+                                        _auto_dossier_note(workout)
                                         _session_log = st.session_state.setdefault("session_feedback_log", [])
                                         _session_log.append({
                                             "athlete_name": workout["athlete_name"],
@@ -1960,6 +1988,7 @@ elif page == "feedback":
                                     )
                                     st.session_state[f"posted_{wk}"] = True
                                     _day_stats_mark_done(posted=True)
+                                    _auto_dossier_note(workout)
                                     # Sla op voor sessie-samenvatting
                                     _session_log = st.session_state.setdefault("session_feedback_log", [])
                                     _session_log.append({

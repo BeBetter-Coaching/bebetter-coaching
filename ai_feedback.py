@@ -690,3 +690,82 @@ Regels:
     )
 
     return response.content[0].text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Dossier-signalering — detecteert dossier-waardige berichten van atleten
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+# Trap 1: alleen berichten met een hard signaal gaan door naar de AI-check.
+# Korte tokens met woordgrenzen om valse hits (bijv. 'pr' in 'proberen') te voorkomen.
+_SIGNAAL_PATRONEN = [
+    r"blessure", r"geblesseerd", r"\bpijn\b", r"fysio", r"\bziek\b", r"griep",
+    r"koorts", r"overtraind", r"\bgestopt\b", r"\bstoppen\b", r"opgeven",
+    r"opgegeven", r"huilen", r"somber", r"depressi", r"burn[- ]?out",
+    r"zwanger", r"operatie", r"ziekenhuis", r"\bpr\b", r"\brecord\b",
+    r"snelste", r"nooit eerder", r"beste ooit", r"doorbraak",
+    r"motivatie kwijt", r"geen motivatie", r"twijfel",
+]
+
+_DOSSIER_CHECK_SYSTEM = """Je beoordeelt of een bericht van een hardloop-atleet aan de coach dossier-waardig is.
+
+ALLEEN dossier-waardig bij:
+- (nieuwe of verergerende) blessure of ziekte
+- mentale dip, motivatiecrisis of twijfel over de coaching
+- ingrijpende levensgebeurtenis die de training raakt
+- uitzonderlijke doorbraak, PR of mijlpaal
+
+NIET dossier-waardig: gewone vermoeidheid, een losse goede of slechte training, weer, drukte op werk zonder gevolgen.
+
+Antwoord met uitsluitend "NEE", of met één feitelijke Nederlandse zin (max 20 woorden) die het signaal samenvat. Geen oordeel, geen advies."""
+
+
+def check_dossier_signal(workout_data: dict) -> str | None:
+    """
+    Geeft een één-zin dossier-notitie terug als het atleet-bericht een
+    uitschieter is (heel goed of heel slecht), anders None.
+
+    Trap 1 (gratis): gevoel-score extreem óf signaalwoord in de tekst.
+    Trap 2 (Haiku): strenge AI-check + samenvatting in één zin.
+    """
+    teksten = [workout_data.get("post_notes") or ""]
+    teksten += workout_data.get("athlete_comments") or []
+    tekst = "\n".join(t for t in teksten if t and t.strip()).strip()
+    if not tekst:
+        return None  # zonder eigen woorden valt er niets te noteren
+
+    felt_extreem = False
+    try:
+        felt = workout_data.get("felt")
+        felt_extreem = int(float(felt)) in (1, 4, 5) if felt else False
+    except (ValueError, TypeError):
+        pass
+
+    tekst_lc = tekst.lower()
+    heeft_signaalwoord = any(_re.search(p, tekst_lc) for p in _SIGNAAL_PATRONEN)
+    if not (felt_extreem or heeft_signaalwoord):
+        return None
+
+    _FELT_LABELS = {1: "Geweldig", 2: "Goed", 3: "Normaal", 4: "Slecht", 5: "Vreselijk"}
+    try:
+        felt_str = _FELT_LABELS.get(int(float(workout_data.get("felt") or 0)), "onbekend")
+    except (ValueError, TypeError):
+        felt_str = "onbekend"
+
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=80,
+        system=_DOSSIER_CHECK_SYSTEM,
+        messages=[{"role": "user", "content": (
+            f"Training: {workout_data.get('workout_name', 'training')} "
+            f"({workout_data.get('workout_date', '')})\n"
+            f"Gevoel-score: {felt_str}\n\n"
+            f"Wat de atleet schrijft:\n{tekst[:1500]}"
+        )}],
+    )
+    out = response.content[0].text.strip()
+    if not out or out.upper().startswith("NEE") or len(out) < 8:
+        return None
+    return out
