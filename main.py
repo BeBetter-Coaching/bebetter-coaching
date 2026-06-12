@@ -2285,6 +2285,16 @@ elif page == "intake":
         st.session_state["ik_werkdruk"]        = _src.get("werkdruk", "Normaal")
         st.session_state["ik_ondergrond"]      = _src.get("loopondergrond", ["Weg"])
         st.session_state["ik_op_tijd"]         = _src.get("op_tijd", False)
+        # Nieuwe-klant-velden
+        st.session_state["ik_motivatie"]       = _src.get("motivatie", "")
+        st.session_state["ik_loopervaring"]    = _src.get("loopervaring", "")
+        st.session_state["ik_prs"]             = _src.get("prs", "")
+        st.session_state["ik_eerdere"]         = _src.get("eerdere_schemas", "")
+        st.session_state["ik_slaap"]           = _src.get("slaap", "")
+        st.session_state["ik_klachten"]        = _src.get("huidige_klachten", "")
+        st.session_state["ik_leuk"]            = _src.get("leuk", "")
+        st.session_state["ik_niet_leuk"]       = _src.get("niet_leuk", "")
+        st.session_state["ik_wedstrijd"]       = _src.get("wedstrijddatum_tekst", "")
         st.session_state["ik_loaded_for"]      = ik_athlete_key
 
     st.markdown("<hr class='bb-divider'>", unsafe_allow_html=True)
@@ -2334,15 +2344,77 @@ elif page == "intake":
     ca, cb = st.columns(2)
     with ca:
         blessure = st.text_input("Blessurehistorie", key="ik_blessure",
-                                 placeholder="bijv. linkerknie (2023)")
-        wat_werkte = st.text_input("Wat werkte goed", key="ik_wat_werkte")
+                                 placeholder="bijv. linkerknie (2023), shin splints 2x")
     with cb:
         andere = st.text_input("Andere sporten / verplichtingen", key="ik_andere",
-                               placeholder="bijv. HYROX 2x/week")
-        wat_niet = st.text_input("Wat werkte niet", key="ik_wat_niet")
+                               placeholder="bijv. HYROX 2x/week, voetbal op zaterdag")
 
-    coach_notitie = st.text_area("⭐ Coach notitie — jouw kennis over deze atleet",
-                                 key="ik_coach_notitie", height=80)
+    if ik_mode == _MODE_NIEUW:
+        # ── Nieuwe klant: achtergrond die je nog niet kent ──
+        st.markdown("<hr class='bb-divider'>", unsafe_allow_html=True)
+        st.markdown("<div class='bb-intake-label'>Loophistorie & achtergrond</div>", unsafe_allow_html=True)
+        cn1, cn2 = st.columns(2)
+        with cn1:
+            loopervaring = st.text_input(
+                "Hoe lang loop je al, en hoe consistent het laatste jaar?",
+                key="ik_loopervaring",
+                placeholder="bijv. 3 jaar, laatste half jaar 2-3x/week zonder onderbreking",
+            )
+            prs = st.text_input(
+                "Beste prestaties ooit (PR's)", key="ik_prs",
+                placeholder="bijv. 5km 24:10 (2024), 10km 51:30 (2023)",
+            )
+            eerdere = st.text_input(
+                "Eerder een schema of coach gehad? Hoe beviel dat?", key="ik_eerdere",
+                placeholder="bijv. Runkeeper-schema gevolgd, vond het te eentonig",
+            )
+        with cn2:
+            wedstrijd = st.text_input(
+                "Wedstrijd al geprikt? Welke en wanneer?", key="ik_wedstrijd",
+                placeholder="bijv. Dam tot Damloop, 21 september — of: nog niet",
+            )
+            klachten = st.text_input(
+                "Huidige klachten of fysieke aandachtspunten", key="ik_klachten",
+                placeholder="bijv. stijve kuiten na lange duurloop, niets acuuts",
+            )
+
+        st.markdown("<div class='bb-intake-label'>Leefstijl & motivatie</div>", unsafe_allow_html=True)
+        cm1, cm2 = st.columns(2)
+        with cm1:
+            motivatie = st.text_area(
+                "Waarom dit doel — wat drijft je?", key="ik_motivatie", height=70,
+                placeholder="bijv. 40 worden en fitter zijn dan ooit; samen met zus de halve lopen",
+            )
+            slaap = st.text_input(
+                "Slaap & leefritme", key="ik_slaap",
+                placeholder="bijv. 7 uur, jonge kinderen, onregelmatige diensten",
+            )
+        with cm2:
+            leuk = st.text_input(
+                "Waar word je blij van in training?", key="ik_leuk",
+                placeholder="bijv. lange rustige duurlopen, buiten in het bos",
+            )
+            niet_leuk = st.text_input(
+                "Waar zie je tegenop / wat haat je?", key="ik_niet_leuk",
+                placeholder="bijv. baantraining, vroege ochtenden",
+            )
+
+        coach_notitie = st.text_area(
+            "⭐ Eerste indruk & afspraken — jouw inschatting na het gesprek",
+            key="ik_coach_notitie", height=80,
+            placeholder="bijv. enthousiast maar wil te snel; eerst 4 wkn rustig opbouwen, "
+                        "belastbaarheid kuiten in de gaten houden",
+        )
+    else:
+        # ── Bestaande atleet: wat we al weten uit de samenwerking ──
+        cw1, cw2 = st.columns(2)
+        with cw1:
+            wat_werkte = st.text_input("Wat werkte goed", key="ik_wat_werkte")
+        with cw2:
+            wat_niet = st.text_input("Wat werkte niet", key="ik_wat_niet")
+        coach_notitie = st.text_area("⭐ Coach notitie — jouw kennis over deze atleet",
+                                     key="ik_coach_notitie", height=80)
+
     notities = st.text_area("Vrije notities (intake-gesprek)", key="ik_notities", height=110,
                             placeholder="Alles wat verder ter sprake kwam…")
 
@@ -2350,6 +2422,8 @@ elif page == "intake":
     col_save, col_del, _sp = st.columns([2, 2, 3])
     with col_save:
         if st.button("💾 Intake opslaan", type="primary", key="btn_ik_save", use_container_width=True):
+            # Mode-specifieke velden uit session state: zo blijven waarden van
+            # de andere modus bewaard (bijv. na koppelen van een nieuwe klant)
             intakes[ik_athlete_key] = {
                 "athlete_name": ik_athlete_name,
                 "naam": naam, "leeftijd": leeftijd, "horloge": horloge,
@@ -2359,8 +2433,18 @@ elif page == "intake":
                 "herstelcapaciteit": herstel, "werkdruk": werkdruk,
                 "loopondergrond": ondergrond,
                 "blessurehistorie": blessure, "andere_sporten": andere,
-                "wat_werkte": wat_werkte, "wat_niet_werkte": wat_niet,
+                "wat_werkte": st.session_state.get("ik_wat_werkte", ""),
+                "wat_niet_werkte": st.session_state.get("ik_wat_niet", ""),
                 "coach_notitie": coach_notitie, "notities": notities,
+                "motivatie": st.session_state.get("ik_motivatie", ""),
+                "loopervaring": st.session_state.get("ik_loopervaring", ""),
+                "prs": st.session_state.get("ik_prs", ""),
+                "eerdere_schemas": st.session_state.get("ik_eerdere", ""),
+                "slaap": st.session_state.get("ik_slaap", ""),
+                "huidige_klachten": st.session_state.get("ik_klachten", ""),
+                "leuk": st.session_state.get("ik_leuk", ""),
+                "niet_leuk": st.session_state.get("ik_niet_leuk", ""),
+                "wedstrijddatum_tekst": st.session_state.get("ik_wedstrijd", ""),
                 "updated_at": date.today().isoformat(),
             }
             ok, err = intake_store.save_intakes(intakes)
@@ -3020,7 +3104,26 @@ elif page == "builder":
                     st.session_state["builder_langste_afstand"]   = _saved_ik.get("langste_afstand", "")
                     st.session_state["builder_blessure"]          = _saved_ik.get("blessurehistorie", "")
                     st.session_state["builder_andere"]            = _saved_ik.get("andere_sporten", "")
-                    st.session_state["builder_coach_notitie"]     = _saved_ik.get("coach_notitie", "")
+                    # Coach-notitie + intake-achtergrond (nieuwe-klant-velden)
+                    # samenvoegen zodat alles in het AI-prompt terechtkomt
+                    _ctx_extra = [
+                        f"{_lbl}: {_saved_ik[_f]}"
+                        for _lbl, _f in [
+                            ("Motivatie", "motivatie"),
+                            ("Loopervaring", "loopervaring"),
+                            ("PR's", "prs"),
+                            ("Eerdere schema-ervaring", "eerdere_schemas"),
+                            ("Slaap/leefritme", "slaap"),
+                            ("Huidige klachten", "huidige_klachten"),
+                            ("Vindt leuk", "leuk"),
+                            ("Vindt niet leuk", "niet_leuk"),
+                            ("Wedstrijd", "wedstrijddatum_tekst"),
+                        ]
+                        if _saved_ik.get(_f)
+                    ]
+                    st.session_state["builder_coach_notitie"] = "\n".join(
+                        filter(None, [_saved_ik.get("coach_notitie", "")] + _ctx_extra)
+                    )
                     st.session_state["builder_wat_werkte"]        = _saved_ik.get("wat_werkte", "")
                     st.session_state["builder_wat_niet_werkte"]   = _saved_ik.get("wat_niet_werkte", "")
                     st.session_state["builder_kwaliteitservaring"] = _saved_ik.get("kwaliteitservaring", "Enige ervaring")
