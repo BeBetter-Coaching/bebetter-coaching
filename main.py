@@ -3099,7 +3099,7 @@ elif page == "atleten":
     module_header("Atleet-dossiers", "👤")
 
     st.caption("Klik op een atleet voor het volledige dossier: intake, notities, trends, races en zones. "
-               "📝 = intake aanwezig · ⏸ = op hold")
+               "📝 = intake aanwezig · 🗒️ = coach-notities (aantal) · ⏸ = op hold")
 
     if st.session_state.get("intakes") is None:
         st.session_state["intakes"] = intake_store.load_intakes()
@@ -3107,6 +3107,8 @@ elif page == "atleten":
     if "schema_on_hold" not in st.session_state:
         st.session_state["schema_on_hold"] = intake_store.load_on_hold()
     _oh = st.session_state["schema_on_hold"]
+    # Notities één keer per sessie laden (gedeelde cache met het dossier)
+    _notes_all = dossier._notes()
 
     # ── Recent bekeken dossiers ──
     _recents = st.session_state.get("recent_dossiers", [])
@@ -3121,8 +3123,12 @@ elif page == "atleten":
                         st.session_state["dossier_user_key"] = a["user_key"]
                         go_to("dossier")
 
-    _zoek = st.text_input("🔍 Zoek atleet", key="atleten_zoek",
-                          placeholder="Typ een naam…", label_visibility="collapsed").strip().lower()
+    _czoek, _cfilter = st.columns([3, 1], vertical_alignment="center")
+    with _czoek:
+        _zoek = st.text_input("🔍 Zoek atleet", key="atleten_zoek",
+                              placeholder="Typ een naam…", label_visibility="collapsed").strip().lower()
+    with _cfilter:
+        _alleen_notities = st.toggle("🗒️ Alleen met notities", key="atleten_alleen_notities")
 
     # ── Nieuwe klanten: intake gedaan, nog niet in FinalSurge ──
     _wachtend = {k: v for k, v in _intakes_all.items() if k.startswith("nieuw:")}
@@ -3143,8 +3149,10 @@ elif page == "atleten":
     for group_name, members in athletes_by_group.items():
         if _zoek:
             members = [a for a in members if _zoek in a["name"].lower()]
-            if not members:
-                continue
+        if _alleen_notities:
+            members = [a for a in members if _notes_all.get(a["user_key"])]
+        if not members:
+            continue
         st.markdown(f'<p class="bb-section-label">{_esc(group_name)} — {len(members)}</p>',
                     unsafe_allow_html=True)
         cols = st.columns(3)
@@ -3152,6 +3160,9 @@ elif page == "atleten":
             badges = []
             if a["user_key"] in _intakes_all:
                 badges.append("📝")
+            _n_notes = len(_notes_all.get(a["user_key"], []))
+            if _n_notes:
+                badges.append(f"🗒️{_n_notes}")
             if a["user_key"] in _oh:
                 badges.append("⏸")
             label = a["name"] + (("  " + " ".join(badges)) if badges else "")
