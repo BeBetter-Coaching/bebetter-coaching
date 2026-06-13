@@ -258,10 +258,11 @@ def group_is_excluded(group_name: str, exclude_groups) -> bool:
     """
     True als de groepsnaam bij een uit te sluiten groep hoort.
 
-    Matcht als alle woorden van een zoekterm in de groepsnaam voorkomen
-    (genormaliseerd, case-insensitief). Zo vangt exclude {'los schema'} ook
-    'Los schema', "Losse schema's" en 'Los schema (geen feedback)', terwijl
-    echte trainingsgroepen veilig blijven (die bevatten nooit beide woorden).
+    Matcht als alle woorden van een zoekterm als deelstring in de groepsnaam
+    voorkomen (genormaliseerd, case-insensitief). Zo vangt exclude
+    {'los schema'} ook '1. Los trainingsschema', "Losse schema's" en
+    'Los schema (geen feedback)', terwijl echte trainingsgroepen veilig
+    blijven (die bevatten nooit zowel 'los' als 'schema').
     """
     if not exclude_groups:
         return False
