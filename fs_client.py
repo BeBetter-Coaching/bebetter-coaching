@@ -254,6 +254,27 @@ def get_athletes_by_group() -> dict[str, list[dict]]:
     return groups
 
 
+def group_is_excluded(group_name: str, exclude_groups) -> bool:
+    """
+    True als de groepsnaam bij een uit te sluiten groep hoort.
+
+    Matcht als alle woorden van een zoekterm in de groepsnaam voorkomen
+    (genormaliseerd, case-insensitief). Zo vangt exclude {'los schema'} ook
+    'Los schema', "Losse schema's" en 'Los schema (geen feedback)', terwijl
+    echte trainingsgroepen veilig blijven (die bevatten nooit beide woorden).
+    """
+    if not exclude_groups:
+        return False
+    g = (group_name or "").strip().lower()
+    if not g:
+        return False
+    for term in exclude_groups:
+        woorden = term.strip().lower().split()
+        if woorden and all(w in g for w in woorden):
+            return True
+    return False
+
+
 def _pace_to_float(pace_str) -> float:
     """Converteer pace string (bijv. '3:12' of '3:12/km') naar float min/km. Hoger = langzamer."""
     if not pace_str:
@@ -601,9 +622,8 @@ def get_workouts_needing_feedback(
     if athlete_filter:
         athletes = [a for a in athletes if a["user_key"] in athlete_filter]
     if exclude_groups:
-        _excl = {g.strip().lower() for g in exclude_groups}
         athletes = [a for a in athletes
-                    if (a.get("group") or "").strip().lower() not in _excl]
+                    if not group_is_excluded(a.get("group"), exclude_groups)]
 
     def _is_athlete_comment(c: dict) -> bool:
         if "is_athlete" in c:
@@ -1124,12 +1144,11 @@ def get_compliance_alerts(
     start = today - timedelta(days=days_back)
     end = today - timedelta(days=1)
     skip = set(on_hold_keys or [])
-    excl = {g.strip().lower() for g in (exclude_groups or set())}
 
     athletes = [
         a for a in get_athletes()
         if a["user_key"] not in skip
-        and (a.get("group") or "").strip().lower() not in excl
+        and not group_is_excluded(a.get("group"), exclude_groups)
     ]
 
     def _check(a: dict) -> dict | None:
