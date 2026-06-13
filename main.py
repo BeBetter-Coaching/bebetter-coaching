@@ -1400,6 +1400,12 @@ if page == "home":
             st.markdown(f"<style>{_tile_css}</style>", unsafe_allow_html=True)
 
             def _open_feedback_alle():
+                # Wis een eventueel achtergebleven groeps-/atleetfilter zodat de
+                # module exact de volledige lijst toont die deze tegel telt
+                for _k in list(st.session_state.keys()):
+                    if _k.startswith("chk_"):
+                        st.session_state[_k] = False
+                st.session_state.pop("feedback_group_filter", None)
                 st.session_state.pop("workouts", None)
                 st.session_state.pop("last_filter", None)
                 go_to("feedback")
@@ -1748,6 +1754,23 @@ elif page == "feedback":
 
     # Filter overgeslagen workouts — zelfde filter als de dagstatus-tegel
     workouts = _filter_skipped(workouts)
+
+    # Synchroniseer de homepage-tegel met de live module-telling, maar alleen
+    # bij de volledige lijst (geen atleetfilter, standaard-toggles, days_back=3)
+    # — exact de parameters waarmee de tegel zelf telt.
+    if (
+        athlete_filter is None
+        and not include_data_only
+        and not include_planned_no_notes
+        and days_back == 3
+    ):
+        _live_open = sum(
+            1 for w in workouts
+            if not st.session_state.get(f"posted_{w['workout_key']}")
+        )
+        _ds = st.session_state.get("day_stats")
+        if _ds is not None:
+            _ds["feedback_pending"] = _live_open
 
     if not workouts:
         st.success("✅ Geen openstaande workouts gevonden voor de huidige filters.")
