@@ -3815,6 +3815,12 @@ elif page == "builder":
 
         st.markdown(f"<div class='bb-intake-label'>Stap 2 — Plan voor {_esc(naam)}</div>", unsafe_allow_html=True)
 
+        # Zichtbaar maken dat de Garmin-herstelstatus is meegewogen (alleen als die
+        # er is voor deze atleet; bij klanten zonder Garmin-data verschijnt niets).
+        _garmin_line = intake_store.garmin_summary_line(intake.get("athlete_key", ""))
+        if _garmin_line:
+            st.info(f"🏃 Garmin-herstel meegenomen: {_garmin_line}")
+
         # Auto-genereren als we hier net zijn aangekomen
         if st.session_state.get("builder_plan") is None:
             with st.spinner("Plan genereren… (±15-30 seconden, automatische retry bij serverfouten)"):
