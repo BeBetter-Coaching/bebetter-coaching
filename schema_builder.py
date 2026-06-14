@@ -13,6 +13,8 @@ from typing import Optional
 
 import anthropic
 
+import intake_store
+
 client = anthropic.Anthropic()
 
 
@@ -1045,6 +1047,17 @@ Het goedgekeurde schema:
 def generate_plan(intake: dict) -> str:
     """Genereer een trainingsplan tekstueel (stap 1-3)."""
     prompt = build_prompt(intake)
+
+    # Garmin-herstelstatus meegeven als achtergrond (alleen als de hardloopcoach-app
+    # die publiceerde voor deze atleet; anders leeg -> prompt en gedrag ongewijzigd).
+    _garmin = intake_store.garmin_context_text(intake.get("athlete_key", ""))
+    if _garmin:
+        prompt += (
+            "\n\n" + _garmin + "\nWeeg deze actuele herstel- en belastingstatus mee bij "
+            "het opbouwtempo en de intensiteit van de eerste weken (bijvoorbeeld "
+            "voorzichtiger starten na onderherstel of een recente zware sessie). Het "
+            "doel, de wedstrijddatum en de zones blijven leidend."
+        )
 
     # Bouw de message content op: tekst + eventuele afbeeldingen
     content = [{"type": "text", "text": prompt}]

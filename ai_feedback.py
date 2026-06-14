@@ -5,6 +5,8 @@ from __future__ import annotations
 import anthropic
 from datetime import date
 
+import intake_store
+
 client = anthropic.Anthropic()
 
 SYSTEM_PROMPT = """Je schrijft concept-feedback namens een hardloopcoach aan zijn atleten.
@@ -305,10 +307,15 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
             f"Zeg NOOIT dat iets 'hoog', 'te hard' of 'in zone X' was."
         )
 
+    # Garmin-herstelstatus (alleen als de hardloopcoach-app die publiceerde voor
+    # deze atleet; anders leeg -> prompt en gedrag ongewijzigd).
+    garmin_context = intake_store.garmin_context_text(athlete_key)
+    garmin_section = f"\n\n{garmin_context}" if garmin_context else ""
+
     context = f"""Training: {workout_name}
 
 WAT WAS DE BEDOELING (workout builder):
-{plan_text}{zones_section}
+{plan_text}{zones_section}{garmin_section}
 
 Samenvattende data:
 {activity_summary}{lap_section}
