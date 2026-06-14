@@ -292,3 +292,30 @@ def garmin_context_text(user_key: str) -> str:
         f"{body}\n"
         f"(bijgewerkt: {state.get('updated_at', '')})"
     )
+
+
+def garmin_summary_line(user_key: str) -> str:
+    """Korte one-liner voor in de UI (leeg als er geen Garmin-data is).
+
+    Bv. 'readiness ORANJE · belasting 82% van normaal · zware sessie 19u geleden'.
+    """
+    if not user_key:
+        return ""
+    try:
+        state = (load_garmin_state() or {}).get(user_key)
+    except Exception:
+        return ""
+    if not state:
+        return ""
+    readiness = state.get("readiness") or {}
+    sig = readiness.get("signals") or {}
+    parts: list[str] = []
+    light_nl = {"green": "GROEN", "amber": "ORANJE", "red": "ROOD"}.get(readiness.get("light"))
+    if light_nl:
+        parts.append(f"readiness {light_nl}")
+    if sig.get("acwr") is not None:
+        parts.append(f"belasting {round(sig['acwr'] * 100)}% van normaal")
+    hard = sig.get("last_hard_session")
+    if hard and hard.get("hours_ago") is not None and hard["hours_ago"] <= 48:
+        parts.append(f"zware sessie {round(hard['hours_ago'])}u geleden")
+    return " · ".join(parts)
