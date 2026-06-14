@@ -17,6 +17,61 @@ import intake_store
 
 _FELT_LABELS = {1: "😄 Geweldig", 2: "🙂 Goed", 3: "😐 Normaal", 4: "😕 Slecht", 5: "😣 Vreselijk"}
 
+_GARMIN_LIGHT = {
+    "green": ("🟢 GROEN — hersteld, ruimte om te trainen", "success"),
+    "amber": ("🟡 ORANJE — let op, pas de intensiteit aan", "warning"),
+    "red": ("🔴 ROOD — onderherstel, houd het rustig", "error"),
+}
+
+
+def _render_garmin_panel(user_key: str) -> None:
+    """Toon de Garmin-readiness uit de hardloopcoach-app (alleen als die er is).
+
+    Volledig defensief: zonder data of bij wélke fout dan ook wordt er niets
+    getoond, zodat het dossier zich exact als voorheen gedraagt. Atleten zonder
+    gepubliceerde Garmin-state (alle klanten nu) zien dus niets nieuws.
+    """
+    try:
+        state = (intake_store.load_garmin_state() or {}).get(user_key)
+    except Exception:
+        return
+    if not state:
+        return
+    try:
+        readiness = state.get("readiness") or {}
+        sig = readiness.get("signals") or {}
+        light = readiness.get("light")
+
+        st.markdown("#### 🏃 Garmin-readiness")
+        label, kind = _GARMIN_LIGHT.get(light, (f"Readiness: {light}", "info"))
+        getattr(st, kind)(label)
+
+        for reden in (readiness.get("reasons") or [])[:3]:
+            st.markdown(f"- {reden}")
+
+        def _f(v, suffix=""):
+            return f"{v}{suffix}" if v is not None else "—"
+
+        hrv = sig.get("hrv") or {}
+        cols = st.columns(5)
+        cols[0].metric("HRV", _f(hrv.get("current")))
+        cols[1].metric("Slaap", _f(sig.get("sleep_last_night_h"), " u"))
+        cols[2].metric("Rust-HS", _f(sig.get("resting_hr")))
+        cols[3].metric("Body Battery", _f(sig.get("body_battery_at_wake")))
+        cols[4].metric("ACWR", _f(sig.get("acwr")))
+
+        report_md = (state.get("weekly") or {}).get("report_md")
+        if report_md:
+            with st.expander("📋 Wekelijks coach-rapport (Garmin)"):
+                st.markdown(report_md)
+
+        if state.get("updated_at"):
+            st.caption(f"Garmin-data bijgewerkt: {state['updated_at']}")
+        st.divider()
+    except Exception:
+        # Nooit het dossier laten vallen op dit extra paneel.
+        return
+
 
 # ---------------------------------------------------------------------------
 # Coach-notities (GitHub-backed, session-gecachet)
@@ -254,6 +309,8 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
     st.markdown("  ·  ".join(status_parts))
     if on_hold_info:
         st.warning("Deze atleet staat op hold en telt niet mee in dagstatus en schema-verloop.")
+
+    _render_garmin_panel(user_key)
 
     col_intake, col_notes = st.columns([1, 1])
 

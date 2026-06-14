@@ -216,3 +216,19 @@ def save_builder_state(state: dict) -> tuple[bool, str]:
 def clear_builder_state() -> tuple[bool, str]:
     """Wis de opgeslagen builder-state."""
     return _save_json("builder_state.json", _BUILDER_LOCAL, {}, "Reset builder_state via app")
+
+
+# ---------------------------------------------------------------------------
+# Garmin athlete-state (gepubliceerd door de losse hardloopcoach-app)
+# ---------------------------------------------------------------------------
+
+_GARMIN_STATE_LOCAL = os.path.join(_BASE_DIR, ".garmin_state.json")
+
+
+def load_garmin_state() -> dict:
+    """Laad de Garmin athlete-state. Dict: user_key → {readiness, weekly, ...}.
+
+    Wordt geschreven door de aparte hardloopcoach-app; alleen-lezen hier.
+    Leeg dict als er (nog) geen data is.
+    """
+    return _load_json("garmin_state.json", _GARMIN_STATE_LOCAL)
