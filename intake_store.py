@@ -232,3 +232,63 @@ def load_garmin_state() -> dict:
     Leeg dict als er (nog) geen data is.
     """
     return _load_json("garmin_state.json", _GARMIN_STATE_LOCAL)
+
+
+def garmin_context_text(user_key: str) -> str:
+    """Korte, AI-leesbare samenvatting van de Garmin-state voor deze atleet.
+
+    Bedoeld om als achtergrond mee te geven aan de schema- en feedback-prompts.
+    Geeft een lege string ('') terug als er geen Garmin-data is — dan verandert
+    er niets aan de prompt en dus niets aan het gedrag voor die atleet.
+    """
+    if not user_key:
+        return ""
+    try:
+        state = (load_garmin_state() or {}).get(user_key)
+    except Exception:
+        return ""
+    if not state:
+        return ""
+
+    readiness = state.get("readiness") or {}
+    sig = readiness.get("signals") or {}
+    light_nl = {"green": "GROEN", "amber": "ORANJE", "red": "ROOD"}.get(
+        readiness.get("light"), ""
+    )
+
+    lines: list[str] = []
+    if light_nl:
+        reasons = "; ".join((readiness.get("reasons") or [])[:2])
+        lines.append(f"Readiness vandaag: {light_nl}" + (f" — {reasons}" if reasons else ""))
+
+    hrv = sig.get("hrv") or {}
+    nums: list[str] = []
+    if hrv.get("current") is not None:
+        nums.append(f"HRV {hrv['current']} (baseline {hrv.get('baseline_mean', '?')})")
+    if sig.get("sleep_last_night_h") is not None:
+        nums.append(f"slaap {sig['sleep_last_night_h']}u")
+    if sig.get("resting_hr") is not None:
+        nums.append(f"rust-HS {sig['resting_hr']}")
+    if sig.get("body_battery_at_wake") is not None:
+        nums.append(f"Body Battery bij ontwaken {sig['body_battery_at_wake']}")
+    if nums:
+        lines.append(", ".join(nums))
+
+    if sig.get("acwr") is not None:
+        zone = sig.get("acwr_zone", "")
+        lines.append(f"belasting deze week {round(sig['acwr'] * 100)}% van normaal ({zone})")
+
+    hard = sig.get("last_hard_session")
+    if hard and hard.get("hours_ago") is not None and hard["hours_ago"] <= 48:
+        lines.append(f"zware sessie {round(hard['hours_ago'])}u geleden ({hard.get('name', '')})")
+
+    if not lines:
+        return ""
+
+    body = "\n".join(f"- {x}" for x in lines)
+    return (
+        "GARMIN-HERSTELSTATUS van deze atleet (momentopname uit de hardloopcoach-app; "
+        "alleen als achtergrond — het plan, de doelen en de zones blijven leidend):\n"
+        f"{body}\n"
+        f"(bijgewerkt: {state.get('updated_at', '')})"
+    )
