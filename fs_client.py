@@ -852,6 +852,13 @@ def diagnose_athlete_feedback(user_key: str, days_back: int = 10) -> list[dict]:
 
         has_athlete_input = bool(post_notes or comment_count or felt or effort)
         is_past = bool(workout_date_str) and workout_date_str < today_str
+        first_act = acts[0] if acts else {}
+        is_planned_workout = bool(
+            first_act.get("planned_amount") or
+            first_act.get("planned_duration") or
+            (w.get("description") or "").strip()
+        )
+        is_planned_no_notes = is_past and has_data and not has_athlete_input and is_planned_workout
 
         rij = {
             "datum": workout_date_str,
@@ -871,9 +878,14 @@ def diagnose_athlete_feedback(user_key: str, days_back: int = 10) -> list[dict]:
             continue
 
         if not has_athlete_input:
-            rij["beslissing"] = "❌ niet getoond (standaard)"
-            rij["reden"] = ("geen input van atleet (geen notitie, gevoel, RPE of comment). "
-                            "Komt alleen met de toggles 'zonder notities'.")
+            if is_planned_no_notes:
+                rij["beslissing"] = "✅ komt door"
+                rij["reden"] = ("uitgevoerde geplande training zonder notitie. Wordt altijd "
+                                "getoond (toggle 'geplande trainingen zonder notities' staat aan).")
+            else:
+                rij["beslissing"] = "❌ niet getoond (standaard)"
+                rij["reden"] = ("losse activiteit zonder plan én zonder input van de atleet. "
+                                "Komt alleen met de toggle 'ook trainingen zonder notities'.")
             rapport.append(rij)
             continue
 

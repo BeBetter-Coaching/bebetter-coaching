@@ -1272,8 +1272,8 @@ if page == "home":
             # "Los schema"-groep krijgt geen feedback → niet meetellen
             _fb_fut = _pool.submit(
                 fs_client.get_workouts_needing_feedback,
-                3, None, False, False,
-                {"los schema"}, True,
+                3, None, False, True,  # include_planned_no_notes=True: uitgevoerde
+                {"los schema"}, True,  # geplande trainingen altijd meetellen
             )
             _races_fut = _pool.submit(fs_client.get_upcoming_races, 7)
             _alerts_fut = _pool.submit(
@@ -1683,8 +1683,9 @@ elif page == "feedback":
 
         include_planned_no_notes = st.toggle(
             "Geplande trainingen zonder notities",
-            value=False,
-            help="Voltooide trainingen uit het schema waarop de atleet geen notitie heeft achtergelaten.",
+            value=True,
+            help="Afspraak: een uitgevoerde geplande training wordt altijd getoond, "
+                 "ook als de atleet er geen notitie bij schreef. Uitzetten verbergt ze.",
         )
         include_data_only = st.toggle(
             "Ook trainingen zonder notities",
@@ -1792,12 +1793,12 @@ elif page == "feedback":
     workouts = _filter_skipped(workouts)
 
     # Synchroniseer de homepage-tegel met de live module-telling, maar alleen
-    # bij de volledige lijst (geen atleetfilter, standaard-toggles, days_back=3)
-    # — exact de parameters waarmee de tegel zelf telt.
+    # als de filters exact overeenkomen met waarmee de tegel zelf telt:
+    # geen atleetfilter, days_back=3, data-only uit, geplande-zonder-notitie aan.
     if (
         athlete_filter is None
         and not include_data_only
-        and not include_planned_no_notes
+        and include_planned_no_notes
         and days_back == 3
     ):
         _live_open = sum(
