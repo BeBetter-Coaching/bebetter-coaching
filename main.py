@@ -1706,6 +1706,42 @@ elif page == "feedback":
             st.rerun()
 
         st.markdown("---")
+        with st.expander("🔍 Waarom mist iemand?"):
+            st.caption("Kies een atleet en zie per training waarom die wel of niet in de "
+                       "feedbacklijst komt.")
+            _diag_all = sorted(
+                [a for members in athletes_by_group.values() for a in members],
+                key=lambda x: x["name"],
+            )
+            _diag_naam = st.selectbox("Atleet", [a["name"] for a in _diag_all], key="diag_athlete")
+            _diag_dagen = st.slider("Kijk terug (dagen)", 3, 21, 10, key="diag_days")
+            if st.button("Analyseer", key="diag_run"):
+                _diag_key = next(a["user_key"] for a in _diag_all if a["name"] == _diag_naam)
+                with st.spinner("Analyseren…"):
+                    try:
+                        st.session_state["diag_result"] = fs_client.diagnose_athlete_feedback(
+                            _diag_key, days_back=_diag_dagen)
+                    except Exception as e:
+                        st.session_state["diag_result"] = [{"fout": str(e)}]
+            _diag_res = st.session_state.get("diag_result")
+            if _diag_res is not None:
+                if not _diag_res:
+                    st.info("Geen trainingen in deze periode.")
+                else:
+                    for _r in _diag_res:
+                        if "fout" in _r:
+                            st.error(_r["fout"])
+                            continue
+                        st.markdown(f"**{_r['datum']} · {_r['naam']}** — {_r['beslissing']}")
+                        st.caption(
+                            f"{_r['activiteiten']} · voltooid: {'ja' if _r['voltooid'] else 'nee'} · "
+                            f"gevoel: {_r['gevoel'] or '—'} · RPE: {_r['rpe'] or '—'} · "
+                            f"notitie: {'ja' if _r['post_notes'] else 'nee'} · comments: {_r['comments']}"
+                        )
+                        st.caption(f"↳ {_r['reden']}")
+                        st.markdown("")
+
+        st.markdown("---")
         st.caption(f"Vandaag: {date.today().strftime('%d %B %Y')}")
 
     # Workouts laden

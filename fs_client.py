@@ -818,6 +818,94 @@ def get_workouts_needing_feedback(
     return results
 
 
+def diagnose_athlete_feedback(user_key: str, days_back: int = 10) -> list[dict]:
+    """
+    Diagnose: waarom komt een workout van deze atleet wel/niet in de
+    feedbacklijst? Loopt dezelfde logica na als get_workouts_needing_feedback,
+    maar filtert niets weg en geeft per workout de beslissing + reden terug.
+    """
+    end = date.today()
+    start = end - timedelta(days=days_back)
+    today_str = end.isoformat()
+    coach_key = get_coach_key()
+
+    def _is_athlete_comment(c: dict) -> bool:
+        if "is_athlete" in c:
+            return bool(c["is_athlete"])
+        return c.get("user_key") != coach_key
+
+    def _ts(c: dict) -> str:
+        return c.get("timestamp") or c.get("created_at") or ""
+
+    workouts = get_workouts_deduped(user_key, start, end)
+    rapport = []
+    for w in workouts:
+        post_notes = (w.get("post_workout_notes") or "").strip()
+        comment_count = w.get("CommentCount") or 0
+        has_data = bool(w.get("has_actual_data"))
+        felt = w.get("felt")
+        effort = w.get("effort")
+        workout_key = w.get("key")
+        acts = w.get("Activities") or []
+        act_types = [a.get("activity_type_name") or "?" for a in acts]
+        workout_date_str = (w.get("workout_date") or "")[:10]
+
+        has_athlete_input = bool(post_notes or comment_count or felt or effort)
+        is_past = bool(workout_date_str) and workout_date_str < today_str
+
+        rij = {
+            "datum": workout_date_str,
+            "naam": w.get("name") or w.get("description") or "Training",
+            "activiteiten": ", ".join(act_types) or "—",
+            "voltooid": has_data,
+            "gevoel": felt,
+            "rpe": effort,
+            "post_notes": bool(post_notes),
+            "comments": comment_count,
+        }
+
+        if not workout_key:
+            rij["beslissing"] = "❌ overgeslagen"
+            rij["reden"] = "geen workout_key"
+            rapport.append(rij)
+            continue
+
+        if not has_athlete_input:
+            rij["beslissing"] = "❌ niet getoond (standaard)"
+            rij["reden"] = ("geen input van atleet (geen notitie, gevoel, RPE of comment). "
+                            "Komt alleen met de toggles 'zonder notities'.")
+            rapport.append(rij)
+            continue
+
+        # Comments ophalen voor het laatste-woord-oordeel
+        try:
+            comments = get_comments(workout_key, user_key) if comment_count else []
+        except Exception:
+            comments = []
+        athlete_comments = [c for c in comments if _is_athlete_comment(c)]
+        coach_comments = [c for c in comments if not _is_athlete_comment(c)]
+        comments_sorted = sorted(comments, key=_ts)
+
+        last_coach_ts = max((_ts(c) for c in coach_comments), default="") if coach_comments else ""
+        coach_responded_after = bool(last_coach_ts) and last_coach_ts[:10] > workout_date_str
+        post_notes_need_response = bool(post_notes) and not coach_responded_after
+
+        if coach_comments and not athlete_comments and not post_notes_need_response:
+            rij["beslissing"] = "❌ niet getoond"
+            rij["reden"] = (f"coach reageerde al na de training ({last_coach_ts[:10]}) en er is "
+                            "geen losse atleet-reactie die nog antwoord nodig heeft.")
+        elif coach_comments and athlete_comments and comments_sorted and not _is_athlete_comment(comments_sorted[-1]):
+            rij["beslissing"] = "❌ niet getoond"
+            rij["reden"] = "laatste bericht in de thread is van de coach (atleet is aan zet, niet jij)."
+        else:
+            rij["beslissing"] = "✅ komt door"
+            rij["reden"] = "atleet-input aanwezig, coach is aan zet."
+        rapport.append(rij)
+
+    rapport.sort(key=lambda r: r["datum"], reverse=True)
+    return rapport
+
+
 # ---------------------------------------------------------------------------
 # Workout aanmaken (voor schema-import)
 # ---------------------------------------------------------------------------
