@@ -694,13 +694,19 @@ def get_workouts_needing_feedback(
             })
 
     # ── Fase 2: comments parallel ophalen ─────────────────────────────────
+    # Fouten binnen de fetch MOETEN worden opgevangen: anders valt de hele
+    # kandidaat uit _parallel_per_athlete (None → weggefilterd) en mist de
+    # coach die atleet volledig. Een lege commentlijst is altijd beter dan
+    # een verdwenen atleet.
     def _fetch_comments(cand: dict) -> dict:
-        if cand["comment_count"]:
-            cand["_comments"] = get_comments(
-                cand["workout_key"], cand["athlete"]["user_key"]
+        try:
+            cand["_comments"] = (
+                get_comments(cand["workout_key"], cand["athlete"]["user_key"])
+                if cand["comment_count"] else []
             )
-        else:
+        except Exception:
             cand["_comments"] = []
+            cand["_comments_failed"] = True
         return cand
 
     with_comments = _parallel_per_athlete(candidates, _fetch_comments)
@@ -749,10 +755,15 @@ def get_workouts_needing_feedback(
         detail_candidates.append(cand)
 
     # ── Fase 3: workout-details parallel ophalen ───────────────────────────
+    # Ook hier fouten opvangen: details zijn alleen voor de grafiek/data, een
+    # mislukte fetch mag de atleet nooit uit de lijst laten vallen.
     def _fetch_details(cand: dict) -> dict:
-        cand["_details"] = get_workout_details(
-            cand["workout_key"], cand["athlete"]["user_key"]
-        )
+        try:
+            cand["_details"] = get_workout_details(
+                cand["workout_key"], cand["athlete"]["user_key"]
+            )
+        except Exception:
+            cand["_details"] = {}
         return cand
 
     final = _parallel_per_athlete(detail_candidates, _fetch_details)
