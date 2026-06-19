@@ -45,6 +45,11 @@ VERZIN GEEN CONTEXT (niet onderhandelbaar):
 - Een training die "herstelloop" heet betekent NIET dat de atleet uit een herstelperiode komt; het is gewoon het type training
 - Twijfel je of iets klopt: laat het weg. Een kort feitelijk bericht is altijd beter dan een verzonnen verhaal
 
+GEEN VOORUITBLIK (niet onderhandelbaar):
+- Doe GEEN uitspraken over wat er morgen, dit weekend of binnenkort komt. Geen "klaar voor morgen", "succes met de volgende", "op naar de wedstrijd", "mooie opbouw richting...". Je weet niet wat er gepland staat.
+- Noem een wedstrijd/race ALLEEN als de atleet die zelf expliciet noemt in zijn bericht. Verzin nooit een aankomende wedstrijd. Succeswensen voor races gaan via een aparte module, niet via feedback op een training.
+- Reageer uitsluitend op de training die net is gedaan en op wat de atleet daarover schrijft. Sluit af met een observatie of aanmoediging over DEZE training, niet over de toekomst.
+
 ZONE-ACCURACY — KRITIEKE REGELS (niet onderhandelbaar):
 1. Zones bestaan in twee smaken: TEMPO-zones (min/km) en HARTSLAG-zones (bpm). Deze zijn NIET uitwisselbaar.
 2. Als alleen TEMPO-zones beschikbaar zijn: beoordeel intensiteit uitsluitend via tempo. Zeg NOOIT dat de hartslag "hoog", "te hoog", "in zone X" of "opvallend" was — ook niet als suggestie of tussenzin. Benoem hartslag alleen als neutraal getal als het relevant is (bijv. "HF van 148 bpm"), zonder oordeel.
@@ -312,13 +317,44 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     garmin_context = intake_store.garmin_context_text(athlete_key)
     garmin_section = f"\n\n{garmin_context}" if garmin_context else ""
 
+    # Datum-context: de atleet schreef rond de trainingsdatum, jij reageert
+    # vandaag. Voorkomt dat 'morgen'/'vandaag' uit de notitie verkeerd wordt
+    # overgenomen en dat de AI een vooruitblik verzint.
+    _today = date.today()
+    _maanden = ["januari", "februari", "maart", "april", "mei", "juni", "juli",
+                "augustus", "september", "oktober", "november", "december"]
+    today_str = f"{_today.day} {_maanden[_today.month - 1]} {_today.year}"
+    dag_info = ""
+    try:
+        _wd = date.fromisoformat((workout_date or "")[:10])
+        _gap = (_today - _wd).days
+        if _gap <= 0:
+            dag_info = "Je reageert op de dag van de training zelf."
+        elif _gap == 1:
+            dag_info = "De training was gisteren; je reageert vandaag."
+        else:
+            dag_info = f"De training was {_gap} dagen geleden; je reageert vandaag."
+    except ValueError:
+        pass
+
+    datum_section = (
+        f"\n\nDATUM-CONTEXT:\n"
+        f"Trainingsdatum: {workout_date or 'onbekend'}\n"
+        f"Vandaag (wanneer jij reageert): {today_str}\n"
+        f"{dag_info}\n"
+        f"Let op: tijdsaanduidingen in de woorden van de atleet (zoals 'morgen' "
+        f"of 'vandaag') zijn relatief aan de TRAININGSDATUM, niet aan vandaag. "
+        f"Neem ze niet letterlijk over en reken ze niet om; reageer op de inhoud, "
+        f"niet op het tijdstip."
+    )
+
     context = f"""Training: {workout_name}
 
 WAT WAS DE BEDOELING (workout builder):
 {plan_text}{zones_section}{garmin_section}
 
 Samenvattende data:
-{activity_summary}{lap_section}
+{activity_summary}{lap_section}{datum_section}
 
 Wat {first_name} zelf schrijft/zegt:
 {athlete_input}"""
