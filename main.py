@@ -1582,19 +1582,31 @@ if page == "home":
     </div>
     """, unsafe_allow_html=True)
 
-    # Discrete admin-ingang: onopvallend puntje uiterst rechtsonder.
-    # Valt niet op in de navigatie; leidt naar de pincode-gate.
-    _sp_a, _sp_b, _adm_col = st.columns([6, 6, 1])
-    with _adm_col:
-        st.markdown(
-            "<style>div.st-key-bb_admin_dot button{background:transparent!important;"
-            "border:none!important;color:#16335E!important;box-shadow:none!important;"
-            "font-size:0.8rem!important;padding:0!important;}"
-            "div.st-key-bb_admin_dot button:hover{color:#2876FB!important;}</style>",
-            unsafe_allow_html=True,
-        )
-        if st.button("·", key="bb_admin_dot", help=" "):
-            go_to("admin")
+    # Verborgen admin-ingang: het BeBetter-logo onderaan is een afbeelding
+    # die alleen ná drie tikken de pincode-gate opent. Ziet eruit als pure
+    # branding; één nieuwsgierige klik doet niets.
+    _sp1, _brand_col, _sp2 = st.columns([5, 2, 5])
+    with _brand_col:
+        st.markdown(f"""
+        <style>
+        div.st-key-bb_brand_stamp button {{
+            background: url('data:image/png;base64,{logo_wit_b64}') center/contain no-repeat !important;
+            border: none !important; box-shadow: none !important;
+            height: 30px; width: 100%; color: transparent !important;
+            opacity: 0.35; transition: opacity 0.25s ease;
+        }}
+        div.st-key-bb_brand_stamp button:hover {{ opacity: 0.7; }}
+        div.st-key-bb_brand_stamp button p {{ color: transparent !important; }}
+        </style>
+        """, unsafe_allow_html=True)
+        if st.button("BeBetter", key="bb_brand_stamp", help=""):
+            _tik = st.session_state.get("_brand_tik", 0) + 1
+            st.session_state["_brand_tik"] = _tik
+            if _tik >= 3:
+                st.session_state["_brand_tik"] = 0
+                go_to("admin")
+            else:
+                st.rerun()
 
 
 # ===========================================================================
