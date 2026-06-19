@@ -678,22 +678,23 @@ def get_workouts_needing_feedback(
                 continue
 
             has_athlete_input = bool(post_notes or comment_count or felt or effort)
-            is_data_only = has_data and not has_athlete_input
-
             workout_date_str = (w.get("workout_date") or "")[:10]
             is_past = bool(workout_date_str) and workout_date_str < today_str
-            is_skipped = is_past and not has_data and not has_athlete_input
-
             _planned = is_planned_workout(w)
-            is_planned_no_notes = is_past and has_data and not has_athlete_input and _planned
+
+            # Een VOLTOOIDE geplande training zonder notitie hoort altijd
+            # getoond te worden, ook als die vandaag is gedaan (geen is_past-eis).
+            is_planned_no_notes = has_data and not has_athlete_input and _planned
+            # Data-only = voltooide LOSSE activiteit (geen plan) zonder notitie.
+            is_data_only = has_data and not has_athlete_input and not _planned
+            # Overgeslagen = verleden, niet gedaan, geen notitie.
+            is_skipped = is_past and not has_data and not has_athlete_input
 
             if (
                 not has_athlete_input
                 and not (include_data_only and (is_data_only or is_skipped))
                 and not (include_planned_no_notes and is_planned_no_notes)
             ):
-                continue
-            if include_data_only and not has_athlete_input and not is_data_only and not is_past:
                 continue
 
             candidates.append({
@@ -844,7 +845,6 @@ def diagnose_athlete_feedback(user_key: str, days_back: int = 10) -> list[dict]:
     """
     end = date.today()
     start = end - timedelta(days=days_back)
-    today_str = end.isoformat()
     coach_key = get_coach_key()
 
     def _is_athlete_comment(c: dict) -> bool:
@@ -869,9 +869,10 @@ def diagnose_athlete_feedback(user_key: str, days_back: int = 10) -> list[dict]:
         workout_date_str = (w.get("workout_date") or "")[:10]
 
         has_athlete_input = bool(post_notes or comment_count or felt or effort)
-        is_past = bool(workout_date_str) and workout_date_str < today_str
         _planned = is_planned_workout(w)
-        is_planned_no_notes = is_past and has_data and not has_athlete_input and _planned
+        # Gelijk aan get_workouts_needing_feedback: voltooide geplande training
+        # zonder notitie telt altijd, ongeacht of die vandaag of eerder was.
+        is_planned_no_notes = has_data and not has_athlete_input and _planned
 
         rij = {
             "datum": workout_date_str,
