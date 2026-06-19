@@ -276,6 +276,29 @@ def group_is_excluded(group_name: str, exclude_groups) -> bool:
     return False
 
 
+def is_planned_workout(w: dict) -> bool:
+    """
+    True als deze workout een geplande training is (geen losse watch-sync).
+
+    Een training kan op meerdere manieren gepland zijn in FinalSurge:
+    via de workout builder (has_structured_workout), via een gepland
+    volume/tijd op de activiteit OF op de workout zelf, of via een
+    beschrijving. Eerder werd alleen naar de activiteit + beschrijving
+    gekeken, waardoor builder-trainingen zonder gepland volume ten
+    onrechte als 'losse activiteit' golden.
+    """
+    if w.get("has_structured_workout"):
+        return True
+    if (w.get("description") or "").strip():
+        return True
+    if w.get("planned_amount") or w.get("planned_duration"):
+        return True
+    for act in (w.get("Activities") or []):
+        if act.get("planned_amount") or act.get("planned_duration"):
+            return True
+    return False
+
+
 def _pace_to_float(pace_str) -> float:
     """Converteer pace string (bijv. '3:12' of '3:12/km') naar float min/km. Hoger = langzamer."""
     if not pace_str:
@@ -661,13 +684,8 @@ def get_workouts_needing_feedback(
             is_past = bool(workout_date_str) and workout_date_str < today_str
             is_skipped = is_past and not has_data and not has_athlete_input
 
-            first_act = (w.get("Activities") or [{}])[0]
-            is_planned_workout = bool(
-                first_act.get("planned_amount") or
-                first_act.get("planned_duration") or
-                (w.get("description") or "").strip()
-            )
-            is_planned_no_notes = is_past and has_data and not has_athlete_input and is_planned_workout
+            _planned = is_planned_workout(w)
+            is_planned_no_notes = is_past and has_data and not has_athlete_input and _planned
 
             if (
                 not has_athlete_input
@@ -852,18 +870,14 @@ def diagnose_athlete_feedback(user_key: str, days_back: int = 10) -> list[dict]:
 
         has_athlete_input = bool(post_notes or comment_count or felt or effort)
         is_past = bool(workout_date_str) and workout_date_str < today_str
-        first_act = acts[0] if acts else {}
-        is_planned_workout = bool(
-            first_act.get("planned_amount") or
-            first_act.get("planned_duration") or
-            (w.get("description") or "").strip()
-        )
-        is_planned_no_notes = is_past and has_data and not has_athlete_input and is_planned_workout
+        _planned = is_planned_workout(w)
+        is_planned_no_notes = is_past and has_data and not has_athlete_input and _planned
 
         rij = {
             "datum": workout_date_str,
             "naam": w.get("name") or w.get("description") or "Training",
             "activiteiten": ", ".join(act_types) or "—",
+            "gepland": _planned,
             "voltooid": has_data,
             "gevoel": felt,
             "rpe": effort,

@@ -1736,7 +1736,8 @@ elif page == "feedback":
                             continue
                         st.markdown(f"**{_r['datum']} · {_r['naam']}** — {_r['beslissing']}")
                         st.caption(
-                            f"{_r['activiteiten']} · voltooid: {'ja' if _r['voltooid'] else 'nee'} · "
+                            f"{_r['activiteiten']} · gepland: {'ja' if _r.get('gepland') else 'nee'} · "
+                            f"voltooid: {'ja' if _r['voltooid'] else 'nee'} · "
                             f"gevoel: {_r['gevoel'] or '—'} · RPE: {_r['rpe'] or '—'} · "
                             f"notitie: {'ja' if _r['post_notes'] else 'nee'} · comments: {_r['comments']}"
                         )
