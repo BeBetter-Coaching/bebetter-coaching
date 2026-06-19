@@ -197,6 +197,40 @@ def save_notes(notes: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Administratie — handmatige klantvelden (status, pakket, coach, cyclus, notitie)
+# ---------------------------------------------------------------------------
+
+_ADMIN_LOCAL = os.path.join(_BASE_DIR, ".admin_clients.json")
+
+
+def load_admin_clients() -> dict:
+    """Handmatige admin-velden per klant. Dict: user_key → veld-dict."""
+    return _load_json("admin_clients.json", _ADMIN_LOCAL)
+
+
+def save_admin_clients(data: dict) -> tuple[bool, str]:
+    """Sla handmatige admin-velden op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("admin_clients.json", _ADMIN_LOCAL, data, "Update admin_clients via app")
+
+
+# ---------------------------------------------------------------------------
+# Administratie — KOR-omzetcijfers (cumulatief per maand)
+# ---------------------------------------------------------------------------
+
+_REVENUE_LOCAL = os.path.join(_BASE_DIR, ".revenue.json")
+
+
+def load_revenue() -> dict:
+    """Cumulatieve omzet per maand. Dict: 'YYYY-MM' → bedrag (float)."""
+    return _load_json("revenue.json", _REVENUE_LOCAL)
+
+
+def save_revenue(data: dict) -> tuple[bool, str]:
+    """Sla cumulatieve omzetcijfers op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("revenue.json", _REVENUE_LOCAL, data, "Update revenue via app")
+
+
+# ---------------------------------------------------------------------------
 # Builder-state (half afgemaakt schema)
 # ---------------------------------------------------------------------------
 

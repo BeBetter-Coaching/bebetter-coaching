@@ -206,11 +206,18 @@ def _extract_athlete(a: dict, group_name: str, seen: set) -> Optional[dict]:
         or a.get("key")
         or key  # laatste fallback op user_key
     )
+    # E-mail kan onder verschillende sleutels staan (of ontbreken)
+    email = (
+        a.get("email") or a.get("Email") or a.get("email_address")
+        or a.get("EmailAddress") or a.get("user_email") or ""
+    )
     return {
         "user_key": key,
         "coach_athlete_key": coach_athlete_key,
         "name": f"{a.get('first_name', '')} {a.get('last_name', '')}".strip(),
         "first_name": a.get("first_name", ""),
+        "last_name": a.get("last_name", ""),
+        "email": email,
         "group": group_name,
         "_raw_keys": list(a.keys()),  # debug: welke velden heeft dit object?
     }
@@ -835,6 +842,31 @@ def get_workouts_needing_feedback(
     if return_stats:
         return results, {"posted_today": posted_today}
     return results
+
+
+def get_last_activity_dates(lookback_days: int = 60) -> dict:
+    """
+    Geeft per user_key de datum van de laatst voltooide activiteit terug
+    (ISO-string) binnen de lookback. Voor het inactiviteits-signaal in admin.
+    Atleten zonder voltooide activiteit krijgen None.
+    """
+    today = date.today()
+    start = today - timedelta(days=lookback_days)
+    athletes = get_athletes()
+
+    def _last(a: dict):
+        try:
+            workouts = get_workouts_deduped(a["user_key"], start, today)
+        except Exception:
+            return (a["user_key"], None)
+        done = [
+            (w.get("workout_date") or "")[:10]
+            for w in workouts
+            if w.get("has_actual_data") and w.get("workout_date")
+        ]
+        return (a["user_key"], max(done) if done else None)
+
+    return dict(_parallel_per_athlete(athletes, _last))
 
 
 def diagnose_athlete_feedback(user_key: str, days_back: int = 10) -> list[dict]:

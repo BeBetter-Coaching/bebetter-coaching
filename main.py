@@ -10,6 +10,7 @@ import ai_feedback
 import schema_builder
 import intake_store
 import dossier
+import admin
 import base64
 import html as _html_mod
 import io
@@ -1169,6 +1170,12 @@ COACH_ATHLETE_KEY = {a["user_key"]: a.get("coach_athlete_key", a["user_key"])
 if "page" not in st.session_state:
     st.session_state["page"] = "home"
 
+# Verborgen ingang admin (alleen Jip): ?admin=1 in de URL → adminroute.
+# Remco ziet hier niets van; er staat geen knop in het hoofdmenu.
+if st.query_params.get("admin") == "1":
+    st.session_state["page"] = "admin"
+    st.query_params.pop("admin", None)
+
 page = st.session_state["page"]
 
 
@@ -1574,6 +1581,52 @@ if page == "home":
                     border-radius:2px; max-width:160px; margin:0 auto;"></div>
     </div>
     """, unsafe_allow_html=True)
+
+    # Discrete admin-ingang: onopvallend puntje uiterst rechtsonder.
+    # Valt niet op in de navigatie; leidt naar de pincode-gate.
+    _sp_a, _sp_b, _adm_col = st.columns([6, 6, 1])
+    with _adm_col:
+        st.markdown(
+            "<style>div.st-key-bb_admin_dot button{background:transparent!important;"
+            "border:none!important;color:#16335E!important;box-shadow:none!important;"
+            "font-size:0.8rem!important;padding:0!important;}"
+            "div.st-key-bb_admin_dot button:hover{color:#2876FB!important;}</style>",
+            unsafe_allow_html=True,
+        )
+        if st.button("·", key="bb_admin_dot", help=" "):
+            go_to("admin")
+
+
+# ===========================================================================
+# PAGINA: ADMINISTRATIE (module 8, verborgen — alleen Jip)
+# ===========================================================================
+
+elif page == "admin":
+    module_header("Administratie", "🗃️")
+
+    # Pincode-gate — los van het app-wachtwoord, alleen voor Jip
+    try:
+        _admin_pin = st.secrets.get("ADMIN_PIN", "") or os.environ.get("ADMIN_PIN", "")
+    except Exception:
+        _admin_pin = os.environ.get("ADMIN_PIN", "")
+    _admin_pin = (_admin_pin or "2580").strip()  # standaard 2580 — wijzig via ADMIN_PIN secret
+
+    if not st.session_state.get("_admin_unlocked"):
+        st.markdown("Deze module is afgeschermd.")
+        with st.form("admin_pin_form"):
+            _pin_in = st.text_input("Pincode", type="password")
+            if st.form_submit_button("Ontgrendelen", type="primary"):
+                import hmac as _hmac
+                if _hmac.compare_digest(_pin_in.strip(), _admin_pin):
+                    st.session_state["_admin_unlocked"] = True
+                    st.rerun()
+                else:
+                    import time as _t
+                    _t.sleep(1)
+                    st.error("Onjuiste pincode.")
+        st.stop()
+
+    admin.render_admin(athletes_by_group)
 
 
 # ===========================================================================
