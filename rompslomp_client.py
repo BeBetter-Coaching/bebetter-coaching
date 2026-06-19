@@ -110,6 +110,10 @@ def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
                                 params={"page": page, "per_page": 100})
             if resp.status_code in (401, 403):
                 return [], f"Geen toegang ({resp.status_code}). Is de API-token geldig en geactiveerd?"
+            if resp.status_code == 404:
+                return [], (f"Bedrijf niet gevonden (404). Klopt ROMPSLOMP_COMPANY_ID? "
+                            f"Nu ingesteld op '{_company_id()}'. Probeer de naam-slug uit je "
+                            f"Rompslomp-URL, bijv. 'bebetter-coaching'.")
             resp.raise_for_status()
             data = resp.json()
             items = data if isinstance(data, list) else (data.get("data") or data.get("sales_invoices") or [])
