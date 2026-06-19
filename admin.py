@@ -14,6 +14,7 @@ import streamlit as st
 
 import fs_client
 import intake_store
+import rompslomp_client
 
 # ── Pakketten: standaard prijs per 4 weken (instelbaar via de module) ──
 PAKKET_PRIJZEN_STD = {
@@ -202,6 +203,41 @@ def _eur(v) -> str:
         return "€0,00"
 
 
+def _doe_rompslomp_sync(revenue: dict) -> tuple[dict, str]:
+    """
+    Haal de cumulatieve omzet van dit jaar uit Rompslomp en schrijf die over
+    de maanden van dit jaar heen in de omzetopslag. Eerdere jaren blijven staan.
+    Geeft (bijgewerkte_revenue, foutmelding).
+    """
+    jaar = date.today().year
+    with st.spinner("Rompslomp-facturen ophalen…"):
+        cumulatief, err = rompslomp_client.get_cumulatieve_omzet(jaar)
+        facturen, _ = rompslomp_client.get_invoices(jaar)
+    if err:
+        st.session_state["_rompslomp_bron"] = f"⚠️ Sync mislukt: {err}"
+        return revenue, err
+    # Maanden van dit jaar vervangen door de Rompslomp-waarden
+    nieuw = {k: v for k, v in revenue.items() if not k.startswith(str(jaar))}
+    nieuw.update(cumulatief)
+    intake_store.save_revenue(nieuw)
+    st.session_state["_rompslomp_facturen"] = facturen
+    st.session_state["_rompslomp_sync_dag"] = date.today().isoformat()
+    st.session_state["_rompslomp_bron"] = (
+        f"Laatst gesynct: {date.today().strftime('%d-%m-%Y')} "
+        f"({len(facturen)} facturen dit jaar)."
+    )
+    return nieuw, ""
+
+
+def _sync_rompslomp_indien_nodig(revenue: dict, proj: dict):
+    """Eén automatische sync per dag bij het openen van de module."""
+    if st.session_state.get("_rompslomp_sync_dag") != date.today().isoformat():
+        nieuw, err = _doe_rompslomp_sync(revenue)
+        if not err:
+            return nieuw, kor_projectie(nieuw)
+    return revenue, proj
+
+
 def render_admin(athletes_by_group: dict):
     """Hoofdscherm van de administratiemodule."""
     athletes = sorted(
@@ -280,12 +316,45 @@ def render_admin(athletes_by_group: dict):
 
     # ── KOR-TRACKER ──
     st.markdown("### 💶 KOR-omzettracker")
+
+    # Rompslomp-sync: automatisch één keer per dag bij openen, plus handmatig.
+    if rompslomp_client.is_configured():
+        revenue, proj = _sync_rompslomp_indien_nodig(revenue, proj)
+
     pct = min(proj["huidig"] / KOR_GRENS * 100, 100) if KOR_GRENS else 0
     st.progress(pct / 100)
     st.markdown(f"**{_eur(proj['huidig'])}** van {_eur(KOR_GRENS)}  ·  nog **{_eur(proj['resterend'])}** te gaan "
                 f"({pct:.0f}%)")
 
-    with st.expander("➕ Nieuw cumulatief omzetbedrag invoeren"):
+    if rompslomp_client.is_configured():
+        _bron = st.session_state.get("_rompslomp_bron", "")
+        rc1, rc2 = st.columns([3, 1], vertical_alignment="center")
+        with rc1:
+            st.caption(f"🔗 Gekoppeld met Rompslomp. {_bron}")
+        with rc2:
+            if st.button("🔄 Sync nu", key="adm_rompslomp_sync", use_container_width=True):
+                _doe_rompslomp_sync(revenue)
+                st.rerun()
+        with st.expander("🧾 Facturen dit jaar (Rompslomp)"):
+            _facturen = st.session_state.get("_rompslomp_facturen")
+            if _facturen is None:
+                st.caption("Klik op 'Sync nu' om de facturen op te halen.")
+            elif not _facturen:
+                st.caption("Geen facturen gevonden voor dit jaar.")
+            else:
+                _df_f = pd.DataFrame([
+                    {"Datum": f["datum"], "Nr": f["nummer"], "Klant": f["naam"],
+                     "Bedrag": f["bedrag"], "Betaald": "✅" if f["betaald"] else "openstaand"}
+                    for f in _facturen
+                ])
+                st.dataframe(_df_f, use_container_width=True, hide_index=True,
+                             column_config={"Bedrag": st.column_config.NumberColumn(format="€%.2f")})
+    else:
+        st.caption("💡 Rompslomp-koppeling staat klaar maar is nog niet geconfigureerd. "
+                   "Zet ROMPSLOMP_API_TOKEN en ROMPSLOMP_COMPANY_ID in de secrets om automatisch te syncen. "
+                   "Tot dan kun je hieronder handmatig invoeren.")
+
+    with st.expander("➕ Nieuw cumulatief omzetbedrag handmatig invoeren"):
         st.caption("Kijk in Rompslomp en vul het cumulatieve jaarbedrag tot nu toe in. "
                    "Bestaande maand overschrijven mag.")
         cm1, cm2, cm3 = st.columns([1.2, 1.5, 1])
