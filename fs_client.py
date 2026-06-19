@@ -1336,6 +1336,7 @@ def get_upcoming_races(days_ahead: int = 21, athlete_filter: list[str] = None) -
     today = date.today()
     end = today + timedelta(days=days_ahead)
     athletes_by_group = get_athletes_by_group()
+    coach_key = get_coach_key()
 
     todo = [
         {**athlete, "_group": group_name}
@@ -1343,6 +1344,11 @@ def get_upcoming_races(days_ahead: int = 21, athlete_filter: list[str] = None) -
         for athlete in members
         if not athlete_filter or athlete["user_key"] in athlete_filter
     ]
+
+    def _is_coach_comment(c: dict) -> bool:
+        if "is_athlete" in c:
+            return not bool(c["is_athlete"])
+        return c.get("user_key") == coach_key
 
     def _fetch(athlete: dict) -> list[dict]:
         user_key = athlete["user_key"]
@@ -1364,9 +1370,14 @@ def get_upcoming_races(days_ahead: int = 21, athlete_filter: list[str] = None) -
             description = w.get("description") or ""
             race_type = detect_race_type(name, description)
 
-            # Bestaande comments ophalen
+            # Bestaande comments ophalen. Een coach-comment = wens al gegeven
+            # (geldt voor beide coaches, blijft kloppen over sessies/apparaten).
             comment_count = w.get("CommentCount") or 0
-            comments = get_comments(workout_key, user_key) if comment_count else []
+            try:
+                comments = get_comments(workout_key, user_key) if comment_count else []
+            except Exception:
+                comments = []
+            wish_given = any(_is_coach_comment(c) for c in comments)
 
             races.append({
                 "athlete_name": athlete["name"],
@@ -1378,6 +1389,7 @@ def get_upcoming_races(days_ahead: int = 21, athlete_filter: list[str] = None) -
                 "race_type": race_type,
                 "description": description,
                 "comments": comments,
+                "wish_given": wish_given,
                 "group": athlete["_group"],
             })
         return races

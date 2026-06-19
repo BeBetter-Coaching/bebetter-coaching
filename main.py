@@ -1307,7 +1307,8 @@ if page == "home":
         st.session_state["day_stats"] = {
             "feedback_pending": len(_fb),
             "posted_today": _fb_stats.get("posted_today", 0),
-            "races_coming": len(_races),
+            # Alleen races tellen waarvoor nog GEEN wens (coach-comment) is gegeven
+            "races_coming": sum(1 for r in _races if not r.get("wish_given")),
             "compliance_alerts": _alerts,
             "schema_urgent": _schema_urgent,
             "loaded_at": date.today().isoformat(),
@@ -2691,7 +2692,7 @@ elif page == "races":
     # ── Filters ──────────────────────────────────────────────────────────────
     col_f1, col_f2, _ = st.columns([1, 1, 2])
     with col_f1:
-        days_ahead = st.selectbox("Kijk vooruit", [7, 14, 21, 30], index=1,
+        days_ahead = st.selectbox("Kijk vooruit", [7, 14, 21, 30], index=0,
                                   format_func=lambda d: f"{d} dagen", key="races_days")
     with col_f2:
         if st.button("🔄 Vernieuwen", key="races_refresh"):
@@ -2717,10 +2718,20 @@ elif page == "races":
     if not races:
         st.info(f"Geen races gevonden in de komende {days_ahead} dagen.")
     else:
-        # Batch-knop
-        pending_races = [r for r in races
-                         if not st.session_state.get(f"race_posted_{r['workout_key']}")]
-        st.markdown(f"**{len(pending_races)} race(s)** gevonden — succeswensen nog te versturen.")
+        # Een race is afgehandeld als de wens al gepost is in deze sessie OF
+        # als er al een coach-comment in FinalSurge staat (wish_given) — dat
+        # laatste blijft kloppen na een herstart en over beide coaches heen.
+        def _race_done(r):
+            return (st.session_state.get(f"race_posted_{r['workout_key']}")
+                    or r.get("wish_given"))
+
+        pending_races = [r for r in races if not _race_done(r)]
+
+        c_info_r, c_verberg_r = st.columns([3, 2], vertical_alignment="center")
+        with c_info_r:
+            st.markdown(f"**{len(pending_races)} race(s)** zonder verstuurde succeswens.")
+        with c_verberg_r:
+            verberg_race = st.toggle("Verberg afgehandelde", value=True, key="race_verberg")
 
         if pending_races:
             if st.button("⚡ Genereer alle wensen (AI)", type="primary", key="races_batch"):
@@ -2762,7 +2773,9 @@ elif page == "races":
 
         for i, race in enumerate(races):
             wk = race["workout_key"]
-            posted = st.session_state.get(f"race_posted_{wk}", False)
+            posted = _race_done(race)
+            if verberg_race and posted:
+                continue
             icon = TYPE_ICON.get(race["race_type"], "🏁")
 
             with st.container():
