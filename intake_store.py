@@ -214,6 +214,23 @@ def save_admin_clients(data: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Administratie — pakketprijzen (instelbaar)
+# ---------------------------------------------------------------------------
+
+_PRIJZEN_LOCAL = os.path.join(_BASE_DIR, ".pakket_prijzen.json")
+
+
+def load_pakket_prijzen() -> dict:
+    """Prijs per pakket (per 4 weken). Dict: pakketnaam → bedrag."""
+    return _load_json("pakket_prijzen.json", _PRIJZEN_LOCAL)
+
+
+def save_pakket_prijzen(data: dict) -> tuple[bool, str]:
+    """Sla pakketprijzen op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("pakket_prijzen.json", _PRIJZEN_LOCAL, data, "Update pakket_prijzen via app")
+
+
+# ---------------------------------------------------------------------------
 # Administratie — KOR-omzetcijfers (cumulatief per maand)
 # ---------------------------------------------------------------------------
 

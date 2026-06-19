@@ -15,9 +15,8 @@ import streamlit as st
 import fs_client
 import intake_store
 
-# ── Pakketten: prijs per 4 weken ──
-PAKKETTEN = {
-    "—": 0,
+# ── Pakketten: standaard prijs per 4 weken (instelbaar via de module) ──
+PAKKET_PRIJZEN_STD = {
     "Los Schema": 25,
     "Comfort": 55,
     "Start to Run": 65,
@@ -25,6 +24,7 @@ PAKKETTEN = {
     "Premium": 110,
     "High Performer": 135,
 }
+PAKKETTEN = ["—"] + list(PAKKET_PRIJZEN_STD.keys())
 COACHES = ["—", "Jip", "Remco"]
 STATUSSEN = ["Actief", "On hold", "Opgezegd"]
 CYCLI = ["4 weken", "12 weken", "Jaar"]
@@ -103,15 +103,65 @@ def kor_projectie(revenue: dict, grens: float = KOR_GRENS) -> dict:
     }
 
 
-def geschatte_jaaromzet(admin: dict, status_filter: str = "Actief") -> float:
-    """Som van pakketprijzen × 13 periodes voor klanten met de gegeven status."""
+def pakket_van_groep(group_name: str) -> str:
+    """
+    Leid het pakket af uit de FinalSurge-(sub)groep. De subgroepen ZIJN de
+    pakketten (Los Schema, Start to Run, Getting Better, Comfort, ...).
+    Matcht op losse woorden zodat '1. Los trainingsschema' → 'Los Schema'.
+    Geeft '—' als geen pakket past.
+    """
+    g = (group_name or "").strip().lower()
+    if not g:
+        return "—"
+    # Speciale gevallen waar de groepsnaam afwijkt van de pakketnaam
+    if "los" in g and "schema" in g:
+        return "Los Schema"
+    for pakket in PAKKET_PRIJZEN_STD:
+        woorden = pakket.lower().split()
+        if all(w in g for w in woorden):
+            return pakket
+    return "—"
+
+
+def effectieve_prijs(pakket: str, korting_pct: float, prijzen: dict) -> float:
+    """Prijs per 4 weken na korting."""
+    basis = prijzen.get(pakket, PAKKET_PRIJZEN_STD.get(pakket, 0))
+    try:
+        k = max(0.0, min(float(korting_pct or 0), 100.0))
+    except (ValueError, TypeError):
+        k = 0.0
+    return basis * (1 - k / 100)
+
+
+def klant_pakket(athlete: dict, admin: dict) -> str:
+    """Pakket van een klant: handmatige override, anders afgeleid uit de groep."""
+    v = admin.get(athlete["user_key"], {})
+    if v.get("pakket") and v["pakket"] != "—":
+        return v["pakket"]
+    return pakket_van_groep(athlete.get("group", ""))
+
+
+def geschatte_jaaromzet(athletes: list, admin: dict, prijzen: dict,
+                        status_filter: str = "Actief") -> float:
+    """Som van effectieve pakketprijzen × 13 periodes voor klanten met die status."""
     totaal = 0.0
-    for velden in admin.values():
-        if velden.get("status", "Actief") != status_filter:
+    for a in athletes:
+        v = admin.get(a["user_key"], {})
+        if v.get("status", "Actief") != status_filter:
             continue
-        prijs = PAKKETTEN.get(velden.get("pakket", "—"), 0)
-        totaal += prijs * PERIODES_PER_JAAR
+        pakket = klant_pakket(a, admin)
+        totaal += effectieve_prijs(pakket, v.get("korting", 0), prijzen) * PERIODES_PER_JAAR
     return totaal
+
+
+def _prijzen() -> dict:
+    """Pakketprijzen uit opslag, aangevuld met standaardwaarden."""
+    opgeslagen = {}
+    try:
+        opgeslagen = intake_store.load_pakket_prijzen()
+    except Exception:
+        pass
+    return {**PAKKET_PRIJZEN_STD, **opgeslagen}
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +210,7 @@ def render_admin(athletes_by_group: dict):
     )
     admin = _admin()
     revenue = _revenue()
+    prijzen = _prijzen()
     proj = kor_projectie(revenue)
 
     # Inactiviteit (laatste FinalSurge-activiteit) — on demand, gecachet
@@ -170,7 +221,7 @@ def render_admin(athletes_by_group: dict):
 
     actief = [a for a in athletes if admin.get(a["user_key"], {}).get("status", "Actief") == "Actief"]
     on_hold = [a for a in athletes if admin.get(a["user_key"], {}).get("status") == "On hold"]
-    jaaromzet = geschatte_jaaromzet(admin)
+    jaaromzet = geschatte_jaaromzet(athletes, admin, prijzen)
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("KOR-ruimte over", _eur(proj["resterend"]),
@@ -187,10 +238,10 @@ def render_admin(athletes_by_group: dict):
     elif proj["gepasseerd"]:
         st.error(f"⚠️ De KOR-grens van {_eur(KOR_GRENS)} is overschreden.")
 
-    # Pakketverdeling van actieve klanten
+    # Pakketverdeling van actieve klanten (pakket afgeleid uit de groep)
     verdeling: dict[str, int] = {}
     for a in actief:
-        pk = admin.get(a["user_key"], {}).get("pakket", "—")
+        pk = klant_pakket(a, admin)
         verdeling[pk] = verdeling.get(pk, 0) + 1
     if verdeling:
         _vp = "  ·  ".join(f"{k}: {v}" for k, v in sorted(verdeling.items(), key=lambda x: -x[1]))
@@ -261,21 +312,45 @@ def render_admin(athletes_by_group: dict):
             ).set_index("Maand")
             st.line_chart(_df_rev, height=180)
 
+    # ── PAKKETPRIJZEN ──
+    with st.expander("⚙️ Pakketprijzen (per 4 weken)"):
+        st.caption("Pas de prijs per pakket aan. Geldt voor de omzetschatting van alle klanten.")
+        _pcols = st.columns(len(PAKKET_PRIJZEN_STD))
+        _nieuw_prijzen = {}
+        for _i, _pk in enumerate(PAKKET_PRIJZEN_STD):
+            with _pcols[_i]:
+                _nieuw_prijzen[_pk] = st.number_input(
+                    _pk, min_value=0, step=5, value=int(prijzen.get(_pk, 0)),
+                    key=f"prijs_{_pk}",
+                )
+        if st.button("💾 Prijzen opslaan", key="adm_save_prijzen"):
+            ok, err = intake_store.save_pakket_prijzen(_nieuw_prijzen)
+            if ok:
+                st.success("Pakketprijzen opgeslagen.")
+                st.rerun()
+            else:
+                st.error(f"Opslaan mislukt: {err}")
+
     st.divider()
 
     # ── KLANTENLIJST ──
     st.markdown("### 👥 Klantenlijst")
-    st.caption("Live uit FinalSurge. Pakket, coach, status, betaalcyclus en notitie stel je hier in; "
-               "die blijven bewaard en worden nooit door een sync overschreven.")
+    st.caption("Live uit FinalSurge. Het pakket wordt automatisch afgeleid uit de FinalSurge-groep; "
+               "je kunt het overschrijven. Coach, status, betaalcyclus, korting en notitie stel je hier in. "
+               "Alles wordt bewaard en nooit door een sync overschreven.")
 
     rows = []
     for a in athletes:
         v = admin.get(a["user_key"], {})
+        pakket = klant_pakket(a, admin)
+        korting = float(v.get("korting", 0) or 0)
         rows.append({
             "user_key": a["user_key"],
             "Naam": a["name"],
             "E-mail": a.get("email", "") or "",
-            "Pakket": v.get("pakket", "—"),
+            "Pakket": pakket,
+            "Korting %": korting,
+            "Prijs/4wk": round(effectieve_prijs(pakket, korting, prijzen), 2),
             "Coach": v.get("coach", "—"),
             "Status": v.get("status", "Actief"),
             "Betaalcyclus": v.get("cyclus", "4 weken"),
@@ -292,7 +367,12 @@ def render_admin(athletes_by_group: dict):
             "user_key": None,  # verbergen
             "Naam": st.column_config.TextColumn(disabled=True),
             "E-mail": st.column_config.TextColumn(disabled=True),
-            "Pakket": st.column_config.SelectboxColumn(options=list(PAKKETTEN.keys()), required=True),
+            "Pakket": st.column_config.SelectboxColumn(options=PAKKETTEN, required=True,
+                       help="Automatisch uit de groep; overschrijven kan."),
+            "Korting %": st.column_config.NumberColumn(min_value=0, max_value=100, step=5,
+                       help="Korting op de pakketprijs, in procenten."),
+            "Prijs/4wk": st.column_config.NumberColumn(disabled=True, format="€%.2f",
+                       help="Effectieve prijs na korting (berekend)."),
             "Coach": st.column_config.SelectboxColumn(options=COACHES, required=True),
             "Status": st.column_config.SelectboxColumn(options=STATUSSEN, required=True),
             "Betaalcyclus": st.column_config.SelectboxColumn(options=CYCLI, required=True),
@@ -303,8 +383,15 @@ def render_admin(athletes_by_group: dict):
     if st.button("💾 Klantgegevens opslaan", type="primary", key="adm_save_clients"):
         nieuw = dict(admin)
         for _, r in edited.iterrows():
+            # Pakket alleen opslaan als override wanneer het afwijkt van de
+            # groep-afleiding; anders leeg laten zodat het de groep blijft volgen.
+            _afgeleid = pakket_van_groep(
+                next((a.get("group", "") for a in athletes if a["user_key"] == r["user_key"]), "")
+            )
+            _pakket_val = r["Pakket"] if r["Pakket"] != _afgeleid else ""
             nieuw[r["user_key"]] = {
-                "pakket": r["Pakket"],
+                "pakket": _pakket_val,
+                "korting": float(r["Korting %"] or 0),
                 "coach": r["Coach"],
                 "status": r["Status"],
                 "cyclus": r["Betaalcyclus"],
