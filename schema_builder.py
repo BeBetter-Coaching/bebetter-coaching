@@ -316,6 +316,97 @@ def format_training_log(workouts: list[dict]) -> str:
     return "\n".join(lines)
 
 
+_INTAKE_VELDEN_SPEC = """{
+  "naam": "roepnaam",
+  "leeftijd": "getal of leeg",
+  "horloge": "merk/type sporthorloge of leeg",
+  "doel": "trainingsdoel",
+  "referentie": "recente referentieprestatie (afstand + tijd) of leeg",
+  "langste": "langste recent gelopen afstand of leeg",
+  "volume": "huidig wekelijks volume (km/week) of leeg",
+  "dagen": "trainingsdagen (bijv. ma/wo/vr/zo) of leeg",
+  "tijd": "beschikbare tijd per training of leeg",
+  "kwaliteit": "exact één van: Weinig/geen | Enige ervaring | Regelmatig",
+  "op_tijd": "true als de atleet op tijd (minuten) traint i.p.v. km, anders false",
+  "herstel": "exact één van: Langzaam | Normaal | Snel",
+  "werkdruk": "exact één van: Laag | Normaal | Hoog",
+  "ondergrond": "lijst met elementen uit: Weg, Trail, Baan, Loopband",
+  "blessure": "blessurehistorie of leeg",
+  "andere": "andere sporten/verplichtingen of leeg",
+  "motivatie": "waarom dit doel, wat drijft de atleet, of leeg",
+  "loopervaring": "hoe lang en hoe consistent loopt de atleet al, of leeg",
+  "prs": "beste prestaties ooit (PR's) of leeg",
+  "eerdere": "eerdere schema's/coach-ervaring of leeg",
+  "slaap": "slaap en leefritme of leeg",
+  "klachten": "huidige klachten of fysieke aandachtspunten of leeg",
+  "leuk": "waar wordt de atleet blij van in training, of leeg",
+  "niet_leuk": "waar ziet de atleet tegenop / wat haat hij, of leeg",
+  "wedstrijd": "geprikte wedstrijd + datum, of leeg",
+  "notities": "overige relevante info uit het gesprek die nergens anders past"
+}"""
+
+
+def extract_intake_fields(tekst: str) -> dict:
+    """
+    Haal uit een vrije intake-notule (willekeurige tekst) de gestructureerde
+    intakevelden. Geeft een dict met dezelfde sleutels als de intakeformulier.
+    Onbekende velden blijven leeg; selectievelden krijgen alleen toegestane
+    waarden. Bij twijfel niets verzinnen.
+    """
+    import json as _json
+
+    prompt = f"""Hieronder staat een vrije notitie van een intakegesprek met een hardloper.
+Haal de informatie eruit en vul deze JSON-structuur. Gebruik EXACT deze sleutels:
+
+{_INTAKE_VELDEN_SPEC}
+
+Regels:
+- Vul alleen in wat echt in de tekst staat. Verzin niets. Laat onbekend leeg ("" of [] of false).
+- Voor de selectievelden (kwaliteit, herstel, werkdruk): gebruik UITSLUITEND een van de genoemde waarden, of laat leeg als het er niet uit blijkt.
+- Antwoord met ALLEEN de JSON, geen uitleg eromheen.
+
+NOTITIE:
+{tekst[:8000]}"""
+
+    response = client.messages.create(
+        model="claude-opus-4-5",
+        max_tokens=1500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    out = response.content[0].text.strip()
+
+    # JSON uit de respons vissen (eventueel binnen ```-blok)
+    m = re.search(r"\{.*\}", out, re.DOTALL)
+    if not m:
+        return {}
+    try:
+        data = _json.loads(m.group(0))
+    except Exception:
+        return {}
+
+    # Valideer selectievelden tegen de toegestane opties
+    _opts = {
+        "kwaliteit": {"Weinig/geen", "Enige ervaring", "Regelmatig"},
+        "herstel": {"Langzaam", "Normaal", "Snel"},
+        "werkdruk": {"Laag", "Normaal", "Hoog"},
+    }
+    for veld, toegestaan in _opts.items():
+        if data.get(veld) not in toegestaan:
+            data.pop(veld, None)
+    # Ondergrond: alleen geldige elementen
+    geldig_ond = {"Weg", "Trail", "Baan", "Loopband"}
+    ond = data.get("ondergrond")
+    if isinstance(ond, list):
+        data["ondergrond"] = [o for o in ond if o in geldig_ond]
+    else:
+        data.pop("ondergrond", None)
+    # op_tijd naar bool
+    if "op_tijd" in data:
+        data["op_tijd"] = bool(data["op_tijd"]) if isinstance(data["op_tijd"], bool) \
+            else str(data["op_tijd"]).strip().lower() in ("true", "ja", "1", "yes")
+    return data
+
+
 def extract_file_content(uploaded_file) -> dict:
     """
     Verwerk een geüpload bestand naar tekst of een afbeelding voor Claude.

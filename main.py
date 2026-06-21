@@ -2567,6 +2567,65 @@ elif page == "intake":
         st.session_state["ik_wedstrijd"]       = _src.get("wedstrijddatum_tekst", "")
         st.session_state["ik_loaded_for"]      = ik_athlete_key
 
+    # ── AI-vulhulp: plak een intakegesprek of upload een bestand ──────────
+    with st.expander("✨ Vul automatisch in vanuit een intakegesprek (plak tekst of upload)"):
+        st.caption("Plak hier de notule of upload een bestand (PDF, Word, foto). De AI haalt eruit "
+                   "wat erin staat en vult het formulier hieronder. Jij controleert en past aan.")
+        _ai_tekst = st.text_area("Notule / vrije tekst", height=140, key="ik_ai_tekst",
+                                 placeholder="Plak hier het hele intakeverhaal…")
+        _ai_file = st.file_uploader("…of upload een bestand", key="ik_ai_file",
+                                    type=["pdf", "docx", "txt", "png", "jpg", "jpeg"])
+        if st.button("✨ Formulier invullen met AI", type="primary", key="ik_ai_run"):
+            _bron_tekst = (_ai_tekst or "").strip()
+            # Bestand → tekst (afbeeldingen worden als losse tekst niet ondersteund hier)
+            if _ai_file is not None:
+                try:
+                    _fc = schema_builder.extract_file_content(_ai_file)
+                    if _fc.get("type") == "text":
+                        _bron_tekst = (_bron_tekst + "\n\n" + _fc.get("content", "")).strip()
+                    else:
+                        st.warning("Afbeeldingen kunnen hier nog niet automatisch gelezen worden. "
+                                   "Typ of plak de tekst van de foto.")
+                except Exception as e:
+                    st.error(f"Bestand lezen mislukt: {e}")
+            if not _bron_tekst:
+                st.warning("Plak eerst tekst of upload een leesbaar bestand.")
+            else:
+                with st.spinner("Intake uitlezen…"):
+                    try:
+                        _velden = schema_builder.extract_intake_fields(_bron_tekst)
+                    except Exception as e:
+                        _velden = {}
+                        st.error(f"Uitlezen mislukt: {e}")
+                if _velden:
+                    # Map naar de ik_-sessiekeys (alleen niet-lege waarden)
+                    _map = {
+                        "naam": "ik_naam", "leeftijd": "ik_leeftijd", "horloge": "ik_horloge",
+                        "doel": "ik_doel", "referentie": "ik_referentie", "langste": "ik_langste",
+                        "volume": "ik_volume", "dagen": "ik_dagen", "tijd": "ik_tijd",
+                        "kwaliteit": "ik_kwaliteit", "op_tijd": "ik_op_tijd",
+                        "herstel": "ik_herstel", "werkdruk": "ik_werkdruk", "ondergrond": "ik_ondergrond",
+                        "blessure": "ik_blessure", "andere": "ik_andere",
+                        "motivatie": "ik_motivatie", "loopervaring": "ik_loopervaring",
+                        "prs": "ik_prs", "eerdere": "ik_eerdere", "slaap": "ik_slaap",
+                        "klachten": "ik_klachten", "leuk": "ik_leuk", "niet_leuk": "ik_niet_leuk",
+                        "wedstrijd": "ik_wedstrijd", "notities": "ik_notities",
+                    }
+                    _n = 0
+                    for _k, _skey in _map.items():
+                        if _k not in _velden:
+                            continue
+                        _val = _velden[_k]
+                        if _val in ("", [], None):
+                            continue
+                        st.session_state[_skey] = _val
+                        _n += 1
+                    st.session_state["ik_loaded_for"] = ik_athlete_key  # prefill niet laten overschrijven
+                    st.success(f"{_n} velden ingevuld. Controleer hieronder en pas aan waar nodig.")
+                    st.rerun()
+                else:
+                    st.info("Kon geen velden uit de tekst halen.")
+
     st.markdown("<hr class='bb-divider'>", unsafe_allow_html=True)
 
     # ── Formulier ────────────────────────────────────────────────────────
