@@ -1209,6 +1209,45 @@ def get_calendar_labels(user_key: str, start: date, end: date) -> list[dict]:
     ]
 
 
+def diagnose_athlete_workouts(user_key: str, dagen_vooruit: int = 90) -> dict:
+    """
+    Diagnose voor het 'verborgen schema'-probleem: toon de ruwe velden van
+    aankomende structured workouts én de kalenderlabels, zodat we kunnen zien
+    hóe 'hide'/verborgen in de FinalSurge-data staat.
+    """
+    today = date.today()
+    end = today + timedelta(days=dagen_vooruit)
+    out: dict = {}
+    try:
+        workouts = get_workouts(user_key, today, end)
+    except Exception as e:
+        return {"fout": str(e)}
+
+    structured = [w for w in workouts
+                  if w.get("has_structured_workout") and not w.get("is_race")]
+    out["aantal_structured"] = len(structured)
+    # Alle unieke veldnamen die op een workout voorkomen
+    alle_velden = set()
+    for w in structured:
+        alle_velden.update(w.keys())
+    out["workout_velden"] = sorted(alle_velden)
+    # Verdachte velden die met zichtbaarheid te maken kunnen hebben
+    _verdacht = [k for k in alle_velden if any(t in k.lower() for t in
+                 ("hid", "visib", "zicht", "verberg", "show", "publish", "draft", "private", "athlete_can"))]
+    out["zichtbaarheid_velden"] = _verdacht
+    # Voorbeeld: de laatste paar structured workouts met hun volledige velden
+    structured.sort(key=lambda w: (w.get("workout_date") or ""))
+    out["voorbeeld_workouts"] = [
+        {k: v for k, v in w.items() if not isinstance(v, (list, dict))}
+        for w in structured[-3:]
+    ]
+    try:
+        out["labels"] = get_calendar_labels(user_key, today, end)
+    except Exception as e:
+        out["labels"] = f"fout: {e}"
+    return out
+
+
 _MIN_SCHEMA_WORKOUTS = 4  # minder dan 4 geplande trainingen = "los schema", niet tellen
 
 

@@ -3083,6 +3083,33 @@ elif page == "schema":
         key="schema_threshold",
     )
 
+    # Tijdelijke diagnose: hoe staat 'verborgen/hide' in de FinalSurge-data?
+    with st.expander("🔍 Diagnose: verborgen trainingen opsporen"):
+        st.caption("Kies een atleet waarvan je net workouts op 'hide' hebt gezet, en kijk welke "
+                   "velden/labels dat aangeven. Daarmee bouw ik de melding in het overzicht.")
+        _diag_athletes = sorted(
+            [a for members in athletes_by_group.values() for a in members],
+            key=lambda x: x["name"],
+        )
+        _dnaam = st.selectbox("Atleet", [a["name"] for a in _diag_athletes], key="schema_diag_athlete")
+        if st.button("Analyseer", key="schema_diag_run"):
+            _dkey = next(a["user_key"] for a in _diag_athletes if a["name"] == _dnaam)
+            with st.spinner("Workouts en labels ophalen…"):
+                try:
+                    st.session_state["schema_diag"] = fs_client.diagnose_athlete_workouts(_dkey)
+                except Exception as e:
+                    st.session_state["schema_diag"] = {"fout": str(e)}
+        _sd = st.session_state.get("schema_diag")
+        if _sd:
+            st.write(f"**Structured workouts (vooruit):** {_sd.get('aantal_structured', 0)}")
+            st.write(f"**Mogelijke zichtbaarheid-velden:** {_sd.get('zichtbaarheid_velden', [])}")
+            st.write("**Alle workout-velden:**")
+            st.json(_sd.get("workout_velden", []))
+            st.write("**Voorbeeld-workouts (volledige velden):**")
+            st.json(_sd.get("voorbeeld_workouts", []))
+            st.write("**Kalenderlabels:**")
+            st.json(_sd.get("labels", []))
+
     col_load, col_reload = st.columns([2, 1])
     with col_load:
         if "schema_data" not in st.session_state:
