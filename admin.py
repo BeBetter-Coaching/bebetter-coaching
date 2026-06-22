@@ -362,21 +362,18 @@ def render_admin(athletes_by_group: dict):
                     st.session_state["_rompslomp_diag"] = rompslomp_client.diagnose()
             _diag = st.session_state.get("_rompslomp_diag")
             if _diag:
+                st.write(f"**Facturen-omzet:** {_eur(_diag.get('facturen_omzet', 0))}  ·  "
+                         f"**handmatige omzetboekingen:** {_eur(_diag.get('journal_omzet', 0))}  ·  "
+                         f"**totaal:** {_eur(_diag.get('totaal_omzet', 0))}")
                 st.write(f"**Grootboekrekeningen:** {_diag['accounts_aantal']} "
                          f"(fout: {_diag['accounts_fout'] or 'geen'})")
                 st.write(f"**Herkend als omzetrekening:** {len(_diag['omzetrekeningen'])}")
                 if _diag["omzetrekeningen"]:
                     st.json(_diag["omzetrekeningen"])
-                st.write("**Voorbeeld grootboekrekeningen (eerste 8):**")
-                st.json(_diag["accounts_voorbeeld"])
                 st.write(f"**Journaalboekingen:** {_diag['journal_aantal']} "
                          f"(fout: {_diag['journal_fout'] or 'geen'})")
-                if _diag.get("journal_voorbeeld"):
-                    st.write("**Voorbeeld boeking:**")
-                    st.json(_diag["journal_voorbeeld"])
-                st.write(f"**Berekende grootboek-omzet {date.today().year}:** "
-                         f"{_eur(_diag['omzet_totaal'])} (fout: {_diag['omzet_fout'] or 'geen'})")
-                st.json(_diag["omzet_per_maand"])
+                st.write("**Alle boekingen (zoek de omzetregel ~€334,61):**")
+                st.json(_diag.get("journal_boekingen", []))
         # Vangnet: alleen tonen als er ondanks de grootboek-sync nog een
         # handmatige correctie is ingesteld (normaal niet nodig).
         if correctie:
