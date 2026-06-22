@@ -284,6 +284,45 @@ def _cumulatief_uit_maanden(per_maand: dict, year: int) -> dict:
     return {k: v for k, v in cumulatief.items() if k <= vandaag_key}
 
 
+def diagnose(year: int | None = None) -> dict:
+    """Diagnose-info over de grootboek-omzet: wat geeft de API terug?"""
+    if year is None:
+        year = date.today().year
+    out: dict = {}
+    accounts, a_err = get_accounts()
+    out["accounts_fout"] = a_err
+    out["accounts_aantal"] = len(accounts)
+    out["accounts_voorbeeld"] = [
+        {"id": a.get("id"), "name": a.get("name"), "type": a.get("type"),
+         "path": a.get("path") or a.get("path_name")}
+        for a in accounts[:8]
+    ]
+    rev = [a for a in accounts if _is_revenue_account(a)]
+    out["omzetrekeningen"] = [{"id": a.get("id"), "name": a.get("name"),
+                               "path": a.get("path") or a.get("path_name")} for a in rev]
+
+    entries, e_err = _paged("journal_entries", ("data", "journal_entries"))
+    out["journal_fout"] = e_err
+    out["journal_aantal"] = len(entries)
+    # Eerste boeking met regels als voorbeeld
+    for e in entries:
+        if e.get("lines"):
+            out["journal_voorbeeld"] = {
+                "date": e.get("date"),
+                "lines": [{"account_id": l.get("account_id"),
+                           "account_path": l.get("account_path"),
+                           "debit": l.get("debit_amount"), "credit": l.get("credit_amount")}
+                          for l in e["lines"][:4]],
+            }
+            break
+
+    per_maand, pm_err = get_omzet_per_maand_grootboek(year)
+    out["omzet_fout"] = pm_err
+    out["omzet_per_maand"] = per_maand
+    out["omzet_totaal"] = round(sum(per_maand.values()), 2) if per_maand else 0.0
+    return out
+
+
 def get_cumulatieve_omzet(year: int | None = None) -> tuple[dict, str]:
     """
     Cumulatieve omzet per maand voor het jaar, in het formaat {'YYYY-MM': bedrag}.
