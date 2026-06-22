@@ -353,8 +353,24 @@ def render_admin(athletes_by_group: dict):
                 _doe_rompslomp_sync(revenue)
                 st.rerun()
 
-        st.caption("De omzet komt rechtstreeks uit je grootboek (Winst & Verlies), dus inclusief "
-                   "losse verkopen, clinics, strippenkaarten en handmatige boekingen.")
+        # Automatische omzet uit de API (facturen + journaalboekingen, zonder ijk)
+        _jaar = str(date.today().year)
+        _api_omzet = max((v for k, v in revenue.items() if k.startswith(_jaar)), default=0.0)
+
+        with st.expander(f"🎯 IJk op je Rompslomp Winst & Verlies  ·  ijk-correctie nu: {_eur(correctie)}"):
+            st.caption("De API geeft je facturen en journaalboekingen terug, maar niet élke directe "
+                       "omzetboeking (een enkele bank-/kasboeking rechtstreeks op omzet zit er niet in). "
+                       "Vul hieronder je omzet volgens Rompslomp Winst & Verlies in (kalenderjaar). De app "
+                       "onthoudt het verschil en houdt het daarna automatisch kloppend. Je hoeft dit alléén "
+                       "opnieuw te doen als je weer zo'n directe omzetboeking maakt.")
+            st.caption(f"Automatisch uit de API (facturen + boekingen): **{_eur(_api_omzet)}**  ·  "
+                       f"huidige ijk-correctie: **{_eur(correctie)}**  →  weergegeven: **{_eur(_api_omzet + correctie)}**")
+            _ijk_in = st.number_input("Omzet volgens je Rompslomp W&V (€)", min_value=0.0, step=10.0,
+                                      value=float(_api_omzet + correctie), key="adm_kor_ijk")
+            if st.button("IJk hierop", type="primary", key="adm_kor_ijk_save"):
+                intake_store.save_kor_correctie(round(_ijk_in - _api_omzet, 2))
+                st.success("Geijkt — de KOR-stand klopt nu met je Winst & Verlies.")
+                st.rerun()
 
         with st.expander("🔧 Diagnose grootboek (waarom klopt de omzet wel/niet?)"):
             if st.button("Analyseer grootboek", key="adm_diag_grootboek"):
@@ -385,17 +401,6 @@ def render_admin(athletes_by_group: dict):
                 st.write(f"**Facturen zonder geldige datum** "
                          f"({len(_diag.get('facturen_geen_datum', []))}):")
                 st.json(_diag.get("facturen_geen_datum", []))
-        # Vangnet: alleen tonen als er ondanks de grootboek-sync nog een
-        # handmatige correctie is ingesteld (normaal niet nodig).
-        if correctie:
-            with st.expander(f"➕ Handmatige correctie: {_eur(correctie)} (normaal niet nodig)"):
-                st.caption("De omzet komt nu uit het grootboek en hoort vanzelf te kloppen met je "
-                           "Winst & Verlies. Zet dit op 0 als de stand klopt.")
-                _corr_in = st.number_input("Handmatige correctie (€)", min_value=0.0, step=10.0,
-                                           value=float(correctie), key="adm_kor_corr")
-                if st.button("Opslaan", key="adm_kor_corr_save"):
-                    intake_store.save_kor_correctie(_corr_in)
-                    st.rerun()
         with st.expander("🧾 Facturen dit jaar (Rompslomp)"):
             _facturen = st.session_state.get("_rompslomp_facturen")
             if _facturen is None:
