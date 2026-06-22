@@ -1209,34 +1209,50 @@ def get_calendar_labels(user_key: str, start: date, end: date) -> list[dict]:
     ]
 
 
-def diagnose_athlete_workouts(user_key: str, dagen_vooruit: int = 90) -> dict:
+def _raw_athlete(user_key: str) -> dict:
+    """Geef het volledige ruwe atleet-object uit TeamAthleteList terug."""
+    data = _get("TeamAthleteList")
+    for top in data.get("data") or []:
+        for group in top.get("groups", []):
+            for a in group.get("athletes", []):
+                if a.get("user_key") == user_key:
+                    return a
+    return {}
+
+
+def diagnose_hide_setting(user_key: str, coach_athlete_key: str = "") -> dict:
     """
-    Diagnose voor het 'verborgen schema'-probleem: toon de ruwe velden van
-    aankomende structured workouts én de kalenderlabels, zodat we kunnen zien
-    hóe 'hide'/verborgen in de FinalSurge-data staat.
+    Zoek de 'Hide Workouts from Athlete: Date After'-instelling. Die staat niet
+    op de workouts (can_hide bleek onbetrouwbaar). Kandidaten: het ruwe atleet-
+    object en mogelijke coaching-settings endpoints. Toont alles zodat we het
+    juiste veld kunnen vinden.
     """
-    today = date.today()
-    end = today + timedelta(days=dagen_vooruit)
     out: dict = {}
     try:
-        workouts = get_workouts(user_key, today, end)
+        raw = _raw_athlete(user_key)
+        out["atleet_velden"] = sorted(raw.keys())
+        # velden die met verbergen/datum te maken kunnen hebben
+        out["verdachte_velden"] = {
+            k: raw[k] for k in raw
+            if any(t in k.lower() for t in ("hide", "hidden", "visib", "verberg",
+                   "date_after", "after_date", "lock", "show", "cutoff"))
+        }
     except Exception as e:
-        return {"fout": str(e)}
+        out["atleet_fout"] = str(e)
 
-    structured = [w for w in workouts
-                  if w.get("has_structured_workout") and not w.get("is_race")]
-    structured.sort(key=lambda w: (w.get("workout_date") or ""))
-    out["aantal_structured"] = len(structured)
-
-    # Tijdlijn: per training de zichtbaarheid-permissies. Waar can_hide omslaat
-    # van true → false ligt waarschijnlijk de grens tussen zichtbaar en verborgen.
-    out["tijdlijn"] = [
-        {"datum": (w.get("workout_date") or "")[:10],
-         "can_hide": w.get("can_hide"),
-         "can_edit": w.get("can_edit"),
-         "naam": w.get("name")}
-        for w in structured
-    ]
+    # Probeer een paar mogelijke settings-endpoints (stil falen)
+    cak = coach_athlete_key or out.get("verdachte_velden", {}).get("coachathlete_key", "")
+    for endpoint, params in [
+        ("CoachAthleteSettings", {"coach_athlete_key": cak}),
+        ("CoachAthleteSettingsGet", {"coach_athlete_key": cak}),
+        ("AthleteCoachingSettings", {"user_key": user_key}),
+        ("Settings", {"scope": "USER", "scopekey": user_key}),
+    ]:
+        try:
+            resp = _get(endpoint, params)
+            out[f"endpoint_{endpoint}"] = resp.get("data") if isinstance(resp, dict) else resp
+        except Exception as e:
+            out[f"endpoint_{endpoint}"] = f"fout: {str(e)[:80]}"
     return out
 
 
@@ -1295,21 +1311,6 @@ def get_schema_end_dates(
             last_date_str = None
             days_left = None
 
-        # Verborgen voor de atleet: FinalSurge "Hide Workouts from Athlete: Date After".
-        # Een al-verborgen training heeft can_hide=False; zichtbare can_hide=True.
-        today_iso = today.isoformat()
-        toekomst = [w for w in structured if w["workout_date"][:10] >= today_iso]
-        verborgen = [w for w in toekomst if w.get("can_hide") is False]
-        zichtbaar = [w for w in toekomst if w.get("can_hide") is not False]
-        hidden_count = len(verborgen)
-        last_visible = max((w["workout_date"][:10] for w in zichtbaar), default=None)
-        hidden_from = min((w["workout_date"][:10] for w in verborgen), default=None)
-        # Dagen tot het ZICHTBARE deel op is (wat de atleet ervaart).
-        # None = geen zichtbare toekomst meer (alles verborgen of niets gepland).
-        visible_days_left = (
-            (date.fromisoformat(last_visible) - today).days if last_visible else None
-        )
-
         return {
             "name": athlete["name"],
             "first_name": athlete["first_name"],
@@ -1317,10 +1318,6 @@ def get_schema_end_dates(
             "group": athlete["_group"],
             "last_date": last_date_str,
             "days_left": days_left,
-            "hidden_count": hidden_count,
-            "last_visible_date": last_visible,
-            "visible_days_left": visible_days_left,
-            "hidden_from_date": hidden_from,
         }
 
     results = _parallel_per_athlete(todo, _fetch)
