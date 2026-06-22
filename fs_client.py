@@ -219,6 +219,9 @@ def _extract_athlete(a: dict, group_name: str, seen: set) -> Optional[dict]:
         "last_name": a.get("last_name", ""),
         "email": email,
         "group": group_name,
+        # "Hide Workouts from Athlete": vaste einddatum óf X dagen vooruit
+        "hide_after_date": (a.get("hide_after_date") or "")[:10] or None,
+        "hide_days_out": a.get("hide_days_out"),
         "_raw_keys": list(a.keys()),  # debug: welke velden heeft dit object?
     }
 
@@ -1209,53 +1212,6 @@ def get_calendar_labels(user_key: str, start: date, end: date) -> list[dict]:
     ]
 
 
-def _raw_athlete(user_key: str) -> dict:
-    """Geef het volledige ruwe atleet-object uit TeamAthleteList terug."""
-    data = _get("TeamAthleteList")
-    for top in data.get("data") or []:
-        for group in top.get("groups", []):
-            for a in group.get("athletes", []):
-                if a.get("user_key") == user_key:
-                    return a
-    return {}
-
-
-def diagnose_hide_setting(user_key: str, coach_athlete_key: str = "") -> dict:
-    """
-    Zoek de 'Hide Workouts from Athlete: Date After'-instelling. Die staat niet
-    op de workouts (can_hide bleek onbetrouwbaar). Kandidaten: het ruwe atleet-
-    object en mogelijke coaching-settings endpoints. Toont alles zodat we het
-    juiste veld kunnen vinden.
-    """
-    out: dict = {}
-    try:
-        raw = _raw_athlete(user_key)
-        out["atleet_velden"] = sorted(raw.keys())
-        # velden die met verbergen/datum te maken kunnen hebben
-        out["verdachte_velden"] = {
-            k: raw[k] for k in raw
-            if any(t in k.lower() for t in ("hide", "hidden", "visib", "verberg",
-                   "date_after", "after_date", "lock", "show", "cutoff"))
-        }
-    except Exception as e:
-        out["atleet_fout"] = str(e)
-
-    # Probeer een paar mogelijke settings-endpoints (stil falen)
-    cak = coach_athlete_key or out.get("verdachte_velden", {}).get("coachathlete_key", "")
-    for endpoint, params in [
-        ("CoachAthleteSettings", {"coach_athlete_key": cak}),
-        ("CoachAthleteSettingsGet", {"coach_athlete_key": cak}),
-        ("AthleteCoachingSettings", {"user_key": user_key}),
-        ("Settings", {"scope": "USER", "scopekey": user_key}),
-    ]:
-        try:
-            resp = _get(endpoint, params)
-            out[f"endpoint_{endpoint}"] = resp.get("data") if isinstance(resp, dict) else resp
-        except Exception as e:
-            out[f"endpoint_{endpoint}"] = f"fout: {str(e)[:80]}"
-    return out
-
-
 _MIN_SCHEMA_WORKOUTS = 4  # minder dan 4 geplande trainingen = "los schema", niet tellen
 
 
@@ -1311,6 +1267,24 @@ def get_schema_end_dates(
             last_date_str = None
             days_left = None
 
+        # Zichtbaar voor de atleet: FinalSurge "Hide Workouts from Athlete".
+        # Vaste einddatum (hide_after_date) of X dagen vooruit (hide_days_out).
+        # De atleet ziet niets ná die datum.
+        visible_until = athlete.get("hide_after_date")
+        if not visible_until and athlete.get("hide_days_out") is not None:
+            try:
+                visible_until = (today + timedelta(days=int(athlete["hide_days_out"]))).isoformat()
+            except (ValueError, TypeError):
+                visible_until = None
+
+        if visible_until:
+            verborgen_dates = [d for d in planned_dates if d > visible_until]
+            hidden_count = len(verborgen_dates)
+            visible_days_left = (date.fromisoformat(visible_until) - today).days
+        else:
+            hidden_count = 0
+            visible_days_left = None
+
         return {
             "name": athlete["name"],
             "first_name": athlete["first_name"],
@@ -1318,6 +1292,9 @@ def get_schema_end_dates(
             "group": athlete["_group"],
             "last_date": last_date_str,
             "days_left": days_left,
+            "visible_until": visible_until,
+            "hidden_count": hidden_count,
+            "visible_days_left": visible_days_left,
         }
 
     results = _parallel_per_athlete(todo, _fetch)

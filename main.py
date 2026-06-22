@@ -3083,28 +3083,6 @@ elif page == "schema":
         key="schema_threshold",
     )
 
-    with st.expander("🔍 Diagnose: 'hide na datum'-instelling zoeken"):
-        st.caption("can_hide bleek onbetrouwbaar (flagde iedereen). Hier zoeken we het echte veld voor "
-                   "'Hide Workouts from Athlete: Date After'. Kies een atleet met een hide-datum.")
-        _dia = sorted([a for m in athletes_by_group.values() for a in m], key=lambda x: x["name"])
-        _dnm = st.selectbox("Atleet", [a["name"] for a in _dia], key="hide_diag_athlete")
-        if st.button("Zoek hide-instelling", key="hide_diag_run"):
-            _a = next(a for a in _dia if a["name"] == _dnm)
-            with st.spinner("Zoeken…"):
-                try:
-                    st.session_state["hide_diag"] = fs_client.diagnose_hide_setting(
-                        _a["user_key"], _a.get("coach_athlete_key", ""))
-                except Exception as e:
-                    st.session_state["hide_diag"] = {"fout": str(e)}
-        _hd = st.session_state.get("hide_diag")
-        if _hd:
-            st.write("**Verdachte velden op het atleet-object:**")
-            st.json(_hd.get("verdachte_velden", {}))
-            st.write("**Alle atleet-velden:**")
-            st.json(_hd.get("atleet_velden", []))
-            st.write("**Settings-endpoints:**")
-            st.json({k: v for k, v in _hd.items() if k.startswith("endpoint_")})
-
     col_load, col_reload = st.columns([2, 1])
     with col_load:
         if "schema_data" not in st.session_state:
@@ -3156,6 +3134,34 @@ elif page == "schema":
         c4.metric("Totaal atleten", len(schema_data))
         c5.metric("⏸ Op hold", len(on_hold))
 
+        # ── Verborgen-trainingen signaal (FinalSurge "Hide Workouts from Athlete") ──
+        # Alleen atleten waarvan het ZICHTBARE deel (bijna) op is én er nog
+        # verborgen trainingen achter staan. Drempel volgt de slider hierboven.
+        verborgen_actie = [
+            r for r in schema_data
+            if r.get("hidden_count", 0) > 0
+            and r.get("visible_days_left") is not None
+            and r["visible_days_left"] <= threshold
+        ]
+        if verborgen_actie:
+            st.markdown("")
+            st.warning(f"👁 **{len(verborgen_actie)} atleten zien (bijna) geen trainingen meer** — "
+                       f"hun verborgen-datum is bereikt terwijl er nog trainingen klaarstaan. Zet in "
+                       f"FinalSurge bij die atleet 'Hide Workouts from Athlete' vooruit, anders denken "
+                       f"ze dat hun schema niet verlengd is.")
+
+            def _vis(r):
+                vdl = r["visible_days_left"]
+                if vdl < 0:
+                    return f"zichtbaar liep **{abs(vdl)} dagen geleden** af"
+                if vdl == 0:
+                    return "zichtbaar **t/m vandaag**"
+                return f"nog **{vdl} dagen** zichtbaar (t/m {r['visible_until']})"
+
+            for r in sorted(verborgen_actie, key=lambda x: x["visible_days_left"]):
+                st.markdown(f"- **{r['name']}** ({r['group']}) — {_vis(r)} · "
+                            f"{r['hidden_count']} verborgen trainingen klaar")
+
         st.markdown("---")
 
         filtered = [r for r in schema_data if r["days_left"] is None or r["days_left"] <= threshold]
@@ -3163,7 +3169,12 @@ elif page == "schema":
 
         def _render_athlete_row(r, show_build_btn=True):
             c0, c1, c2, c3, c4, c5 = st.columns([2.5, 2, 1, 2, 1.5, 1.5])
-            c0.write(r["name"])
+            _hide_issue = (
+                r.get("hidden_count", 0) > 0
+                and r.get("visible_days_left") is not None
+                and r["visible_days_left"] <= threshold
+            )
+            c0.write(("👁 " if _hide_issue else "") + r["name"])
             c1.write(r["last_date"] or "—")
             c2.write(str(r["days_left"]) if r["days_left"] is not None else "—")
             c3.write(_status(r["days_left"]))
