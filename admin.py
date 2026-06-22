@@ -229,13 +229,26 @@ def _doe_rompslomp_sync(revenue: dict) -> tuple[dict, str]:
     return nieuw, ""
 
 
-def _sync_rompslomp_indien_nodig(revenue: dict, proj: dict):
+def _sync_rompslomp_indien_nodig(revenue: dict, proj: dict, correctie: float):
     """Eén automatische sync per dag bij het openen van de module."""
     if st.session_state.get("_rompslomp_sync_dag") != date.today().isoformat():
         nieuw, err = _doe_rompslomp_sync(revenue)
         if not err:
-            return nieuw, kor_projectie(nieuw)
+            return nieuw, kor_projectie(_met_correctie(nieuw, correctie))
     return revenue, proj
+
+
+def _met_correctie(revenue: dict, correctie: float) -> dict:
+    """
+    Tel de overige-omzet-correctie op bij de cumulatieve factuuromzet van het
+    lopende jaar (parallelle verschuiving: de eindstand klopt, de trend-helling
+    blijft gelijk). Zo loopt de KOR-stand gelijk met Rompslomp Winst & Verlies.
+    """
+    if not correctie:
+        return revenue
+    jaar = str(date.today().year)
+    return {k: (round(v + correctie, 2) if k.startswith(jaar) else v)
+            for k, v in revenue.items()}
 
 
 def render_admin(athletes_by_group: dict):
@@ -247,7 +260,11 @@ def render_admin(athletes_by_group: dict):
     admin = _admin()
     revenue = _revenue()
     prijzen = _prijzen()
-    proj = kor_projectie(revenue)
+    try:
+        correctie = intake_store.load_kor_correctie()
+    except Exception:
+        correctie = 0.0
+    proj = kor_projectie(_met_correctie(revenue, correctie))
 
     # Inactiviteit (laatste FinalSurge-activiteit) — on demand, gecachet
     last_act = st.session_state.get("_admin_last_act")
@@ -319,7 +336,7 @@ def render_admin(athletes_by_group: dict):
 
     # Rompslomp-sync: automatisch één keer per dag bij openen, plus handmatig.
     if rompslomp_client.is_configured():
-        revenue, proj = _sync_rompslomp_indien_nodig(revenue, proj)
+        revenue, proj = _sync_rompslomp_indien_nodig(revenue, proj, correctie)
 
     pct = min(proj["huidig"] / KOR_GRENS * 100, 100) if KOR_GRENS else 0
     st.progress(pct / 100)
@@ -335,6 +352,26 @@ def render_admin(athletes_by_group: dict):
             if st.button("🔄 Sync nu", key="adm_rompslomp_sync", use_container_width=True):
                 _doe_rompslomp_sync(revenue)
                 st.rerun()
+
+        # Overige omzet: het deel van je W&V-omzet dat niet uit verkoopfacturen
+        # komt (losse verkopen, kasontvangsten, handmatige boekingen).
+        _factuur_huidig = max((v for k, v in revenue.items()
+                               if k.startswith(str(date.today().year))), default=0.0)
+        with st.expander(f"➕ Overige omzet (niet-factuur): {_eur(correctie)}"):
+            st.caption("Vergelijk de factuuromzet hierboven met 'Omzet' in je Rompslomp Winst & "
+                       "Verlies. Staat daar méér? Vul hier het verschil in (losse verkopen, "
+                       "kasontvangsten, handmatige boekingen). Dit wordt bij de factuuromzet opgeteld.")
+            _co1, _co2 = st.columns([2, 1])
+            with _co1:
+                _corr_in = st.number_input("Overige omzet dit jaar (€)", min_value=0.0, step=10.0,
+                                           value=float(correctie), key="adm_kor_corr")
+            with _co2:
+                st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
+                if st.button("Opslaan", key="adm_kor_corr_save", use_container_width=True):
+                    intake_store.save_kor_correctie(_corr_in)
+                    st.rerun()
+            st.caption(f"Facturen **{_eur(_factuur_huidig)}** + overige **{_eur(correctie)}** = "
+                       f"**{_eur(_factuur_huidig + correctie)}** (KOR-stand).")
         with st.expander("🧾 Facturen dit jaar (Rompslomp)"):
             _facturen = st.session_state.get("_rompslomp_facturen")
             if _facturen is None:

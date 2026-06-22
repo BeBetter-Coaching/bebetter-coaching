@@ -231,6 +231,28 @@ def save_pakket_prijzen(data: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Administratie — KOR-correctie (overige omzet, niet in verkoopfacturen)
+# ---------------------------------------------------------------------------
+
+_KOR_CORR_LOCAL = os.path.join(_BASE_DIR, ".kor_correctie.json")
+
+
+def load_kor_correctie() -> float:
+    """Overige omzet (niet-factuur) die bij de factuuromzet wordt opgeteld."""
+    d = _load_json("kor_correctie.json", _KOR_CORR_LOCAL)
+    try:
+        return float(d.get("overige_omzet", 0) or 0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def save_kor_correctie(bedrag: float) -> tuple[bool, str]:
+    """Sla de overige-omzet-correctie op."""
+    return _save_json("kor_correctie.json", _KOR_CORR_LOCAL,
+                      {"overige_omzet": float(bedrag)}, "Update kor_correctie via app")
+
+
+# ---------------------------------------------------------------------------
 # Administratie — KOR-omzetcijfers (cumulatief per maand)
 # ---------------------------------------------------------------------------
 
