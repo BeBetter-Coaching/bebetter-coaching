@@ -376,13 +376,15 @@ def render_admin(athletes_by_group: dict):
                     st.write("**Alle boekingen:**")
                     st.json(_diag.get("journal_boekingen", []))
                 st.markdown("---")
-                st.write(f"**Facturen 2026:** {_diag.get('facturen_2026_aantal', 0)} · "
+                st.write(f"**Facturen totaal opgehaald:** {_diag.get('facturen_raw_totaal', 0)} · "
                          f"statussen: {_diag.get('factuur_statussen', [])}")
-                st.write("**Beschikbare factuurvelden:**")
-                st.json(_diag.get("factuur_velden", []))
-                st.write(f"**Facturen die op €0 worden geteld** "
-                         f"({len(_diag.get('facturen_op_nul', []))}) — hier zit de gemiste omzet:")
-                st.json(_diag.get("facturen_op_nul", []))
+                st.write("**Aantal facturen per jaar:**")
+                st.json(_diag.get("facturen_per_jaar_aantal", {}))
+                st.write("**Omzet (factuurbedrag) per jaar — zoek waar de €200 zit:**")
+                st.json(_diag.get("facturen_per_jaar_som", {}))
+                st.write(f"**Facturen zonder geldige datum** "
+                         f"({len(_diag.get('facturen_geen_datum', []))}):")
+                st.json(_diag.get("facturen_geen_datum", []))
         # Vangnet: alleen tonen als er ondanks de grootboek-sync nog een
         # handmatige correctie is ingesteld (normaal niet nodig).
         if correctie:
