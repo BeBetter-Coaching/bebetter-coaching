@@ -351,8 +351,8 @@ def render_admin(athletes_by_group: dict):
                              column_config={"Bedrag": st.column_config.NumberColumn(format="€%.2f")})
     else:
         st.caption("💡 Rompslomp-koppeling staat klaar maar is nog niet geconfigureerd. "
-                   "Zet ROMPSLOMP_API_TOKEN en ROMPSLOMP_COMPANY_ID in de secrets om automatisch te syncen. "
-                   "Tot dan kun je hieronder handmatig invoeren.")
+                   "Zet ROMPSLOMP_API_TOKEN in de Streamlit-secrets om automatisch te syncen "
+                   "(het bedrijf-id wordt automatisch opgehaald). Tot dan kun je hieronder handmatig invoeren.")
 
     with st.expander("➕ Nieuw cumulatief omzetbedrag handmatig invoeren"):
         st.caption("Kijk in Rompslomp en vul het cumulatieve jaarbedrag tot nu toe in. "

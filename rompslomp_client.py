@@ -15,9 +15,12 @@ from datetime import date
 
 import requests
 
-# De developer-pagina's en API draaien op de app-host
-_BASE_DEFAULT = "https://app.rompslomp.nl/api/v1"
+# Officiële API-host (zie developer.rompslomp.nl)
+_BASE_DEFAULT = "https://api.rompslomp.nl/api/v1"
 _TIMEOUT = (5, 30)
+
+# Gevonden company_id wordt gecachet zodat we /companies niet elke call herhalen
+_company_id_cache: str | None = None
 
 # Omzetbasis voor KOR: turnover is excl. btw. Voor een KOR-deelnemer zonder
 # btw zijn beide velden gelijk; we nemen de excl-btw-waarde als omzet.
@@ -41,7 +44,7 @@ def _token() -> str:
     return _secret("ROMPSLOMP_API_TOKEN")
 
 
-def _company_id() -> str:
+def _company_id_secret() -> str:
     return _secret("ROMPSLOMP_COMPANY_ID")
 
 
@@ -50,8 +53,44 @@ def _base() -> str:
 
 
 def is_configured() -> bool:
-    """True als token én company_id beschikbaar zijn."""
-    return bool(_token() and _company_id())
+    """True zodra er een API-token is; company_id wordt automatisch opgehaald."""
+    return bool(_token())
+
+
+def get_companies() -> tuple[list[dict], str]:
+    """Haal de bedrijven van de token-eigenaar op. Geeft (lijst, foutmelding)."""
+    if not _token():
+        return [], "Geen API-token ingesteld."
+    try:
+        resp = _session.get(f"{_base()}/companies", headers=_headers(), timeout=_TIMEOUT)
+        if resp.status_code in (401, 403):
+            return [], f"Geen toegang ({resp.status_code}). Is de API-token geldig?"
+        resp.raise_for_status()
+        data = resp.json()
+        items = data if isinstance(data, list) else (data.get("data") or data.get("companies") or [])
+        return items, ""
+    except Exception as e:
+        return [], str(e)
+
+
+def _company_id() -> str:
+    """
+    Bepaal het company_id: handmatig ingesteld secret heeft voorrang, anders
+    automatisch het eerste bedrijf van de token-eigenaar (gecachet).
+    """
+    global _company_id_cache
+    handmatig = _company_id_secret()
+    if handmatig:
+        return handmatig
+    if _company_id_cache:
+        return _company_id_cache
+    companies, _ = get_companies()
+    if companies:
+        cid = str(companies[0].get("id") or companies[0].get("company_id") or "")
+        if cid:
+            _company_id_cache = cid
+            return cid
+    return ""
 
 
 def _headers() -> dict:
@@ -99,9 +138,14 @@ def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
     betaald (bool), status}.
     """
     if not is_configured():
-        return [], "Rompslomp niet geconfigureerd (token/company_id ontbreekt)."
+        return [], "Rompslomp niet geconfigureerd (API-token ontbreekt)."
 
-    url = f"{_base()}/companies/{_company_id()}/sales_invoices"
+    cid = _company_id()
+    if not cid:
+        return [], ("Kon geen bedrijf (company_id) ophalen via de API. "
+                    "Is de API-token geldig en geactiveerd?")
+
+    url = f"{_base()}/companies/{cid}/sales_invoices"
     facturen = []
     page = 1
     try:
