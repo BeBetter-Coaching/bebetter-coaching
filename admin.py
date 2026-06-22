@@ -344,119 +344,77 @@ def render_admin(athletes_by_group: dict):
                 f"({pct:.0f}%)")
 
     if rompslomp_client.is_configured():
+        _jaar = str(date.today().year)
+        _api_omzet = max((v for k, v in revenue.items() if k.startswith(_jaar)), default=0.0)
+
         _bron = st.session_state.get("_rompslomp_bron", "")
         rc1, rc2 = st.columns([3, 1], vertical_alignment="center")
         with rc1:
-            st.caption(f"🔗 Gekoppeld met Rompslomp. {_bron}")
+            st.caption(f"🔗 Automatisch uit Rompslomp — facturen + boekingen. {_bron}")
         with rc2:
             if st.button("🔄 Sync nu", key="adm_rompslomp_sync", use_container_width=True):
                 _doe_rompslomp_sync(revenue)
                 st.rerun()
 
-        # Automatische omzet uit de API (facturen + journaalboekingen, zonder ijk)
-        _jaar = str(date.today().year)
-        _api_omzet = max((v for k, v in revenue.items() if k.startswith(_jaar)), default=0.0)
-
-        with st.expander(f"🎯 IJk op je Rompslomp Winst & Verlies  ·  ijk-correctie nu: {_eur(correctie)}"):
-            st.caption("De API geeft je facturen en journaalboekingen terug, maar niet élke directe "
-                       "omzetboeking (een enkele bank-/kasboeking rechtstreeks op omzet zit er niet in). "
-                       "Vul hieronder je omzet volgens Rompslomp Winst & Verlies in (kalenderjaar). De app "
-                       "onthoudt het verschil en houdt het daarna automatisch kloppend. Je hoeft dit alléén "
-                       "opnieuw te doen als je weer zo'n directe omzetboeking maakt.")
-            st.caption(f"Automatisch uit de API (facturen + boekingen): **{_eur(_api_omzet)}**  ·  "
-                       f"huidige ijk-correctie: **{_eur(correctie)}**  →  weergegeven: **{_eur(_api_omzet + correctie)}**")
-            _ijk_in = st.number_input("Omzet volgens je Rompslomp W&V (€)", min_value=0.0, step=10.0,
-                                      value=float(_api_omzet + correctie), key="adm_kor_ijk")
-            if st.button("IJk hierop", type="primary", key="adm_kor_ijk_save"):
-                intake_store.save_kor_correctie(round(_ijk_in - _api_omzet, 2))
-                st.success("Geijkt — de KOR-stand klopt nu met je Winst & Verlies.")
-                st.rerun()
-
-        with st.expander("🔧 Diagnose grootboek (waarom klopt de omzet wel/niet?)"):
-            if st.button("Analyseer grootboek", key="adm_diag_grootboek"):
-                with st.spinner("Grootboek ophalen…"):
-                    st.session_state["_rompslomp_diag"] = rompslomp_client.diagnose()
-            _diag = st.session_state.get("_rompslomp_diag")
-            if _diag:
-                st.write(f"**Facturen-omzet:** {_eur(_diag.get('facturen_omzet', 0))}  ·  "
-                         f"**handmatige omzetboekingen:** {_eur(_diag.get('journal_omzet', 0))}  ·  "
-                         f"**totaal:** {_eur(_diag.get('totaal_omzet', 0))}")
-                st.write(f"**Grootboekrekeningen:** {_diag['accounts_aantal']} "
-                         f"(fout: {_diag['accounts_fout'] or 'geen'})")
-                st.write(f"**Herkend als omzetrekening:** {len(_diag['omzetrekeningen'])}")
-                if _diag["omzetrekeningen"]:
-                    st.json(_diag["omzetrekeningen"])
-                st.write(f"**Journaalboekingen:** {_diag['journal_aantal']} "
-                         f"(fout: {_diag['journal_fout'] or 'geen'})")
-                with st.container():
-                    st.write("**Alle boekingen:**")
-                    st.json(_diag.get("journal_boekingen", []))
-                st.markdown("---")
-                st.write(f"**Facturen totaal opgehaald:** {_diag.get('facturen_raw_totaal', 0)} · "
-                         f"statussen: {_diag.get('factuur_statussen', [])}")
-                st.write("**Aantal facturen per jaar:**")
-                st.json(_diag.get("facturen_per_jaar_aantal", {}))
-                st.write("**Omzet (factuurbedrag) per jaar — zoek waar de €200 zit:**")
-                st.json(_diag.get("facturen_per_jaar_som", {}))
-                st.write(f"**Facturen zonder geldige datum** "
-                         f"({len(_diag.get('facturen_geen_datum', []))}):")
-                st.json(_diag.get("facturen_geen_datum", []))
-        with st.expander("🧾 Facturen dit jaar (Rompslomp)"):
+        with st.expander("📈 Verloop & facturen"):
+            if revenue:
+                _df_rev = pd.DataFrame(
+                    [{"Maand": m, "Omzet (cumulatief)": v} for m, v in sorted(revenue.items())]
+                ).set_index("Maand")
+                st.line_chart(_df_rev, height=200)
             _facturen = st.session_state.get("_rompslomp_facturen")
-            if _facturen is None:
-                st.caption("Klik op 'Sync nu' om de facturen op te halen.")
-            elif not _facturen:
-                st.caption("Geen facturen gevonden voor dit jaar.")
-            else:
-                # Reconciliatie: tel mee zoals de KOR-tracker (geen concepten)
-                _gepubliceerd = [f for f in _facturen if f.get("status") != "concept"]
-                _tot = sum(f["bedrag"] for f in _gepubliceerd)
-                st.caption(f"**{len(_gepubliceerd)} facturen** (excl. concepten) · "
-                           f"totaal **{_eur(_tot)}**. Vergelijk dit met 'Omzet' in je "
-                           f"Rompslomp Winst & Verlies; die horen gelijk te zijn.")
+            if _facturen:
                 _df_f = pd.DataFrame([
                     {"Datum": f["datum"], "Nr": f["nummer"], "Klant": f["naam"],
-                     "Bedrag": f["bedrag"], "Status": f.get("status", ""),
-                     "Betaald": "✅" if f["betaald"] else "openstaand"}
-                    for f in _facturen
+                     "Bedrag": f["bedrag"], "Betaald": "✅" if f["betaald"] else "openstaand"}
+                    for f in _facturen if f.get("status") != "concept"
                 ])
                 st.dataframe(_df_f, use_container_width=True, hide_index=True,
                              column_config={"Bedrag": st.column_config.NumberColumn(format="€%.2f")})
-    else:
-        st.caption("💡 Rompslomp-koppeling staat klaar maar is nog niet geconfigureerd. "
-                   "Zet ROMPSLOMP_API_TOKEN in de Streamlit-secrets om automatisch te syncen "
-                   "(het bedrijf-id wordt automatisch opgehaald). Tot dan kun je hieronder handmatig invoeren.")
 
-    with st.expander("➕ Nieuw cumulatief omzetbedrag handmatig invoeren"):
-        st.caption("Kijk in Rompslomp en vul het cumulatieve jaarbedrag tot nu toe in. "
-                   "Bestaande maand overschrijven mag.")
-        cm1, cm2, cm3 = st.columns([1.2, 1.5, 1])
-        with cm1:
-            _maand = st.text_input("Maand (YYYY-MM)", value=date.today().strftime("%Y-%m"),
-                                   key="adm_rev_maand")
-        with cm2:
-            _bedrag = st.number_input("Cumulatief bedrag (€)", min_value=0.0, step=100.0,
-                                      value=float(proj["huidig"]), key="adm_rev_bedrag")
-        with cm3:
-            st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
-            if st.button("Opslaan", type="primary", key="adm_rev_save", use_container_width=True):
-                revenue[_maand.strip()] = round(float(_bedrag), 2)
-                ok, err = intake_store.save_revenue(revenue)
-                if ok:
-                    st.success(f"Omzet {_maand} opgeslagen.")
+        with st.expander("🎯 Bijstellen op je Winst & Verlies (zelden nodig)"):
+            st.caption("Alles loopt automatisch via je facturen en boekingen. Klopt de stand een keer niet "
+                       "met je Rompslomp Winst & Verlies — bijvoorbeeld door een bedrag dat je direct op "
+                       "omzet boekte zonder factuur — vul dan hier je W&V-omzet in. De app onthoudt het verschil.")
+            _ijk_in = st.number_input("Omzet volgens je Rompslomp W&V (€)", min_value=0.0, step=10.0,
+                                      value=float(_api_omzet + correctie), key="adm_kor_ijk")
+            ijc1, ijc2 = st.columns([1, 2])
+            with ijc1:
+                if st.button("Bijstellen", type="primary", key="adm_kor_ijk_save"):
+                    intake_store.save_kor_correctie(round(_ijk_in - _api_omzet, 2))
                     st.rerun()
-                else:
-                    st.error(f"Opslaan mislukt: {err}")
+            with ijc2:
+                if correctie:
+                    st.caption(f"Huidige bijstelling: **{_eur(correctie)}** bovenop de automatische "
+                               f"**{_eur(_api_omzet)}**.")
+    else:
+        st.caption("💡 Nog niet gekoppeld met Rompslomp. Zet ROMPSLOMP_API_TOKEN in de Streamlit-secrets "
+                   "voor automatische omzet, of voer hieronder handmatig in.")
+        with st.expander("➕ Omzetbedrag handmatig invoeren"):
+            cm1, cm2, cm3 = st.columns([1.2, 1.5, 1])
+            with cm1:
+                _maand = st.text_input("Maand (YYYY-MM)", value=date.today().strftime("%Y-%m"),
+                                       key="adm_rev_maand")
+            with cm2:
+                _bedrag = st.number_input("Cumulatief bedrag (€)", min_value=0.0, step=100.0,
+                                          value=float(proj["huidig"]), key="adm_rev_bedrag")
+            with cm3:
+                st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
+                if st.button("Opslaan", type="primary", key="adm_rev_save", use_container_width=True):
+                    revenue[_maand.strip()] = round(float(_bedrag), 2)
+                    intake_store.save_revenue(revenue)
+                    st.rerun()
 
-        if revenue:
-            _df_rev = pd.DataFrame(
-                [{"Maand": m, "Cumulatief": v} for m, v in sorted(revenue.items())]
-            ).set_index("Maand")
-            st.line_chart(_df_rev, height=180)
+    st.divider()
 
-    # ── PAKKETPRIJZEN ──
+    # ── KLANTENLIJST ──
+    st.markdown("### 👥 Klantenlijst")
+    st.caption("Live uit FinalSurge. Het pakket wordt automatisch afgeleid uit de FinalSurge-groep; "
+               "je kunt het overschrijven. Coach, status, betaalcyclus, korting en notitie stel je hier in. "
+               "Alles wordt bewaard en nooit door een sync overschreven.")
+
     with st.expander("⚙️ Pakketprijzen (per 4 weken)"):
-        st.caption("Pas de prijs per pakket aan. Geldt voor de omzetschatting van alle klanten.")
+        st.caption("Prijs per pakket — bepaalt de geschatte jaaromzet van je klanten.")
         _pcols = st.columns(len(PAKKET_PRIJZEN_STD))
         _nieuw_prijzen = {}
         for _i, _pk in enumerate(PAKKET_PRIJZEN_STD):
@@ -472,14 +430,6 @@ def render_admin(athletes_by_group: dict):
                 st.rerun()
             else:
                 st.error(f"Opslaan mislukt: {err}")
-
-    st.divider()
-
-    # ── KLANTENLIJST ──
-    st.markdown("### 👥 Klantenlijst")
-    st.caption("Live uit FinalSurge. Het pakket wordt automatisch afgeleid uit de FinalSurge-groep; "
-               "je kunt het overschrijven. Coach, status, betaalcyclus, korting en notitie stel je hier in. "
-               "Alles wordt bewaard en nooit door een sync overschreven.")
 
     rows = []
     for a in athletes:
