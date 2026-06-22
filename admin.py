@@ -372,8 +372,17 @@ def render_admin(athletes_by_group: dict):
                     st.json(_diag["omzetrekeningen"])
                 st.write(f"**Journaalboekingen:** {_diag['journal_aantal']} "
                          f"(fout: {_diag['journal_fout'] or 'geen'})")
-                st.write("**Alle boekingen (zoek de omzetregel ~€334,61):**")
-                st.json(_diag.get("journal_boekingen", []))
+                with st.container():
+                    st.write("**Alle boekingen:**")
+                    st.json(_diag.get("journal_boekingen", []))
+                st.markdown("---")
+                st.write(f"**Facturen 2026:** {_diag.get('facturen_2026_aantal', 0)} · "
+                         f"statussen: {_diag.get('factuur_statussen', [])}")
+                st.write("**Beschikbare factuurvelden:**")
+                st.json(_diag.get("factuur_velden", []))
+                st.write(f"**Facturen die op €0 worden geteld** "
+                         f"({len(_diag.get('facturen_op_nul', []))}) — hier zit de gemiste omzet:")
+                st.json(_diag.get("facturen_op_nul", []))
         # Vangnet: alleen tonen als er ondanks de grootboek-sync nog een
         # handmatige correctie is ingesteld (normaal niet nodig).
         if correctie:

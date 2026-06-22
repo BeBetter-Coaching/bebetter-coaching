@@ -350,6 +350,25 @@ def diagnose(year: int | None = None) -> dict:
     out["journal_omzet"] = round(sum(jr_pm.values()), 2)
     out["journal_omzet_fout"] = jr_err
     out["totaal_omzet"] = round(sum(inv_pm.values()) + sum(jr_pm.values()), 2)
+
+    # Factuur-diagnose: welke velden heeft een factuur, en welke facturen
+    # tellen op €0 (bedrag in onverwacht veld) of hebben geen datum?
+    raw_inv, _ = _paged("sales_invoices", ("data", "sales_invoices"))
+    out["factuur_velden"] = sorted(raw_inv[0].keys()) if raw_inv else []
+    inv_year = [i for i in raw_inv if (i.get("date") or "")[:10].startswith(str(year))]
+    out["facturen_2026_aantal"] = len(inv_year)
+    verdacht = []
+    for i in inv_year:
+        excl = _parse_bedrag(i.get("price_without_vat"))
+        incl = _parse_bedrag(i.get("price_with_vat"))
+        bedrag = incl if incl else excl
+        if bedrag <= 0:
+            verdacht.append({k: i.get(k) for k in i.keys()
+                             if "price" in k or "amount" in k or "total" in k
+                             or k in ("invoice_number", "date", "status")})
+    out["facturen_op_nul"] = verdacht
+    # Facturen met status != published/imported (worden mogelijk wel meegeteld in W&V)
+    out["factuur_statussen"] = sorted({(i.get("status") or "?") for i in inv_year})
     return out
 
 
