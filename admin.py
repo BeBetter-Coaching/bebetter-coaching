@@ -353,25 +353,19 @@ def render_admin(athletes_by_group: dict):
                 _doe_rompslomp_sync(revenue)
                 st.rerun()
 
-        # Overige omzet: het deel van je W&V-omzet dat niet uit verkoopfacturen
-        # komt (losse verkopen, kasontvangsten, handmatige boekingen).
-        _factuur_huidig = max((v for k, v in revenue.items()
-                               if k.startswith(str(date.today().year))), default=0.0)
-        with st.expander(f"➕ Overige omzet (niet-factuur): {_eur(correctie)}"):
-            st.caption("Vergelijk de factuuromzet hierboven met 'Omzet' in je Rompslomp Winst & "
-                       "Verlies. Staat daar méér? Vul hier het verschil in (losse verkopen, "
-                       "kasontvangsten, handmatige boekingen). Dit wordt bij de factuuromzet opgeteld.")
-            _co1, _co2 = st.columns([2, 1])
-            with _co1:
-                _corr_in = st.number_input("Overige omzet dit jaar (€)", min_value=0.0, step=10.0,
+        st.caption("De omzet komt rechtstreeks uit je grootboek (Winst & Verlies), dus inclusief "
+                   "losse verkopen, clinics, strippenkaarten en handmatige boekingen.")
+        # Vangnet: alleen tonen als er ondanks de grootboek-sync nog een
+        # handmatige correctie is ingesteld (normaal niet nodig).
+        if correctie:
+            with st.expander(f"➕ Handmatige correctie: {_eur(correctie)} (normaal niet nodig)"):
+                st.caption("De omzet komt nu uit het grootboek en hoort vanzelf te kloppen met je "
+                           "Winst & Verlies. Zet dit op 0 als de stand klopt.")
+                _corr_in = st.number_input("Handmatige correctie (€)", min_value=0.0, step=10.0,
                                            value=float(correctie), key="adm_kor_corr")
-            with _co2:
-                st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
-                if st.button("Opslaan", key="adm_kor_corr_save", use_container_width=True):
+                if st.button("Opslaan", key="adm_kor_corr_save"):
                     intake_store.save_kor_correctie(_corr_in)
                     st.rerun()
-            st.caption(f"Facturen **{_eur(_factuur_huidig)}** + overige **{_eur(correctie)}** = "
-                       f"**{_eur(_factuur_huidig + correctie)}** (KOR-stand).")
         with st.expander("🧾 Facturen dit jaar (Rompslomp)"):
             _facturen = st.session_state.get("_rompslomp_facturen")
             if _facturen is None:

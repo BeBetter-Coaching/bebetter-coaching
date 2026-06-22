@@ -190,28 +190,87 @@ def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
     return facturen, ""
 
 
-def get_cumulatieve_omzet(year: int | None = None) -> tuple[dict, str]:
+def _paged(url: str, key_candidates: tuple) -> tuple[list, str]:
+    """Haal alle pagina's van een lijst-endpoint op. Geeft (items, fout)."""
+    cid = _company_id()
+    if not cid:
+        return [], "Geen bedrijf (company_id) beschikbaar."
+    items_all = []
+    page = 1
+    try:
+        while True:
+            resp = _session.get(f"{_base()}/companies/{cid}/{url}",
+                                headers=_headers(), timeout=_TIMEOUT,
+                                params={"page": page, "per_page": 100})
+            if resp.status_code in (401, 403):
+                return [], f"Geen toegang ({resp.status_code})."
+            if resp.status_code == 404:
+                return [], "404"
+            resp.raise_for_status()
+            data = resp.json()
+            items = data if isinstance(data, list) else next(
+                (data.get(k) for k in key_candidates if data.get(k) is not None), [])
+            if not items:
+                break
+            items_all.extend(items)
+            if len(items) < 100:
+                break
+            page += 1
+            if page > 100:
+                break
+    except Exception as e:
+        return [], str(e)
+    return items_all, ""
+
+
+def get_accounts() -> tuple[list[dict], str]:
+    """Haal de grootboekrekeningen op."""
+    return _paged("accounts", ("data", "accounts"))
+
+
+def _is_revenue_account(acc: dict) -> bool:
+    """True als een grootboekrekening een omzetrekening is."""
+    t = (acc.get("type") or "").lower()
+    p = (acc.get("path") or acc.get("path_name") or "").lower()
+    return t == "revenue" or "revenue" in p or "omzet" in p
+
+
+def get_omzet_per_maand_grootboek(year: int) -> tuple[dict, str]:
     """
-    Bereken cumulatieve omzet per maand voor het jaar, in hetzelfde formaat
-    als de handmatige omzetopslag: {'YYYY-MM': cumulatief_bedrag}.
-    Alleen gepubliceerde/geïmporteerde facturen tellen mee (geen concepten).
+    Omzet per maand uit de GROOTBOEKBOEKINGEN: som van (credit - debet) op
+    omzetrekeningen. Dit is exact wat Rompslomp als 'Omzet' in Winst & Verlies
+    toont — inclusief losse verkopen en handmatige boekingen, niet alleen
+    verkoopfacturen. Geeft ({maand: bedrag}, fout).
     """
-    if year is None:
-        year = date.today().year
-    facturen, err = get_invoices(year)
+    accounts, err = get_accounts()
+    if err:
+        return {}, err
+    revenue_ids = {a.get("id") for a in accounts if _is_revenue_account(a)}
+
+    entries, err = _paged("journal_entries", ("data", "journal_entries"))
     if err:
         return {}, err
 
     per_maand: dict[str, float] = {}
-    for f in facturen:
-        if f.get("status") == "concept":
+    for e in entries:
+        datum = (e.get("date") or "")[:10]
+        if not datum.startswith(str(year)) or len(datum) < 7:
             continue
-        maand = f["datum"][:7]
-        if len(maand) != 7:
-            continue
-        per_maand[maand] = per_maand.get(maand, 0.0) + f["bedrag"]
+        maand = datum[:7]
+        for line in (e.get("lines") or []):
+            acc_id = line.get("account_id")
+            acc_path = (line.get("account_path") or "").lower()
+            is_rev = acc_id in revenue_ids or "revenue" in acc_path or "omzet" in acc_path
+            if not is_rev:
+                continue
+            credit = _parse_bedrag(line.get("credit_amount"))
+            debet = _parse_bedrag(line.get("debit_amount"))
+            per_maand[maand] = per_maand.get(maand, 0.0) + (credit - debet)
+    return per_maand, ""
 
-    # Cumulatief opbouwen over alle maanden t/m de laatste met omzet
+
+def _cumulatief_uit_maanden(per_maand: dict, year: int) -> dict:
+    """Bouw een cumulatieve {YYYY-MM: bedrag} t/m de huidige maand."""
     cumulatief: dict[str, float] = {}
     loopsom = 0.0
     for m in range(1, 13):
@@ -219,9 +278,36 @@ def get_cumulatieve_omzet(year: int | None = None) -> tuple[dict, str]:
         if key in per_maand:
             loopsom += per_maand[key]
             cumulatief[key] = round(loopsom, 2)
-        elif cumulatief:  # alleen doorlopen na de eerste maand met omzet
+        elif cumulatief:
             cumulatief[key] = round(loopsom, 2)
-    # Toekomstige maanden zonder omzet weglaten
     vandaag_key = date.today().strftime("%Y-%m")
-    cumulatief = {k: v for k, v in cumulatief.items() if k <= vandaag_key}
-    return cumulatief, ""
+    return {k: v for k, v in cumulatief.items() if k <= vandaag_key}
+
+
+def get_cumulatieve_omzet(year: int | None = None) -> tuple[dict, str]:
+    """
+    Cumulatieve omzet per maand voor het jaar, in het formaat {'YYYY-MM': bedrag}.
+
+    Primair uit de grootboekboekingen (= exact de W&V-omzet). Lukt dat niet
+    (bijv. geen toegang tot journal_entries), dan terugvallen op de som van
+    de verkoopfacturen.
+    """
+    if year is None:
+        year = date.today().year
+
+    per_maand, err = get_omzet_per_maand_grootboek(year)
+    if not err and per_maand:
+        return _cumulatief_uit_maanden(per_maand, year), ""
+
+    # Fallback: verkoopfacturen
+    facturen, ferr = get_invoices(year)
+    if ferr:
+        return {}, (err or ferr)
+    fmaand: dict[str, float] = {}
+    for f in facturen:
+        if f.get("status") == "concept":
+            continue
+        maand = f["datum"][:7]
+        if len(maand) == 7:
+            fmaand[maand] = fmaand.get(maand, 0.0) + f["bedrag"]
+    return _cumulatief_uit_maanden(fmaand, year), ""
