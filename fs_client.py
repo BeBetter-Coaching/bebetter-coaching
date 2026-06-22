@@ -1280,13 +1280,13 @@ def get_schema_end_dates(
 
         # Alleen structured workouts tellen — races en losse events worden uitgesloten.
         # Minder dan _MIN_SCHEMA_WORKOUTS = "los schema" (losse trainingen, geen echt schema).
-        planned_dates = [
-            w["workout_date"][:10]
-            for w in workouts
+        structured = [
+            w for w in workouts
             if w.get("workout_date")
             and w.get("has_structured_workout")
             and not w.get("is_race")
         ]
+        planned_dates = [w["workout_date"][:10] for w in structured]
 
         if len(planned_dates) >= _MIN_SCHEMA_WORKOUTS:
             last_date_str = max(planned_dates)
@@ -1295,6 +1295,21 @@ def get_schema_end_dates(
             last_date_str = None
             days_left = None
 
+        # Verborgen voor de atleet: FinalSurge "Hide Workouts from Athlete: Date After".
+        # Een al-verborgen training heeft can_hide=False; zichtbare can_hide=True.
+        today_iso = today.isoformat()
+        toekomst = [w for w in structured if w["workout_date"][:10] >= today_iso]
+        verborgen = [w for w in toekomst if w.get("can_hide") is False]
+        zichtbaar = [w for w in toekomst if w.get("can_hide") is not False]
+        hidden_count = len(verborgen)
+        last_visible = max((w["workout_date"][:10] for w in zichtbaar), default=None)
+        hidden_from = min((w["workout_date"][:10] for w in verborgen), default=None)
+        # Dagen tot het ZICHTBARE deel op is (wat de atleet ervaart).
+        # None = geen zichtbare toekomst meer (alles verborgen of niets gepland).
+        visible_days_left = (
+            (date.fromisoformat(last_visible) - today).days if last_visible else None
+        )
+
         return {
             "name": athlete["name"],
             "first_name": athlete["first_name"],
@@ -1302,6 +1317,10 @@ def get_schema_end_dates(
             "group": athlete["_group"],
             "last_date": last_date_str,
             "days_left": days_left,
+            "hidden_count": hidden_count,
+            "last_visible_date": last_visible,
+            "visible_days_left": visible_days_left,
+            "hidden_from_date": hidden_from,
         }
 
     results = _parallel_per_athlete(todo, _fetch)
