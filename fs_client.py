@@ -1225,26 +1225,18 @@ def diagnose_athlete_workouts(user_key: str, dagen_vooruit: int = 90) -> dict:
 
     structured = [w for w in workouts
                   if w.get("has_structured_workout") and not w.get("is_race")]
-    out["aantal_structured"] = len(structured)
-    # Alle unieke veldnamen die op een workout voorkomen
-    alle_velden = set()
-    for w in structured:
-        alle_velden.update(w.keys())
-    out["workout_velden"] = sorted(alle_velden)
-    # Verdachte velden die met zichtbaarheid te maken kunnen hebben
-    _verdacht = [k for k in alle_velden if any(t in k.lower() for t in
-                 ("hid", "visib", "zicht", "verberg", "show", "publish", "draft", "private", "athlete_can"))]
-    out["zichtbaarheid_velden"] = _verdacht
-    # Voorbeeld: de laatste paar structured workouts met hun volledige velden
     structured.sort(key=lambda w: (w.get("workout_date") or ""))
-    out["voorbeeld_workouts"] = [
-        {k: v for k, v in w.items() if not isinstance(v, (list, dict))}
-        for w in structured[-3:]
+    out["aantal_structured"] = len(structured)
+
+    # Tijdlijn: per training de zichtbaarheid-permissies. Waar can_hide omslaat
+    # van true → false ligt waarschijnlijk de grens tussen zichtbaar en verborgen.
+    out["tijdlijn"] = [
+        {"datum": (w.get("workout_date") or "")[:10],
+         "can_hide": w.get("can_hide"),
+         "can_edit": w.get("can_edit"),
+         "naam": w.get("name")}
+        for w in structured
     ]
-    try:
-        out["labels"] = get_calendar_labels(user_key, today, end)
-    except Exception as e:
-        out["labels"] = f"fout: {e}"
     return out
 
 

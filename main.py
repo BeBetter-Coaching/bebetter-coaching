@@ -3101,14 +3101,16 @@ elif page == "schema":
                     st.session_state["schema_diag"] = {"fout": str(e)}
         _sd = st.session_state.get("schema_diag")
         if _sd:
-            st.write(f"**Structured workouts (vooruit):** {_sd.get('aantal_structured', 0)}")
-            st.write(f"**Mogelijke zichtbaarheid-velden:** {_sd.get('zichtbaarheid_velden', [])}")
-            st.write("**Alle workout-velden:**")
-            st.json(_sd.get("workout_velden", []))
-            st.write("**Voorbeeld-workouts (volledige velden):**")
-            st.json(_sd.get("voorbeeld_workouts", []))
-            st.write("**Kalenderlabels:**")
-            st.json(_sd.get("labels", []))
+            if _sd.get("fout"):
+                st.error(_sd["fout"])
+            else:
+                st.write(f"**Structured workouts (vooruit):** {_sd.get('aantal_structured', 0)}")
+                st.caption("Zoek de datum waar **can_hide** van true → false omslaat: daar begint "
+                           "het verborgen deel (een al-verborgen training kun je niet nóg verbergen).")
+                _tl = _sd.get("tijdlijn", [])
+                if _tl:
+                    import pandas as _pd
+                    st.dataframe(_pd.DataFrame(_tl), use_container_width=True, hide_index=True)
 
     col_load, col_reload = st.columns([2, 1])
     with col_load:
