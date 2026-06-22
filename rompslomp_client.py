@@ -22,10 +22,6 @@ _TIMEOUT = (5, 30)
 # Gevonden company_id wordt gecachet zodat we /companies niet elke call herhalen
 _company_id_cache: str | None = None
 
-# Omzetbasis voor KOR: turnover is excl. btw. Voor een KOR-deelnemer zonder
-# btw zijn beide velden gelijk; we nemen de excl-btw-waarde als omzet.
-_OMZET_VELD = "price_without_vat"
-
 _session = requests.Session()
 
 
@@ -167,12 +163,18 @@ def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
                 datum = (inv.get("date") or "")[:10]
                 if year and not datum.startswith(str(year)):
                     continue
+                _excl = _parse_bedrag(inv.get("price_without_vat"))
+                _incl = _parse_bedrag(inv.get("price_with_vat"))
+                # KOR-vrijgesteld → geen btw, dus het totaalbedrag (incl) IS de
+                # omzet en is betrouwbaarder gevuld dan het excl-btw-veld.
+                bedrag = _incl if _incl else _excl
                 facturen.append({
                     "datum": datum,
                     "nummer": inv.get("invoice_number"),
                     "naam": _contact_naam(inv),
-                    "bedrag": _parse_bedrag(inv.get(_OMZET_VELD)),
-                    "bedrag_incl": _parse_bedrag(inv.get("price_with_vat")),
+                    "bedrag": bedrag,
+                    "bedrag_excl": _excl,
+                    "bedrag_incl": _incl,
                     "betaald": inv.get("payment_status") == "paid",
                     "status": inv.get("status"),
                 })

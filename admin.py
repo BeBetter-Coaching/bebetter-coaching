@@ -342,9 +342,16 @@ def render_admin(athletes_by_group: dict):
             elif not _facturen:
                 st.caption("Geen facturen gevonden voor dit jaar.")
             else:
+                # Reconciliatie: tel mee zoals de KOR-tracker (geen concepten)
+                _gepubliceerd = [f for f in _facturen if f.get("status") != "concept"]
+                _tot = sum(f["bedrag"] for f in _gepubliceerd)
+                st.caption(f"**{len(_gepubliceerd)} facturen** (excl. concepten) · "
+                           f"totaal **{_eur(_tot)}**. Vergelijk dit met 'Omzet' in je "
+                           f"Rompslomp Winst & Verlies; die horen gelijk te zijn.")
                 _df_f = pd.DataFrame([
                     {"Datum": f["datum"], "Nr": f["nummer"], "Klant": f["naam"],
-                     "Bedrag": f["bedrag"], "Betaald": "✅" if f["betaald"] else "openstaand"}
+                     "Bedrag": f["bedrag"], "Status": f.get("status", ""),
+                     "Betaald": "✅" if f["betaald"] else "openstaand"}
                     for f in _facturen
                 ])
                 st.dataframe(_df_f, use_container_width=True, hide_index=True,
