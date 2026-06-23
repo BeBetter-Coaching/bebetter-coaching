@@ -158,12 +158,31 @@ def _save_skipped(skipped: dict):
     except Exception:
         pass
 
+def _athlete_latest_ts(workout: dict) -> str:
+    """Laatste tijdstempel van een atleet-bericht in de thread (of '')."""
+    return max(
+        (m.get("timestamp") or "" for m in workout.get("thread", [])
+         if m.get("van") == "atleet"),
+        default="",
+    )
+
+def _skip_snapshot(workout: dict) -> dict:
+    """Momentopname van de atleet-input op het moment van overslaan."""
+    return {
+        "date": date.today().isoformat(),
+        "athlete_ts": _athlete_latest_ts(workout),
+        "notes": bool(workout.get("post_notes")),
+        "felt": bool(workout.get("felt")),
+        "effort": bool(workout.get("effort")),
+    }
+
 def _filter_skipped(workouts: list) -> list:
     """
     Filter overgeslagen workouts eruit — tenzij de atleet ná het overslaan
-    opnieuw heeft gereageerd, dan komt de workout terug (en uit de skiplijst).
-    Gedeeld door de feedbackpagina én de dagstatus-telling zodat beide
-    hetzelfde aantal zien.
+    NIEUWE input heeft gegeven (reactie, notitie, gevoel of RPE), dan komt de
+    workout terug. We vergelijken tegen een momentopname van bij het overslaan,
+    dus FinalSurge-tijdstempels onderling: geen datum- of tijdzone-gedoe.
+    Gedeeld door de feedbackpagina én de dagstatus-telling.
     """
     _skipped = _load_skipped()
     if not _skipped:
@@ -172,21 +191,24 @@ def _filter_skipped(workouts: list) -> list:
     _updated = False
     for w in workouts:
         wk_key = w.get("workout_key", "")
-        if wk_key not in _skipped:
+        snap = _skipped.get(wk_key)
+        if snap is None:
             filtered.append(w)
             continue
-        skip_ts = _skipped[wk_key]
-        # Alleen een reactie van een LATERE DAG dan de skip haalt de workout
-        # terug. Volledige tijdstempels zijn hier onbruikbaar: de skip is een
-        # kale datum en "2026-06-12T09:14" > "2026-06-12" is als tekst waar,
-        # waardoor een reactie van eerder die dag de skip direct ongedaan
-        # maakte en de workout bleef terugkomen.
-        new_athlete_msg = any(
-            m.get("van") == "atleet"
-            and (m.get("timestamp") or "")[:10] > skip_ts[:10]
-            for m in w.get("thread", [])
-        )
-        if new_athlete_msg:
+
+        cur_ts = _athlete_latest_ts(w)
+        if isinstance(snap, dict):
+            nieuwe_input = (
+                (cur_ts and cur_ts > (snap.get("athlete_ts") or ""))
+                or (bool(w.get("post_notes")) and not snap.get("notes"))
+                or (bool(w.get("felt")) and not snap.get("felt"))
+                or (bool(w.get("effort")) and not snap.get("effort"))
+            )
+        else:
+            # Oud formaat (kale datum-string): val terug op datum-vergelijking
+            nieuwe_input = cur_ts[:10] > str(snap)[:10]
+
+        if nieuwe_input:
             del _skipped[wk_key]
             _updated = True
             filtered.append(w)
@@ -2067,7 +2089,7 @@ elif page == "feedback":
                         with col_skip_early:
                             if st.button("⏭️ Overslaan", key=f"skip_early_{i}"):
                                 _skipped = _load_skipped()
-                                _skipped[wk] = date.today().isoformat()
+                                _skipped[wk] = _skip_snapshot(workout)
                                 _save_skipped(_skipped)
                                 st.session_state[f"posted_{wk}"] = True
                                 _day_stats_mark_done(posted=False)
@@ -2144,7 +2166,7 @@ elif page == "feedback":
                         with col_skip:
                             if st.button("⏭️ Overslaan", key=f"skip_{i}"):
                                 _skipped = _load_skipped()
-                                _skipped[wk] = date.today().isoformat()
+                                _skipped[wk] = _skip_snapshot(workout)
                                 _save_skipped(_skipped)
                                 st.session_state[f"posted_{wk}"] = True
                                 _day_stats_mark_done(posted=False)
