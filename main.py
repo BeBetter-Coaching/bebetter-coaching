@@ -1279,8 +1279,8 @@ if page == "home":
             # "Los schema"-groep krijgt geen feedback → niet meetellen
             _fb_fut = _pool.submit(
                 fs_client.get_workouts_needing_feedback,
-                3, None, False, True,  # include_planned_no_notes=True: uitgevoerde
-                {"los schema"}, True,  # geplande trainingen altijd meetellen
+                7, None, False, True,  # 7 dagen terug; include_planned_no_notes=True:
+                {"los schema"}, True,  # uitgevoerde geplande trainingen altijd meetellen
             )
             _races_fut = _pool.submit(fs_client.get_upcoming_races, 7)
             _alerts_fut = _pool.submit(
@@ -1715,7 +1715,9 @@ elif page == "feedback":
         if st.button("← Terug naar groepen", key="btn_back_groups"):
             go_to("feedback_groups")
 
-        days_back = st.slider("Terugkijkperiode (dagen)", 1, 14, 3)
+        days_back = st.slider("Terugkijkperiode (dagen)", 1, 21, 7,
+                              help="Hoe ver terug workouts worden opgehaald. Ruimer = ook iets oudere "
+                                   "trainingen waar de atleet later nog op reageerde.")
 
         st.markdown("**Atleten** — laat leeg voor iedereen")
         selected_keys = []
@@ -1861,12 +1863,12 @@ elif page == "feedback":
 
     # Synchroniseer de homepage-tegel met de live module-telling, maar alleen
     # als de filters exact overeenkomen met waarmee de tegel zelf telt:
-    # geen atleetfilter, days_back=3, data-only uit, geplande-zonder-notitie aan.
+    # geen atleetfilter, days_back=7, data-only uit, geplande-zonder-notitie aan.
     if (
         athlete_filter is None
         and not include_data_only
         and include_planned_no_notes
-        and days_back == 3
+        and days_back == 7
     ):
         _live_open = sum(
             1 for w in workouts
