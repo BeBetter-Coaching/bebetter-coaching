@@ -280,6 +280,108 @@ def _analyse_log(log: list[dict]) -> dict:
     }
 
 
+def _periode_stats(entries: list[dict]) -> dict:
+    """Aggregaten voor één periode: volume/week, conditie-index, compliance, gevoel/RPE."""
+    weken: dict = {}
+    effs, felts, rpes, scores = [], [], [], []
+    for e in entries:
+        try:
+            d = date.fromisoformat(e["date"])
+        except (ValueError, KeyError):
+            continue
+        is_planned = bool(e.get("planned_km") or e.get("planned_min") or e.get("description"))
+        if is_planned and not e.get("is_race"):
+            scores.append(_workout_score(e))
+        if not e.get("completed"):
+            continue
+        if not e.get("is_race"):
+            weken.setdefault(_week_label(d), 0.0)
+            weken[_week_label(d)] += float(e.get("actual_km") or 0)
+            hr = e.get("hr_avg")
+            pace_min = fs_client._pace_to_float(e.get("pace"))
+            if hr and pace_min != float("inf"):
+                try:
+                    eff = (1000 / pace_min) / float(hr) * 100
+                    if 40 < eff < 300:
+                        effs.append(eff)
+                except (ValueError, TypeError, ZeroDivisionError):
+                    pass
+        if e.get("felt"):
+            try:
+                felts.append(int(float(e["felt"])))
+            except (ValueError, TypeError):
+                pass
+        if e.get("effort"):
+            try:
+                rpes.append(int(float(e["effort"])))
+            except (ValueError, TypeError):
+                pass
+    return {
+        "km_per_week": round(sum(weken.values()) / len(weken), 1) if weken else 0.0,
+        "conditie_index": round(sum(effs) / len(effs), 1) if effs else None,
+        "compliance": round(sum(scores) / len(scores) * 100) if scores else None,
+        "gevoel": round(sum(felts) / len(felts), 1) if felts else None,  # 1=top, 5=slecht
+        "rpe": round(sum(rpes) / len(rpes), 1) if rpes else None,
+        "n_runs": sum(1 for e in entries if e.get("completed") and not e.get("is_race")),
+    }
+
+
+def evaluatie_context(log: list[dict], coach_notes: list[dict], naam: str) -> str:
+    """Bouw de datacontext voor de AI-evaluatie: toen (1e helft) vs nu (2e helft)."""
+    today = date.today()
+    mid = (today - timedelta(days=45)).isoformat()
+    cutoff = (today - timedelta(days=90)).isoformat()
+    eerste = [e for e in log if cutoff <= e.get("date", "") < mid]
+    tweede = [e for e in log if e.get("date", "") >= mid]
+    s1, s2 = _periode_stats(eerste), _periode_stats(tweede)
+
+    def _reg(label, a, b, hoger_beter=True, suffix=""):
+        if a is None and b is None:
+            return f"{label}: onvoldoende data"
+        av = "—" if a is None else f"{a}{suffix}"
+        bv = "—" if b is None else f"{b}{suffix}"
+        return f"{label}: toen {av} → nu {bv}"
+
+    regels = [
+        _reg("Volume (km/week)", s1["km_per_week"], s2["km_per_week"], suffix=" km"),
+        _reg("Conditie-index (tempo per hartslag, hoger=fitter)", s1["conditie_index"], s2["conditie_index"]),
+        _reg("Compliance", s1["compliance"], s2["compliance"], suffix="%"),
+        _reg("Gevoel (1=top, 5=slecht)", s1["gevoel"], s2["gevoel"]),
+        _reg("Inspanning RPE (1-10)", s1["rpe"], s2["rpe"]),
+        f"Aantal runs: toen {s1['n_runs']} → nu {s2['n_runs']}",
+    ]
+
+    races = [e for e in log if e.get("is_race") and e.get("completed")]
+    if races:
+        regels.append("Races in deze periode: " + ", ".join(
+            f"{e.get('name','race')} ({e.get('date','')[:10]})" for e in races[:5]))
+
+    # Wat de atleet zelf schreef (eigen woorden over hoe het ging)
+    atleet_woorden = [
+        f"[{e['date'][:10]}] {e['post_notes'][:200]}"
+        for e in sorted(log, key=lambda x: x.get("date", ""))
+        if e.get("post_notes")
+    ]
+    woorden_blok = "\n".join(atleet_woorden[-10:]) if atleet_woorden else "(geen notities van de atleet)"
+
+    notes_blok = "\n".join(
+        f"[{n.get('datum','')}] {n.get('coach','')}: {n.get('tekst','')[:200]}"
+        for n in coach_notes[:10]
+    ) if coach_notes else "(geen coach-notities)"
+
+    return f"""Atleet: {naam}
+Periode: laatste 3 maanden, vergelijking eerste helft (TOEN) vs tweede helft (NU).
+
+CIJFERS TOEN → NU:
+{chr(10).join(regels)}
+
+WAT DE ATLEET ZELF SCHREEF (post-workout notities):
+{woorden_blok}
+
+COACH-NOTITIES (incl. automatische signalen):
+{notes_blok}"""
+
+
 def _schema_end(future: list[dict]) -> tuple[str | None, int | None]:
     """Laatste geplande structured workout — zelfde definitie als schema-verloop."""
     dates = [
@@ -457,6 +559,27 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
         m2.metric("Compliance (8 wkn)", "—", "geen geplande trainingen", delta_color="off")
     m3.metric("Volume laatste 4 wkn", f"{analyse['km_4w']} km")
     m4.metric("Races in log", str(len(analyse["races"])))
+
+    # ── Evaluatie & advies (AI, on demand) ──
+    st.markdown("#### 📋 Evaluatie & advies")
+    st.caption("Een beknopte coach-evaluatie: vergelijkt de eerste helft van de afgelopen 3 maanden "
+               "met nu. Is de atleet vooruitgegaan, wat gaat goed, waar ligt hij het best?")
+    _eval_key = f"dossier_eval_{user_key}"
+    _eval = st.session_state.get(_eval_key)
+    if _eval:
+        st.info(_eval)
+    ec1, ec2 = st.columns([1, 3])
+    with ec1:
+        if st.button("✨ Genereer evaluatie" if not _eval else "🔄 Opnieuw",
+                     key=f"gen_eval_{user_key}", type="primary" if not _eval else "secondary"):
+            import ai_feedback
+            with st.spinner("Evaluatie schrijven…"):
+                try:
+                    _ctx = evaluatie_context(data["log"], _notes().get(user_key, []), naam)
+                    st.session_state[_eval_key] = ai_feedback.generate_athlete_evaluation(_ctx, naam)
+                except Exception as e:
+                    st.error(f"Mislukt: {e}")
+            st.rerun()
 
     # ── Grafieken ──
     c_vol, c_trend = st.columns(2)

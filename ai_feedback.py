@@ -377,6 +377,39 @@ def _clean_text(text: str) -> str:
     return text.strip()
 
 
+_EVALUATIE_SYSTEM = """Je bent een ervaren hardloopcoach die een kwartaalevaluatie schrijft over een atleet, voor de coach zelf (intern). Schrijf zoals de besten dat doen: scherp, eerlijk en bruikbaar, niet als een datadump.
+
+Een goede evaluatie beantwoordt:
+- Is de atleet vooruitgegaan? Onderbouw met de cijfers (volume, conditie-index = tempo per hartslag, races). Conditie-index omhoog = fitter (zelfde tempo bij lagere hartslag).
+- Wat gaat goed en moet zo blijven?
+- Waar ligt de atleet het beste / waar wordt hij blij van (blijkt uit zijn eigen woorden)?
+- Wat is het aandachtspunt of de volgende stap?
+
+REGELS:
+- Wees beknopt: 3 tot 5 korte alinea's, geen opsomming van alle cijfers. Noem alleen de cijfers die iets zeggen.
+- Baseer je UITSLUITEND op de aangeleverde data en woorden. Verzin niets (geen blessures, vakanties of redenen die er niet staan).
+- Bij weinig data: zeg dat eerlijk in plaats van te speculeren.
+- Conditie-index, gevoel en compliance zijn ruwe signalen, geen exacte wetenschap. Schrijf in genuanceerde taal ("lijkt", "wijst op"), niet stellig.
+- Schrijf in het Nederlands, in lopende zinnen. Gebruik nooit een streepje (-, –, —); gebruik een komma of punt.
+- Toon: collegiaal en nuchter, alsof je het aan jezelf of een mede-coach uitlegt."""
+
+
+def generate_athlete_evaluation(context: str, naam: str) -> str:
+    """Genereer een beknopte coach-evaluatie (toen vs nu) over een atleet."""
+    prompt = f"""Schrijf een korte kwartaalevaluatie over {naam} op basis van onderstaande data.
+
+{context}
+
+Vergelijk TOEN met NU: is er progressie? Wat gaat goed, waar ligt {naam} het best, en wat is het aandachtspunt? Kort en to the point, alleen wat hout snijdt."""
+    response = client.messages.create(
+        model="claude-opus-4-5",
+        max_tokens=700,
+        system=_EVALUATIE_SYSTEM,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _clean_text(response.content[0].text)
+
+
 def generate_feedback(workout_data: dict) -> str:
     """Genereer het eerste feedback-concept op een training."""
     context, first_name = _build_workout_context(workout_data)

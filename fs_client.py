@@ -458,7 +458,10 @@ def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> l
             "actual_min":   round(float(act.get("duration")) / 60, 0) if act.get("duration") else None,
             "pace":         act.get("pace_display"),       # gemiddelde pace HELE run
             "hr_avg":       act.get("hr_avg"),
-            "completed":    bool(w.get("has_actual_data")),
+            # has_actual_data is onbetrouwbaar (true ook bij geplande, niet
+            # gelopen trainingen) → gebruik de echte uitvoeringsstatus, anders
+            # tellen geplande km mee in het volume.
+            "completed":    is_executed_workout(w),
             "is_race":      bool(w.get("is_race")),
             "post_notes":   (w.get("post_workout_notes") or "").strip(),
             "felt":         w.get("felt"),
@@ -909,7 +912,7 @@ def get_last_activity_dates(lookback_days: int = 60) -> dict:
         done = [
             (w.get("workout_date") or "")[:10]
             for w in workouts
-            if w.get("has_actual_data") and w.get("workout_date")
+            if is_executed_workout(w) and w.get("workout_date")
         ]
         return (a["user_key"], max(done) if done else None)
 
