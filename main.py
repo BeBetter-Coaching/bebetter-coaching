@@ -3159,13 +3159,15 @@ elif page == "schema":
         c5.metric("⏸ Op hold", len(on_hold))
 
         # ── Verborgen-trainingen signaal (FinalSurge "Hide Workouts from Athlete") ──
-        # Alleen atleten waarvan het ZICHTBARE deel (bijna) op is én er nog
-        # verborgen trainingen achter staan. Drempel volgt de slider hierboven.
+        # Atleten waarvan het ZICHTBARE deel binnen een week (bijna) op is én er
+        # nog verborgen trainingen achter staan. Eigen venster, los van de
+        # schema-slider hierboven (die staat vaak op 3 dagen).
+        _HIDE_VENSTER = 7
         verborgen_actie = [
             r for r in schema_data
             if r.get("hidden_count", 0) > 0
             and r.get("visible_days_left") is not None
-            and r["visible_days_left"] <= threshold
+            and r["visible_days_left"] <= _HIDE_VENSTER
         ]
         if verborgen_actie:
             st.markdown("")
@@ -3196,7 +3198,7 @@ elif page == "schema":
             _hide_issue = (
                 r.get("hidden_count", 0) > 0
                 and r.get("visible_days_left") is not None
-                and r["visible_days_left"] <= threshold
+                and r["visible_days_left"] <= _HIDE_VENSTER
             )
             c0.write(("👁 " if _hide_issue else "") + r["name"])
             c1.write(r["last_date"] or "—")
