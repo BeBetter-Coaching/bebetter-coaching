@@ -264,6 +264,29 @@ def get_athletes() -> list[dict]:
     return result
 
 
+def is_executed_workout(w: dict) -> bool:
+    """
+    Of een workout daadwerkelijk is UITGEVOERD.
+
+    has_actual_data is onbetrouwbaar: FinalSurge zet dat ook op true bij
+    geplande (structured) workouts die nog niet gelopen zijn. We kijken daarom
+    naar echte uitvoeringssignalen: voltooiingsstatus, stats of completion.
+    """
+    status = (w.get("workout_status_text") or "").strip().lower()
+    if status:
+        # "Planned" = nog niet gedaan; al het andere ("Completed", e.d.) wel
+        return status != "planned"
+    if w.get("has_stats"):
+        return True
+    try:
+        if float(w.get("workout_completion") or 0) > 0:
+            return True
+    except (ValueError, TypeError):
+        pass
+    # Geen status-veld beschikbaar → val terug op has_actual_data
+    return bool(w.get("has_actual_data"))
+
+
 def get_athletes_by_group() -> dict[str, list[dict]]:
     """Geeft atleten gegroepeerd per groepsnaam."""
     athletes = get_athletes()
@@ -693,7 +716,7 @@ def get_workouts_needing_feedback(
         for w in prefetched.get(user_key, []):
             post_notes = (w.get("post_workout_notes") or "").strip()
             comment_count = w.get("CommentCount") or 0
-            has_data = bool(w.get("has_actual_data"))
+            has_data = is_executed_workout(w)
             felt = w.get("felt")
             effort = w.get("effort")
             workout_key = w.get("key")
@@ -916,7 +939,7 @@ def diagnose_athlete_feedback(user_key: str, days_back: int = 10) -> list[dict]:
     for w in workouts:
         post_notes = (w.get("post_workout_notes") or "").strip()
         comment_count = w.get("CommentCount") or 0
-        has_data = bool(w.get("has_actual_data"))
+        has_data = is_executed_workout(w)
         felt = w.get("felt")
         effort = w.get("effort")
         workout_key = w.get("key")
