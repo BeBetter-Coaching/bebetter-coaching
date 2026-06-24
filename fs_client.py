@@ -787,7 +787,10 @@ def get_workouts_needing_feedback(
             continue
 
         last_coach_ts = max((_ts(c) for c in coach_comments), default="") if coach_comments else ""
-        coach_responded_after = bool(last_coach_ts) and last_coach_ts[:10] > workout_date_str
+        # >= zodat een coach-reactie op DEZELFDE dag als de training ook telt
+        # (training en reactie zijn vaak dezelfde dag). Een succeswens van vóór
+        # de training (datum < trainingsdatum) telt terecht níét als reactie.
+        coach_responded_after = bool(last_coach_ts) and last_coach_ts[:10] >= workout_date_str
         post_notes_need_response = bool(post_notes) and not coach_responded_after
 
         if coach_comments and not athlete_comments:
@@ -967,7 +970,10 @@ def diagnose_athlete_feedback(user_key: str, days_back: int = 10) -> list[dict]:
         comments_sorted = sorted(comments, key=_ts)
 
         last_coach_ts = max((_ts(c) for c in coach_comments), default="") if coach_comments else ""
-        coach_responded_after = bool(last_coach_ts) and last_coach_ts[:10] > workout_date_str
+        # >= zodat een coach-reactie op DEZELFDE dag als de training ook telt
+        # (training en reactie zijn vaak dezelfde dag). Een succeswens van vóór
+        # de training (datum < trainingsdatum) telt terecht níét als reactie.
+        coach_responded_after = bool(last_coach_ts) and last_coach_ts[:10] >= workout_date_str
         post_notes_need_response = bool(post_notes) and not coach_responded_after
 
         if coach_comments and not athlete_comments and not post_notes_need_response:
