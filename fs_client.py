@@ -232,12 +232,18 @@ def get_athletes() -> list[dict]:
     top_groups = data.get("data") or []
     seen = set()
     result = []
+    # Een atleet kan in meerdere groepen zitten. We houden ALLE groepen bij,
+    # zodat uitsluiting (los schema) klopt ook als de eerste groep een andere is.
+    alle_groepen: dict = {}
 
     for top in top_groups:
         # Geneste structuur: top → groups[] → athletes[]
         for group in top.get("groups", []):
             group_name = group.get("name") or group.get("group_name") or "Overig"
             for a in group.get("athletes", []):
+                _k = a.get("user_key")
+                if _k:
+                    alle_groepen.setdefault(_k, []).append(group_name)
                 athlete = _extract_athlete(a, group_name, seen)
                 if athlete:
                     result.append(athlete)
@@ -250,6 +256,10 @@ def get_athletes() -> list[dict]:
                 athlete = _extract_athlete(a, "Overig", seen)
                 if athlete:
                     result.append(athlete)
+
+    # Alle groepen per atleet meegeven voor robuuste uitsluiting
+    for a in result:
+        a["all_groups"] = alle_groepen.get(a["user_key"], [a.get("group", "")])
 
     return result
 
@@ -656,8 +666,11 @@ def get_workouts_needing_feedback(
     if athlete_filter:
         athletes = [a for a in athletes if a["user_key"] in athlete_filter]
     if exclude_groups:
-        athletes = [a for a in athletes
-                    if not group_is_excluded(a.get("group"), exclude_groups)]
+        athletes = [
+            a for a in athletes
+            if not any(group_is_excluded(g, exclude_groups)
+                       for g in (a.get("all_groups") or [a.get("group")]))
+        ]
 
     def _is_athlete_comment(c: dict) -> bool:
         if "is_athlete" in c:
@@ -700,14 +713,11 @@ def get_workouts_needing_feedback(
             # Overgeslagen = verleden, niet gedaan, geen notitie.
             is_skipped = is_past and not has_data and not has_athlete_input
 
-            # Een run hoort pas in de feedbacklijst als hij ook echt is
-            # UITGEVOERD. Een nog te doen geplande run (ook van vandaag), zelfs
-            # met een comment erop, telt niet als 'wachten op feedback' — dat is
-            # verwarrend. Enige uitzondering: gemiste/overgeslagen trainingen die
-            # je expliciet via de 'zonder notities'-toggle wilt zien.
-            if not has_data and not (include_data_only and is_skipped):
-                continue
-
+            # Een nog te doen geplande run ZONDER input telt niet als 'wachten op
+            # feedback' (verwarrend). Maar een nog niet uitgevoerde run MÉT een
+            # reactie/notitie van de atleet wél: die vraagt misschien iets, bijv.
+            # waarom hij de training niet gaat doen. Dus we sluiten alleen runs
+            # uit die niet uitgevoerd zijn ÉN geen atleet-input hebben.
             if (
                 not has_athlete_input
                 and not (include_data_only and (is_data_only or is_skipped))
@@ -1339,7 +1349,8 @@ def get_compliance_alerts(
     athletes = [
         a for a in get_athletes()
         if a["user_key"] not in skip
-        and not group_is_excluded(a.get("group"), exclude_groups)
+        and not any(group_is_excluded(g, exclude_groups)
+                    for g in (a.get("all_groups") or [a.get("group")]))
     ]
 
     def _check(a: dict) -> dict | None:
