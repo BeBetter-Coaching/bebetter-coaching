@@ -439,6 +439,22 @@ def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> l
             except (ValueError, TypeError):
                 return None
 
+        def _norm_km(val, unit):
+            """Normaliseer afstand naar kilometers o.b.v. de eenheid."""
+            v = _safe_float(val)
+            if v is None:
+                return None
+            u = (unit or "km").strip().lower()
+            if u in ("m", "meter", "meters"):
+                return round(v / 1000, 2)
+            if u in ("mi", "mile", "miles"):
+                return round(v * 1.60934, 2)
+            if u in ("yd", "yard", "yards"):
+                return round(v * 0.0009144, 2)
+            if u in ("ft", "feet", "foot"):
+                return round(v * 0.0003048, 2)
+            return v  # km of onbekend → aannemen km
+
         # Workout description (bevat de geplande structuur, bijv. "5x 1000m Z4")
         description = (w.get("description") or "").strip()
         workout_name = (w.get("name") or "").strip()
@@ -451,10 +467,11 @@ def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> l
             "workout_key": w.get("key") or "",
             "name": workout_name or description or "Training",
             "description": description,
-            "activity_type": (w.get("activity_type_name") or "Hardlopen"),
-            "planned_km":   _safe_float(act.get("planned_amount")),
+            "activity_type": (w.get("activity_type_name") or act.get("activity_type_name") or "Hardlopen"),
+            "amount_type":  act.get("amount_type"),
+            "planned_km":   _norm_km(act.get("planned_amount"), act.get("planned_amount_type") or act.get("amount_type")),
             "planned_min":  round(float(act.get("planned_duration")) / 60, 0) if act.get("planned_duration") else None,
-            "actual_km":    _safe_float(act.get("amount")),
+            "actual_km":    _norm_km(act.get("amount"), act.get("amount_type")),
             "actual_min":   round(float(act.get("duration")) / 60, 0) if act.get("duration") else None,
             "pace":         act.get("pace_display"),       # gemiddelde pace HELE run
             "hr_avg":       act.get("hr_avg"),

@@ -147,6 +147,26 @@ def _workout_score(e: dict) -> float:
     return 1.0  # gepland zonder doelvolume (bijv. losse beschrijving) → gedaan is gedaan
 
 
+def _is_run(e: dict) -> bool:
+    """True als de activiteit hardlopen is (geen fiets/zwem/kracht)."""
+    t = (e.get("activity_type") or "").strip().lower()
+    if not t:
+        return True  # onbekend → meenemen
+    return any(k in t for k in ("hardlo", "run", "lop", "trail"))
+
+
+def _run_km(e: dict) -> float:
+    """Hardloop-km van een entry, met sanity-cap tegen corrupte waarden."""
+    if not _is_run(e):
+        return 0.0
+    try:
+        km = float(e.get("actual_km") or 0)
+    except (ValueError, TypeError):
+        return 0.0
+    # Een enkele hardloop-activiteit boven 100 km is vrijwel zeker een datafout
+    return km if 0 <= km <= 100 else 0.0
+
+
 def _analyse_log(log: list[dict]) -> dict:
     """Bereken compliance, weekvolume en gevoel/RPE-trend uit het log."""
     today = date.today()
@@ -182,13 +202,13 @@ def _analyse_log(log: list[dict]) -> dict:
 
         if e.get("completed"):
             wk = _week_label(d)
-            week_km[wk] = week_km.get(wk, 0.0) + float(e.get("actual_km") or 0)
+            week_km[wk] = week_km.get(wk, 0.0) + _run_km(e)
 
             # Conditie-index: snelheid per hartslag (m/min per bpm × 100).
-            # Stijgende lijn = zelfde tempo bij lagere HF = fitter.
+            # Stijgende lijn = zelfde tempo bij lagere HF = fitter. Alleen runs.
             hr = e.get("hr_avg")
             pace_min = fs_client._pace_to_float(e.get("pace"))
-            if hr and pace_min != float("inf") and not e.get("is_race"):
+            if hr and pace_min != float("inf") and not e.get("is_race") and _is_run(e):
                 try:
                     # meters per minuut gedeeld door hartslag, ×100
                     # typisch bereik hardlopen: ~70 (rustig) tot ~200 (snel)
@@ -294,9 +314,9 @@ def _periode_stats(entries: list[dict]) -> dict:
             scores.append(_workout_score(e))
         if not e.get("completed"):
             continue
-        if not e.get("is_race"):
+        if not e.get("is_race") and _is_run(e):
             weken.setdefault(_week_label(d), 0.0)
-            weken[_week_label(d)] += float(e.get("actual_km") or 0)
+            weken[_week_label(d)] += _run_km(e)
             hr = e.get("hr_avg")
             pace_min = fs_client._pace_to_float(e.get("pace"))
             if hr and pace_min != float("inf"):
@@ -322,7 +342,7 @@ def _periode_stats(entries: list[dict]) -> dict:
         "compliance": round(sum(scores) / len(scores) * 100) if scores else None,
         "gevoel": round(sum(felts) / len(felts), 1) if felts else None,  # 1=top, 5=slecht
         "rpe": round(sum(rpes) / len(rpes), 1) if rpes else None,
-        "n_runs": sum(1 for e in entries if e.get("completed") and not e.get("is_race")),
+        "n_runs": sum(1 for e in entries if e.get("completed") and not e.get("is_race") and _is_run(e)),
     }
 
 
@@ -557,8 +577,23 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
         )
     else:
         m2.metric("Compliance (8 wkn)", "—", "geen geplande trainingen", delta_color="off")
-    m3.metric("Volume laatste 4 wkn", f"{analyse['km_4w']} km")
+    m3.metric("Volume laatste 4 wkn (hardlopen)", f"{analyse['km_4w']} km")
     m4.metric("Races in log", str(len(analyse["races"])))
+
+    with st.expander("🔍 Controle: km per activiteit (laatste 4 weken)"):
+        _cut = (date.today() - timedelta(weeks=4)).isoformat()
+        _rows = [
+            {"datum": e.get("date", "")[:10], "type": e.get("activity_type", ""),
+             "ruw bedrag": e.get("actual_km"), "eenheid": e.get("amount_type"),
+             "geteld als run-km": round(_run_km(e), 2)}
+            for e in sorted(data["log"], key=lambda x: x.get("date", ""), reverse=True)
+            if e.get("completed") and e.get("date", "") >= _cut
+        ]
+        if _rows:
+            st.caption("Zo telt de app het volume op. Niet-runs en corrupte waarden tellen als 0.")
+            st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+        else:
+            st.caption("Geen voltooide activiteiten in de laatste 4 weken.")
 
     # ── Evaluatie & advies (AI, on demand) ──
     st.markdown("#### 📋 Evaluatie & advies")
