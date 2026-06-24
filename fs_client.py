@@ -700,6 +700,14 @@ def get_workouts_needing_feedback(
             # Overgeslagen = verleden, niet gedaan, geen notitie.
             is_skipped = is_past and not has_data and not has_athlete_input
 
+            # Een run hoort pas in de feedbacklijst als hij ook echt is
+            # UITGEVOERD. Een nog te doen geplande run (ook van vandaag), zelfs
+            # met een comment erop, telt niet als 'wachten op feedback' — dat is
+            # verwarrend. Enige uitzondering: gemiste/overgeslagen trainingen die
+            # je expliciet via de 'zonder notities'-toggle wilt zien.
+            if not has_data and not (include_data_only and is_skipped):
+                continue
+
             if (
                 not has_athlete_input
                 and not (include_data_only and (is_data_only or is_skipped))
