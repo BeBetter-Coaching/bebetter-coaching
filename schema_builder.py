@@ -1374,6 +1374,12 @@ Als de beschrijving geen expliciet zonenummer geeft:
 KRITIEK voor warming-up en cooling-down: gebruik ALTIJD zone 1, ook als het hoofdblok een hogere zone heeft.
 KRITIEK voor repeat-blokken: gebruik de zone van de ACTIEVE intervallen (niet zone 1) tenzij expliciet anders staat.
 
+━━━ WANDELEN ━━━
+Als de beschrijving "wandelen" of "walk" noemt (bijv. wandelherstel tussen intervallen):
+- geef die stap het veld "name": "wandelen" en intensity "REST"
+- gebruik GEEN loopzone (geen zone 1) voor die stap; de app vult zelf een wandel-pace in
+- behoud de afstand/tijd zoals beschreven (bijv. 1 min of 200m wandelen)
+
 ━━━ VOORBEELDEN ━━━
 
 VOORBEELD 1 — Intervaltraining (5x 800m Z4, herstel 400m Z1):
@@ -1545,6 +1551,35 @@ Genereer de FinalSurge WorkoutBuilder JSON voor deze workout."""
             if len(parts) == 3 and parts[0] == "00":
                 step["duration"] = f"{parts[1]}:{parts[2]}"
 
+        def _is_wandel(step: dict) -> bool:
+            blob = " ".join(
+                str(step.get(k) or "") for k in ("name", "name_original", "comments", "comments_original")
+            ).lower()
+            return "wandel" in blob or "walk" in blob
+
+        def _wandel_target(step: dict) -> bool:
+            """
+            Zet een wandel-stap op een pace-target van 10:00-12:00 min/km i.p.v. een zone.
+            10:00/km = 600 sec, 12:00/km = 720 sec. Geeft True terug als toegepast.
+            """
+            if target != "pace" or not _is_wandel(step):
+                return False
+            step["target"] = [
+                {
+                    "targetType": "pace",
+                    "zoneBased": False,
+                    "zone": 0,
+                    "targetLow": "600",   # 10:00 min/km (sneller)
+                    "targetHigh": "720",  # 12:00 min/km (langzamer)
+                    "targetOption": None,
+                    "targetTypeOriginal": None,
+                    "targetOptionOriginal": None,
+                    "targetIsTimeBased": False,
+                },
+                _default_target()[1],
+            ]
+            return True
+
         def _fix_step_targets(step: dict) -> None:
             """Zorg dat elke stap een geldige niet-lege target array heeft."""
             t = step.get("target")
@@ -1562,10 +1597,12 @@ Genereer de FinalSurge WorkoutBuilder JSON voor deze workout."""
                 if step.get("type") == "repeat" and step.get("steps"):
                     step["data"] = step.pop("steps")
                 # Fix targets op repeat-blok zelf
+                _wandel_target(step)
                 _fix_step_targets(step)
                 _fix_duration(step)
                 # Fix targets op alle inner steps
                 for inner in step.get("data", []):
+                    _wandel_target(inner)
                     _fix_step_targets(inner)
                     _fix_duration(inner)
 
@@ -1583,6 +1620,51 @@ Genereer de FinalSurge WorkoutBuilder JSON voor deze workout."""
 # ---------------------------------------------------------------------------
 # FinalSurge import
 # ---------------------------------------------------------------------------
+
+def _parse_duration_to_min(dur: str) -> float:
+    """'MM:SS' of 'H:MM:SS' → minuten (float)."""
+    parts = (dur or "").split(":")
+    try:
+        if len(parts) == 3:
+            return int(parts[0]) * 60 + int(parts[1]) + int(parts[2]) / 60
+        if len(parts) == 2:
+            return int(parts[0]) + int(parts[1]) / 60
+    except ValueError:
+        return 0.0
+    return 0.0
+
+
+def _calc_builder_duration_min(target_options: list):
+    """
+    Bereken de totale tijd in minuten vanuit de WorkoutBuilder target_options.
+    Telt alle TIME-stappen op (inclusief repeat-blokken × herhalingen), zodat de
+    geplande totaaltijd exact gelijk loopt met wat in de builder staat.
+    """
+    total = 0.0
+    found = False
+
+    def _step_min(step: dict) -> float:
+        if step.get("durationType") == "TIME":
+            return _parse_duration_to_min(step.get("duration") or "")
+        return 0.0
+
+    for opt in target_options:
+        for step in opt.get("steps", []):
+            if step.get("type") == "repeat":
+                reps = step.get("repeats") or 1
+                for inner in (step.get("data") or step.get("steps") or []):
+                    m = _step_min(inner)
+                    if m > 0:
+                        total += m * reps
+                        found = True
+            else:
+                m = _step_min(step)
+                if m > 0:
+                    total += m
+                    found = True
+
+    return round(total) if found else None
+
 
 def _calc_builder_distance_km(target_options: list):
     """
@@ -1669,6 +1751,12 @@ def import_to_finalsurge(
 
             # Stap 2: sla de workout op
             planned_min = w.get("planned_min") if op_tijd else None
+            # Bij tijdsschema: gebruik de builder-totaaltijd als geplande tijd,
+            # zodat de geplande totaaltijd exact matcht met de WorkoutBuilder.
+            if op_tijd and builder_steps:
+                builder_min = _calc_builder_duration_min(builder_steps)
+                if builder_min:
+                    planned_min = builder_min
             result = fs_client.save_workout(
                 user_key=athlete_key,
                 workout_date=w["date"],
