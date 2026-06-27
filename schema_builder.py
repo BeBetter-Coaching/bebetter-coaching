@@ -1569,8 +1569,8 @@ Genereer de FinalSurge WorkoutBuilder JSON voor deze workout."""
                     "targetType": "pace",
                     "zoneBased": False,
                     "zone": 0,
-                    "targetLow": "600",   # 10:00 min/km (sneller)
-                    "targetHigh": "720",  # 12:00 min/km (langzamer)
+                    "targetLow": "10:00",   # min/km (sneller)
+                    "targetHigh": "12:00",  # min/km (langzamer)
                     "targetOption": None,
                     "targetTypeOriginal": None,
                     "targetOptionOriginal": None,
