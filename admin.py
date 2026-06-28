@@ -237,16 +237,25 @@ def _naam_tokens(s: str) -> set:
 
 def niet_gefactureerde_klanten(athletes: list, admin: dict, facturen: list) -> list:
     """
-    Actieve, niet-gratis klanten zonder gematchte factuur (op naam) dit jaar.
-    Match = alle woorden van de achternaam komen voor in de factuurnaam én de
-    voornaam komt voor. Naam-matching is niet 100% sluitend, dus een hint.
+    Actieve, niet-gratis klanten zonder gematchte factuur dit jaar.
+    Match = e-mail van de betaler komt overeen (vangt 'partner/ouder betaalt'),
+    óf alle woorden van de achternaam + de voornaam staan op de factuur.
+    Klanten met 'Vooruitbetaald t/m' in de toekomst vallen buiten het signaal.
+    Naam-matching is niet 100% sluitend, dus een hint.
     """
-    factuur_tokens = [_naam_tokens(f.get("naam", "")) for f in (facturen or [])
-                      if f.get("status") != "concept"]
+    losse = [f for f in (facturen or []) if f.get("status") != "concept"]
+    factuur_tokens = [_naam_tokens(f.get("naam", "")) for f in losse]
+    factuur_emails = {(f.get("email") or "").strip().lower() for f in losse if f.get("email")}
+    vandaag = date.today().isoformat()
     result = []
     for a in athletes:
         v = admin.get(a["user_key"], {})
         if v.get("status", "Actief") != "Actief" or v.get("gratis"):
+            continue
+        if v.get("vooruitbetaald_tot") and vandaag <= str(v["vooruitbetaald_tot"]):
+            continue
+        email = (a.get("email", "") or "").strip().lower()
+        if email and email in factuur_emails:
             continue
         last_toks = _naam_tokens(a.get("last_name", ""))
         first = (a.get("first_name", "") or "").lower().split()
@@ -720,6 +729,12 @@ def render_admin(athletes_by_group: dict):
         pakket = klant_pakket(a, admin)
         gratis = bool(v.get("gratis"))
         eigen = float(v.get("prijs_override") or 0)
+        vb_val = None
+        if v.get("vooruitbetaald_tot"):
+            try:
+                vb_val = datetime.fromisoformat(str(v["vooruitbetaald_tot"])).date()
+            except ValueError:
+                vb_val = None
         rows.append({
             "user_key": a["user_key"],
             "Naam": a["name"],
@@ -731,9 +746,11 @@ def render_admin(athletes_by_group: dict):
             "Coach": v.get("coach", "—"),
             "Status": v.get("status", "Actief"),
             "Betaalcyclus": v.get("cyclus", "4 weken"),
+            "Vooruitbetaald t/m": vb_val,
             "Notitie": v.get("notitie", ""),
         })
     df = pd.DataFrame(rows)
+    df["Vooruitbetaald t/m"] = pd.to_datetime(df["Vooruitbetaald t/m"], errors="coerce")
 
     edited = st.data_editor(
         df,
@@ -758,6 +775,9 @@ def render_admin(athletes_by_group: dict):
             "Coach": st.column_config.SelectboxColumn(options=COACHES, required=True),
             "Status": st.column_config.SelectboxColumn(options=STATUSSEN, required=True),
             "Betaalcyclus": st.column_config.SelectboxColumn(options=CYCLI, required=True),
+            "Vooruitbetaald t/m": st.column_config.DateColumn(format="DD-MM-YYYY",
+                       help="Vul een datum in als de klant vooruit/ineens betaald heeft. Tot die "
+                            "datum valt hij buiten het 'nog niet gefactureerd'-signaal."),
             "Notitie": st.column_config.TextColumn(),
         },
     )
@@ -771,6 +791,8 @@ def render_admin(athletes_by_group: dict):
                 next((a.get("group", "") for a in athletes if a["user_key"] == r["user_key"]), "")
             )
             _pakket_val = r["Pakket"] if r["Pakket"] != _afgeleid else ""
+            _vb = r["Vooruitbetaald t/m"]
+            _vb_iso = _vb.date().isoformat() if pd.notna(_vb) else None
             nieuw[r["user_key"]] = {
                 "pakket": _pakket_val,
                 "prijs_override": float(r["Eigen prijs/4wk"]) or None,
@@ -778,6 +800,7 @@ def render_admin(athletes_by_group: dict):
                 "coach": r["Coach"],
                 "status": r["Status"],
                 "cyclus": r["Betaalcyclus"],
+                "vooruitbetaald_tot": _vb_iso,
                 "notitie": r["Notitie"] or "",
             }
         ok, err = _save_admin(nieuw)

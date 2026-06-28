@@ -125,6 +125,18 @@ def _contact_naam(inv: dict) -> str:
     return ""
 
 
+def _contact_email(inv: dict) -> str:
+    """Haal het e-mailadres van de betaler uit een factuur (indien aanwezig)."""
+    cc = inv.get("cached_contact")
+    if isinstance(cc, dict):
+        e = (cc.get("email") or cc.get("email_address")
+             or cc.get("contact_person_email") or "")
+        if e:
+            return str(e).strip().lower()
+    e = inv.get("email") or inv.get("contact_email") or ""
+    return str(e).strip().lower()
+
+
 def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
     """
     Haal verkoopfacturen op (alle pagina's). Optioneel gefilterd op kalenderjaar.
@@ -172,6 +184,7 @@ def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
                     "datum": datum,
                     "nummer": inv.get("invoice_number"),
                     "naam": _contact_naam(inv),
+                    "email": _contact_email(inv),
                     "bedrag": bedrag,
                     "bedrag_excl": _excl,
                     "bedrag_incl": _incl,
