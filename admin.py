@@ -142,16 +142,29 @@ def klant_pakket(athlete: dict, admin: dict) -> str:
     return pakket_van_groep(athlete.get("group", ""))
 
 
+def klant_is_gratis(athlete: dict, admin: dict) -> bool:
+    """True als de klant als vriendendienst (gratis) is gemarkeerd."""
+    return bool(admin.get(athlete["user_key"], {}).get("gratis"))
+
+
+def klant_prijs(athlete: dict, admin: dict, prijzen: dict) -> float:
+    """Effectieve 4-wekenprijs van een klant; 0 bij vriendendienst (gratis)."""
+    if klant_is_gratis(athlete, admin):
+        return 0.0
+    v = admin.get(athlete["user_key"], {})
+    return effectieve_prijs(klant_pakket(athlete, admin), v.get("korting", 0), prijzen)
+
+
 def geschatte_jaaromzet(athletes: list, admin: dict, prijzen: dict,
                         status_filter: str = "Actief") -> float:
-    """Som van effectieve pakketprijzen × 13 periodes voor klanten met die status."""
+    """Som van effectieve pakketprijzen × 13 periodes voor klanten met die status.
+    Vriendendiensten (gratis) tellen mee als klant maar leveren €0 omzet."""
     totaal = 0.0
     for a in athletes:
         v = admin.get(a["user_key"], {})
         if v.get("status", "Actief") != status_filter:
             continue
-        pakket = klant_pakket(a, admin)
-        totaal += effectieve_prijs(pakket, v.get("korting", 0), prijzen) * PERIODES_PER_JAAR
+        totaal += klant_prijs(a, admin, prijzen) * PERIODES_PER_JAAR
     return totaal
 
 
@@ -201,7 +214,9 @@ def omzet_per_pakket(athletes: list, admin: dict, prijzen: dict) -> dict:
         pk = klant_pakket(a, admin)
         if pk == "—":
             continue
-        bedrag = effectieve_prijs(pk, v.get("korting", 0), prijzen) * PERIODES_PER_JAAR
+        bedrag = klant_prijs(a, admin, prijzen) * PERIODES_PER_JAAR
+        if bedrag <= 0:  # vriendendienst (gratis) telt niet mee in de omzetverdeling
+            continue
         per[pk] = per.get(pk, 0.0) + bedrag
     return per
 
@@ -385,8 +400,10 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     k1, k2, k3, k4 = st.columns(4)
     k1.markdown(_card("Omzet YTD", _eur0(omzet_ytd)), unsafe_allow_html=True)
     k2.markdown(_card("Omzet deze maand", _eur0(omzet_maand), maand_delta), unsafe_allow_html=True)
+    gratis_n = sum(1 for a in actief if klant_is_gratis(a, admin))
+    _k3_sub = (f"{gratis_n} vriendendienst · " if gratis_n else "") + f"{len(on_hold)} on hold"
     k3.markdown(_card("Actieve klanten", str(len(actief)),
-                      f"<div class='bb-card-sub'>{len(on_hold)} on hold</div>"), unsafe_allow_html=True)
+                      f"<div class='bb-card-sub'>{_k3_sub}</div>"), unsafe_allow_html=True)
     k4.markdown(_card("Ruimte tot KOR-grens", _eur0(ruimte),
                       f"<div class='bb-card-sub'>van {_eur0(KOR_GRENS)}</div>"), unsafe_allow_html=True)
 
@@ -655,13 +672,15 @@ def render_admin(athletes_by_group: dict):
         v = admin.get(a["user_key"], {})
         pakket = klant_pakket(a, admin)
         korting = float(v.get("korting", 0) or 0)
+        gratis = bool(v.get("gratis"))
         rows.append({
             "user_key": a["user_key"],
             "Naam": a["name"],
             "E-mail": a.get("email", "") or "",
             "Pakket": pakket,
             "Korting %": korting,
-            "Prijs/4wk": round(effectieve_prijs(pakket, korting, prijzen), 2),
+            "Gratis": gratis,
+            "Prijs/4wk": round(0.0 if gratis else effectieve_prijs(pakket, korting, prijzen), 2),
             "Coach": v.get("coach", "—"),
             "Status": v.get("status", "Actief"),
             "Betaalcyclus": v.get("cyclus", "4 weken"),
@@ -682,8 +701,11 @@ def render_admin(athletes_by_group: dict):
                        help="Automatisch uit de groep; overschrijven kan."),
             "Korting %": st.column_config.NumberColumn(min_value=0, max_value=100, step=5,
                        help="Korting op de pakketprijs, in procenten."),
+            "Gratis": st.column_config.CheckboxColumn(
+                       help="Vriendendienst: telt mee als actieve klant, maar levert €0 omzet "
+                            "en wordt niet in Rompslomp verwacht."),
             "Prijs/4wk": st.column_config.NumberColumn(disabled=True, format="€%.2f",
-                       help="Effectieve prijs na korting (berekend)."),
+                       help="Effectieve prijs na korting (berekend). €0,00 bij een vriendendienst."),
             "Coach": st.column_config.SelectboxColumn(options=COACHES, required=True),
             "Status": st.column_config.SelectboxColumn(options=STATUSSEN, required=True),
             "Betaalcyclus": st.column_config.SelectboxColumn(options=CYCLI, required=True),
@@ -703,6 +725,7 @@ def render_admin(athletes_by_group: dict):
             nieuw[r["user_key"]] = {
                 "pakket": _pakket_val,
                 "korting": float(r["Korting %"] or 0),
+                "gratis": bool(r["Gratis"]),
                 "coach": r["Coach"],
                 "status": r["Status"],
                 "cyclus": r["Betaalcyclus"],
