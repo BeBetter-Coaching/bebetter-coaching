@@ -239,21 +239,27 @@ CATEGORIE_KLEUR = {
     "Strippenkaarten": "#22C55E", # groen
     "Overig": "#8FA8CE",          # grijsblauw
 }
+# Clinics/bedrijfstrainingen: op betaler-naam óf op omschrijving
+_CLINIC_NAMEN = ("gemeente", "optimum")
+_CLINIC_WOORDEN = ("clinic", "bedrijfstraining", "bedrijfs training", "workshop")
+# Coaching: voluit-pakketnamen + losse trefwoorden + afkortingen (als heel woord)
 _COACHING_WOORDEN = [p.lower() for p in PAKKET_PRIJZEN_STD] + [
-    "coaching", "begeleiding", "schema", "training", "hardloop", "run"]
+    "coaching", "begeleiding", "schema", "hardloopschema"]
+_COACHING_AFK = {"str", "gb", "hp"}  # Start to Run, Getting Better, High Performer
 
 
 def factuur_categorie(naam: str, omschrijving: str, bedrag: float = 0) -> str:
     """Deel een factuur in op categorie o.b.v. betaler-naam en omschrijving (factuurregel)."""
     n = (naam or "").lower()
     o = (omschrijving or "").lower()
-    if "gemeente" in n or "optimum" in n:
+    if any(w in n for w in _CLINIC_NAMEN) or any(w in o for w in _CLINIC_WOORDEN):
         return "Clinics"
     if "lactaat" in o:
         return "Lactaatmetingen"
     if "strip" in o or "ritten" in o:
         return "Strippenkaarten"
-    if any(w in o for w in _COACHING_WOORDEN):
+    tokens = set(re.findall(r"[a-zà-ÿ]+", o))
+    if any(w in o for w in _COACHING_WOORDEN) or (tokens & _COACHING_AFK):
         return "Coaching"
     return "Overig"
 
