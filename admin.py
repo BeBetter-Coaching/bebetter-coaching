@@ -155,6 +155,57 @@ def geschatte_jaaromzet(athletes: list, admin: dict, prijzen: dict,
     return totaal
 
 
+NL_MAANDEN = ["Jan", "Feb", "Mrt", "Apr", "Mei", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"]
+VOLLE_MAANDEN = ["januari", "februari", "maart", "april", "mei", "juni", "juli",
+                 "augustus", "september", "oktober", "november", "december"]
+
+
+def jaar_maandomzet(revenue_cum: dict, jaar: int) -> dict:
+    """Cumulatief per maand → omzet PER maand (niet-cumulatief) voor dat jaar. {maand_int: bedrag}."""
+    cum: dict[int, float] = {}
+    for k, v in revenue_cum.items():
+        if k.startswith(f"{jaar}-"):
+            try:
+                cum[int(k.split("-")[1])] = float(v)
+            except (ValueError, IndexError):
+                continue
+    if not cum:
+        return {}
+    maand_omzet: dict[int, float] = {}
+    prev = 0.0
+    for m in range(1, max(cum) + 1):
+        if m in cum:
+            maand_omzet[m] = round(cum[m] - prev, 2)
+            prev = cum[m]
+    return maand_omzet
+
+
+def prognose_maanden(maand_omzet: dict) -> dict:
+    """Vul de resterende maanden van het jaar met een prognose o.b.v. het gemiddelde van de laatste 3 maanden."""
+    if not maand_omzet:
+        return {}
+    laatste = max(maand_omzet)
+    vals = [maand_omzet[m] for m in sorted(maand_omzet)]
+    basis = vals[-3:] if len(vals) >= 3 else vals
+    gem = sum(basis) / len(basis)
+    return {m: round(gem, 2) for m in range(laatste + 1, 13)}
+
+
+def omzet_per_pakket(athletes: list, admin: dict, prijzen: dict) -> dict:
+    """Geschatte jaaromzet per pakkettype voor actieve klanten. {pakket: bedrag}."""
+    per: dict[str, float] = {}
+    for a in athletes:
+        v = admin.get(a["user_key"], {})
+        if v.get("status", "Actief") != "Actief":
+            continue
+        pk = klant_pakket(a, admin)
+        if pk == "—":
+            continue
+        bedrag = effectieve_prijs(pk, v.get("korting", 0), prijzen) * PERIODES_PER_JAAR
+        per[pk] = per.get(pk, 0.0) + bedrag
+    return per
+
+
 def _prijzen() -> dict:
     """Pakketprijzen uit opslag, aangevuld met standaardwaarden."""
     opgeslagen = {}
@@ -251,6 +302,219 @@ def _met_correctie(revenue: dict, correctie: float) -> dict:
             for k, v in revenue.items()}
 
 
+def _eur0(v) -> str:
+    """Hele euro's, met punt als duizendtalscheiding: '€ 14.860'."""
+    try:
+        return "€ " + f"{float(v):,.0f}".replace(",", ".")
+    except (ValueError, TypeError):
+        return "€ 0"
+
+
+DASH_CSS = """
+<style>
+.bb-card{background:#fff;border:1px solid #eef0f2;border-radius:14px;padding:16px 18px;
+  box-shadow:0 1px 2px rgba(16,24,40,.04);height:100%}
+.bb-card-label{font-size:.82rem;color:#667085;margin-bottom:8px;display:flex;justify-content:space-between}
+.bb-card-value{font-size:1.7rem;font-weight:700;color:#101828;line-height:1.1}
+.bb-card-delta{font-size:.78rem;margin-top:7px}
+.bb-card-delta.up{color:#12826a}
+.bb-card-delta.down{color:#d92d20}
+.bb-card-sub{font-size:.78rem;color:#98a2b3;margin-top:7px}
+.bb-section-title{font-weight:700;color:#101828;font-size:1.02rem;margin:2px 0 8px}
+.kor-pct{font-size:2.4rem;font-weight:700;color:#0e9384;line-height:1}
+.kor-pct-sub{font-size:.8rem;color:#667085;margin-top:4px}
+.kor-bar{position:relative;height:26px;border-radius:13px;background:#eef0f2;overflow:hidden}
+.kor-fill{position:absolute;left:0;top:0;bottom:0;border-radius:13px;
+  background:linear-gradient(90deg,#16a34a 0%,#65b741 55%,#f59e0b 100%)}
+.kor-marker{position:absolute;top:-3px;bottom:-3px;width:0;border-left:2px dashed #344054}
+.kor-leg{display:flex;gap:18px;margin-top:12px;font-size:.78rem;color:#475467;flex-wrap:wrap}
+.kor-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.sig{display:flex;gap:12px;align-items:flex-start;background:#fff;border:1px solid #eef0f2;
+  border-radius:12px;padding:13px 15px;margin-bottom:10px}
+.sig-ico{font-size:1.05rem;line-height:1.3}
+.sig-t{font-weight:600;color:#101828;font-size:.9rem}
+.sig-d{color:#667085;font-size:.8rem;margin-top:2px}
+</style>
+"""
+
+
+def _card(label: str, value: str, extra_html: str = "") -> str:
+    return (f"<div class='bb-card'><div class='bb-card-label'><span>{label}</span>"
+            f"<span style='color:#cbd0d8'>&#9432;</span></div>"
+            f"<div class='bb-card-value'>{value}</div>{extra_html}</div>")
+
+
+def _sig(ico: str, titel: str, detail: str) -> str:
+    return (f"<div class='sig'><div class='sig-ico'>{ico}</div>"
+            f"<div><div class='sig-t'>{titel}</div><div class='sig-d'>{detail}</div></div></div>")
+
+
+def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
+                       revenue_cum, facturen, last_act):
+    """Rendert het visuele administratie-dashboard (KPI's, KOR-gauge, grafieken, signalen)."""
+    try:
+        import plotly.graph_objects as go
+    except Exception:
+        go = None
+
+    st.markdown(DASH_CSS, unsafe_allow_html=True)
+    jaar = date.today().year
+    TEAL = "#0e9384"
+
+    maand_omzet = jaar_maandomzet(revenue_cum, jaar)
+    sorted_m = sorted(maand_omzet)
+    omzet_ytd = proj["huidig"]
+    omzet_maand = maand_omzet.get(sorted_m[-1], 0.0) if sorted_m else 0.0
+    ruimte = max(proj["resterend"], 0)
+    pct_kor = (omzet_ytd / KOR_GRENS * 100) if KOR_GRENS else 0
+
+    # Delta omzet deze maand vs vorige maand
+    maand_delta = ""
+    if len(sorted_m) >= 2 and maand_omzet[sorted_m[-2]]:
+        pct = (maand_omzet[sorted_m[-1]] - maand_omzet[sorted_m[-2]]) / maand_omzet[sorted_m[-2]] * 100
+        kl, tk = ("up", "+") if pct >= 0 else ("down", "")
+        maand_delta = f"<div class='bb-card-delta {kl}'>{tk}{pct:.1f}% t.o.v. vorige maand</div>"
+
+    # ── KPI-tegels ──
+    k1, k2, k3, k4 = st.columns(4)
+    k1.markdown(_card("Omzet YTD", _eur0(omzet_ytd)), unsafe_allow_html=True)
+    k2.markdown(_card("Omzet deze maand", _eur0(omzet_maand), maand_delta), unsafe_allow_html=True)
+    k3.markdown(_card("Actieve klanten", str(len(actief)),
+                      f"<div class='bb-card-sub'>{len(on_hold)} on hold</div>"), unsafe_allow_html=True)
+    k4.markdown(_card("Ruimte tot KOR-grens", _eur0(ruimte),
+                      f"<div class='bb-card-sub'>van {_eur0(KOR_GRENS)}</div>"), unsafe_allow_html=True)
+
+    st.write("")
+
+    # ── KOR-status gauge ──
+    st.markdown("<div class='bb-section-title'>KOR-status</div>", unsafe_allow_html=True)
+    gc1, gc2 = st.columns([1, 3.2])
+    with gc1:
+        st.markdown(f"<div class='kor-pct'>{pct_kor:.1f}%</div>"
+                    f"<div class='kor-pct-sub'>benut van de KOR-grens</div>", unsafe_allow_html=True)
+        if proj.get("datum_grens"):
+            dg = proj["datum_grens"]
+            st.markdown(f"<div class='kor-pct-sub'>Bij dit tempo bereikt rond "
+                        f"<b>{VOLLE_MAANDEN[dg.month - 1]} {dg.year}</b></div>", unsafe_allow_html=True)
+    with gc2:
+        fillpct = min(pct_kor, 100)
+        st.markdown(
+            "<div style='display:flex;justify-content:space-between;font-size:.8rem;color:#475467;margin-bottom:6px'>"
+            f"<span>{_eur0(omzet_ytd)} gebruikt</span><span>{_eur0(KOR_GRENS)} KOR-grens</span></div>"
+            f"<div class='kor-bar'><div class='kor-fill' style='width:{fillpct}%'></div>"
+            f"<div class='kor-marker' style='left:{fillpct}%'></div></div>"
+            "<div class='kor-leg'>"
+            "<span><span class='kor-dot' style='background:#16a34a'></span>Veilig (&lt; 80%)</span>"
+            "<span><span class='kor-dot' style='background:#f59e0b'></span>Let op (80% - 100%)</span>"
+            "<span><span class='kor-dot' style='background:#d92d20'></span>Grens overschreden (&gt; 100%)</span>"
+            "</div>", unsafe_allow_html=True)
+
+    st.write("")
+
+    # ── Omzetverloop + donut ──
+    mc1, mc2 = st.columns([1.7, 1])
+    with mc1:
+        st.markdown(f"<div class='bb-section-title'>Omzetverloop {jaar}</div>", unsafe_allow_html=True)
+        if go and maand_omzet:
+            prog = prognose_maanden(maand_omzet)
+            laatste = max(maand_omzet)
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=[NL_MAANDEN[m - 1] for m in sorted_m], y=[maand_omzet[m] for m in sorted_m],
+                name="Realisatie", mode="lines+markers",
+                line=dict(color=TEAL, width=3), marker=dict(size=7)))
+            if prog:
+                fig.add_trace(go.Scatter(
+                    x=[NL_MAANDEN[laatste - 1]] + [NL_MAANDEN[m - 1] for m in sorted(prog)],
+                    y=[maand_omzet[laatste]] + [prog[m] for m in sorted(prog)],
+                    name="Prognose", mode="lines+markers",
+                    line=dict(color=TEAL, width=2, dash="dot"), marker=dict(size=6)))
+            fig.update_layout(
+                height=300, margin=dict(l=0, r=0, t=10, b=0),
+                plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
+                legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0),
+                yaxis=dict(tickprefix="€ ", gridcolor="#eef0f2", zeroline=False),
+                xaxis=dict(showgrid=False, categoryorder="array", categoryarray=NL_MAANDEN),
+                font=dict(color="#475467"))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.caption(f"Realisatie {NL_MAANDEN[sorted_m[0] - 1].lower()}–{NL_MAANDEN[laatste - 1].lower()}: "
+                       f"**{_eur0(omzet_ytd)}** (YTD)")
+        else:
+            st.caption("Nog geen maandcijfers beschikbaar." if maand_omzet else
+                       "Plotly niet beschikbaar — voeg 'plotly' toe aan requirements.txt.")
+    with mc2:
+        st.markdown("<div class='bb-section-title'>Omzet per pakkettype</div>", unsafe_allow_html=True)
+        per = omzet_per_pakket(athletes, admin, prijzen)
+        if go and per:
+            labels = list(per.keys())
+            values = [per[k] for k in labels]
+            palette = ["#0e9384", "#15b8a6", "#5eead4", "#99f6e4", "#cfece4", "#134e4a"]
+            fig2 = go.Figure(go.Pie(
+                labels=labels, values=values, hole=.62, sort=True, direction="clockwise",
+                marker=dict(colors=palette[:len(labels)]), textinfo="percent"))
+            fig2.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0),
+                               legend=dict(orientation="v", x=1, y=.5),
+                               font=dict(color="#475467"))
+            st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+            st.caption(f"Geschatte jaaromzet (actief): **{_eur0(sum(values))}** — o.b.v. de pakketten van je "
+                       "actieve klanten, niet de gefactureerde omzet.")
+        elif per:
+            for k in sorted(per, key=lambda x: -per[x]):
+                st.caption(f"{k}: {_eur0(per[k])}")
+        else:
+            st.caption("Nog geen pakketten ingesteld bij actieve klanten.")
+
+    st.write("")
+
+    # ── Laatste facturen + signalen ──
+    fc1, fc2 = st.columns([1.7, 1])
+    with fc1:
+        st.markdown("<div class='bb-section-title'>Laatste facturen</div>", unsafe_allow_html=True)
+        rijen = sorted([f for f in (facturen or []) if f.get("status") != "concept"],
+                       key=lambda f: f.get("datum", ""), reverse=True)[:6]
+        if rijen:
+            df = pd.DataFrame([{"Datum": f.get("datum", ""), "Klant": f.get("naam", ""),
+                                "Bedrag": f.get("bedrag", 0),
+                                "Status": "Betaald" if f.get("betaald") else "Open"} for f in rijen])
+            st.dataframe(df, hide_index=True, use_container_width=True,
+                         column_config={"Bedrag": st.column_config.NumberColumn(format="€ %.2f")})
+        else:
+            st.caption("Nog geen facturen geladen — sync hieronder met Rompslomp.")
+    with fc2:
+        st.markdown("<div class='bb-section-title'>Signalen</div>", unsafe_allow_html=True)
+        sig_html = ""
+        if pct_kor >= 100:
+            sig_html += _sig("&#128680;", "KOR-grens overschreden",
+                             f"{pct_kor:.1f}% benut. Let op de fiscale gevolgen.")
+        elif pct_kor >= 70:
+            sig_html += _sig("&#9888;&#65039;", f"KOR-grens nadert: {pct_kor:.1f}% benut",
+                             "Houd je omzet in de gaten om binnen de KOR te blijven.")
+        else:
+            sig_html += _sig("&#9989;", f"Ruim binnen KOR: {pct_kor:.1f}% benut",
+                             f"Nog {_eur0(ruimte)} ruimte tot de grens.")
+        open_f = [f for f in (facturen or []) if not f.get("betaald") and f.get("status") != "concept"]
+        if open_f:
+            som = sum(f.get("bedrag", 0) for f in open_f)
+            sig_html += _sig("&#128196;", f"{len(open_f)} openstaande facturen ({_eur0(som)})",
+                             "Verstuur een herinnering voor tijdige betaling.")
+        st.markdown(sig_html, unsafe_allow_html=True)
+
+        if last_act is not None:
+            grens_dt = (date.today() - timedelta(days=21)).isoformat()
+            stil = [a["name"] for a in actief if (last_act.get(a["user_key"]) or "") < grens_dt]
+            if stil:
+                st.markdown(_sig("&#128101;", f"{len(stil)} klanten zonder recente activiteit",
+                                 ", ".join(stil[:6]) + ("…" if len(stil) > 6 else "")), unsafe_allow_html=True)
+            else:
+                st.markdown(_sig("&#128077;", "Alle actieve klanten trainden recent",
+                                 "Geen inactiviteit in de laatste 3 weken."), unsafe_allow_html=True)
+        else:
+            if st.button("🔄 Check inactieve klanten", use_container_width=True, key="dash_inact"):
+                with st.spinner("Laatste activiteit ophalen…"):
+                    st.session_state["_admin_last_act"] = fs_client.get_last_activity_dates(60)
+                st.rerun()
+
+
 def render_admin(athletes_by_group: dict):
     """Hoofdscherm van de administratiemodule."""
     athletes = sorted(
@@ -269,79 +533,24 @@ def render_admin(athletes_by_group: dict):
     # Inactiviteit (laatste FinalSurge-activiteit) — on demand, gecachet
     last_act = st.session_state.get("_admin_last_act")
 
-    # ── DASHBOARD ──
-    st.markdown("### 📊 Dashboard")
-
-    actief = [a for a in athletes if admin.get(a["user_key"], {}).get("status", "Actief") == "Actief"]
-    on_hold = [a for a in athletes if admin.get(a["user_key"], {}).get("status") == "On hold"]
-    jaaromzet = geschatte_jaaromzet(athletes, admin, prijzen)
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("KOR-ruimte over", _eur(proj["resterend"]),
-              "grens gepasseerd!" if proj["gepasseerd"] else None,
-              delta_color="inverse")
-    c2.metric("Actieve klanten", len(actief))
-    c3.metric("Gesch. jaaromzet (actief)", _eur(jaaromzet))
-    c4.metric("Op hold", len(on_hold))
-
-    if proj["datum_grens"]:
-        _wk = f" · ~{_eur(proj['per_week'])}/week" if proj["per_week"] else ""
-        st.caption(f"Bij dit tempo wordt de KOR-grens van {_eur(KOR_GRENS)} verwacht rond "
-                   f"**{proj['datum_grens'].strftime('%d-%m-%Y')}**{_wk}.")
-    elif proj["gepasseerd"]:
-        st.error(f"⚠️ De KOR-grens van {_eur(KOR_GRENS)} is overschreden.")
-
-    # Pakketverdeling van actieve klanten (pakket afgeleid uit de groep)
-    verdeling: dict[str, int] = {}
-    for a in actief:
-        pk = klant_pakket(a, admin)
-        verdeling[pk] = verdeling.get(pk, 0) + 1
-    if verdeling:
-        _vp = "  ·  ".join(f"{k}: {v}" for k, v in sorted(verdeling.items(), key=lambda x: -x[1]))
-        st.caption(f"**Actief per pakket:** {_vp}")
-
-    if on_hold:
-        st.warning("⏸ **On hold:** " + ", ".join(a["name"] for a in on_hold))
-
-    # Inactiviteitssignaal
-    with st.container():
-        ccol, bcol = st.columns([3, 1], vertical_alignment="center")
-        with bcol:
-            if st.button("🔄 Check inactiviteit", use_container_width=True):
-                with st.spinner("Laatste activiteit ophalen…"):
-                    st.session_state["_admin_last_act"] = fs_client.get_last_activity_dates(60)
-                    last_act = st.session_state["_admin_last_act"]
-        with ccol:
-            if last_act is not None:
-                grens_dt = (date.today() - timedelta(days=21)).isoformat()
-                stil = []
-                for a in athletes:
-                    if admin.get(a["user_key"], {}).get("status") == "Opgezegd":
-                        continue
-                    laatste = last_act.get(a["user_key"])
-                    if laatste is None or laatste < grens_dt:
-                        stil.append((a["name"], laatste))
-                if stil:
-                    st.error("🔕 **Mogelijk inactief (>3 weken geen activiteit):** "
-                             + ", ".join(f"{n} ({l or 'nooit'})" for n, l in stil))
-                else:
-                    st.success("Alle actieve klanten trainden de afgelopen 3 weken.")
-            else:
-                st.caption("Klik om te checken wie >3 weken geen FinalSurge-activiteit had.")
-
-    st.divider()
-
-    # ── KOR-TRACKER ──
-    st.markdown("### 💶 KOR-omzettracker")
-
-    # Rompslomp-sync: automatisch één keer per dag bij openen, plus handmatig.
+    # Rompslomp-sync eerst, zodat het dashboard verse omzet + facturen toont.
     if rompslomp_client.is_configured():
         revenue, proj = _sync_rompslomp_indien_nodig(revenue, proj, correctie)
 
-    pct = min(proj["huidig"] / KOR_GRENS * 100, 100) if KOR_GRENS else 0
-    st.progress(pct / 100)
-    st.markdown(f"**{_eur(proj['huidig'])}** van {_eur(KOR_GRENS)}  ·  nog **{_eur(proj['resterend'])}** te gaan "
-                f"({pct:.0f}%)")
+    actief = [a for a in athletes if admin.get(a["user_key"], {}).get("status", "Actief") == "Actief"]
+    on_hold = [a for a in athletes if admin.get(a["user_key"], {}).get("status") == "On hold"]
+    facturen = st.session_state.get("_rompslomp_facturen") or []
+
+    # ── VISUEEL DASHBOARD ──
+    st.markdown("### 📊 Administratie-dashboard")
+    st.caption("Financiële cockpit · data uit Rompslomp en FinalSurge")
+    _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
+                       _met_correctie(revenue, correctie), facturen, last_act)
+
+    st.divider()
+
+    # ── KOR-TRACKER (sync, verloop, bijstellen) ──
+    st.markdown("### 💶 KOR-omzettracker")
 
     if rompslomp_client.is_configured():
         _jaar = str(date.today().year)
