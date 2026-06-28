@@ -274,7 +274,7 @@ def niet_gefactureerde_klanten(athletes: list, admin: dict, facturen: list) -> l
             continue  # geen achternaam om op te matchen → niet flaggen
         if any(kern.issubset(ft) for ft in factuur_tokens):
             continue
-        result.append(a["name"])
+        result.append(a)
     return result
 
 
@@ -581,13 +581,10 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
             som = sum(f.get("bedrag", 0) for f in open_f)
             sig_html += _sig("&#128196;", f"{len(open_f)} openstaande facturen ({_eur0(som)})",
                              "Verstuur een herinnering voor tijdige betaling.")
-        if facturen:
-            niet_gef = niet_gefactureerde_klanten(athletes, admin, facturen)
-            if niet_gef:
-                sig_html += _sig(
-                    "&#129534;", f"{len(niet_gef)} klanten nog niet gefactureerd in {jaar}",
-                    ", ".join(niet_gef[:6]) + ("…" if len(niet_gef) > 6 else "")
-                    + " · controleer of er nog een (eerste) factuur moet.")
+        niet_gef = niet_gefactureerde_klanten(athletes, admin, facturen) if facturen else []
+        if niet_gef:
+            sig_html += _sig("&#129534;", f"{len(niet_gef)} klanten nog niet gefactureerd in {jaar}",
+                             "Zie de uitklapbare lijst onder dit blok om ze af te werken.")
         st.markdown(sig_html, unsafe_allow_html=True)
 
         if last_act is not None:
@@ -604,6 +601,22 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
                 with st.spinner("Laatste activiteit ophalen…"):
                     st.session_state["_admin_last_act"] = fs_client.get_last_activity_dates(60)
                 st.rerun()
+
+    # ── Werklijst: nog niet gefactureerd (volle breedte, uitklapbaar) ──
+    if niet_gef:
+        with st.expander(f"🧾 {len(niet_gef)} klanten nog niet gefactureerd in {jaar} — werk ze af",
+                         expanded=True):
+            st.caption("Actieve, niet-gratis klanten zonder gematchte factuur dit jaar. Heb je iemand "
+                       "geregeld? Vul 'Vooruitbetaald t/m' in of pas de status aan in de klantenlijst, "
+                       "dan verdwijnt 'ie hier.")
+            werk_df = pd.DataFrame([{
+                "Naam": a["name"],
+                "E-mail": a.get("email", "") or "",
+                "Pakket": klant_pakket(a, admin),
+                "Prijs/4wk": round(klant_prijs(a, admin, prijzen), 2),
+            } for a in niet_gef])
+            st.dataframe(werk_df, hide_index=True, use_container_width=True,
+                         column_config={"Prijs/4wk": st.column_config.NumberColumn(format="€ %.2f")})
 
 
 def render_admin(athletes_by_group: dict):
