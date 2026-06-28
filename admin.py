@@ -230,6 +230,45 @@ def omzet_per_pakket(athletes: list, admin: dict, prijzen: dict) -> dict:
     return per
 
 
+# Omzetcategorieën voor de donut + vaste kleuren (BeBetter dark palet)
+CATEGORIE_VOLGORDE = ["Coaching", "Clinics", "Lactaatmetingen", "Strippenkaarten", "Overig"]
+CATEGORIE_KLEUR = {
+    "Coaching": "#5EE6EB",
+    "Clinics": "#2876FB",
+    "Lactaatmetingen": "#3FA2E0",
+    "Strippenkaarten": "#8FA8CE",
+    "Overig": "#6C7FB0",
+}
+_COACHING_WOORDEN = [p.lower() for p in PAKKET_PRIJZEN_STD] + [
+    "coaching", "begeleiding", "schema", "training", "hardloop", "run"]
+
+
+def factuur_categorie(naam: str, omschrijving: str, bedrag: float = 0) -> str:
+    """Deel een factuur in op categorie o.b.v. betaler-naam en omschrijving (factuurregel)."""
+    n = (naam or "").lower()
+    o = (omschrijving or "").lower()
+    if "gemeente" in n or "optimum" in n:
+        return "Clinics"
+    if "lactaat" in o:
+        return "Lactaatmetingen"
+    if "strip" in o or "ritten" in o:
+        return "Strippenkaarten"
+    if any(w in o for w in _COACHING_WOORDEN):
+        return "Coaching"
+    return "Overig"
+
+
+def omzet_per_categorie(facturen: list) -> dict:
+    """Werkelijk gefactureerde omzet per categorie (uit Rompslomp-facturen)."""
+    per: dict[str, float] = {}
+    for f in facturen or []:
+        if f.get("status") == "concept":
+            continue
+        cat = factuur_categorie(f.get("naam", ""), f.get("omschrijving", ""), f.get("bedrag", 0))
+        per[cat] = per.get(cat, 0.0) + float(f.get("bedrag", 0) or 0)
+    return {k: v for k, v in per.items() if v}
+
+
 def _naam_tokens(s: str) -> set:
     """Naam → set van losse woorden (lowercase, leestekens weg) voor matching."""
     return set(re.sub(r"[^a-zà-ÿ ]", " ", (s or "").lower()).split())
@@ -525,28 +564,29 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
             st.caption("Nog geen maandcijfers beschikbaar." if maand_omzet else
                        "Plotly niet beschikbaar — voeg 'plotly' toe aan requirements.txt.")
     with mc2:
-        st.markdown("<div class='bb-section-title'>Omzet per pakkettype</div>", unsafe_allow_html=True)
-        per = omzet_per_pakket(athletes, admin, prijzen)
+        st.markdown("<div class='bb-section-title'>Omzet per categorie</div>", unsafe_allow_html=True)
+        per = omzet_per_categorie(facturen)
         if go and per:
-            labels = list(per.keys())
-            values = [per[k] for k in labels]
-            palette = ["#5EE6EB", "#2876FB", "#3FA2E0", "#8FA8CE", "#6C7FB0", "#1E3A66"]
+            labels = ([c for c in CATEGORIE_VOLGORDE if c in per]
+                      + [c for c in per if c not in CATEGORIE_VOLGORDE])
+            values = [per[c] for c in labels]
+            colors = [CATEGORIE_KLEUR.get(c, "#1E3A66") for c in labels]
             fig2 = go.Figure(go.Pie(
-                labels=labels, values=values, hole=.62, sort=True, direction="clockwise",
-                marker=dict(colors=palette[:len(labels)], line=dict(color="#081830", width=2)),
+                labels=labels, values=values, hole=.62, sort=False, direction="clockwise",
+                marker=dict(colors=colors, line=dict(color="#081830", width=2)),
                 textinfo="percent", textfont=dict(color="#081830", size=12)))
             fig2.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0),
                                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
                                legend=dict(orientation="v", x=1, y=.5, font=dict(color="#C9D8F0")),
                                font=dict(color="#8FA8CE"))
             st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
-            st.caption(f"Geschatte jaaromzet (actief): **{_eur0(sum(values))}** — o.b.v. de pakketten van je "
-                       "actieve klanten, niet de gefactureerde omzet.")
+            st.caption(f"Werkelijk gefactureerd in {jaar}: **{_eur0(sum(values))}** — uit Rompslomp, "
+                       "ingedeeld op betaler en factuuromschrijving.")
         elif per:
             for k in sorted(per, key=lambda x: -per[x]):
                 st.caption(f"{k}: {_eur0(per[k])}")
         else:
-            st.caption("Nog geen pakketten ingesteld bij actieve klanten.")
+            st.caption("Nog geen facturen geladen — sync hieronder met Rompslomp.")
 
     st.write("")
 

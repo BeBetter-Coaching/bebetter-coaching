@@ -129,8 +129,8 @@ def _contact_email(inv: dict) -> str:
     """Haal het e-mailadres van de betaler uit een factuur (indien aanwezig)."""
     cc = inv.get("cached_contact")
     if isinstance(cc, dict):
-        e = (cc.get("email") or cc.get("email_address")
-             or cc.get("contact_person_email") or "")
+        e = (cc.get("contact_person_email_address") or cc.get("email")
+             or cc.get("email_address") or cc.get("contact_person_email") or "")
         if e:
             return str(e).strip().lower()
     e = inv.get("email") or inv.get("contact_email") or ""
