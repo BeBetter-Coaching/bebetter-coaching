@@ -312,28 +312,33 @@ def _eur0(v) -> str:
 
 DASH_CSS = """
 <style>
-.bb-card{background:#fff;border:1px solid #eef0f2;border-radius:14px;padding:16px 18px;
-  box-shadow:0 1px 2px rgba(16,24,40,.04);height:100%}
-.bb-card-label{font-size:.82rem;color:#667085;margin-bottom:8px;display:flex;justify-content:space-between}
-.bb-card-value{font-size:1.7rem;font-weight:700;color:#101828;line-height:1.1}
-.bb-card-delta{font-size:.78rem;margin-top:7px}
-.bb-card-delta.up{color:#12826a}
-.bb-card-delta.down{color:#d92d20}
-.bb-card-sub{font-size:.78rem;color:#98a2b3;margin-top:7px}
-.bb-section-title{font-weight:700;color:#101828;font-size:1.02rem;margin:2px 0 8px}
-.kor-pct{font-size:2.4rem;font-weight:700;color:#0e9384;line-height:1}
-.kor-pct-sub{font-size:.8rem;color:#667085;margin-top:4px}
-.kor-bar{position:relative;height:26px;border-radius:13px;background:#eef0f2;overflow:hidden}
+/* BeBetter dark design system — navy #081830 / surface #0E2547 / cyan #5EE6EB */
+.bb-card{background:linear-gradient(135deg,#0B1F3A 0%,#0E2547 60%,#10294E 100%);
+  border:1px solid #1E3A66;border-radius:16px;padding:18px 20px;height:100%;
+  box-shadow:0 14px 32px rgba(2,10,26,0.45);transition:transform .2s ease,border-color .2s ease}
+.bb-card:hover{transform:translateY(-3px);border-color:rgba(94,230,235,0.45)}
+.bb-card-label{font-size:.74rem;color:#8FA8CE;margin-bottom:10px;display:flex;justify-content:space-between;
+  letter-spacing:.04em;text-transform:uppercase;font-weight:700}
+.bb-card-value{font-size:1.85rem;font-weight:800;color:#FFFFFF;line-height:1.1;letter-spacing:-.01em}
+.bb-card-delta{font-size:.78rem;margin-top:8px;font-weight:600}
+.bb-card-delta.up{color:#5EE6EB}
+.bb-card-delta.down{color:#FF8A8A}
+.bb-card-sub{font-size:.78rem;color:#5B7396;margin-top:8px}
+.bb-section-title{font-weight:700;color:#5EE6EB;font-size:.74rem;margin:2px 0 10px;
+  letter-spacing:.20em;text-transform:uppercase}
+.kor-pct{font-family:'Archivo Black','Inter',sans-serif;font-size:2.6rem;font-weight:800;color:#5EE6EB;line-height:1}
+.kor-pct-sub{font-size:.8rem;color:#8FA8CE;margin-top:5px}
+.kor-bar{position:relative;height:26px;border-radius:13px;background:#10294E;border:1px solid #1E3A66;overflow:hidden}
 .kor-fill{position:absolute;left:0;top:0;bottom:0;border-radius:13px;
-  background:linear-gradient(90deg,#16a34a 0%,#65b741 55%,#f59e0b 100%)}
-.kor-marker{position:absolute;top:-3px;bottom:-3px;width:0;border-left:2px dashed #344054}
-.kor-leg{display:flex;gap:18px;margin-top:12px;font-size:.78rem;color:#475467;flex-wrap:wrap}
+  background:linear-gradient(90deg,#22C55E 0%,#86C440 55%,#FAC775 100%)}
+.kor-marker{position:absolute;top:-3px;bottom:-3px;width:0;border-left:2px dashed #EAF2FF}
+.kor-leg{display:flex;gap:18px;margin-top:12px;font-size:.78rem;color:#8FA8CE;flex-wrap:wrap}
 .kor-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
-.sig{display:flex;gap:12px;align-items:flex-start;background:#fff;border:1px solid #eef0f2;
+.sig{display:flex;gap:12px;align-items:flex-start;background:#0E2547;border:1px solid #1E3A66;
   border-radius:12px;padding:13px 15px;margin-bottom:10px}
 .sig-ico{font-size:1.05rem;line-height:1.3}
-.sig-t{font-weight:600;color:#101828;font-size:.9rem}
-.sig-d{color:#667085;font-size:.8rem;margin-top:2px}
+.sig-t{font-weight:700;color:#EAF2FF;font-size:.9rem}
+.sig-d{color:#8FA8CE;font-size:.8rem;margin-top:2px}
 </style>
 """
 
@@ -359,7 +364,8 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
 
     st.markdown(DASH_CSS, unsafe_allow_html=True)
     jaar = date.today().year
-    TEAL = "#0e9384"
+    CYAN = "#5EE6EB"
+    AMBER = "#FAC775"
 
     maand_omzet = jaar_maandomzet(revenue_cum, jaar)
     sorted_m = sorted(maand_omzet)
@@ -399,7 +405,7 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     with gc2:
         fillpct = min(pct_kor, 100)
         st.markdown(
-            "<div style='display:flex;justify-content:space-between;font-size:.8rem;color:#475467;margin-bottom:6px'>"
+            "<div style='display:flex;justify-content:space-between;font-size:.8rem;color:#8FA8CE;margin-bottom:6px'>"
             f"<span>{_eur0(omzet_ytd)} gebruikt</span><span>{_eur0(KOR_GRENS)} KOR-grens</span></div>"
             f"<div class='kor-bar'><div class='kor-fill' style='width:{fillpct}%'></div>"
             f"<div class='kor-marker' style='left:{fillpct}%'></div></div>"
@@ -422,20 +428,22 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
             fig.add_trace(go.Scatter(
                 x=[NL_MAANDEN[m - 1] for m in sorted_m], y=[maand_omzet[m] for m in sorted_m],
                 name="Realisatie", mode="lines+markers",
-                line=dict(color=TEAL, width=3), marker=dict(size=7)))
+                line=dict(color=CYAN, width=3), marker=dict(size=7, color=CYAN)))
             if prog:
                 fig.add_trace(go.Scatter(
                     x=[NL_MAANDEN[laatste - 1]] + [NL_MAANDEN[m - 1] for m in sorted(prog)],
                     y=[maand_omzet[laatste]] + [prog[m] for m in sorted(prog)],
                     name="Prognose", mode="lines+markers",
-                    line=dict(color=TEAL, width=2, dash="dot"), marker=dict(size=6)))
+                    line=dict(color=AMBER, width=2, dash="dot"), marker=dict(size=6, color=AMBER)))
             fig.update_layout(
                 height=300, margin=dict(l=0, r=0, t=10, b=0),
-                plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
-                legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0),
-                yaxis=dict(tickprefix="€ ", gridcolor="#eef0f2", zeroline=False),
-                xaxis=dict(showgrid=False, categoryorder="array", categoryarray=NL_MAANDEN),
-                font=dict(color="#475467"))
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0,
+                            font=dict(color="#8FA8CE")),
+                yaxis=dict(tickprefix="€ ", gridcolor="#1E3A66", zeroline=False, color="#8FA8CE"),
+                xaxis=dict(showgrid=False, categoryorder="array", categoryarray=NL_MAANDEN,
+                           color="#8FA8CE"),
+                font=dict(color="#8FA8CE"))
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
             st.caption(f"Realisatie {NL_MAANDEN[sorted_m[0] - 1].lower()}–{NL_MAANDEN[laatste - 1].lower()}: "
                        f"**{_eur0(omzet_ytd)}** (YTD)")
@@ -448,13 +456,15 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
         if go and per:
             labels = list(per.keys())
             values = [per[k] for k in labels]
-            palette = ["#0e9384", "#15b8a6", "#5eead4", "#99f6e4", "#cfece4", "#134e4a"]
+            palette = ["#5EE6EB", "#2876FB", "#3FA2E0", "#8FA8CE", "#6C7FB0", "#1E3A66"]
             fig2 = go.Figure(go.Pie(
                 labels=labels, values=values, hole=.62, sort=True, direction="clockwise",
-                marker=dict(colors=palette[:len(labels)]), textinfo="percent"))
+                marker=dict(colors=palette[:len(labels)], line=dict(color="#081830", width=2)),
+                textinfo="percent", textfont=dict(color="#081830", size=12)))
             fig2.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0),
-                               legend=dict(orientation="v", x=1, y=.5),
-                               font=dict(color="#475467"))
+                               plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                               legend=dict(orientation="v", x=1, y=.5, font=dict(color="#C9D8F0")),
+                               font=dict(color="#8FA8CE"))
             st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
             st.caption(f"Geschatte jaaromzet (actief): **{_eur0(sum(values))}** — o.b.v. de pakketten van je "
                        "actieve klanten, niet de gefactureerde omzet.")
