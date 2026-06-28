@@ -235,11 +235,23 @@ def _naam_tokens(s: str) -> set:
     return set(re.sub(r"[^a-zà-ÿ ]", " ", (s or "").lower()).split())
 
 
+# Tussenvoegsels tellen niet mee bij het matchen van de achternaam.
+_TUSSENVOEGSELS = {"van", "de", "den", "der", "ten", "te", "het", "op", "aan",
+                   "in", "du", "la", "le", "von", "of"}
+
+
+def _achternaam_kern(last_name: str) -> set:
+    """Kernwoorden van de achternaam, zonder tussenvoegsels (bijv. 'De Rijder' -> {rijder})."""
+    toks = _naam_tokens(last_name)
+    kern = {t for t in toks if t not in _TUSSENVOEGSELS}
+    return kern or toks
+
+
 def niet_gefactureerde_klanten(athletes: list, admin: dict, facturen: list) -> list:
     """
     Actieve, niet-gratis klanten zonder gematchte factuur dit jaar.
-    Match = e-mail van de betaler komt overeen (vangt 'partner/ouder betaalt'),
-    óf alle woorden van de achternaam + de voornaam staan op de factuur.
+    Match = de kern van de achternaam (zonder tussenvoegsels) staat op een factuur,
+    óf het e-mailadres van de betaler komt overeen (vangt 'partner/ouder betaalt').
     Klanten met 'Vooruitbetaald t/m' in de toekomst vallen buiten het signaal.
     Naam-matching is niet 100% sluitend, dus een hint.
     """
@@ -257,15 +269,12 @@ def niet_gefactureerde_klanten(athletes: list, admin: dict, facturen: list) -> l
         email = (a.get("email", "") or "").strip().lower()
         if email and email in factuur_emails:
             continue
-        last_toks = _naam_tokens(a.get("last_name", ""))
-        first = (a.get("first_name", "") or "").lower().split()
-        first_tok = first[0] if first else ""
-        gematcht = any(
-            last_toks and last_toks.issubset(ft) and (not first_tok or first_tok in ft)
-            for ft in factuur_tokens
-        )
-        if not gematcht:
-            result.append(a["name"])
+        kern = _achternaam_kern(a.get("last_name", ""))
+        if not kern:
+            continue  # geen achternaam om op te matchen → niet flaggen
+        if any(kern.issubset(ft) for ft in factuur_tokens):
+            continue
+        result.append(a["name"])
     return result
 
 
