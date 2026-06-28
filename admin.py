@@ -269,6 +269,17 @@ def omzet_per_categorie(facturen: list) -> dict:
     return {k: v for k, v in per.items() if v}
 
 
+def facturen_per_categorie(facturen: list) -> dict:
+    """Groepeer facturen per categorie (voor de uitklapbare details)."""
+    groepen: dict[str, list] = {}
+    for f in facturen or []:
+        if f.get("status") == "concept":
+            continue
+        cat = factuur_categorie(f.get("naam", ""), f.get("omschrijving", ""), f.get("bedrag", 0))
+        groepen.setdefault(cat, []).append(f)
+    return groepen
+
+
 def _naam_tokens(s: str) -> set:
     """Naam → set van losse woorden (lowercase, leestekens weg) voor matching."""
     return set(re.sub(r"[^a-zà-ÿ ]", " ", (s or "").lower()).split())
@@ -587,6 +598,27 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
                 st.caption(f"{k}: {_eur0(per[k])}")
         else:
             st.caption("Nog geen facturen geladen — sync hieronder met Rompslomp.")
+
+    # ── Categorie-details (klikbaar uitklappen per categorie) ──
+    cat_groepen = facturen_per_categorie(facturen)
+    if cat_groepen:
+        st.markdown("<div class='bb-section-title'>Categorie openklappen</div>", unsafe_allow_html=True)
+        _volgorde = ([c for c in CATEGORIE_VOLGORDE if c in cat_groepen]
+                     + [c for c in cat_groepen if c not in CATEGORIE_VOLGORDE])
+        for cat in _volgorde:
+            items = sorted(cat_groepen[cat], key=lambda f: f.get("datum", ""), reverse=True)
+            som = sum(float(f.get("bedrag", 0) or 0) for f in items)
+            with st.expander(f"{cat} — {_eur0(som)} · {len(items)} facturen"):
+                st.dataframe(
+                    pd.DataFrame([{
+                        "Datum": f.get("datum", ""),
+                        "Klant": f.get("naam", ""),
+                        "Omschrijving": f.get("omschrijving", ""),
+                        "Bedrag": f.get("bedrag", 0),
+                        "Status": "Betaald" if f.get("betaald") else "Open",
+                    } for f in items]),
+                    hide_index=True, use_container_width=True,
+                    column_config={"Bedrag": st.column_config.NumberColumn(format="€ %.2f")})
 
     st.write("")
 
