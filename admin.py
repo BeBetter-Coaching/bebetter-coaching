@@ -233,11 +233,11 @@ def omzet_per_pakket(athletes: list, admin: dict, prijzen: dict) -> dict:
 # Omzetcategorieën voor de donut + vaste kleuren (BeBetter dark palet)
 CATEGORIE_VOLGORDE = ["Coaching", "Clinics", "Lactaatmetingen", "Strippenkaarten", "Overig"]
 CATEGORIE_KLEUR = {
-    "Coaching": "#5EE6EB",
-    "Clinics": "#2876FB",
-    "Lactaatmetingen": "#3FA2E0",
-    "Strippenkaarten": "#8FA8CE",
-    "Overig": "#6C7FB0",
+    "Coaching": "#5EE6EB",        # cyan
+    "Clinics": "#2876FB",         # blauw
+    "Lactaatmetingen": "#FAC775", # amber
+    "Strippenkaarten": "#22C55E", # groen
+    "Overig": "#8FA8CE",          # grijsblauw
 }
 _COACHING_WOORDEN = [p.lower() for p in PAKKET_PRIJZEN_STD] + [
     "coaching", "begeleiding", "schema", "training", "hardloop", "run"]
