@@ -7,6 +7,7 @@ notitie) worden los opgeslagen en nooit door een sync overschreven.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -219,6 +220,36 @@ def omzet_per_pakket(athletes: list, admin: dict, prijzen: dict) -> dict:
             continue
         per[pk] = per.get(pk, 0.0) + bedrag
     return per
+
+
+def _naam_tokens(s: str) -> set:
+    """Naam → set van losse woorden (lowercase, leestekens weg) voor matching."""
+    return set(re.sub(r"[^a-zà-ÿ ]", " ", (s or "").lower()).split())
+
+
+def niet_gefactureerde_klanten(athletes: list, admin: dict, facturen: list) -> list:
+    """
+    Actieve, niet-gratis klanten zonder gematchte factuur (op naam) dit jaar.
+    Match = alle woorden van de achternaam komen voor in de factuurnaam én de
+    voornaam komt voor. Naam-matching is niet 100% sluitend, dus een hint.
+    """
+    factuur_tokens = [_naam_tokens(f.get("naam", "")) for f in (facturen or [])
+                      if f.get("status") != "concept"]
+    result = []
+    for a in athletes:
+        v = admin.get(a["user_key"], {})
+        if v.get("status", "Actief") != "Actief" or v.get("gratis"):
+            continue
+        last_toks = _naam_tokens(a.get("last_name", ""))
+        first = (a.get("first_name", "") or "").lower().split()
+        first_tok = first[0] if first else ""
+        gematcht = any(
+            last_toks and last_toks.issubset(ft) and (not first_tok or first_tok in ft)
+            for ft in factuur_tokens
+        )
+        if not gematcht:
+            result.append(a["name"])
+    return result
 
 
 def _prijzen() -> dict:
@@ -524,6 +555,13 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
             som = sum(f.get("bedrag", 0) for f in open_f)
             sig_html += _sig("&#128196;", f"{len(open_f)} openstaande facturen ({_eur0(som)})",
                              "Verstuur een herinnering voor tijdige betaling.")
+        if facturen:
+            niet_gef = niet_gefactureerde_klanten(athletes, admin, facturen)
+            if niet_gef:
+                sig_html += _sig(
+                    "&#129534;", f"{len(niet_gef)} klanten nog niet gefactureerd in {jaar}",
+                    ", ".join(niet_gef[:6]) + ("…" if len(niet_gef) > 6 else "")
+                    + " · controleer of er nog een (eerste) factuur moet.")
         st.markdown(sig_html, unsafe_allow_html=True)
 
         if last_act is not None:
