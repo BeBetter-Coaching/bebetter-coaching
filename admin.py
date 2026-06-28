@@ -685,6 +685,30 @@ def render_admin(athletes_by_group: dict):
                 st.dataframe(_df_f, use_container_width=True, hide_index=True,
                              column_config={"Bedrag": st.column_config.NumberColumn(format="€%.2f")})
 
+        with st.expander("🔬 Factuur-diagnose (voor omzet-categorieën)"):
+            st.caption("Eenmalige check: zo zie ik onder welk veld de omschrijving van een factuur "
+                       "staat, zodat ik clinics, lactaatmetingen en strippenkaarten betrouwbaar kan "
+                       "herkennen. Klik, bekijk wat er staat en stuur het door.")
+            if st.button("Toon factuurvelden", key="adm_factuur_diag"):
+                _ruw, _err = rompslomp_client.ruwe_facturen(date.today().year, n=6)
+                st.session_state["_factuur_ruw"] = _ruw
+                st.session_state["_factuur_ruw_err"] = _err
+            _ruw = st.session_state.get("_factuur_ruw")
+            if st.session_state.get("_factuur_ruw_err"):
+                st.error(st.session_state["_factuur_ruw_err"])
+            if _ruw:
+                # Overzicht: naam, bedrag, gevonden omschrijving
+                _ov = pd.DataFrame([{
+                    "Klant": rompslomp_client._contact_naam(i),
+                    "Bedrag": rompslomp_client._parse_bedrag(
+                        i.get("price_with_vat") or i.get("price_without_vat")),
+                    "Omschrijving (gevonden)": rompslomp_client._factuur_omschrijving(i),
+                } for i in _ruw])
+                st.dataframe(_ov, use_container_width=True, hide_index=True,
+                             column_config={"Bedrag": st.column_config.NumberColumn(format="€%.2f")})
+                st.caption("Alle ruwe velden van de eerste factuur (zoek waar de omschrijving in zit):")
+                st.json(_ruw[0])
+
         with st.expander("🎯 Bijstellen op je Winst & Verlies (zelden nodig)"):
             st.caption("Alles loopt automatisch via je facturen en boekingen. Klopt de stand een keer niet "
                        "met je Rompslomp Winst & Verlies — bijvoorbeeld door een bedrag dat je direct op "

@@ -137,6 +137,24 @@ def _contact_email(inv: dict) -> str:
     return str(e).strip().lower()
 
 
+def _factuur_omschrijving(inv: dict) -> str:
+    """Beste-gok omschrijving van een factuur: directe velden óf de factuurregels."""
+    for k in ("description", "subject", "reference", "title", "note", "notes", "remarks"):
+        v = inv.get(k)
+        if v:
+            return str(v).strip()
+    for lk in ("sales_invoice_details", "details", "lines", "invoice_lines",
+               "sales_invoice_lines", "rows", "items"):
+        lines = inv.get(lk)
+        if isinstance(lines, list):
+            descs = [str(li.get("description") or li.get("name") or li.get("title") or "").strip()
+                     for li in lines if isinstance(li, dict)]
+            descs = [d for d in descs if d]
+            if descs:
+                return " | ".join(descs[:4])
+    return ""
+
+
 def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
     """
     Haal verkoopfacturen op (alle pagina's). Optioneel gefilterd op kalenderjaar.
@@ -185,6 +203,7 @@ def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
                     "nummer": inv.get("invoice_number"),
                     "naam": _contact_naam(inv),
                     "email": _contact_email(inv),
+                    "omschrijving": _factuur_omschrijving(inv),
                     "bedrag": bedrag,
                     "bedrag_excl": _excl,
                     "bedrag_incl": _incl,
@@ -201,6 +220,29 @@ def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
 
     facturen.sort(key=lambda f: f["datum"])
     return facturen, ""
+
+
+def ruwe_facturen(year: int | None = None, n: int = 6) -> tuple[list, str]:
+    """Geeft de ruwe JSON van de eerste n facturen terug (voor diagnose van velden)."""
+    if not is_configured():
+        return [], "Rompslomp niet geconfigureerd."
+    cid = _company_id()
+    if not cid:
+        return [], "Geen bedrijf (company_id) beschikbaar."
+    url = f"{_base()}/companies/{cid}/sales_invoices"
+    try:
+        resp = _session.get(url, headers=_headers(), timeout=_TIMEOUT,
+                            params={"page": 1, "per_page": 50})
+        if resp.status_code in (401, 403):
+            return [], f"Geen toegang ({resp.status_code})."
+        resp.raise_for_status()
+        data = resp.json()
+        items = data if isinstance(data, list) else (data.get("data") or data.get("sales_invoices") or [])
+        if year:
+            items = [i for i in items if (i.get("date") or "").startswith(str(year))]
+        return items[:n], ""
+    except Exception as e:
+        return [], str(e)
 
 
 def _paged(url: str, key_candidates: tuple) -> tuple[list, str]:
