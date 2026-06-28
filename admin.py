@@ -303,6 +303,22 @@ def _achternaam_kern(last_name: str) -> set:
     return kern or toks
 
 
+def match_contact_fs(contact: dict, athletes: list) -> str:
+    """Koppel een Rompslomp-contact aan een FinalSurge-klant (e-mail óf achternaam-kern).
+    Geeft de FinalSurge-naam terug, of '' als er geen match is."""
+    email = (contact.get("email", "") or "").strip().lower()
+    if email:
+        for a in athletes:
+            if (a.get("email", "") or "").strip().lower() == email:
+                return a["name"]
+    ctoks = _naam_tokens(contact.get("naam", ""))
+    for a in athletes:
+        kern = _achternaam_kern(a.get("last_name", ""))
+        if kern and kern.issubset(ctoks):
+            return a["name"]
+    return ""
+
+
 def niet_gefactureerde_klanten(athletes: list, admin: dict, facturen: list) -> list:
     """
     Actieve, niet-gratis klanten zonder gematchte factuur dit jaar.
@@ -786,6 +802,29 @@ def render_admin(athletes_by_group: dict):
                              column_config={"Bedrag": st.column_config.NumberColumn(format="€%.2f")})
                 st.caption("Alle ruwe velden van de eerste factuur (zoek waar de omschrijving in zit):")
                 st.json(_ruw[0])
+
+        with st.expander("👥 Rompslomp-contacten (alle gefactureerde klanten)"):
+            st.caption("Iedereen die ooit een factuur kreeg in Rompslomp, met of er een FinalSurge-klant "
+                       "aan gekoppeld is. Contacten zonder koppeling zijn clinics, losse kopers of "
+                       "oud-klanten.")
+            if st.button("Haal Rompslomp-contacten op", key="adm_contacten"):
+                _ct, _cterr = rompslomp_client.get_contacts()
+                st.session_state["_rompslomp_contacten"] = _ct
+                st.session_state["_rompslomp_contacten_err"] = _cterr
+            if st.session_state.get("_rompslomp_contacten_err"):
+                st.error(st.session_state["_rompslomp_contacten_err"])
+            _ct = st.session_state.get("_rompslomp_contacten")
+            if _ct:
+                _gekoppeld = sum(1 for c in _ct if match_contact_fs(c, athletes))
+                st.caption(f"**{len(_ct)} contacten** · {_gekoppeld} gekoppeld aan FinalSurge · "
+                           f"{len(_ct) - _gekoppeld} zonder koppeling.")
+                _cdf = pd.DataFrame([{
+                    "Naam": c["naam"],
+                    "E-mail": c["email"],
+                    "Nr": c["nummer"],
+                    "FinalSurge-klant": match_contact_fs(c, athletes) or "—",
+                } for c in sorted(_ct, key=lambda x: x["naam"])])
+                st.dataframe(_cdf, use_container_width=True, hide_index=True)
 
         with st.expander("🎯 Bijstellen op je Winst & Verlies (zelden nodig)"):
             st.caption("Alles loopt automatisch via je facturen en boekingen. Klopt de stand een keer niet "

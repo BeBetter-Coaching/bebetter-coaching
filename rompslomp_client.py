@@ -245,6 +245,51 @@ def ruwe_facturen(year: int | None = None, n: int = 6) -> tuple[list, str]:
         return [], str(e)
 
 
+def get_contacts() -> tuple[list[dict], str]:
+    """
+    Haal alle contacten (klanten) op uit Rompslomp — iedereen die ooit een
+    factuur kreeg. Geeft (lijst, fout). Elk contact: {id, naam, email, nummer}.
+    """
+    if not is_configured():
+        return [], "Rompslomp niet geconfigureerd."
+    cid = _company_id()
+    if not cid:
+        return [], "Geen bedrijf (company_id) beschikbaar."
+    url = f"{_base()}/companies/{cid}/contacts"
+    contacten = []
+    page = 1
+    try:
+        while True:
+            resp = _session.get(url, headers=_headers(), timeout=_TIMEOUT,
+                                params={"page": page, "per_page": 100})
+            if resp.status_code in (401, 403):
+                return [], f"Geen toegang ({resp.status_code}). Token geldig?"
+            if resp.status_code == 404:
+                return [], "Contacten-endpoint niet gevonden (404)."
+            resp.raise_for_status()
+            data = resp.json()
+            items = data if isinstance(data, list) else (data.get("data") or data.get("contacts") or [])
+            if not items:
+                break
+            for c in items:
+                contacten.append({
+                    "id": c.get("id"),
+                    "naam": (c.get("name") or c.get("company_name")
+                             or c.get("contact_person_name") or "").strip(),
+                    "email": (c.get("contact_person_email_address") or c.get("email")
+                              or c.get("email_address") or "").strip().lower(),
+                    "nummer": c.get("contact_number") or c.get("number") or "",
+                })
+            if len(items) < 100:
+                break
+            page += 1
+            if page > 50:
+                break
+    except Exception as e:
+        return [], str(e)
+    return contacten, ""
+
+
 def _paged(url: str, key_candidates: tuple) -> tuple[list, str]:
     """Haal alle pagina's van een lijst-endpoint op. Geeft (items, fout)."""
     cid = _company_id()
