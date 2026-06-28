@@ -149,11 +149,19 @@ def klant_is_gratis(athlete: dict, admin: dict) -> bool:
 
 
 def klant_prijs(athlete: dict, admin: dict, prijzen: dict) -> float:
-    """Effectieve 4-wekenprijs van een klant; 0 bij vriendendienst (gratis)."""
+    """Effectieve 4-wekenprijs van een klant.
+    0 bij vriendendienst (gratis); eigen prijs als die is ingevuld (afwijkende/oude
+    prijs); anders de standaard pakketprijs."""
     if klant_is_gratis(athlete, admin):
         return 0.0
     v = admin.get(athlete["user_key"], {})
-    return effectieve_prijs(klant_pakket(athlete, admin), v.get("korting", 0), prijzen)
+    override = v.get("prijs_override")
+    if override:
+        try:
+            return float(override)
+        except (ValueError, TypeError):
+            pass
+    return effectieve_prijs(klant_pakket(athlete, admin), 0, prijzen)
 
 
 def geschatte_jaaromzet(athletes: list, admin: dict, prijzen: dict,
@@ -684,8 +692,9 @@ def render_admin(athletes_by_group: dict):
     # ── KLANTENLIJST ──
     st.markdown("### 👥 Klantenlijst")
     st.caption("Live uit FinalSurge. Het pakket wordt automatisch afgeleid uit de FinalSurge-groep; "
-               "je kunt het overschrijven. Coach, status, betaalcyclus, korting en notitie stel je hier in. "
-               "Alles wordt bewaard en nooit door een sync overschreven.")
+               "je kunt het overschrijven. Vink 'Gratis' aan bij vriendendiensten en vul 'Eigen prijs/4wk' "
+               "in bij klanten met een afwijkende (bijv. oude) prijs. Coach, status, betaalcyclus en notitie "
+               "stel je hier ook in. Alles wordt bewaard en nooit door een sync overschreven.")
 
     with st.expander("⚙️ Pakketprijzen (per 4 weken)"):
         st.caption("Prijs per pakket — bepaalt de geschatte jaaromzet van je klanten.")
@@ -709,16 +718,16 @@ def render_admin(athletes_by_group: dict):
     for a in athletes:
         v = admin.get(a["user_key"], {})
         pakket = klant_pakket(a, admin)
-        korting = float(v.get("korting", 0) or 0)
         gratis = bool(v.get("gratis"))
+        eigen = float(v.get("prijs_override") or 0)
         rows.append({
             "user_key": a["user_key"],
             "Naam": a["name"],
             "E-mail": a.get("email", "") or "",
             "Pakket": pakket,
-            "Korting %": korting,
             "Gratis": gratis,
-            "Prijs/4wk": round(0.0 if gratis else effectieve_prijs(pakket, korting, prijzen), 2),
+            "Eigen prijs/4wk": eigen,
+            "Prijs/4wk": round(klant_prijs(a, admin, prijzen), 2),
             "Coach": v.get("coach", "—"),
             "Status": v.get("status", "Actief"),
             "Betaalcyclus": v.get("cyclus", "4 weken"),
@@ -737,13 +746,15 @@ def render_admin(athletes_by_group: dict):
             "E-mail": st.column_config.TextColumn(disabled=True),
             "Pakket": st.column_config.SelectboxColumn(options=PAKKETTEN, required=True,
                        help="Automatisch uit de groep; overschrijven kan."),
-            "Korting %": st.column_config.NumberColumn(min_value=0, max_value=100, step=5,
-                       help="Korting op de pakketprijs, in procenten."),
             "Gratis": st.column_config.CheckboxColumn(
                        help="Vriendendienst: telt mee als actieve klant, maar levert €0 omzet "
                             "en wordt niet in Rompslomp verwacht."),
+            "Eigen prijs/4wk": st.column_config.NumberColumn(min_value=0, step=5, format="€%.2f",
+                       help="Laat op €0 voor de standaard pakketprijs. Vul het werkelijke bedrag in "
+                            "bij een afwijkende prijs, bijv. de oude prijs van vóór de verhoging."),
             "Prijs/4wk": st.column_config.NumberColumn(disabled=True, format="€%.2f",
-                       help="Effectieve prijs na korting (berekend). €0,00 bij een vriendendienst."),
+                       help="Effectieve prijs (berekend): eigen prijs indien ingevuld, anders de "
+                            "pakketprijs. €0,00 bij een vriendendienst."),
             "Coach": st.column_config.SelectboxColumn(options=COACHES, required=True),
             "Status": st.column_config.SelectboxColumn(options=STATUSSEN, required=True),
             "Betaalcyclus": st.column_config.SelectboxColumn(options=CYCLI, required=True),
@@ -762,7 +773,7 @@ def render_admin(athletes_by_group: dict):
             _pakket_val = r["Pakket"] if r["Pakket"] != _afgeleid else ""
             nieuw[r["user_key"]] = {
                 "pakket": _pakket_val,
-                "korting": float(r["Korting %"] or 0),
+                "prijs_override": float(r["Eigen prijs/4wk"]) or None,
                 "gratis": bool(r["Gratis"]),
                 "coach": r["Coach"],
                 "status": r["Status"],
