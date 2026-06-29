@@ -346,6 +346,29 @@ _INTAKE_VELDEN_SPEC = """{
 }"""
 
 
+def _create_message(**kwargs):
+    """
+    client.messages.create met retry + backoff bij tijdelijke API-overbelasting
+    (HTTP 429 / 5xx / 529 'overloaded'). Niet-tijdelijke fouten gooien direct door.
+    """
+    import time as _time
+    laatste = None
+    for poging in range(5):
+        try:
+            return client.messages.create(**kwargs)
+        except Exception as e:
+            laatste = e
+            status = getattr(e, "status_code", None)
+            msg = str(e).lower()
+            tijdelijk = (status in (429, 500, 502, 503, 529)
+                         or "overloaded" in msg or "rate limit" in msg
+                         or "timeout" in msg or "529" in msg)
+            if not tijdelijk or poging == 4:
+                raise
+            _time.sleep(min(2 ** poging, 8) + 0.5)  # 1.5s, 2.5s, 4.5s, 8.5s
+    raise laatste
+
+
 def extract_intake_fields(tekst: str) -> dict:
     """
     Haal uit een vrije intake-notule (willekeurige tekst) de gestructureerde
@@ -368,7 +391,7 @@ Regels:
 NOTITIE:
 {tekst[:8000]}"""
 
-    response = client.messages.create(
+    response = _create_message(
         model="claude-opus-4-5",
         max_tokens=1500,
         messages=[{"role": "user", "content": prompt}],

@@ -2621,7 +2621,13 @@ elif page == "intake":
                         _velden = schema_builder.extract_intake_fields(_bron_tekst)
                     except Exception as e:
                         _velden = {}
-                        st.error(f"Uitlezen mislukt: {e}")
+                        _m = str(e).lower()
+                        if "overloaded" in _m or "529" in _m or "rate limit" in _m:
+                            st.warning("De AI is even overbelast (tijdelijk druk bij Anthropic). "
+                                       "Wacht een halve minuut en klik nog een keer op "
+                                       "'Formulier invullen met AI'. Je tekst/bestand blijft staan.")
+                        else:
+                            st.error(f"Uitlezen mislukt: {e}")
                 if _velden:
                     # Map naar de ik_-sessiekeys (alleen niet-lege waarden)
                     _map = {
