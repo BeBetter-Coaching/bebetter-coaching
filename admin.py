@@ -1197,31 +1197,32 @@ def render_admin(athletes_by_group: dict):
                            "de tweede tabel alle grootboekpaden in je boekingen zodat we de "
                            "detectie kunnen bijstellen.")
                 if st.button("Check kosten", key="adm_kosten_check"):
-                    _kpr, _ke = rompslomp_client.get_kosten_per_rekening(date.today().year)
-                    _paden, _pe = rompslomp_client.journal_paden(date.today().year)
-                    st.session_state["_kosten_check"] = (_kpr, _ke, _paden, _pe)
+                    _jr = date.today().year
+                    _kpr, _ke = rompslomp_client.get_kosten_per_rekening(_jr)
+                    _uit, _uit_n, _uit_ep = rompslomp_client.get_uitgaven_ytd(_jr)
+                    st.session_state["_kosten_check"] = (_kpr, _ke, _uit, _uit_n, _uit_ep)
                 if "_kosten_check" in st.session_state:
-                    _kpr, _ke, _paden, _pe = st.session_state["_kosten_check"]
+                    _kpr, _ke, _uit, _uit_n, _uit_ep = st.session_state["_kosten_check"]
                     if _ke:
                         st.error(f"Kosten ophalen mislukt: {_ke}")
-                    elif _kpr:
-                        st.dataframe(pd.DataFrame(
-                            [{"Rekening": k, "Bedrag": v} for k, v in sorted(_kpr.items())]),
-                            hide_index=True, use_container_width=True,
-                            column_config={"Bedrag": st.column_config.NumberColumn(format="€ %.2f")})
-                        st.caption(f"Totaal: **{_eur(sum(_kpr.values()))}** — dit bedrag gebruiken "
-                                   "de potjes als werkelijke kosten.")
-                    else:
-                        st.warning("Geen kosten gevonden op kostenrekeningen. Hieronder alle "
-                                   "grootboekpaden in je boekingen — stuur een screenshot door, "
-                                   "dan stel ik de detectie bij.")
-                        if _paden:
-                            st.dataframe(pd.DataFrame(_paden), hide_index=True,
-                                         use_container_width=True,
-                                         column_config={"saldo": st.column_config.NumberColumn(
-                                             format="€ %.2f")})
-                        elif _pe:
-                            st.error(f"Boekingen ophalen mislukt: {_pe}")
+                    _totaal = sum(_kpr.values()) + _uit
+                    _regels = ([{"Bron": f"Journaal: {k}", "Bedrag": v}
+                                for k, v in sorted(_kpr.items())]
+                               + ([{"Bron": f"Uitgaven/inkoopfacturen ({_uit_ep}, {_uit_n} stuks)",
+                                    "Bedrag": _uit}] if _uit else []))
+                    if _regels:
+                        st.dataframe(pd.DataFrame(_regels), hide_index=True,
+                                     use_container_width=True,
+                                     column_config={"Bedrag": st.column_config.NumberColumn(
+                                         format="€ %.2f")})
+                    st.caption(f"Totaal gevonden: **{_eur(_totaal)}** — vergelijk dit met de "
+                               "kostenregel op je Rompslomp Winst & Verlies. Wijkt het af, "
+                               "draai dan de API-verkenner hieronder en stuur een screenshot.")
+                    if st.button("🛰️ API verkennen (welke endpoints bestaan er?)",
+                                 key="adm_api_verkenner"):
+                        st.session_state["_api_verkenner"] = rompslomp_client.api_verkenner()
+                    if st.session_state.get("_api_verkenner"):
+                        st.json(st.session_state["_api_verkenner"])
 
             with st.expander("👥 Rompslomp-contacten (koppelingscontrole)"):
                 st.caption("Iedereen die ooit een factuur kreeg in Rompslomp, met of er een "

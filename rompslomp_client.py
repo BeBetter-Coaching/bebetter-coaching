@@ -423,12 +423,91 @@ def get_kosten_per_rekening(year: int) -> tuple[dict, str]:
     return {k: round(v, 2) for k, v in per.items()}, ""
 
 
+def get_uitgaven_ytd(year: int) -> tuple[float, int, str]:
+    """
+    Som van inkoopfacturen/uitgaven dit jaar. Probeert de bekende
+    endpoint-namen; geeft (bedrag, aantal, gebruikte_endpoint of '').
+    KOR/geen aftrek: het incl-bedrag is de kost.
+    """
+    for endpoint, keys in (
+        ("purchase_invoices", ("data", "purchase_invoices")),
+        ("purchases", ("data", "purchases")),
+        ("receipts", ("data", "receipts")),
+        ("expenses", ("data", "expenses")),
+    ):
+        items, err = _paged(endpoint, keys)
+        if err or not items:
+            continue
+        totaal, n = 0.0, 0
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            d = (it.get("date") or it.get("invoice_date") or it.get("booking_date") or "")[:10]
+            if not d.startswith(str(year)):
+                continue
+            bedrag = _parse_bedrag(it.get("price_with_vat") or it.get("total_price")
+                                   or it.get("amount") or it.get("price_without_vat")
+                                   or it.get("total"))
+            if bedrag:
+                totaal += bedrag
+                n += 1
+        if n:
+            return round(totaal, 2), n, endpoint
+    return 0.0, 0, ""
+
+
 def get_kosten_ytd(year: int) -> tuple[float, str]:
-    """Totale werkelijke kosten dit jaar. Best effort; bij fout (0.0, reden)."""
+    """
+    Totale werkelijke kosten dit jaar: kostenregels uit de journaalboekingen
+    plus inkoopfacturen/uitgaven. Best effort; bij fout (0.0, reden).
+    """
     per, err = get_kosten_per_rekening(year)
     if err:
         return 0.0, err
-    return round(sum(per.values()), 2), ""
+    journal = sum(per.values())
+    uitgaven, _, _ = get_uitgaven_ytd(year)
+    return round(journal + uitgaven, 2), ""
+
+
+def api_verkenner() -> dict:
+    """
+    Diagnose: welke endpoints kent deze API (swagger_doc) en wat geven de
+    kandidaat-kosten-endpoints terug? Alleen voor de kosten-check in Beheer.
+    """
+    uit: dict = {"swagger_paden": [], "probes": {}}
+    try:
+        r = _session.get(f"{_base()}/swagger_doc", headers=_headers(), timeout=_TIMEOUT)
+        if r.status_code == 200:
+            paths = (r.json() or {}).get("paths") or {}
+            uit["swagger_paden"] = sorted(paths.keys())
+        else:
+            uit["swagger_paden"] = [f"(swagger_doc: HTTP {r.status_code})"]
+    except Exception as e:
+        uit["swagger_paden"] = [f"(swagger_doc: {e})"]
+
+    cid = _company_id()
+    for ep in ("purchase_invoices", "purchases", "receipts", "expenses",
+               "financial_transactions", "transactions", "bank_transactions",
+               "financial_mutations", "reports/profit_and_loss", "profit_and_loss"):
+        try:
+            r = _session.get(f"{_base()}/companies/{cid}/{ep}", headers=_headers(),
+                             timeout=_TIMEOUT, params={"page": 1, "per_page": 2})
+            info: dict = {"status": r.status_code}
+            if r.status_code == 200:
+                data = r.json()
+                items = data if isinstance(data, list) else next(
+                    (data[k] for k in ("data", ep.split("/")[-1])
+                     if isinstance(data, dict) and isinstance(data.get(k), list)), [])
+                if isinstance(items, list):
+                    info["n_op_pagina_1"] = len(items)
+                    if items and isinstance(items[0], dict):
+                        info["velden"] = sorted(items[0].keys())[:16]
+                elif isinstance(data, dict):
+                    info["velden"] = sorted(data.keys())[:16]
+            uit["probes"][ep] = info
+        except Exception as e:
+            uit["probes"][ep] = {"status": f"fout: {e}"}
+    return uit
 
 
 def journal_paden(year: int, max_n: int = 25) -> tuple[list[dict], str]:
