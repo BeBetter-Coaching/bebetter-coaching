@@ -423,37 +423,50 @@ def get_kosten_per_rekening(year: int) -> tuple[dict, str]:
     return {k: round(v, 2) for k, v in per.items()}, ""
 
 
+def _uitgave_bedrag(item: dict) -> float:
+    """
+    Totaalbedrag van één uitgave (expenses-endpoint). De bedragen zitten in
+    de invoice_lines, niet op het hoofdniveau. KOR/geen aftrek: incl = kost.
+    """
+    direct = _parse_bedrag(item.get("price_with_vat") or item.get("total_price")
+                           or item.get("amount") or item.get("price_without_vat"))
+    if direct:
+        return direct
+    totaal = 0.0
+    for line in (item.get("invoice_lines") or []):
+        if not isinstance(line, dict):
+            continue
+        b = _parse_bedrag(line.get("price_with_vat") or line.get("price_without_vat"))
+        if not b:
+            per_stuk = _parse_bedrag(line.get("price_per_unit"))
+            aantal = _parse_bedrag(line.get("quantity")) or 1.0
+            b = per_stuk * aantal
+        totaal += b
+    return round(totaal, 2)
+
+
 def get_uitgaven_ytd(year: int) -> tuple[float, int, str]:
     """
-    Som van inkoopfacturen/uitgaven dit jaar. Probeert de bekende
-    endpoint-namen; geeft (bedrag, aantal, gebruikte_endpoint of '').
-    KOR/geen aftrek: het incl-bedrag is de kost.
+    Som van de uitgaven (kosten) dit jaar uit het expenses-endpoint.
+    Geeft (bedrag, aantal, endpoint). Concepten tellen niet mee.
     """
-    for endpoint, keys in (
-        ("purchase_invoices", ("data", "purchase_invoices")),
-        ("purchases", ("data", "purchases")),
-        ("receipts", ("data", "receipts")),
-        ("expenses", ("data", "expenses")),
-    ):
-        items, err = _paged(endpoint, keys)
-        if err or not items:
+    items, err = _paged("expenses", ("data", "expenses"))
+    if err or not items:
+        return 0.0, 0, ""
+    totaal, n = 0.0, 0
+    for it in items:
+        if not isinstance(it, dict):
             continue
-        totaal, n = 0.0, 0
-        for it in items:
-            if not isinstance(it, dict):
-                continue
-            d = (it.get("date") or it.get("invoice_date") or it.get("booking_date") or "")[:10]
-            if not d.startswith(str(year)):
-                continue
-            bedrag = _parse_bedrag(it.get("price_with_vat") or it.get("total_price")
-                                   or it.get("amount") or it.get("price_without_vat")
-                                   or it.get("total"))
-            if bedrag:
-                totaal += bedrag
-                n += 1
-        if n:
-            return round(totaal, 2), n, endpoint
-    return 0.0, 0, ""
+        if (it.get("state") or "").lower() in ("draft", "concept"):
+            continue
+        d = (it.get("date") or it.get("invoice_date") or "")[:10]
+        if not d.startswith(str(year)):
+            continue
+        bedrag = _uitgave_bedrag(it)
+        if bedrag:
+            totaal += bedrag
+            n += 1
+    return round(totaal, 2), n, "expenses"
 
 
 def get_kosten_ytd(year: int) -> tuple[float, str]:

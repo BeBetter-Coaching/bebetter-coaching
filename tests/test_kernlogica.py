@@ -436,6 +436,18 @@ class TestBtwOmschakeling:
         assert rc._is_kosten_account({"type": "expense"}) is True
         assert rc._is_kosten_account({"type": "revenue", "path": "Omzet"}) is False
 
+    def test_uitgave_bedrag_uit_invoice_lines(self):
+        # expenses-endpoint: bedragen zitten in de regels, niet op het hoofdniveau
+        import rompslomp_client as rc
+        uitgave = {"date": "2026-06-21", "invoice_lines": [
+            {"price_with_vat": "18.81", "price_without_vat": "15.55"},
+            {"price_per_unit": "6.52", "quantity": "2.0"},   # geen totaalvelden
+        ]}
+        assert rc._uitgave_bedrag(uitgave) == 31.85           # 18.81 + 13.04
+        # direct veld op hoofdniveau wint als het er wél is
+        assert rc._uitgave_bedrag({"price_with_vat": "52.50"}) == 52.50
+        assert rc._uitgave_bedrag({"invoice_lines": []}) == 0.0
+
     def test_categorie_omzet_excl_na_omschakeling(self):
         fac = [
             {"naam": "A", "omschrijving": "Comfort", "datum": "2026-07-01",

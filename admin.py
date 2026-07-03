@@ -491,9 +491,19 @@ def _doe_rompslomp_sync(revenue: dict) -> tuple[dict, str]:
     nieuw.update(cumulatief)
     intake_store.save_revenue(nieuw)
     st.session_state["_rompslomp_facturen"] = facturen
-    # Werkelijke kosten dit jaar (uit de journaalboekingen) — voor de potjes
+    # Werkelijke kosten dit jaar — voor de potjes. Bij succes ook als
+    # laatst-bekende-stand bewaren zodat een mislukte sync later nooit
+    # terugvalt op nul of een schatting.
     _kosten, _kerr = rompslomp_client.get_kosten_ytd(jaar)
     st.session_state["_rompslomp_kosten_ytd"] = None if _kerr else _kosten
+    if not _kerr:
+        try:
+            _inst_cache = intake_store.load_btw_instellingen() or {}
+            _inst_cache["kosten_cache"] = {"jaar": jaar, "bedrag": _kosten,
+                                           "datum": date.today().isoformat()}
+            intake_store.save_btw_instellingen(_inst_cache)
+        except Exception:
+            pass
     st.session_state["_rompslomp_sync_dag"] = date.today().isoformat()
     st.session_state["_rompslomp_bron"] = (
         f"Laatst gesynct: {date.today().strftime('%d-%m-%Y')} "
@@ -683,19 +693,24 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     # ── Potjes: waar moet je omzet heen ──
     st.markdown("<div class='bb-section-title'>Potjes · indicatief</div>", unsafe_allow_html=True)
     try:
-        inst = {**{"ib_pct": 45, "buffer_pct": 10, "kosten_pm": 250},
+        inst = {**{"ib_pct": 45, "buffer_pct": 10},
                 **(intake_store.load_btw_instellingen() or {})}
     except Exception:
-        inst = {"ib_pct": 45, "buffer_pct": 10, "kosten_pm": 250}
-    # Werkelijke kosten uit Rompslomp (bij de dagelijkse sync opgehaald);
-    # alleen als die er niet zijn valt de schatting per maand in.
+        inst = {"ib_pct": 45, "buffer_pct": 10}
+    # Werkelijke kosten uit Rompslomp (dagelijkse sync). Lukt de sync even
+    # niet, dan de laatst bekende stand uit de opslag — nooit een schatting.
     _kosten_echt = st.session_state.get("_rompslomp_kosten_ytd")
+    _cache = inst.get("kosten_cache") or {}
     if _kosten_echt is not None:
         _kosten_ytd = float(_kosten_echt)
         _kosten_bron = f"werkelijke kosten uit Rompslomp ({_eur0(_kosten_ytd)})"
+    elif _cache.get("jaar") == jaar:
+        _kosten_ytd = float(_cache.get("bedrag") or 0)
+        _kosten_bron = (f"laatst bekende kosten uit Rompslomp ({_eur0(_kosten_ytd)}, "
+                        f"stand {_cache.get('datum', '?')})")
     else:
-        _kosten_ytd = inst["kosten_pm"] * date.today().month
-        _kosten_bron = f"geschatte kosten ({_eur0(_kosten_ytd)} = {_eur0(inst['kosten_pm'])}/mnd)"
+        _kosten_ytd = 0.0
+        _kosten_bron = "kosten nog niet gesynct (⚠️ winst is nu gelijk aan omzet)"
     potjes = potjes_advies(omzet_ytd, _kosten_ytd, inst["ib_pct"],
                            inst["buffer_pct"], (btw or {}).get("btw_totaal", 0.0))
     p1, p2, p3, p4 = st.columns(4)
@@ -1137,12 +1152,12 @@ def render_admin(athletes_by_group: dict):
     with tab_beheer:
         st.markdown("**⚙️ Potjes-instellingen**")
         st.caption("Bepalen de verdeling op het dashboard. Stem de percentages af met je boekhouder.")
-        pi1, pi2, pi3 = st.columns(3)
+        pi1, pi2 = st.columns(2)
         try:
-            _inst = {**{"ib_pct": 45, "buffer_pct": 10, "kosten_pm": 250},
+            _inst = {**{"ib_pct": 45, "buffer_pct": 10},
                      **(intake_store.load_btw_instellingen() or {})}
         except Exception:
-            _inst = {"ib_pct": 45, "buffer_pct": 10, "kosten_pm": 250}
+            _inst = {"ib_pct": 45, "buffer_pct": 10}
         with pi1:
             _ib_in = st.number_input("IB-reserve (% van winst)", min_value=0.0, max_value=60.0,
                                      step=1.0, value=float(_inst["ib_pct"]), key="adm_ib_pct",
@@ -1153,15 +1168,12 @@ def render_admin(athletes_by_group: dict):
         with pi2:
             _buf_in = st.number_input("Buffer (% van winst)", min_value=0.0, max_value=50.0,
                                       step=1.0, value=float(_inst["buffer_pct"]), key="adm_buf_pct")
-        with pi3:
-            _kos_in = st.number_input("Kosten per maand (€, alleen fallback)", min_value=0.0, step=25.0,
-                                      value=float(_inst["kosten_pm"]), key="adm_kosten_pm",
-                                      help="De potjes gebruiken je werkelijke kosten uit Rompslomp. "
-                                           "Deze schatting geldt alleen als die even niet opgehaald "
-                                           "kunnen worden.")
+        st.caption("Kosten worden automatisch uit Rompslomp gehaald (uitgaven + boekingen) — "
+                   "daar valt niets aan in te stellen.")
         if st.button("💾 Potjes opslaan", key="adm_potjes_save"):
-            ok, err = intake_store.save_btw_instellingen(
-                {"ib_pct": _ib_in, "buffer_pct": _buf_in, "kosten_pm": _kos_in})
+            _bewaar = {**_inst, "ib_pct": _ib_in, "buffer_pct": _buf_in}
+            _bewaar.pop("kosten_pm", None)  # oude schatting definitief opruimen
+            ok, err = intake_store.save_btw_instellingen(_bewaar)
             if ok:
                 st.success("Opgeslagen.")
                 st.rerun()
