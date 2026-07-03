@@ -549,9 +549,17 @@ DASH_CSS = """
   border:1px solid #1E3A66;border-radius:16px;padding:18px 20px;height:100%;
   box-shadow:0 14px 32px rgba(2,10,26,0.45);transition:transform .2s ease,border-color .2s ease}
 .bb-card:hover{transform:translateY(-3px);border-color:rgba(94,230,235,0.45)}
+.bb-card.hero{border-color:rgba(94,230,235,0.55);
+  box-shadow:0 14px 32px rgba(2,10,26,0.45), 0 0 22px rgba(94,230,235,0.12)}
+.bb-card.hero .bb-card-value{color:#5EE6EB;font-size:2.1rem}
+.bb-card.warn{border-color:rgba(250,199,117,0.55)}
+.bb-card.warn .bb-card-value{color:#FAC775}
+.bb-card.alert{border-color:rgba(255,107,107,0.6)}
+.bb-card.alert .bb-card-value{color:#FF8A8A}
 .bb-card-label{font-size:.74rem;color:#8FA8CE;margin-bottom:10px;display:flex;justify-content:space-between;
   letter-spacing:.04em;text-transform:uppercase;font-weight:700}
 .bb-card-value{font-size:1.85rem;font-weight:800;color:#FFFFFF;line-height:1.1;letter-spacing:-.01em}
+.bb-spark{margin-top:10px;opacity:.85}
 .bb-card-delta{font-size:.78rem;margin-top:8px;font-weight:600}
 .bb-card-delta.up{color:#5EE6EB}
 .bb-card-delta.down{color:#FF8A8A}
@@ -575,10 +583,29 @@ DASH_CSS = """
 """
 
 
-def _card(label: str, value: str, extra_html: str = "") -> str:
-    return (f"<div class='bb-card'><div class='bb-card-label'><span>{label}</span>"
+def _card(label: str, value: str, extra_html: str = "", cls: str = "") -> str:
+    return (f"<div class='bb-card {cls}'><div class='bb-card-label'><span>{label}</span>"
             f"<span style='color:#cbd0d8'>&#9432;</span></div>"
             f"<div class='bb-card-value'>{value}</div>{extra_html}</div>")
+
+
+def _sparkline(values: list[float], kleur: str = "#5EE6EB",
+               breed: int = 120, hoog: int = 26) -> str:
+    """Mini-trendlijntje (inline SVG) voor in een tegel."""
+    vals = [float(v or 0) for v in values]
+    if len(vals) < 3:
+        return ""
+    lo, hi = min(vals), max(vals)
+    span = (hi - lo) or 1.0
+    stap = breed / (len(vals) - 1)
+    punten = " ".join(f"{i * stap:.1f},{hoog - 3 - (v - lo) / span * (hoog - 6):.1f}"
+                      for i, v in enumerate(vals))
+    lx, ly = punten.rsplit(" ", 1)[-1].split(",")
+    return (f"<svg class='bb-spark' width='{breed}' height='{hoog}' "
+            f"viewBox='0 0 {breed} {hoog}' xmlns='http://www.w3.org/2000/svg'>"
+            f"<polyline points='{punten}' fill='none' stroke='{kleur}' "
+            f"stroke-width='2' stroke-linecap='round' stroke-linejoin='round' opacity='0.9'/>"
+            f"<circle cx='{lx}' cy='{ly}' r='2.5' fill='{kleur}'/></svg>")
 
 
 def _sig(ico: str, titel: str, detail: str) -> str:
@@ -606,36 +633,69 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     ruimte = max(proj["resterend"], 0)
     pct_kor = (omzet_ytd / KOR_GRENS * 100) if KOR_GRENS else 0
 
-    # Delta omzet deze maand vs vorige maand. Een net gestarte maand zonder
-    # facturen is geen daling van 100% — dan tonen we neutraal de vorige maand.
+    # Sub-regel in de omzet-tegel: de lopende maand. Een net gestarte maand
+    # zonder facturen is geen daling van 100% — dan neutraal de vorige maand.
     maand_delta = ""
     if omzet_maand == 0 and len(sorted_m) >= 2:
-        maand_delta = (f"<div class='bb-card-sub'>nog geen facturen · "
+        maand_delta = (f"<div class='bb-card-sub'>deze maand nog niets · "
                        f"{NL_MAANDEN[sorted_m[-2] - 1].lower()}: "
                        f"{_eur0(maand_omzet[sorted_m[-2]])}</div>")
     elif len(sorted_m) >= 2 and maand_omzet[sorted_m[-2]]:
         pct = (maand_omzet[sorted_m[-1]] - maand_omzet[sorted_m[-2]]) / maand_omzet[sorted_m[-2]] * 100
         kl, tk = ("up", "+") if pct >= 0 else ("down", "")
-        maand_delta = f"<div class='bb-card-delta {kl}'>{tk}{pct:.1f}% t.o.v. vorige maand</div>"
+        maand_delta = (f"<div class='bb-card-delta {kl}'>deze maand {_eur0(omzet_maand)} "
+                       f"({tk}{pct:.0f}%)</div>")
 
-    # ── KPI-tegels ──
-    k1, k2, k3, k4 = st.columns(4)
-    k1.markdown(_card("Omzet YTD", _eur0(omzet_ytd)), unsafe_allow_html=True)
-    k2.markdown(_card("Omzet deze maand", _eur0(omzet_maand), maand_delta), unsafe_allow_html=True)
-    gratis_n = sum(1 for a in actief if klant_is_gratis(a, admin))
-    _k3_sub = (f"{gratis_n} vriendendienst · " if gratis_n else "") + f"{len(on_hold)} on hold"
-    k3.markdown(_card("Actieve klanten", str(len(actief)),
-                      f"<div class='bb-card-sub'>{_k3_sub}</div>"), unsafe_allow_html=True)
+    # ── Kosten & potjes eerst berekenen (voeden de verhaal-rij) ──
     btw_modus = date.today() >= KOR_TOT
     btw = btw_stand(facturen) if btw_modus else None
-    if btw_modus:
-        k4.markdown(_card("Btw-pot (af te dragen)", _eur0(btw["btw_totaal"]),
-                          f"<div class='bb-card-sub'>{btw['kwartaal']}: {_eur0(btw['btw_kwartaal'])} · "
-                          f"{btw['aangifte_label']}</div>"), unsafe_allow_html=True)
+    try:
+        inst = {**{"ib_pct": 45, "buffer_pct": 10},
+                **(intake_store.load_btw_instellingen() or {})}
+    except Exception:
+        inst = {"ib_pct": 45, "buffer_pct": 10}
+    # Werkelijke kosten uit Rompslomp (dagelijkse sync); bij een mislukte sync
+    # de laatst bekende stand — nooit een schatting.
+    _kosten_echt = st.session_state.get("_rompslomp_kosten_ytd")
+    _cache = inst.get("kosten_cache") or {}
+    if _kosten_echt is not None:
+        _kosten_ytd = float(_kosten_echt)
+        _kosten_bron = "uit Rompslomp"
+        _kosten_bron_lang = f"werkelijke kosten uit Rompslomp ({_eur0(_kosten_ytd)})"
+    elif _cache.get("jaar") == jaar:
+        _kosten_ytd = float(_cache.get("bedrag") or 0)
+        _kosten_bron = f"stand {_cache.get('datum', '?')}"
+        _kosten_bron_lang = (f"laatst bekende kosten uit Rompslomp ({_eur0(_kosten_ytd)}, "
+                             f"stand {_cache.get('datum', '?')})")
     else:
-        k4.markdown(_card("Ruimte tot KOR-grens", _eur0(ruimte),
-                          f"<div class='bb-card-sub'>van {_eur0(KOR_GRENS)} · KOR t/m 31 juli</div>"),
+        _kosten_ytd = 0.0
+        _kosten_bron = "nog niet gesynct ⚠️"
+        _kosten_bron_lang = "kosten nog niet gesynct (⚠️ winst is nu gelijk aan omzet)"
+    potjes = potjes_advies(omzet_ytd, _kosten_ytd, inst["ib_pct"],
+                           inst["buffer_pct"], (btw or {}).get("btw_totaal", 0.0))
+    _marge = (potjes["winst"] / omzet_ytd * 100) if omzet_ytd else 0.0
+
+    # ── Rij 1: het verhaal — omzet → kosten → winst, plus de fiscale klok ──
+    _spark = _sparkline([maand_omzet[m] for m in sorted_m]) if len(sorted_m) >= 3 else ""
+    k1, k2, k3, k4 = st.columns(4)
+    k1.markdown(_card("Omzet YTD", _eur0(omzet_ytd), maand_delta + _spark),
+                unsafe_allow_html=True)
+    k2.markdown(_card("Kosten YTD", _eur0(potjes["kosten_ytd"]),
+                      f"<div class='bb-card-sub'>{_kosten_bron}</div>"), unsafe_allow_html=True)
+    _winst_cls = "warn" if 0 < _marge < 15 else ""
+    k3.markdown(_card("Winst YTD", _eur0(potjes["winst"]),
+                      f"<div class='bb-card-sub'>marge {_marge:.0f}%</div>", _winst_cls),
+                unsafe_allow_html=True)
+    if btw_modus:
+        k4.markdown(_card(f"Btw af te dragen · {btw['kwartaal']}", _eur0(btw["btw_kwartaal"]),
+                          f"<div class='bb-card-sub'>{btw['aangifte_label']} · sinds 1 aug "
+                          f"{_eur0(btw['omzet_excl'])} excl. gefactureerd</div>"),
                     unsafe_allow_html=True)
+    else:
+        _kor_cls = "alert" if pct_kor >= 100 else ("warn" if pct_kor >= 90 else "")
+        k4.markdown(_card("Ruimte tot KOR-grens", _eur0(ruimte),
+                          f"<div class='bb-card-sub'>van {_eur0(KOR_GRENS)} · KOR t/m 31 juli</div>",
+                          _kor_cls), unsafe_allow_html=True)
 
     st.write("")
 
@@ -672,67 +732,13 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
             else:
                 st.error("De KOR-grens is geraakt — de KOR is daarmee al vervallen. "
                          "Overleg met je boekhouder over de gevolgen voor de grensoverschrijdende factuur.")
-    else:
-        # ── Btw-overzicht (vanaf 1 augustus) ──
-        st.markdown("<div class='bb-section-title'>Btw · sinds 1 augustus</div>",
-                    unsafe_allow_html=True)
-        bc1, bc2, bc3 = st.columns(3)
-        bc1.markdown(_card("Omzet excl. btw (sinds 1 aug)", _eur0(btw["omzet_excl"])),
-                     unsafe_allow_html=True)
-        bc2.markdown(_card(f"Af te dragen {btw['kwartaal']}", _eur0(btw["btw_kwartaal"]),
-                           f"<div class='bb-card-sub'>{btw['aangifte_label']}</div>"),
-                     unsafe_allow_html=True)
-        bc3.markdown(_card("Btw totaal (sinds 1 aug)", _eur0(btw["btw_totaal"]),
-                           "<div class='bb-card-sub'>zet dit bedrag apart</div>"),
-                     unsafe_allow_html=True)
-        st.caption("Berekend uit je Rompslomp-facturen (incl. minus excl. per factuur). "
-                   "De KOR-periode t/m 31 juli telt hier niet in mee.")
+        st.write("")
 
-    st.write("")
-
-    # ── Potjes: waar moet je omzet heen ──
-    st.markdown("<div class='bb-section-title'>Resultaat · dit jaar</div>", unsafe_allow_html=True)
-    try:
-        inst = {**{"ib_pct": 45, "buffer_pct": 10},
-                **(intake_store.load_btw_instellingen() or {})}
-    except Exception:
-        inst = {"ib_pct": 45, "buffer_pct": 10}
-    # Werkelijke kosten uit Rompslomp (dagelijkse sync). Lukt de sync even
-    # niet, dan de laatst bekende stand uit de opslag — nooit een schatting.
-    _kosten_echt = st.session_state.get("_rompslomp_kosten_ytd")
-    _cache = inst.get("kosten_cache") or {}
-    if _kosten_echt is not None:
-        _kosten_ytd = float(_kosten_echt)
-        _kosten_bron = f"werkelijke kosten uit Rompslomp ({_eur0(_kosten_ytd)})"
-    elif _cache.get("jaar") == jaar:
-        _kosten_ytd = float(_cache.get("bedrag") or 0)
-        _kosten_bron = (f"laatst bekende kosten uit Rompslomp ({_eur0(_kosten_ytd)}, "
-                        f"stand {_cache.get('datum', '?')})")
-    else:
-        _kosten_ytd = 0.0
-        _kosten_bron = "kosten nog niet gesynct (⚠️ winst is nu gelijk aan omzet)"
-    potjes = potjes_advies(omzet_ytd, _kosten_ytd, inst["ib_pct"],
-                           inst["buffer_pct"], (btw or {}).get("btw_totaal", 0.0))
-
-    # Het volledige plaatje: omzet staat bovenin, hier kosten → winst → marge
-    _marge = (potjes["winst"] / omzet_ytd * 100) if omzet_ytd else 0.0
-    r1, r2, r3 = st.columns(3)
-    r1.markdown(_card("Kosten YTD", _eur0(potjes["kosten_ytd"]),
-                      "<div class='bb-card-sub'>uit Rompslomp (uitgaven + boekingen)</div>"),
-                unsafe_allow_html=True)
-    r2.markdown(_card("Winst YTD", _eur0(potjes["winst"]),
-                      "<div class='bb-card-sub'>omzet minus kosten</div>"),
-                unsafe_allow_html=True)
-    r3.markdown(_card("Marge", f"{_marge:.0f}%",
-                      "<div class='bb-card-sub'>winst / omzet</div>"),
-                unsafe_allow_html=True)
-
-    st.write("")
+    # ── Rij 2: potjes — waar gaat de winst heen ──
     st.markdown("<div class='bb-section-title'>Potjes · indicatief</div>", unsafe_allow_html=True)
     p1, p2, p3, p4 = st.columns(4)
     p1.markdown(_card("IB-pot (inkomstenbelasting)", _eur0(potjes["ib_pot"]),
-                      f"<div class='bb-card-sub'>{inst['ib_pct']:.0f}% van {_eur0(potjes['winst'])} winst · "
-                      f"naast loondienst</div>"),
+                      f"<div class='bb-card-sub'>{inst['ib_pct']:.0f}% van de winst · naast loondienst</div>"),
                 unsafe_allow_html=True)
     p2.markdown(_card("Btw-pot", _eur0(potjes["btw_pot"]),
                       "<div class='bb-card-sub'>af te dragen, niet jouw geld</div>"),
@@ -741,12 +747,12 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
                       f"<div class='bb-card-sub'>{inst['buffer_pct']:.0f}% van de winst</div>"),
                 unsafe_allow_html=True)
     p4.markdown(_card("Privé te onttrekken", _eur0(potjes["prive"]),
-                      "<div class='bb-card-sub'>winst minus IB-pot en buffer</div>"),
+                      "<div class='bb-card-sub'>winst minus IB-pot en buffer</div>", "hero"),
                 unsafe_allow_html=True)
     st.caption(f"Rekenhulp, geen belastingadvies: winst = netto-omzet YTD ({_eur0(omzet_ytd)}) minus "
-               f"{_kosten_bron}. De IB-reserve staat op {inst['ib_pct']:.0f}% omdat de winst bovenop "
-               "een fulltime loondienst-inkomen komt en dus grotendeels in de hoogste schijf valt "
-               "(de MKB-winstvrijstelling dempt dat iets). Stem het exacte percentage af met je boekhouder.")
+               f"{_kosten_bron_lang}. IB-reserve {inst['ib_pct']:.0f}% omdat de winst bovenop een "
+               "fulltime loondienst-inkomen komt (hoogste schijf, gedempt door de MKB-winstvrijstelling). "
+               "Percentages afstemmen met je boekhouder.")
     st.write("")
 
     # ── Omzetverloop + donut ──
@@ -776,6 +782,12 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
                 xaxis=dict(showgrid=False, categoryorder="array", categoryarray=NL_MAANDEN,
                            color="#8FA8CE"),
                 font=dict(color="#8FA8CE"))
+            if jaar == KOR_TOT.year:
+                # Markeer de fiscale overgang: t/m juli KOR, vanaf augustus btw
+                fig.add_shape(type="line", x0="Aug", x1="Aug", y0=0, y1=1, yref="paper",
+                              line=dict(color="#8FA8CE", width=1, dash="dot"), opacity=0.6)
+                fig.add_annotation(x="Aug", y=1.04, yref="paper", text="btw-start",
+                                   showarrow=False, font=dict(color=AMBER, size=11))
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
             st.caption(f"Realisatie {NL_MAANDEN[sorted_m[0] - 1].lower()}–{NL_MAANDEN[laatste - 1].lower()}: "
                        f"**{_eur0(omzet_ytd)}** (YTD)")
@@ -797,7 +809,11 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
             fig2.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0),
                                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
                                legend=dict(orientation="v", x=1, y=.5, font=dict(color="#C9D8F0")),
-                               font=dict(color="#8FA8CE"))
+                               font=dict(color="#8FA8CE"),
+                               annotations=[dict(text=f"<b>{_eur0(sum(values))}</b><br>"
+                                                      "<span style='font-size:11px'>gefactureerd</span>",
+                                                 x=0.5, y=0.5, showarrow=False,
+                                                 font=dict(color="#EAF2FF", size=17))])
             st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
             st.caption(f"Werkelijk gefactureerd in {jaar}: **{_eur0(sum(values))}** — uit Rompslomp, "
                        "ingedeeld op betaler en factuuromschrijving.")
@@ -1056,6 +1072,9 @@ def render_admin(athletes_by_group: dict):
 
     # ══ TAB 3 — KLANTEN ══
     with tab_klant:
+        _gratis_n = sum(1 for a in actief if klant_is_gratis(a, admin))
+        st.markdown(f"**{len(actief)} actieve klanten** · {_gratis_n} vriendendienst · "
+                    f"{len(on_hold)} on hold · {len(athletes) - len(actief) - len(on_hold)} overig")
         st.caption("Live uit FinalSurge; het pakket volgt de FinalSurge-groep (overschrijven kan). "
                    "'Gratis' = vriendendienst, 'Eigen prijs/4wk' = afwijkende (oude) prijs, "
                    "'Vooruitbetaald t/m' = ineens vooruitbetaald. Wordt nooit door een sync overschreven.")
