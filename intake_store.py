@@ -112,6 +112,24 @@ def is_cloud_backed() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Login-tokens ("onthoud mij") — alleen SHA256-hashes, nooit het token zelf
+# ---------------------------------------------------------------------------
+
+_AUTH_TOKENS_LOCAL = os.path.join(_BASE_DIR, ".auth_tokens.json")
+
+
+def load_auth_tokens() -> dict:
+    """Laad geldige login-tokens. Dict: sha256(token) → {created}."""
+    return _load_json("auth_tokens.json", _AUTH_TOKENS_LOCAL)
+
+
+def save_auth_tokens(tokens: dict) -> tuple[bool, str]:
+    """Sla login-token-hashes op. Lege dict = alle apparaten uitgelogd."""
+    return _save_json("auth_tokens.json", _AUTH_TOKENS_LOCAL, tokens,
+                      "Update login-tokens via app")
+
+
+# ---------------------------------------------------------------------------
 # Intakes
 # ---------------------------------------------------------------------------
 

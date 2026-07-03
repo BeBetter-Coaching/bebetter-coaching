@@ -11,29 +11,8 @@ import time
 from datetime import date, datetime
 from typing import Optional
 
-import anthropic
-
 import intake_store
-
-client = anthropic.Anthropic()
-
-
-def _api_call_with_retry(fn, retries: int = 3, base_delay: float = 2.0):
-    """Voer een API-aanroep uit met automatische retry bij 500-fouten."""
-    for attempt in range(retries):
-        try:
-            return fn()
-        except anthropic.APIStatusError as e:
-            if e.status_code >= 500 and attempt < retries - 1:
-                wait = base_delay * (2 ** attempt)
-                time.sleep(wait)
-                continue
-            raise
-        except anthropic.APIConnectionError:
-            if attempt < retries - 1:
-                time.sleep(base_delay * (2 ** attempt))
-                continue
-            raise
+from ai_client import create_message
 
 
 # ---------------------------------------------------------------------------
@@ -346,29 +325,6 @@ _INTAKE_VELDEN_SPEC = """{
 }"""
 
 
-def _create_message(**kwargs):
-    """
-    client.messages.create met retry + backoff bij tijdelijke API-overbelasting
-    (HTTP 429 / 5xx / 529 'overloaded'). Niet-tijdelijke fouten gooien direct door.
-    """
-    import time as _time
-    laatste = None
-    for poging in range(5):
-        try:
-            return client.messages.create(**kwargs)
-        except Exception as e:
-            laatste = e
-            status = getattr(e, "status_code", None)
-            msg = str(e).lower()
-            tijdelijk = (status in (429, 500, 502, 503, 529)
-                         or "overloaded" in msg or "rate limit" in msg
-                         or "timeout" in msg or "529" in msg)
-            if not tijdelijk or poging == 4:
-                raise
-            _time.sleep(min(2 ** poging, 8) + 0.5)  # 1.5s, 2.5s, 4.5s, 8.5s
-    raise laatste
-
-
 def extract_intake_fields(tekst: str) -> dict:
     """
     Haal uit een vrije intake-notule (willekeurige tekst) de gestructureerde
@@ -391,7 +347,7 @@ Regels:
 NOTITIE:
 {tekst[:8000]}"""
 
-    response = _create_message(
+    response = create_message(
         model="claude-opus-4-5",
         max_tokens=1500,
         messages=[{"role": "user", "content": prompt}],
@@ -1044,7 +1000,7 @@ ZONES ({zone_type}): {zones}"""
     for msg in history:
         messages.append({"role": msg["role"], "content": msg["content"]})
 
-    response = client.messages.create(
+    response = create_message(
         model="claude-opus-4-5",
         max_tokens=10000,
         system=CHAT_SYSTEM_PROMPT,
@@ -1191,12 +1147,12 @@ def generate_plan(intake: dict) -> str:
             "text": f"[Bovenstaande afbeelding: {item['label']}]",
         })
 
-    response = _api_call_with_retry(lambda: client.messages.create(
+    response = create_message(
         model="claude-opus-4-5",
         max_tokens=6000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": content}],
-    ))
+    )
     text = response.content[0].text if response.content else None
     if not text:
         raise ValueError("Lege respons van AI bij plan-generatie — probeer opnieuw.")
@@ -1209,12 +1165,12 @@ def generate_csv(plan_tekst: str, intake: dict) -> str:
         raise ValueError("Geen plan beschikbaar om CSV van te genereren.")
     prompt = build_csv_prompt(plan_tekst, intake)
 
-    response = _api_call_with_retry(lambda: client.messages.create(
+    response = create_message(
         model="claude-opus-4-5",
         max_tokens=8000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
-    ))
+    )
     text = response.content[0].text if response.content else None
     if not text:
         raise ValueError("Lege respons van AI bij CSV-generatie — probeer opnieuw.")
@@ -1512,7 +1468,7 @@ Genereer de FinalSurge WorkoutBuilder JSON voor deze workout."""
 
     import json, tempfile, os
     try:
-        response = client.messages.create(
+        response = create_message(
             model="claude-opus-4-5",
             max_tokens=3000,
             system=BUILDER_SYSTEM_PROMPT,

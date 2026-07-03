@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import anthropic
 from datetime import date
 
 import intake_store
-
-client = anthropic.Anthropic()
+from ai_client import create_message
 
 SYSTEM_PROMPT = """Je schrijft concept-feedback namens een hardloopcoach aan zijn atleten.
 
@@ -401,7 +399,7 @@ def generate_athlete_evaluation(context: str, naam: str) -> str:
 {context}
 
 Vergelijk TOEN met NU: is er progressie? Wat gaat goed, waar ligt {naam} het best, en wat is het aandachtspunt? Kort en to the point, alleen wat hout snijdt."""
-    response = client.messages.create(
+    response = create_message(
         model="claude-opus-4-5",
         max_tokens=700,
         system=_EVALUATIE_SYSTEM,
@@ -427,7 +425,7 @@ AANPAK:
 
 Schrijf nu de reactie. Kort en menselijk, in de stijl van Jip."""
 
-    response = client.messages.create(
+    response = create_message(
         model="claude-sonnet-4-6",
         max_tokens=400,
         system=SYSTEM_PROMPT,
@@ -482,7 +480,7 @@ def generate_reply(workout_data: dict, thread: list) -> str:
         f"Houd het kort en persoonlijk, in de stijl van Jip.]"
     )
 
-    response = client.messages.create(
+    response = create_message(
         model="claude-sonnet-4-6",
         max_tokens=400,
         system=SYSTEM_PROMPT,
@@ -583,7 +581,7 @@ Wanneer: {dag} ({race_date}){context_sectie}
 
 GEBRUIK in de tekst exact de aanduiding "{dag}" als je verwijst naar de racedag. Schrijf NIET "morgen" als de race niet morgen is."""
 
-    response = client.messages.create(
+    response = create_message(
         model="claude-sonnet-4-6",
         max_tokens=200,
         system=RACE_WISH_SYSTEM_PROMPT,
@@ -714,7 +712,7 @@ Als geen doeltijd bekend is: leid die af uit de trainingslog.
 Controleer intern je rondetijden (pace × 0.4 = 400m-tijd) maar toon dit rekenwerk NIET in de output.
 Begin direct met het eerste kopje — geen inleiding, geen rekencheck zichtbaar."""
 
-    response = client.messages.create(
+    response = create_message(
         model="claude-sonnet-4-6",
         max_tokens=400,
         system=RACE_PLAN_SYSTEM_PROMPT,
@@ -773,7 +771,7 @@ Regels:
 - Schrijf in het Nederlands, informeel
 - Geen streepjes als gedachtestreepje"""
 
-    response = client.messages.create(
+    response = create_message(
         model="claude-sonnet-4-6",
         max_tokens=150 * n + 100,  # ~150 tokens per atleet + header
         messages=[{"role": "user", "content": prompt}],
@@ -848,7 +846,7 @@ def check_dossier_signal(workout_data: dict) -> str | None:
 
     felt_str = _FELT_NL.get(felt_num, "onbekend")
 
-    response = client.messages.create(
+    response = create_message(
         model="claude-haiku-4-5-20251001",
         max_tokens=80,
         system=_DOSSIER_CHECK_SYSTEM,

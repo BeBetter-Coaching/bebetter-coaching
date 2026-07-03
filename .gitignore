@@ -1,4 +1,5 @@
 .fs_auth_token
+.auth_tokens.json
 .builder_state.json
 .feedback_skipped.json
 builder_debug.txt

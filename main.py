@@ -33,7 +33,13 @@ def _esc(s) -> str:
 # ---------------------------------------------------------------------------
 
 def _check_password() -> bool:
-    """Vraag om wachtwoord; onthoud via URL-token (bookmarkbaar, werkt altijd)."""
+    """Vraag om wachtwoord; 'onthoud mij' = willekeurig token in de URL (bookmarkbaar).
+
+    Het token is random (NIET afgeleid van het wachtwoord — de code van deze app
+    is publiek) en alleen de SHA256-hash staat in de opslag. Intrekken kan via
+    de adminmodule ("Log alle apparaten uit"); alle oude bookmarks zijn dan
+    direct ongeldig.
+    """
     import hashlib
     import hmac
     try:
@@ -44,16 +50,21 @@ def _check_password() -> bool:
     if not correct:
         return True
 
-    def _token(pw: str) -> str:
-        return hashlib.sha256(f"bb-coaching-2025-{pw}".encode()).hexdigest()[:28]
-
-    # Check URL-token (remember me = bookmark met ?k=... in URL)
-    _qp = st.query_params.get("k", "")
-    if _qp and hmac.compare_digest(_qp, _token(correct)):
-        return True
-
     if st.session_state.get("authenticated"):
         return True
+
+    # Check URL-token (remember me = bookmark met ?k=... in URL).
+    # Eén opslag-lookup per browsersessie; daarna draait alles op session_state.
+    _qp = st.query_params.get("k", "")
+    if _qp:
+        _hash = hashlib.sha256(_qp.encode()).hexdigest()
+        try:
+            _geldig = intake_store.load_auth_tokens()
+        except Exception:
+            _geldig = {}
+        if _hash in _geldig:
+            st.session_state["authenticated"] = True
+            return True
 
     # Loginscherm — col-verdeling ruim zodat het op mobiel past
     col1, col2, col3 = st.columns([0.3, 2.4, 0.3])
@@ -84,7 +95,27 @@ def _check_password() -> bool:
                 st.session_state["authenticated"] = True
                 st.session_state["_login_fails"] = 0
                 if onthoud:
-                    st.query_params["k"] = _token(correct)
+                    # Random token; alleen de hash wordt opgeslagen. Lukt het
+                    # opslaan niet (opslag onbereikbaar), dan blijf je gewoon
+                    # deze sessie ingelogd, alleen zonder bookmark-token.
+                    import secrets as _pysecrets
+                    from datetime import datetime as _dt
+                    _nieuw = _pysecrets.token_urlsafe(24)
+                    try:
+                        _tokens = intake_store.load_auth_tokens()
+                        _tokens[hashlib.sha256(_nieuw.encode()).hexdigest()] = {
+                            "created": _dt.now().isoformat(timespec="seconds"),
+                        }
+                        # Maximaal 20 tokens bewaren (oudste eerst weg)
+                        if len(_tokens) > 20:
+                            _oudste = sorted(_tokens, key=lambda h: _tokens[h].get("created", ""))
+                            for _h in _oudste[:len(_tokens) - 20]:
+                                _tokens.pop(_h, None)
+                        _ok, _ = intake_store.save_auth_tokens(_tokens)
+                    except Exception:
+                        _ok = False
+                    if _ok:
+                        st.query_params["k"] = _nieuw
                 st.rerun()
             else:
                 st.session_state["_login_fails"] = _fails + 1
@@ -1644,7 +1675,13 @@ elif page == "admin":
         _admin_pin = st.secrets.get("ADMIN_PIN", "") or os.environ.get("ADMIN_PIN", "")
     except Exception:
         _admin_pin = os.environ.get("ADMIN_PIN", "")
-    _admin_pin = (_admin_pin or "2580").strip()  # standaard 2580 — wijzig via ADMIN_PIN secret
+    _admin_pin = (_admin_pin or "").strip()
+    if not _admin_pin:
+        # Bewust GEEN standaardpincode: de code van deze app staat in een
+        # publieke repo, dus een fallback-pin zou publiek bekend zijn.
+        st.error("De adminmodule is vergrendeld: er is geen ADMIN_PIN ingesteld. "
+                 "Voeg de secret ADMIN_PIN toe in Streamlit Cloud → Settings → Secrets.")
+        st.stop()
 
     if not st.session_state.get("_admin_unlocked"):
         st.markdown("Deze module is afgeschermd.")
@@ -1660,6 +1697,23 @@ elif page == "admin":
                     _t.sleep(1)
                     st.error("Onjuiste pincode.")
         st.stop()
+
+    with st.expander("🔐 Beveiliging — ingelogde apparaten"):
+        st.caption("Maakt alle 'onthoud mij'-bookmarks in één keer ongeldig. Iedereen "
+                   "(ook jijzelf en Remco) moet daarna één keer opnieuw inloggen met het "
+                   "wachtwoord en krijgt dan een verse bookmark-link.")
+        try:
+            _n_tokens = len(intake_store.load_auth_tokens())
+            st.caption(f"Actieve onthoud-tokens: **{_n_tokens}**")
+        except Exception:
+            pass
+        if st.button("Log alle apparaten uit", key="adm_revoke_tokens"):
+            _ok, _err = intake_store.save_auth_tokens({})
+            if _ok:
+                st.query_params.pop("k", None)
+                st.success("Alle onthoud-tokens ingetrokken.")
+            else:
+                st.error(f"Intrekken mislukt: {_err}")
 
     admin.render_admin(athletes_by_group)
 
