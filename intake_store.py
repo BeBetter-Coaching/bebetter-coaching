@@ -112,6 +112,24 @@ def is_cloud_backed() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Weekbriefing (1x per week, gedeeld tussen coaches)
+# ---------------------------------------------------------------------------
+
+_WEEKBRIEFING_LOCAL = os.path.join(_BASE_DIR, ".weekbriefing.json")
+
+
+def load_weekbriefing() -> dict:
+    """Laad de weekbriefing: {week, gemaakt, tekst, stats}."""
+    return _load_json("weekbriefing.json", _WEEKBRIEFING_LOCAL)
+
+
+def save_weekbriefing(data: dict) -> tuple[bool, str]:
+    """Sla de weekbriefing op."""
+    return _save_json("weekbriefing.json", _WEEKBRIEFING_LOCAL, data,
+                      "Update weekbriefing via app")
+
+
+# ---------------------------------------------------------------------------
 # Coach-profielen per atleet (meegroeiend feedback-geheugen)
 # ---------------------------------------------------------------------------
 

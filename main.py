@@ -12,6 +12,8 @@ import intake_store
 import dossier
 import admin
 import belasting
+import briefing
+import rompslomp_client
 import base64
 import html as _html_mod
 import io
@@ -1416,6 +1418,9 @@ if page == "home":
             "posted_today": _fb_stats.get("posted_today", 0),
             # Alleen races tellen waarvoor nog GEEN wens (coach-comment) is gegeven
             "races_coming": sum(1 for r in _races if not r.get("wish_given")),
+            # Namenlijst voor de weekbriefing
+            "races_list": [f"{r['athlete_name']} ({r.get('workout_name', 'race')}, "
+                           f"{(r.get('workout_date') or '')[:10]})" for r in _races],
             "compliance_alerts": _alerts,
             "schema_urgent": _schema_urgent,
             "loaded_at": date.today().isoformat(),
@@ -1649,6 +1654,58 @@ if page == "home":
                         go_to("dossier")
     elif _bel_data.get("datum"):
         st.caption(f"🩺 Geen belasting-signalen ({_bel_data['datum']}) — iedereen binnen de marge.")
+
+    # ── Weekbriefing: het maandagochtend-overzicht ──
+    if "weekbriefing" not in st.session_state:
+        try:
+            st.session_state["weekbriefing"] = intake_store.load_weekbriefing()
+        except Exception:
+            st.session_state["weekbriefing"] = {}
+    _wb = st.session_state["weekbriefing"]
+    _wk_nu = briefing.week_label()
+
+    def _maak_weekbriefing(force: bool = False) -> dict:
+        _bel_res = (st.session_state.get("belasting_data") or {}).get("resultaten", [])
+        _schema_rows = st.session_state.get("schema_data") or []
+        _schema_namen = [r["name"] for r in _schema_rows
+                         if r.get("days_left") is None or r["days_left"] <= 7]
+        _races_lijst = (day_stats or {}).get("races_list", [])
+        _fact: list[str] = []
+        try:
+            if rompslomp_client.is_configured():
+                _facturen, _fe = rompslomp_client.get_invoices(date.today().year)
+                if not _fe:
+                    _fact = [a["name"] for a in admin.niet_gefactureerde_klanten(
+                        _all_athletes, intake_store.load_admin_clients(), _facturen)]
+        except Exception:
+            pass  # facturatie is bonus in de briefing
+        return briefing.weekbriefing(_all_athletes, _bel_res, _schema_namen,
+                                     _races_lijst, _fact, forceer=force)
+
+    if _wb.get("week") != _wk_nu:
+        with st.spinner("Weekbriefing samenstellen…"):
+            try:
+                _wb = _maak_weekbriefing()
+                st.session_state["weekbriefing"] = _wb
+            except Exception:
+                pass
+
+    if _wb.get("tekst"):
+        with st.expander(f"📰 Weekbriefing · week {_wk_nu.split('-W')[1]}",
+                         expanded=_wb.get("gemaakt") == date.today().isoformat()):
+            _ws = _wb.get("stats", {})
+            st.caption(f"Gemaakt op {_wb.get('gemaakt', '')} · gedeeld met beide coaches · "
+                       f"{_ws.get('n_trainingen', '?')} trainingen · ±{_ws.get('km_totaal', '?')} km · "
+                       f"{_ws.get('n_actief', '?')}/{_ws.get('n_atleten', '?')} atleten actief")
+            st.markdown(_wb["tekst"])
+            if st.button("🔄 Vernieuw briefing", key="wb_refresh",
+                         help="Verzamelt de weekdata opnieuw en schrijft een verse briefing"):
+                with st.spinner("Weekbriefing samenstellen…"):
+                    try:
+                        st.session_state["weekbriefing"] = _maak_weekbriefing(force=True)
+                    except Exception as _wbe:
+                        st.error(f"Briefing vernieuwen mislukt: {_wbe}")
+                st.rerun()
 
     st.markdown('<p class="bb-section-label">Modules</p>', unsafe_allow_html=True)
 

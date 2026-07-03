@@ -2,6 +2,7 @@
 .auth_tokens.json
 .belasting.json
 .profielen.json
+.weekbriefing.json
 .builder_state.json
 .feedback_skipped.json
 builder_debug.txt

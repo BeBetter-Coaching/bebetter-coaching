@@ -380,6 +380,47 @@ class TestBelasting:
 
 
 # ---------------------------------------------------------------------------
+# briefing — week-aggregatie
+# ---------------------------------------------------------------------------
+
+class TestBriefingAggregatie:
+    def _atleet(self, naam, group, entries, races=()):
+        return {"naam": naam, "group": group, "entries": entries, "races": list(races)}
+
+    def test_kerncijfers_en_stille_atleten(self):
+        import briefing
+        per = [
+            self._atleet("Anna", "Comfort", [
+                {"completed": True, "activity_type": "Hardlopen", "actual_km": 10, "felt": 2},
+                {"completed": True, "activity_type": "Hardlopen", "actual_km": 5, "felt": 4},
+                {"completed": False, "activity_type": "Hardlopen", "actual_km": None, "felt": None},
+            ]),
+            self._atleet("Bram", "Premium", [], races=[]),
+            self._atleet("Cas", "Comfort", [
+                {"completed": True, "activity_type": "Fietsen", "actual_km": 40, "felt": 3},
+            ], races=["Stadsloop 10k"]),
+        ]
+        s = briefing.aggregeer_week(per)
+        assert s["n_trainingen"] == 3            # niet-uitgevoerde telt niet
+        assert s["km_totaal"] == 15              # fiets-km tellen niet als hardloop-km
+        assert s["stil"] == ["Bram"]
+        assert s["n_actief"] == 2 and s["n_atleten"] == 3
+        assert s["gevoel_gem"] == 3.0            # (2+4+3)/3
+        assert s["races_gedaan"] == ["Cas — Stadsloop 10k"]
+        assert s["groepen"]["Comfort"] == {"n": 3, "atleten": 2}
+
+    def test_leeg(self):
+        import briefing
+        s = briefing.aggregeer_week([])
+        assert s["n_trainingen"] == 0 and s["stil"] == [] and s["gevoel_gem"] is None
+
+    def test_week_label_formaat(self):
+        import briefing
+        from datetime import date
+        assert briefing.week_label(date(2026, 7, 3)) == "2026-W27"
+
+
+# ---------------------------------------------------------------------------
 # ai_feedback.update_athlete_profiel — vangnetten (gemockte AI)
 # ---------------------------------------------------------------------------
 
