@@ -580,6 +580,18 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
     m3.metric("Volume laatste 4 wkn (hardlopen)", f"{analyse['km_4w']} km")
     m4.metric("Races in log", str(len(analyse["races"])))
 
+    # Belasting-signaal van vandaag (uit de gedeelde dagstand van de homepage)
+    _bel_res = next(
+        (r for r in (st.session_state.get("belasting_data") or {}).get("resultaten", [])
+         if r.get("user_key") == user_key),
+        None,
+    )
+    if _bel_res:
+        _ico = "🔴" if _bel_res["ernst"] == "hoog" else "⚠️"
+        st.warning(f"{_ico} **Belasting-signaal vandaag:**  \n"
+                   + "  \n".join(f"· {s}" for s in _bel_res["signalen"])
+                   + (f"\n\n💬 {_bel_res['duiding']}" if _bel_res.get("duiding") else ""))
+
     with st.expander("🔍 Controle: km per activiteit (laatste 4 weken)"):
         _cut = (date.today() - timedelta(weeks=4)).isoformat()
         _rows = [

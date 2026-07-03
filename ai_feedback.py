@@ -861,3 +861,26 @@ def check_dossier_signal(workout_data: dict) -> str | None:
     if not out or out.upper().startswith("NEE") or len(out) < 8:
         return None
     return out
+
+
+_BELASTING_SYSTEM = """Je vat belasting-signalen over een hardloper samen voor de coach, in maximaal twee korte zinnen.
+
+Regels:
+- Combineer de signalen en wat de atleet schrijft tot één praktische observatie plus een zachte suggestie ("overweeg", "kijk even mee", "check even").
+- GEEN medische diagnose, geen alarmtaal, geen verzonnen context. Alleen wat in de data staat.
+- Gebruik NOOIT een streepje (-, – of —). Schrijf vloeiende zinnen met komma's.
+- Nederlands, direct, alsof je een collega-coach kort bijpraat. Geen aanhef, geen naam vooraf."""
+
+
+def belasting_duiding(naam: str, signalen: list[str], notities: str = "") -> str:
+    """Eén duidende coach-zin bij belasting-signalen (Haiku, goedkoop)."""
+    inhoud = f"Atleet: {naam}\nSignalen:\n" + "\n".join(f"- {s}" for s in signalen)
+    if notities.strip():
+        inhoud += f"\n\nRecente notities van de atleet:\n{notities[:800]}"
+    response = create_message(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=120,
+        system=_BELASTING_SYSTEM,
+        messages=[{"role": "user", "content": inhoud}],
+    )
+    return _clean_text(response.content[0].text.strip())

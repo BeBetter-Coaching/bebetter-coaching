@@ -11,6 +11,7 @@ import schema_builder
 import intake_store
 import dossier
 import admin
+import belasting
 import base64
 import html as _html_mod
 import io
@@ -1392,6 +1393,15 @@ if page == "home":
             except Exception:
                 pass
 
+    # Belasting-signalering: 1x per dag berekend (gedeeld opgeslagen), daarna
+    # kost het per sessie maar één opslag-load.
+    if "belasting_data" not in st.session_state:
+        try:
+            with st.spinner("Belasting-signalen checken…"):
+                st.session_state["belasting_data"] = belasting.dagelijkse_check(_all_athletes)
+        except Exception:
+            st.session_state["belasting_data"] = {"datum": "", "resultaten": []}
+
     day_stats = st.session_state.get("day_stats")
     # Gepost vandaag: FinalSurge-telling (alle coaches/apparaten, bij laatste
     # ververs) of de eigen sessie-teller als die hoger is (posts ná de ververs)
@@ -1556,6 +1566,43 @@ if page == "home":
                 </p>
             </div>
             """, unsafe_allow_html=True)
+
+    # ── Belasting-signalering: wie loopt uit de pas ──
+    _bel_data = st.session_state.get("belasting_data") or {}
+    _bel = belasting.zichtbare_resultaten(_bel_data)
+    if _bel:
+        _n_hoog = sum(1 for r in _bel if r["ernst"] == "hoog")
+        with st.expander(
+            f"🩺 Belasting: {len(_bel)} atle{'et' if len(_bel) == 1 else 'ten'} om even mee te kijken"
+            + (f" ({_n_hoog} hoog)" if _n_hoog else ""),
+            expanded=_n_hoog > 0,
+        ):
+            st.caption("Signalen uit volume, gevoel, RPE en notities van de laatste weken. "
+                       "Geen diagnose, wel een seintje om even mee te kijken. "
+                       "**Gezien** dempt de atleet 7 dagen; bij escalatie komt hij eerder terug.")
+            for _r in _bel:
+                _ico = "🔴" if _r["ernst"] == "hoog" else "⚠️"
+                c_bel, c_seen, c_dos = st.columns([3.4, 1.1, 1.1], vertical_alignment="center")
+                with c_bel:
+                    st.markdown(f"{_ico} **{_esc(_r['naam'])}** ({_esc(_r.get('group', ''))})  \n"
+                                + "  \n".join(f"· {_esc(s)}" for s in _r["signalen"]))
+                    if _r.get("duiding"):
+                        st.caption(f"💬 {_r['duiding']}")
+                with c_seen:
+                    if st.button("✓ Gezien", key=f"bel_seen_{_r['user_key']}",
+                                 use_container_width=True,
+                                 help="7 dagen niet meer tonen (voor beide coaches); "
+                                      "bij verergering komt de atleet eerder terug"):
+                        st.session_state["belasting_data"] = belasting.markeer_gezien(
+                            _bel_data, _r["user_key"], _r["ernst"])
+                        st.rerun()
+                with c_dos:
+                    if st.button("Dossier →", key=f"bel_dos_{_r['user_key']}",
+                                 use_container_width=True):
+                        st.session_state["dossier_user_key"] = _r["user_key"]
+                        go_to("dossier")
+    elif _bel_data.get("datum"):
+        st.caption(f"🩺 Geen belasting-signalen ({_bel_data['datum']}) — iedereen binnen de marge.")
 
     st.markdown('<p class="bb-section-label">Modules</p>', unsafe_allow_html=True)
 

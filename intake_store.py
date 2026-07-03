@@ -112,6 +112,24 @@ def is_cloud_backed() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Belasting-signalering (dagstand, gedeeld tussen coaches)
+# ---------------------------------------------------------------------------
+
+_BELASTING_LOCAL = os.path.join(_BASE_DIR, ".belasting.json")
+
+
+def load_belasting() -> dict:
+    """Laad de belasting-dagstand: {datum, resultaten, afgehandeld}."""
+    return _load_json("belasting.json", _BELASTING_LOCAL)
+
+
+def save_belasting(data: dict) -> tuple[bool, str]:
+    """Sla de belasting-dagstand op."""
+    return _save_json("belasting.json", _BELASTING_LOCAL, data,
+                      "Update belasting-signalen via app")
+
+
+# ---------------------------------------------------------------------------
 # Login-tokens ("onthoud mij") — alleen SHA256-hashes, nooit het token zelf
 # ---------------------------------------------------------------------------
 

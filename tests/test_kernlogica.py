@@ -10,6 +10,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import admin
+import belasting
 import dossier
 import fs_client
 import schema_builder
@@ -296,6 +297,86 @@ class TestRunKm:
 
     def test_onbekend_type_telt_als_run(self):
         assert dossier._is_run({"activity_type": ""}) is True
+
+
+# ---------------------------------------------------------------------------
+# belasting — de vier signaalregels
+# ---------------------------------------------------------------------------
+
+def _run_entry(dagen_geleden: int, km: float, felt=None, effort=None, notes=""):
+    from datetime import date, timedelta
+    return {"date": (date.today() - timedelta(days=dagen_geleden)).isoformat(),
+            "activity_type": "Hardlopen", "actual_km": km, "completed": True,
+            "felt": felt, "effort": effort, "post_notes": notes}
+
+
+def _stabiele_basis(km_per_run=5.0, felt=3, effort=5):
+    """4 weken basis: 3 runs/week in dagen 8-35 (buiten het recente venster)."""
+    return [_run_entry(d, km_per_run, felt=felt, effort=effort)
+            for d in (9, 11, 13, 16, 18, 20, 23, 25, 27, 30, 32, 34)]
+
+
+class TestBelasting:
+    def test_stabiel_geen_signaal(self):
+        log = _stabiele_basis() + [_run_entry(d, 5.0, felt=3, effort=5) for d in (1, 3, 5)]
+        assert belasting.analyse_belasting(log) is None
+
+    def test_volumesprong_geeft_signaal(self):
+        # basis 15 km/wk, recente week 24 km = +60% → hoog
+        log = _stabiele_basis() + [_run_entry(d, 8.0) for d in (1, 3, 5)]
+        res = belasting.analyse_belasting(log)
+        assert res is not None and "volume" in res["codes"]
+        assert res["ernst"] == "hoog"  # ratio 1.6 >= 1.5
+
+    def test_starter_met_lage_basis_niet_geflagd(self):
+        # basis onder 10 km/wk: opbouwer, verdubbeling is dan geen alarm
+        log = ([_run_entry(d, 2.0) for d in (9, 16, 23, 30, 32)]
+               + [_run_entry(d, 4.0) for d in (1, 3)])
+        assert belasting.analyse_belasting(log) is None
+
+    def test_gevoel_zakt(self):
+        log = _stabiele_basis(felt=2) + [
+            _run_entry(d, 5.0, felt=4) for d in (1, 3, 5)]  # 2.0 → 4.0
+        res = belasting.analyse_belasting(log)
+        assert res is not None and "gevoel" in res["codes"]
+
+    def test_klachtwoorden_in_notities(self):
+        log = _stabiele_basis() + [
+            _run_entry(2, 5.0, notes="Beetje pijn aan mijn achillespees vandaag")]
+        res = belasting.analyse_belasting(log)
+        assert res is not None and "klachten" in res["codes"]
+        assert "pijn" in res["metrics"]["klachten"]
+
+    def test_twee_signalen_is_hoog(self):
+        log = _stabiele_basis(felt=2) + [
+            _run_entry(d, 5.0, felt=4, notes="last van mijn knie") for d in (1, 3, 5)]
+        res = belasting.analyse_belasting(log)
+        assert res["ernst"] == "hoog" and len(res["codes"]) >= 2
+
+    def test_fietskm_telt_niet_mee_in_volume(self):
+        log = _stabiele_basis()
+        log += [_run_entry(d, 5.0) for d in (1, 3, 5)]
+        # dikke fietsweek erbovenop mag géén volumesignaal geven
+        for d in (1, 2, 4):
+            e = _run_entry(d, 60.0)
+            e["activity_type"] = "Fietsen"
+            log.append(e)
+        assert belasting.analyse_belasting(log) is None
+
+    def test_gezien_dempt_en_escalatie_doorbreekt(self, monkeypatch):
+        import intake_store
+        monkeypatch.setattr(intake_store, "save_belasting", lambda d: (True, ""))
+        from datetime import date, timedelta
+        data = {"datum": date.today().isoformat(),
+                "resultaten": [{"user_key": "a", "naam": "X", "ernst": "let_op",
+                                "signalen": ["s"], "codes": ["volume"]}],
+                "afgehandeld": {}}
+        # markeer gezien → onzichtbaar
+        data = belasting.markeer_gezien(data, "a", "let_op")
+        assert belasting.zichtbare_resultaten(data) == []
+        # escalatie naar hoog → weer zichtbaar ondanks 'gezien'
+        data["resultaten"][0]["ernst"] = "hoog"
+        assert len(belasting.zichtbare_resultaten(data)) == 1
 
 
 # ---------------------------------------------------------------------------
