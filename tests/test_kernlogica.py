@@ -415,21 +415,26 @@ class TestBtwOmschakeling:
         assert "januari" in s["aangifte_label"]  # Q4-aangifte in januari
 
     def test_potjes_advies(self):
-        from datetime import date
-        p = admin.potjes_advies(omzet_netto_ytd=18000, kosten_pm=250, ib_pct=30,
-                                buffer_pct=10, btw_pot=500, vandaag=date(2026, 8, 15))
-        assert p["kosten_ytd"] == 2000.0         # 8 maanden × 250
+        p = admin.potjes_advies(omzet_netto_ytd=18000, kosten_ytd=2000, ib_pct=45,
+                                buffer_pct=10, btw_pot=500)
+        assert p["kosten_ytd"] == 2000.0
         assert p["winst"] == 16000.0
-        assert p["ib_pot"] == 4800.0
+        assert p["ib_pot"] == 7200.0             # 45% — winst bovenop loondienst
         assert p["buffer"] == 1600.0
         assert p["btw_pot"] == 500.0
-        assert p["prive"] == 9600.0              # winst − ib − buffer
+        assert p["prive"] == 7200.0              # winst − ib − buffer
         assert p["ib_pot"] + p["buffer"] + p["prive"] == p["winst"]
 
     def test_potjes_geen_negatieve_winst(self):
-        from datetime import date
-        p = admin.potjes_advies(1000, 500, 30, 10, 0, vandaag=date(2026, 6, 1))
+        p = admin.potjes_advies(1000, 3000, 45, 10, 0)
         assert p["winst"] == 0.0 and p["prive"] == 0.0
+
+    def test_kosten_grootboek_herkenning(self):
+        import rompslomp_client as rc
+        assert rc._path_is_kosten("Kosten.Overige kosten.Diversen") is True
+        assert rc._path_is_kosten("Omzet.Overig") is False
+        assert rc._is_kosten_account({"type": "expense"}) is True
+        assert rc._is_kosten_account({"type": "revenue", "path": "Omzet"}) is False
 
     def test_categorie_omzet_excl_na_omschakeling(self):
         fac = [

@@ -198,6 +198,12 @@ def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
                 # KOR-vrijgesteld → geen btw, dus het totaalbedrag (incl) IS de
                 # omzet en is betrouwbaarder gevuld dan het excl-btw-veld.
                 bedrag = _incl if _incl else _excl
+                _betaald = inv.get("payment_status") == "paid"
+                # Openstaand restant: Rompslomp's open_amount kent deelbetalingen
+                # (betalingsregelingen). Ontbreekt het veld, val terug op alles-of-niets.
+                _open_raw = inv.get("open_amount")
+                _open = (_parse_bedrag(_open_raw) if _open_raw is not None
+                         else (0.0 if _betaald else bedrag))
                 facturen.append({
                     "datum": datum,
                     "nummer": inv.get("invoice_number"),
@@ -207,7 +213,8 @@ def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
                     "bedrag": bedrag,
                     "bedrag_excl": _excl,
                     "bedrag_incl": _incl,
-                    "betaald": inv.get("payment_status") == "paid",
+                    "betaald": _betaald,
+                    "open_bedrag": round(_open, 2),
                     "status": inv.get("status"),
                 })
             if len(items) < 100:
@@ -359,6 +366,48 @@ def get_journal_revenue_per_maand(year: int) -> tuple[dict, str]:
             debet = _parse_bedrag(line.get("debit_amount"))
             per_maand[maand] = per_maand.get(maand, 0.0) + (credit - debet)
     return per_maand, ""
+
+
+def _path_is_kosten(path: str) -> bool:
+    """Herken een kosten-grootboekpad."""
+    p = (path or "").lower()
+    return any(k in p for k in ("kosten", "cost", "expense", "uitgaven"))
+
+
+def _is_kosten_account(acc: dict) -> bool:
+    """True als een grootboekrekening een kostenrekening is."""
+    t = (acc.get("type") or "").lower()
+    if t in ("expense", "cost", "costs"):
+        return True
+    return _path_is_kosten(acc.get("path") or acc.get("path_name") or "")
+
+
+def get_kosten_ytd(year: int) -> tuple[float, str]:
+    """
+    Werkelijke kosten dit jaar uit de journaalboekingen: som van
+    (debet - credit) op kostenrekeningen. Best effort; bij fout (0.0, reden).
+    """
+    accounts, _ = get_accounts()
+    kosten_ids = {a.get("id") for a in accounts if _is_kosten_account(a)}
+
+    entries, err = _paged("journal_entries", ("data", "journal_entries"))
+    if err:
+        return 0.0, err
+
+    totaal = 0.0
+    for e in entries:
+        datum = (e.get("date") or "")[:10]
+        if not datum.startswith(str(year)):
+            continue
+        for line in (e.get("lines") or []):
+            is_kost = (line.get("account_id") in kosten_ids
+                       or _path_is_kosten(line.get("account_path")))
+            if not is_kost:
+                continue
+            debet = _parse_bedrag(line.get("debit_amount"))
+            credit = _parse_bedrag(line.get("credit_amount"))
+            totaal += debet - credit
+    return round(totaal, 2), ""
 
 
 # Vanaf deze datum is BeBetter btw-plichtig (KOR verlaten per 1 aug 2026).

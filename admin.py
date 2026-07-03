@@ -328,15 +328,14 @@ def btw_stand(facturen: list, vandaag: date | None = None) -> dict:
     }
 
 
-def potjes_advies(omzet_netto_ytd: float, kosten_pm: float, ib_pct: float,
-                  buffer_pct: float, btw_pot: float, vandaag: date | None = None) -> dict:
+def potjes_advies(omzet_netto_ytd: float, kosten_ytd: float, ib_pct: float,
+                  buffer_pct: float, btw_pot: float) -> dict:
     """
     Indicatieve verdeling van wat er tot nu toe verdiend is:
     IB-pot en buffer als percentage van de winst; wat overblijft is in
     beginsel privé te onttrekken. Geen belastingadvies — rekenhulp.
     """
-    vandaag = vandaag or date.today()
-    kosten_ytd = round(kosten_pm * vandaag.month, 2)
+    kosten_ytd = round(float(kosten_ytd or 0), 2)
     winst = max(omzet_netto_ytd - kosten_ytd, 0.0)
     ib_pot = round(winst * ib_pct / 100, 2)
     buffer = round(winst * buffer_pct / 100, 2)
@@ -492,6 +491,9 @@ def _doe_rompslomp_sync(revenue: dict) -> tuple[dict, str]:
     nieuw.update(cumulatief)
     intake_store.save_revenue(nieuw)
     st.session_state["_rompslomp_facturen"] = facturen
+    # Werkelijke kosten dit jaar (uit de journaalboekingen) — voor de potjes
+    _kosten, _kerr = rompslomp_client.get_kosten_ytd(jaar)
+    st.session_state["_rompslomp_kosten_ytd"] = None if _kerr else _kosten
     st.session_state["_rompslomp_sync_dag"] = date.today().isoformat()
     st.session_state["_rompslomp_bron"] = (
         f"Laatst gesynct: {date.today().strftime('%d-%m-%Y')} "
@@ -676,15 +678,25 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     # ── Potjes: waar moet je omzet heen ──
     st.markdown("<div class='bb-section-title'>Potjes · indicatief</div>", unsafe_allow_html=True)
     try:
-        inst = {**{"ib_pct": 30, "buffer_pct": 10, "kosten_pm": 250},
+        inst = {**{"ib_pct": 45, "buffer_pct": 10, "kosten_pm": 250},
                 **(intake_store.load_btw_instellingen() or {})}
     except Exception:
-        inst = {"ib_pct": 30, "buffer_pct": 10, "kosten_pm": 250}
-    potjes = potjes_advies(omzet_ytd, inst["kosten_pm"], inst["ib_pct"],
+        inst = {"ib_pct": 45, "buffer_pct": 10, "kosten_pm": 250}
+    # Werkelijke kosten uit Rompslomp (bij de dagelijkse sync opgehaald);
+    # alleen als die er niet zijn valt de schatting per maand in.
+    _kosten_echt = st.session_state.get("_rompslomp_kosten_ytd")
+    if _kosten_echt is not None:
+        _kosten_ytd = float(_kosten_echt)
+        _kosten_bron = f"werkelijke kosten uit Rompslomp ({_eur0(_kosten_ytd)})"
+    else:
+        _kosten_ytd = inst["kosten_pm"] * date.today().month
+        _kosten_bron = f"geschatte kosten ({_eur0(_kosten_ytd)} = {_eur0(inst['kosten_pm'])}/mnd)"
+    potjes = potjes_advies(omzet_ytd, _kosten_ytd, inst["ib_pct"],
                            inst["buffer_pct"], (btw or {}).get("btw_totaal", 0.0))
     p1, p2, p3, p4 = st.columns(4)
     p1.markdown(_card("IB-pot (inkomstenbelasting)", _eur0(potjes["ib_pot"]),
-                      f"<div class='bb-card-sub'>{inst['ib_pct']:.0f}% van {_eur0(potjes['winst'])} winst</div>"),
+                      f"<div class='bb-card-sub'>{inst['ib_pct']:.0f}% van {_eur0(potjes['winst'])} winst · "
+                      f"naast loondienst</div>"),
                 unsafe_allow_html=True)
     p2.markdown(_card("Btw-pot", _eur0(potjes["btw_pot"]),
                       "<div class='bb-card-sub'>af te dragen, niet jouw geld</div>"),
@@ -696,8 +708,9 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
                       "<div class='bb-card-sub'>winst minus IB-pot en buffer</div>"),
                 unsafe_allow_html=True)
     st.caption(f"Rekenhulp, geen belastingadvies: winst = netto-omzet YTD ({_eur0(omzet_ytd)}) minus "
-               f"geschatte kosten ({_eur0(potjes['kosten_ytd'])} = {_eur0(inst['kosten_pm'])}/mnd). "
-               "Stem de percentages af met je boekhouder.")
+               f"{_kosten_bron}. De IB-reserve staat op {inst['ib_pct']:.0f}% omdat de winst bovenop "
+               "een fulltime loondienst-inkomen komt en dus grotendeels in de hoogste schijf valt "
+               "(de MKB-winstvrijstelling dempt dat iets). Stem het exacte percentage af met je boekhouder.")
     st.write("")
 
     # ── Omzetverloop + donut ──
@@ -814,11 +827,14 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
         else:
             sig_html += _sig("&#9989;", f"Ruim binnen KOR: {pct_kor:.1f}% benut",
                              f"Nog {_eur0(ruimte)} ruimte tot de grens.")
-        open_f = [f for f in (facturen or []) if not f.get("betaald") and f.get("status") != "concept"]
+        open_f = [f for f in (facturen or [])
+                  if f.get("open_bedrag", 0) > 0 and f.get("status") != "concept"]
         if open_f:
-            som = sum(f.get("bedrag", 0) for f in open_f)
-            sig_html += _sig("&#128196;", f"{len(open_f)} openstaande facturen ({_eur0(som)})",
-                             "Verstuur een herinnering voor tijdige betaling.")
+            som = sum(f.get("open_bedrag", 0) for f in open_f)
+            _deels = sum(1 for f in open_f if f.get("open_bedrag", 0) < (f.get("bedrag") or 0))
+            sig_html += _sig("&#128196;", f"{len(open_f)} openstaande facturen ({_eur0(som)} te ontvangen)",
+                             ("Inclusief betalingsregelingen: alleen het restant telt. "
+                              if _deels else "") + "Verstuur waar nodig een herinnering.")
         niet_gef = niet_gefactureerde_klanten(athletes, admin, facturen) if facturen else []
         if niet_gef:
             sig_html += _sig("&#129534;", f"{len(niet_gef)} klanten nog niet gefactureerd in {jaar}",
@@ -967,16 +983,23 @@ def render_admin(athletes_by_group: dict):
                 st.caption("✅ Alle actieve klanten hebben dit jaar een factuur.")
 
             _open_f = [f for f in (facturen or [])
-                       if not f.get("betaald") and f.get("status") != "concept"]
+                       if f.get("open_bedrag", 0) > 0 and f.get("status") != "concept"]
             if _open_f:
                 st.markdown(f"**📄 Openstaand ({len(_open_f)} · "
-                            f"{_eur0(sum(f.get('bedrag', 0) for f in _open_f))})**")
+                            f"{_eur0(sum(f.get('open_bedrag', 0) for f in _open_f))} te ontvangen)**")
+                st.caption("Bij een betalingsregeling telt alleen het nog openstaande restant.")
                 st.dataframe(pd.DataFrame([{
                     "Datum": f["datum"], "Nr": f.get("nummer", ""), "Klant": f["naam"],
-                    "Bedrag": f["bedrag"],
+                    "Factuurbedrag": f["bedrag"],
+                    "Nog open": f.get("open_bedrag", 0),
+                    "Status": ("Deels betaald" if f.get("open_bedrag", 0) < (f.get("bedrag") or 0)
+                               else "Open"),
                 } for f in sorted(_open_f, key=lambda x: x["datum"])]),
                     hide_index=True, use_container_width=True,
-                    column_config={"Bedrag": st.column_config.NumberColumn(format="€ %.2f")})
+                    column_config={
+                        "Factuurbedrag": st.column_config.NumberColumn(format="€ %.2f"),
+                        "Nog open": st.column_config.NumberColumn(format="€ %.2f"),
+                    })
 
             with st.expander(f"📋 Alle facturen dit jaar ({len(facturen or [])})"):
                 if facturen:
@@ -1111,19 +1134,26 @@ def render_admin(athletes_by_group: dict):
         st.caption("Bepalen de verdeling op het dashboard. Stem de percentages af met je boekhouder.")
         pi1, pi2, pi3 = st.columns(3)
         try:
-            _inst = {**{"ib_pct": 30, "buffer_pct": 10, "kosten_pm": 250},
+            _inst = {**{"ib_pct": 45, "buffer_pct": 10, "kosten_pm": 250},
                      **(intake_store.load_btw_instellingen() or {})}
         except Exception:
-            _inst = {"ib_pct": 30, "buffer_pct": 10, "kosten_pm": 250}
+            _inst = {"ib_pct": 45, "buffer_pct": 10, "kosten_pm": 250}
         with pi1:
             _ib_in = st.number_input("IB-reserve (% van winst)", min_value=0.0, max_value=60.0,
-                                     step=1.0, value=float(_inst["ib_pct"]), key="adm_ib_pct")
+                                     step=1.0, value=float(_inst["ib_pct"]), key="adm_ib_pct",
+                                     help="De winst komt bovenop je fulltime loondienst-inkomen en valt "
+                                          "daardoor grotendeels in de hoogste IB-schijf (~49,5%); de "
+                                          "MKB-winstvrijstelling dempt dat iets. 45% is een veilige "
+                                          "vuistregel — exact percentage via je boekhouder.")
         with pi2:
             _buf_in = st.number_input("Buffer (% van winst)", min_value=0.0, max_value=50.0,
                                       step=1.0, value=float(_inst["buffer_pct"]), key="adm_buf_pct")
         with pi3:
-            _kos_in = st.number_input("Kosten per maand (€)", min_value=0.0, step=25.0,
-                                      value=float(_inst["kosten_pm"]), key="adm_kosten_pm")
+            _kos_in = st.number_input("Kosten per maand (€, alleen fallback)", min_value=0.0, step=25.0,
+                                      value=float(_inst["kosten_pm"]), key="adm_kosten_pm",
+                                      help="De potjes gebruiken je werkelijke kosten uit Rompslomp. "
+                                           "Deze schatting geldt alleen als die even niet opgehaald "
+                                           "kunnen worden.")
         if st.button("💾 Potjes opslaan", key="adm_potjes_save"):
             ok, err = intake_store.save_btw_instellingen(
                 {"ib_pct": _ib_in, "buffer_pct": _buf_in, "kosten_pm": _kos_in})
