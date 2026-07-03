@@ -1623,10 +1623,15 @@ if page == "home":
     _bel = belasting.zichtbare_resultaten(_bel_data)
     if _bel:
         _n_hoog = sum(1 for r in _bel if r["ernst"] == "hoog")
+        # Alleen bij de éérste keer deze sessie automatisch openklappen (en
+        # alleen bij een hoog signaal) — daarna dicht blijven, niet blijven springen.
+        _bel_auto_open = _n_hoog > 0 and not st.session_state.get("_bel_auto_opened")
+        if _bel_auto_open:
+            st.session_state["_bel_auto_opened"] = True
         with st.expander(
             f"🩺 Belasting: {len(_bel)} atle{'et' if len(_bel) == 1 else 'ten'} om even mee te kijken"
             + (f" ({_n_hoog} hoog)" if _n_hoog else ""),
-            expanded=_n_hoog > 0,
+            expanded=_bel_auto_open,
         ):
             st.caption("Signalen uit volume, gevoel, RPE en notities van de laatste weken. "
                        "Geen diagnose, wel een seintje om even mee te kijken. "
@@ -1687,12 +1692,15 @@ if page == "home":
             try:
                 _wb = _maak_weekbriefing()
                 st.session_state["weekbriefing"] = _wb
+                st.session_state["_wb_vers"] = True
             except Exception:
                 pass
 
     if _wb.get("tekst"):
+        # Alleen open direct na het (her)genereren — daarna altijd dicht.
+        _wb_vers = st.session_state.pop("_wb_vers", False)
         with st.expander(f"📰 Weekbriefing · week {_wk_nu.split('-W')[1]}",
-                         expanded=_wb.get("gemaakt") == date.today().isoformat()):
+                         expanded=_wb_vers):
             _ws = _wb.get("stats", {})
             st.caption(f"Gemaakt op {_wb.get('gemaakt', '')} · gedeeld met beide coaches · "
                        f"{_ws.get('n_trainingen', '?')} trainingen · ±{_ws.get('km_totaal', '?')} km · "
@@ -1703,6 +1711,7 @@ if page == "home":
                 with st.spinner("Weekbriefing samenstellen…"):
                     try:
                         st.session_state["weekbriefing"] = _maak_weekbriefing(force=True)
+                        st.session_state["_wb_vers"] = True
                     except Exception as _wbe:
                         st.error(f"Briefing vernieuwen mislukt: {_wbe}")
                 st.rerun()

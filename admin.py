@@ -691,7 +691,7 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     st.write("")
 
     # ── Potjes: waar moet je omzet heen ──
-    st.markdown("<div class='bb-section-title'>Potjes · indicatief</div>", unsafe_allow_html=True)
+    st.markdown("<div class='bb-section-title'>Resultaat · dit jaar</div>", unsafe_allow_html=True)
     try:
         inst = {**{"ib_pct": 45, "buffer_pct": 10},
                 **(intake_store.load_btw_instellingen() or {})}
@@ -713,6 +713,22 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
         _kosten_bron = "kosten nog niet gesynct (⚠️ winst is nu gelijk aan omzet)"
     potjes = potjes_advies(omzet_ytd, _kosten_ytd, inst["ib_pct"],
                            inst["buffer_pct"], (btw or {}).get("btw_totaal", 0.0))
+
+    # Het volledige plaatje: omzet staat bovenin, hier kosten → winst → marge
+    _marge = (potjes["winst"] / omzet_ytd * 100) if omzet_ytd else 0.0
+    r1, r2, r3 = st.columns(3)
+    r1.markdown(_card("Kosten YTD", _eur0(potjes["kosten_ytd"]),
+                      "<div class='bb-card-sub'>uit Rompslomp (uitgaven + boekingen)</div>"),
+                unsafe_allow_html=True)
+    r2.markdown(_card("Winst YTD", _eur0(potjes["winst"]),
+                      "<div class='bb-card-sub'>omzet minus kosten</div>"),
+                unsafe_allow_html=True)
+    r3.markdown(_card("Marge", f"{_marge:.0f}%",
+                      "<div class='bb-card-sub'>winst / omzet</div>"),
+                unsafe_allow_html=True)
+
+    st.write("")
+    st.markdown("<div class='bb-section-title'>Potjes · indicatief</div>", unsafe_allow_html=True)
     p1, p2, p3, p4 = st.columns(4)
     p1.markdown(_card("IB-pot (inkomstenbelasting)", _eur0(potjes["ib_pot"]),
                       f"<div class='bb-card-sub'>{inst['ib_pct']:.0f}% van {_eur0(potjes['winst'])} winst · "
@@ -930,7 +946,7 @@ def render_admin(athletes_by_group: dict):
     with st.expander(
         f"{'✅' if _alles_klaar else '🔀'} Omschakeling KOR → btw (per 1 aug) · "
         f"{_n_done}/{len(_items)} gedaan",
-        expanded=not _alles_klaar and date.today() >= KOR_TOT - timedelta(days=45),
+        expanded=False,  # altijd dicht — de voortgang staat in de titel
     ):
         st.caption("Jouw checklist voor de overstap. Vinkjes worden gedeeld opgeslagen, "
                    "dus jij en Remco zien dezelfde stand. Eigen punten toevoegen kan onderaan.")
@@ -1229,7 +1245,24 @@ def render_admin(athletes_by_group: dict):
                                          format="€ %.2f")})
                     st.caption(f"Totaal gevonden: **{_eur(_totaal)}** — vergelijk dit met de "
                                "kostenregel op je Rompslomp Winst & Verlies. Wijkt het af, "
-                               "draai dan de API-verkenner hieronder en stuur een screenshot.")
+                               "bekijk dan de uitgaven-lijst hieronder: het verschil zit vrijwel "
+                               "altijd in uitgaven die op een balansrekening horen (bijv. voorraad).")
+                    if st.button("📜 Toon alle uitgaven dit jaar", key="adm_uitgaven_lijst"):
+                        st.session_state["_uitgaven_lijst"] = \
+                            rompslomp_client.get_uitgaven_lijst(date.today().year)
+                    if st.session_state.get("_uitgaven_lijst"):
+                        _ul, _ule = st.session_state["_uitgaven_lijst"]
+                        if _ule:
+                            st.error(_ule)
+                        elif _ul:
+                            st.dataframe(pd.DataFrame(_ul), hide_index=True,
+                                         use_container_width=True,
+                                         column_config={"bedrag": st.column_config.NumberColumn(
+                                             format="€ %.2f")})
+                            st.caption(f"{len(_ul)} uitgaven · som {_eur(sum(u['bedrag'] for u in _ul))}. "
+                                       "Zie je een uitgave die op de W&V niet als kost telt "
+                                       "(kolom 'rekening'), geef de rekeningnaam door — dan sluit "
+                                       "ik die categorie uit.")
                     if st.button("🛰️ API verkennen (welke endpoints bestaan er?)",
                                  key="adm_api_verkenner"):
                         st.session_state["_api_verkenner"] = rompslomp_client.api_verkenner()

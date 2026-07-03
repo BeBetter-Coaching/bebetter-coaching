@@ -469,6 +469,34 @@ def get_uitgaven_ytd(year: int) -> tuple[float, int, str]:
     return round(totaal, 2), n, "expenses"
 
 
+def get_uitgaven_lijst(year: int) -> tuple[list[dict], str]:
+    """Alle uitgaven van dit jaar als platte lijst (voor de kosten-check)."""
+    items, err = _paged("expenses", ("data", "expenses"))
+    if err:
+        return [], err
+    lijst = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        d = (it.get("date") or it.get("invoice_date") or "")[:10]
+        if not d.startswith(str(year)):
+            continue
+        omschrijving = " | ".join(
+            str(li.get("description") or "").strip()
+            for li in (it.get("invoice_lines") or []) if isinstance(li, dict)
+            and (li.get("description") or "").strip())[:120]
+        lijst.append({
+            "datum": d,
+            "naam": _contact_naam(it),
+            "omschrijving": omschrijving,
+            "bedrag": _uitgave_bedrag(it),
+            "rekening": str(it.get("type_account") or ""),
+            "state": it.get("state") or "",
+        })
+    lijst.sort(key=lambda x: x["datum"], reverse=True)
+    return lijst, ""
+
+
 def get_kosten_ytd(year: int) -> tuple[float, str]:
     """
     Totale werkelijke kosten dit jaar: kostenregels uit de journaalboekingen
