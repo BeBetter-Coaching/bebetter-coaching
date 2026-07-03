@@ -1,0 +1,335 @@
+"""Tests op de pure kernlogica — precies de functies die eerder kapot zijn geweest.
+
+Draaien met:  python3 -m pytest tests/ -q
+Geen netwerk, geen secrets nodig: alles is pure logica.
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import admin
+import dossier
+import fs_client
+import schema_builder
+
+
+# ---------------------------------------------------------------------------
+# fs_client — uitvoeringsdetectie, km-normalisatie, groep-uitsluiting
+# ---------------------------------------------------------------------------
+
+class TestIsExecutedWorkout:
+    def test_planned_status_is_niet_uitgevoerd(self):
+        # has_actual_data is onbetrouwbaar: true bij geplande structuurtrainingen
+        w = {"workout_status_text": "Planned", "has_actual_data": True}
+        assert fs_client.is_executed_workout(w) is False
+
+    def test_done_status_is_uitgevoerd(self):
+        assert fs_client.is_executed_workout({"workout_status_text": "Completed"}) is True
+
+    def test_geen_status_maar_stats(self):
+        assert fs_client.is_executed_workout({"workout_status_text": "", "has_stats": True}) is True
+
+    def test_completion_boven_nul(self):
+        assert fs_client.is_executed_workout({"workout_completion": "0.8"}) is True
+
+    def test_corrupte_completion_valt_terug(self):
+        assert fs_client.is_executed_workout({"workout_completion": "n/a"}) is False
+
+
+class TestNormKm:
+    def test_meters_naar_km(self):
+        assert fs_client._norm_km(5000, "m") == 5.0
+
+    def test_mijlen_naar_km(self):
+        assert fs_client._norm_km(3.1, "mi") == 4.99
+
+    def test_km_blijft_km(self):
+        assert fs_client._norm_km(10, "km") == 10
+
+    def test_onbekende_eenheid_aanname_km(self):
+        assert fs_client._norm_km(8, None) == 8
+
+    def test_corrupt_en_leeg(self):
+        assert fs_client._norm_km("abc", "km") is None
+        assert fs_client._norm_km(None, "km") is None
+
+
+class TestGroupIsExcluded:
+    def test_los_schema_varianten(self):
+        assert fs_client.group_is_excluded("1. Los trainingsschema", ["los schema"]) is True
+        assert fs_client.group_is_excluded("Losse schema's", ["los schema"]) is True
+
+    def test_echte_groep_blijft(self):
+        assert fs_client.group_is_excluded("Getting Better", ["los schema"]) is False
+
+    def test_leeg(self):
+        assert fs_client.group_is_excluded("", ["los schema"]) is False
+        assert fs_client.group_is_excluded("Comfort", []) is False
+
+
+class TestDetectRaceType:
+    def test_marathon_niet_halve(self):
+        assert fs_client.detect_race_type("Marathon Rotterdam") == "Marathon"
+
+    def test_halve_marathon(self):
+        assert fs_client.detect_race_type("Halve marathon Oss") == "Halve marathon"
+
+    def test_onbekend_is_race(self):
+        assert fs_client.detect_race_type("Kermisloop") == "Race"
+
+
+# ---------------------------------------------------------------------------
+# schema_builder — CSV-parsing en builder-berekeningen
+# ---------------------------------------------------------------------------
+
+CSV_VOORBEELD = """Date,ActivityType,WorkoutName,PlannedTimeMinutes,PlannedDistance,mi/km/m/y,WorkoutDescription
+06/29/2026,Run,Duurloop,,10,km,Rustige duurloop Z2
+06/30/2026,Rest,,,,,
+07/01/2026,Run,Intervallen,45,,km,5x 800m Z4
+kapotte datum,Run,Fout,,5,km,ongeldige rij
+07/02/2026,Run,Mijlenloop,,3.1,mi,Test in mijlen
+"""
+
+
+class TestParseCsvText:
+    def test_datum_mmddyyyy_naar_iso(self):
+        rows = schema_builder.parse_csv_text(CSV_VOORBEELD)
+        assert rows[0]["date"] == "2026-06-29"
+
+    def test_rustdag_zonder_naam_overgeslagen(self):
+        rows = schema_builder.parse_csv_text(CSV_VOORBEELD)
+        assert all(r["activity_type"] != "Rest" for r in rows)
+
+    def test_ongeldige_datum_overgeslagen(self):
+        rows = schema_builder.parse_csv_text(CSV_VOORBEELD)
+        assert all(r["name"] != "Fout" for r in rows)
+
+    def test_mijlen_omgezet_en_afgerond(self):
+        rows = schema_builder.parse_csv_text(CSV_VOORBEELD)
+        mijlen = next(r for r in rows if r["name"] == "Mijlenloop")
+        assert mijlen["planned_km"] == 5  # 3.1 mi = 4.99 km → afgerond 5
+
+    def test_tijd_als_float(self):
+        rows = schema_builder.parse_csv_text(CSV_VOORBEELD)
+        interval = next(r for r in rows if r["name"] == "Intervallen")
+        assert interval["planned_min"] == 45.0
+
+    def test_csv_in_markdown_blok(self):
+        omhuld = f"Hier je schema:\n```csv\n{CSV_VOORBEELD}```\nSucces!"
+        assert len(schema_builder.parse_csv_text(omhuld)) == len(
+            schema_builder.parse_csv_text(CSV_VOORBEELD))
+
+
+class TestBuilderBerekeningen:
+    def test_parse_duration(self):
+        assert schema_builder._parse_duration_to_min("45:00") == 45
+        assert schema_builder._parse_duration_to_min("1:05:00") == 65
+        assert schema_builder._parse_duration_to_min("03:30") == 3.5
+        assert schema_builder._parse_duration_to_min("kapot") == 0.0
+
+    def test_totaaltijd_met_repeat(self):
+        # 10min wu + 5x(2min+1min) + 5min cd = 30 min
+        opts = [{"steps": [
+            {"type": "step", "durationType": "TIME", "duration": "10:00"},
+            {"type": "repeat", "repeats": 5, "data": [
+                {"type": "step", "durationType": "TIME", "duration": "02:00"},
+                {"type": "step", "durationType": "TIME", "duration": "01:00"}]},
+            {"type": "step", "durationType": "TIME", "duration": "05:00"},
+        ]}]
+        assert schema_builder._calc_builder_duration_min(opts) == 30
+
+    def test_afstandsschema_geeft_geen_tijd(self):
+        opts = [{"steps": [{"type": "step", "durationType": "DISTANCE", "durationDist": 5.0}]}]
+        assert schema_builder._calc_builder_duration_min(opts) is None
+
+    def test_totaalafstand_met_repeat(self):
+        # 1.5km wu + 5x(0.8+0.4) + 1.5km cd = 9 km
+        opts = [{"steps": [
+            {"type": "step", "durationType": "DISTANCE", "durationDist": 1.5},
+            {"type": "repeat", "repeats": 5, "data": [
+                {"type": "step", "durationType": "DISTANCE", "durationDist": 0.8},
+                {"type": "step", "durationType": "DISTANCE", "durationDist": 0.4}]},
+            {"type": "step", "durationType": "DISTANCE", "durationDist": 1.5},
+        ]}]
+        assert schema_builder._calc_builder_distance_km(opts) == 9
+
+
+# ---------------------------------------------------------------------------
+# admin — KOR, pakketten, prijzen, omzet-categorisatie, matching
+# ---------------------------------------------------------------------------
+
+class TestKorProjectie:
+    def test_leeg(self):
+        p = admin.kor_projectie({})
+        assert p["huidig"] == 0.0 and p["resterend"] == admin.KOR_GRENS
+
+    def test_stand_en_resterend(self):
+        p = admin.kor_projectie({"2026-05": 10000.0, "2026-06": 12000.0})
+        assert p["huidig"] == 12000.0
+        assert p["resterend"] == 8000.0
+        assert p["gepasseerd"] is False
+        assert p["datum_grens"] is not None  # stijgende trend → projectiedatum
+
+    def test_gepasseerd(self):
+        p = admin.kor_projectie({"2026-06": 21000.0})
+        assert p["gepasseerd"] is True
+
+
+class TestPakketEnPrijs:
+    def test_pakket_van_groep(self):
+        assert admin.pakket_van_groep("1. Los trainingsschema") == "Los Schema"
+        assert admin.pakket_van_groep("Start to Run groep A") == "Start to Run"
+        assert admin.pakket_van_groep("Wandelclub") == "—"
+
+    def test_eigen_prijs_override(self):
+        ath = {"user_key": "a", "group": "Comfort"}
+        adm = {"a": {"prijs_override": 45}}
+        assert admin.klant_prijs(ath, adm, admin.PAKKET_PRIJZEN_STD) == 45.0
+
+    def test_gratis_is_nul(self):
+        ath = {"user_key": "a", "group": "Comfort"}
+        adm = {"a": {"gratis": True}}
+        assert admin.klant_prijs(ath, adm, admin.PAKKET_PRIJZEN_STD) == 0.0
+
+    def test_standaard_pakketprijs(self):
+        ath = {"user_key": "a", "group": "Comfort"}
+        assert admin.klant_prijs(ath, {}, admin.PAKKET_PRIJZEN_STD) == 55
+
+    def test_jaaromzet_telt_gratis_niet_mee(self):
+        aths = [{"user_key": "a", "group": "Comfort"}, {"user_key": "b", "group": "Comfort"}]
+        adm = {"a": {"status": "Actief"}, "b": {"status": "Actief", "gratis": True}}
+        assert admin.geschatte_jaaromzet(aths, adm, admin.PAKKET_PRIJZEN_STD) == 55 * 13
+
+
+class TestMaandomzet:
+    def test_cumulatief_naar_maand(self):
+        cum = {"2026-01": 1000.0, "2026-02": 2500.0, "2026-03": 4000.0}
+        mo = admin.jaar_maandomzet(cum, 2026)
+        assert mo == {1: 1000.0, 2: 1500.0, 3: 1500.0}
+        assert round(sum(mo.values()), 2) == 4000.0  # som maanden == cumulatieve eindstand
+
+    def test_prognose_gemiddelde_laatste_drie(self):
+        prog = admin.prognose_maanden({1: 100.0, 2: 200.0, 3: 300.0, 4: 400.0})
+        assert prog[5] == 300.0  # gem. van 200/300/400
+        assert set(prog) == set(range(5, 13))
+
+
+class TestFactuurCategorie:
+    def test_clinics_op_naam_en_omschrijving(self):
+        assert admin.factuur_categorie("Gemeente Oss", "wat dan ook") == "Clinics"
+        assert admin.factuur_categorie("Optimum Change", "") == "Clinics"
+        assert admin.factuur_categorie("Bedrijf X", "bedrijfstraining van tilburg") == "Clinics"
+
+    def test_lactaat_vs_strippenkaart_op_omschrijving_niet_bedrag(self):
+        # beide kunnen €135 zijn — de omschrijving beslist
+        assert admin.factuur_categorie("Jan", "Lactaatmeting", 135) == "Lactaatmetingen"
+        assert admin.factuur_categorie("Piet", "Strippenkaart 2x", 135) == "Strippenkaarten"
+
+    def test_coaching_pakketnamen_en_afkortingen(self):
+        assert admin.factuur_categorie("Anouk", "Start to run") == "Coaching"
+        for afk in ("STR", "GB", "HP"):
+            assert admin.factuur_categorie("X", afk) == "Coaching"
+
+    def test_onbekend_is_overig(self):
+        assert admin.factuur_categorie("Klaas", "iets vaags") == "Overig"
+
+    def test_omzet_per_categorie_slaat_concept_over(self):
+        fac = [
+            {"naam": "A", "omschrijving": "Comfort", "bedrag": 55, "status": "published"},
+            {"naam": "B", "omschrijving": "Comfort", "bedrag": 999, "status": "concept"},
+        ]
+        assert admin.omzet_per_categorie(fac) == {"Coaching": 55.0}
+
+
+class TestKlantMatching:
+    ATHS = [
+        {"user_key": "d", "name": "Doutzen Schmidt", "first_name": "Doutzen",
+         "last_name": "Schmidt", "email": "jeroenschmidt78@hotmail.com"},
+        {"user_key": "r", "name": "Dave De Rijder", "first_name": "Dave",
+         "last_name": "De Rijder", "email": "mail@davederijder.nl"},
+    ]
+
+    def test_achternaam_kern_zonder_tussenvoegsels(self):
+        assert admin._achternaam_kern("De Rijder") == {"rijder"}
+        assert admin._achternaam_kern("Van Hamersveld") == {"hamersveld"}
+
+    def test_match_op_email_bij_andere_betaler(self):
+        c = {"naam": "Jeroen Schmidt", "email": "jeroenschmidt78@hotmail.com"}
+        assert admin.match_contact_fs(c, self.ATHS) == "Doutzen Schmidt"
+
+    def test_match_op_achternaam_zonder_tussenvoegsel(self):
+        c = {"naam": "Dave Rijder", "email": ""}
+        assert admin.match_contact_fs(c, self.ATHS) == "Dave De Rijder"
+
+    def test_clinic_contact_matcht_niet(self):
+        assert admin.match_contact_fs({"naam": "Gemeente Oss", "email": ""}, self.ATHS) == ""
+
+    def test_niet_gefactureerd_slaat_gratis_en_vooruitbetaald_over(self):
+        aths = self.ATHS + [{"user_key": "n", "name": "Nieuwe Klant", "first_name": "Nieuwe",
+                             "last_name": "Klant", "email": "n@x.nl"}]
+        adm = {"d": {"status": "Actief", "gratis": True},
+               "r": {"status": "Actief", "vooruitbetaald_tot": "2099-12-31"},
+               "n": {"status": "Actief"}}
+        namen = [a["name"] for a in admin.niet_gefactureerde_klanten(aths, adm, [
+            {"naam": "Iemand Anders", "status": "sent"}])]
+        assert namen == ["Nieuwe Klant"]
+
+
+# ---------------------------------------------------------------------------
+# dossier — hardloop-km filtering (de 5526km-bug)
+# ---------------------------------------------------------------------------
+
+class TestRunKm:
+    def test_fiets_telt_niet_mee(self):
+        assert dossier._run_km({"activity_type": "Fietsen", "actual_km": 40}) == 0.0
+
+    def test_hardlopen_telt(self):
+        assert dossier._run_km({"activity_type": "Hardlopen", "actual_km": 12.5}) == 12.5
+
+    def test_sanity_cap_boven_100km(self):
+        assert dossier._run_km({"activity_type": "Hardlopen", "actual_km": 5526}) == 0.0
+
+    def test_corrupt_is_nul(self):
+        assert dossier._run_km({"activity_type": "Hardlopen", "actual_km": "kapot"}) == 0.0
+
+    def test_onbekend_type_telt_als_run(self):
+        assert dossier._is_run({"activity_type": ""}) is True
+
+
+# ---------------------------------------------------------------------------
+# fs_client.get_training_log — parallelle lap-fetch (gemockte API)
+# ---------------------------------------------------------------------------
+
+class TestTrainingLogLaps:
+    def test_laps_parallel_toegevoegd_en_fouten_niet_blokkerend(self, monkeypatch):
+        from datetime import date, timedelta
+        vandaag = date.today().isoformat()
+        gisteren = (date.today() - timedelta(days=1)).isoformat()
+
+        def fake_workouts(user_key, start, end):
+            return [
+                {"workout_date": vandaag, "key": "w1", "name": "Intervallen",
+                 "workout_status_text": "Completed",
+                 "Activities": [{"amount": 8, "amount_type": "km"}]},
+                {"workout_date": gisteren, "key": "w2", "name": "Duurloop",
+                 "workout_status_text": "Completed",
+                 "Activities": [{"amount": 10, "amount_type": "km"}]},
+                {"workout_date": gisteren, "key": "w3", "name": "Gepland",
+                 "workout_status_text": "Planned", "Activities": []},
+            ]
+
+        def fake_details(workout_key, user_key):
+            if workout_key == "w2":
+                raise RuntimeError("API-fout mag laps nooit blokkeren")
+            return {"Activities": [{"Laps": [
+                {"distance_display": "1 km", "pace_display": "4:30", "hr_avg": 165}]}]}
+
+        monkeypatch.setattr(fs_client, "get_workouts_deduped", fake_workouts)
+        monkeypatch.setattr(fs_client, "get_workout_details", fake_details)
+
+        log = {e["name"]: e for e in fs_client.get_training_log("user", months=1)}
+        assert log["Intervallen"]["laps"] == [{"dist": "1 km", "pace": "4:30", "hr": 165}]
+        assert log["Duurloop"]["laps"] == []      # fout → lege laps, geen crash
+        assert log["Gepland"]["laps"] == []       # niet uitgevoerd → geen detail-fetch

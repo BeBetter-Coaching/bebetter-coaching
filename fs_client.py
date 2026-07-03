@@ -410,6 +410,52 @@ def _parallel_per_athlete(athletes: list[dict], fetch_fn) -> list:
     return [results[i] for i in range(len(athletes)) if results.get(i) is not None]
 
 
+def _safe_float(val):
+    try:
+        return round(float(val), 2) if val else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _norm_km(val, unit):
+    """Normaliseer afstand naar kilometers o.b.v. de eenheid."""
+    v = _safe_float(val)
+    if v is None:
+        return None
+    u = (unit or "km").strip().lower()
+    if u in ("m", "meter", "meters"):
+        return round(v / 1000, 2)
+    if u in ("mi", "mile", "miles"):
+        return round(v * 1.60934, 2)
+    if u in ("yd", "yard", "yards"):
+        return round(v * 0.0009144, 2)
+    if u in ("ft", "feet", "foot"):
+        return round(v * 0.0003048, 2)
+    return v  # km of onbekend → aannemen km
+
+
+def _fetch_compressed_laps(workout_key: str, user_key: str) -> list[dict]:
+    """Haal lapdata op en comprimeer naar pace + afstand + hartslag per lap.
+    Lege lijst bij elke fout — lapdata is bonus, nooit blokkerend."""
+    try:
+        details = get_workout_details(workout_key, user_key)
+        detail_acts = details.get("Activities") or []
+        if not detail_acts:
+            return []
+        laps = []
+        for lap in (detail_acts[0].get("Laps") or [])[:30]:
+            if not isinstance(lap, dict):
+                continue
+            laps.append({
+                "dist": lap.get("distance_display") or lap.get("amount"),
+                "pace": lap.get("pace_display"),
+                "hr":   lap.get("hr_avg"),
+            })
+        return laps
+    except Exception:
+        return []
+
+
 def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> list[dict]:
     """
     Haal trainingslog op voor de afgelopen X maanden.
@@ -432,28 +478,6 @@ def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> l
 
         activities = w.get("Activities") or []
         act = activities[0] if activities else {}
-
-        def _safe_float(val):
-            try:
-                return round(float(val), 2) if val else None
-            except (ValueError, TypeError):
-                return None
-
-        def _norm_km(val, unit):
-            """Normaliseer afstand naar kilometers o.b.v. de eenheid."""
-            v = _safe_float(val)
-            if v is None:
-                return None
-            u = (unit or "km").strip().lower()
-            if u in ("m", "meter", "meters"):
-                return round(v / 1000, 2)
-            if u in ("mi", "mile", "miles"):
-                return round(v * 1.60934, 2)
-            if u in ("yd", "yard", "yards"):
-                return round(v * 0.0009144, 2)
-            if u in ("ft", "feet", "foot"):
-                return round(v * 0.0003048, 2)
-            return v  # km of onbekend → aannemen km
 
         # Workout description (bevat de geplande structuur, bijv. "5x 1000m Z4")
         description = (w.get("description") or "").strip()
@@ -486,28 +510,19 @@ def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> l
             "laps":         [],  # wordt ingevuld voor recente workouts
         }
 
-        # Voor recente workouts: haal lapdata op voor interval-analyse
-        if date_str >= detail_cutoff.isoformat() and entry["completed"] and entry["workout_key"]:
-            try:
-                details = get_workout_details(entry["workout_key"], user_key)
-                detail_acts = details.get("Activities") or []
-                if detail_acts:
-                    raw_laps = detail_acts[0].get("Laps") or []
-                    # Comprimeer: bewaar alleen pace + afstand + hartslag per lap
-                    laps = []
-                    for lap in raw_laps[:30]:
-                        if not isinstance(lap, dict):
-                            continue
-                        laps.append({
-                            "dist": lap.get("distance_display") or lap.get("amount"),
-                            "pace": lap.get("pace_display"),
-                            "hr":   lap.get("hr_avg"),
-                        })
-                    entry["laps"] = laps
-            except Exception:
-                pass  # lapdata is bonus, nooit blokkerend
-
         result.append(entry)
+
+    # Voor recente workouts: lapdata parallel ophalen voor interval-analyse
+    # (was serieel: 15-25 calls achter elkaar maakten het dossier traag).
+    detail_cutoff_str = detail_cutoff.isoformat()
+    detail_entries = [e for e in result
+                      if e["date"] >= detail_cutoff_str and e["completed"] and e["workout_key"]]
+    if detail_entries:
+        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+            futures = {pool.submit(_fetch_compressed_laps, e["workout_key"], user_key): e
+                       for e in detail_entries}
+            for fut in as_completed(futures):
+                futures[fut]["laps"] = fut.result()
 
     # Post-processing: voor race-entries, vervang data met de snelste activiteit op die dag.
     # Reden: atleten doen wu → race → cd als losse activiteiten; de wu wordt soms
