@@ -698,26 +698,6 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     st.caption(f"Rekenhulp, geen belastingadvies: winst = netto-omzet YTD ({_eur0(omzet_ytd)}) minus "
                f"geschatte kosten ({_eur0(potjes['kosten_ytd'])} = {_eur0(inst['kosten_pm'])}/mnd). "
                "Stem de percentages af met je boekhouder.")
-    with st.expander("⚙️ Potjes-instellingen"):
-        pi1, pi2, pi3 = st.columns(3)
-        with pi1:
-            _ib_in = st.number_input("IB-reserve (% van winst)", min_value=0.0, max_value=60.0,
-                                     step=1.0, value=float(inst["ib_pct"]), key="adm_ib_pct")
-        with pi2:
-            _buf_in = st.number_input("Buffer (% van winst)", min_value=0.0, max_value=50.0,
-                                      step=1.0, value=float(inst["buffer_pct"]), key="adm_buf_pct")
-        with pi3:
-            _kos_in = st.number_input("Kosten per maand (€)", min_value=0.0, step=25.0,
-                                      value=float(inst["kosten_pm"]), key="adm_kosten_pm")
-        if st.button("💾 Instellingen opslaan", key="adm_potjes_save"):
-            ok, err = intake_store.save_btw_instellingen(
-                {"ib_pct": _ib_in, "buffer_pct": _buf_in, "kosten_pm": _kos_in})
-            if ok:
-                st.success("Opgeslagen.")
-                st.rerun()
-            else:
-                st.error(f"Opslaan mislukt: {err}")
-
     st.write("")
 
     # ── Omzetverloop + donut ──
@@ -778,26 +758,30 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
         else:
             st.caption("Nog geen facturen geladen — sync hieronder met Rompslomp.")
 
-    # ── Categorie-details (klikbaar uitklappen per categorie) ──
+    # ── Categorie-details: één compacte kijker i.p.v. losse uitklapmenu's ──
     cat_groepen = facturen_per_categorie(facturen)
     if cat_groepen:
-        st.markdown("<div class='bb-section-title'>Categorie openklappen</div>", unsafe_allow_html=True)
         _volgorde = ([c for c in CATEGORIE_VOLGORDE if c in cat_groepen]
                      + [c for c in cat_groepen if c not in CATEGORIE_VOLGORDE])
-        for cat in _volgorde:
-            items = sorted(cat_groepen[cat], key=lambda f: f.get("datum", ""), reverse=True)
-            som = sum(rompslomp_client.factuur_omzet(f) for f in items)
-            with st.expander(f"{cat} — {_eur0(som)} · {len(items)} facturen"):
-                st.dataframe(
-                    pd.DataFrame([{
-                        "Datum": f.get("datum", ""),
-                        "Klant": f.get("naam", ""),
-                        "Omschrijving": f.get("omschrijving", ""),
-                        "Bedrag": f.get("bedrag", 0),
-                        "Status": "Betaald" if f.get("betaald") else "Open",
-                    } for f in items]),
-                    hide_index=True, use_container_width=True,
-                    column_config={"Bedrag": st.column_config.NumberColumn(format="€ %.2f")})
+        with st.expander("🔍 Facturen per categorie bekijken"):
+            _labels = {}
+            for cat in _volgorde:
+                som = sum(rompslomp_client.factuur_omzet(f) for f in cat_groepen[cat])
+                _labels[f"{cat} — {_eur0(som)} · {len(cat_groepen[cat])} facturen"] = cat
+            _keuze = st.selectbox("Categorie", list(_labels), label_visibility="collapsed",
+                                  key="adm_cat_kijker")
+            items = sorted(cat_groepen[_labels[_keuze]],
+                           key=lambda f: f.get("datum", ""), reverse=True)
+            st.dataframe(
+                pd.DataFrame([{
+                    "Datum": f.get("datum", ""),
+                    "Klant": f.get("naam", ""),
+                    "Omschrijving": f.get("omschrijving", ""),
+                    "Bedrag": f.get("bedrag", 0),
+                    "Status": "Betaald" if f.get("betaald") else "Open",
+                } for f in items]),
+                hide_index=True, use_container_width=True,
+                column_config={"Bedrag": st.column_config.NumberColumn(format="€ %.2f")})
 
     st.write("")
 
@@ -838,7 +822,7 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
         niet_gef = niet_gefactureerde_klanten(athletes, admin, facturen) if facturen else []
         if niet_gef:
             sig_html += _sig("&#129534;", f"{len(niet_gef)} klanten nog niet gefactureerd in {jaar}",
-                             "Zie de uitklapbare lijst onder dit blok om ze af te werken.")
+                             "Werk ze af op het tabblad Facturatie.")
         st.markdown(sig_html, unsafe_allow_html=True)
 
         if last_act is not None:
@@ -855,22 +839,6 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
                 with st.spinner("Laatste activiteit ophalen…"):
                     st.session_state["_admin_last_act"] = fs_client.get_last_activity_dates(60)
                 st.rerun()
-
-    # ── Werklijst: nog niet gefactureerd (volle breedte, uitklapbaar) ──
-    if niet_gef:
-        with st.expander(f"🧾 {len(niet_gef)} klanten nog niet gefactureerd in {jaar} — werk ze af",
-                         expanded=True):
-            st.caption("Actieve, niet-gratis klanten zonder gematchte factuur dit jaar. Heb je iemand "
-                       "geregeld? Vul 'Vooruitbetaald t/m' in of pas de status aan in de klantenlijst, "
-                       "dan verdwijnt 'ie hier.")
-            werk_df = pd.DataFrame([{
-                "Naam": a["name"],
-                "E-mail": a.get("email", "") or "",
-                "Pakket": klant_pakket(a, admin),
-                "Prijs/4wk": round(klant_prijs(a, admin, prijzen), 2),
-            } for a in niet_gef])
-            st.dataframe(werk_df, hide_index=True, use_container_width=True,
-                         column_config={"Prijs/4wk": st.column_config.NumberColumn(format="€ %.2f")})
 
 
 def render_admin(athletes_by_group: dict):
@@ -959,235 +927,269 @@ def render_admin(athletes_by_group: dict):
                     _save_todo()
                     st.rerun()
 
-    st.markdown("### 📊 Administratie-dashboard")
-    st.caption("Financiële cockpit · data uit Rompslomp en FinalSurge")
-    _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
-                       _met_correctie(revenue, correctie), facturen, last_act)
+    st.markdown("### 📊 Administratie")
+    _bron = st.session_state.get("_rompslomp_bron", "")
+    st.caption(f"Financiële cockpit · data uit Rompslomp en FinalSurge. {_bron}")
 
-    st.divider()
+    tab_dash, tab_fact, tab_klant, tab_beheer = st.tabs(
+        ["📊 Dashboard", "🧾 Facturatie", "👥 Klanten", "⚙️ Beheer"])
 
-    # ── KOR-TRACKER (sync, verloop, bijstellen) ──
-    st.markdown("### 💶 KOR-omzettracker")
+    # ══ TAB 1 — DASHBOARD (alleen kijken, geen knoppen nodig) ══
+    with tab_dash:
+        _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
+                           _met_correctie(revenue, correctie), facturen, last_act)
 
-    if rompslomp_client.is_configured():
-        _jaar = str(date.today().year)
-        _api_omzet = max((v for k, v in revenue.items() if k.startswith(_jaar)), default=0.0)
-
-        _bron = st.session_state.get("_rompslomp_bron", "")
-        rc1, rc2 = st.columns([3, 1], vertical_alignment="center")
-        with rc1:
-            st.caption(f"🔗 Automatisch uit Rompslomp — facturen + boekingen. {_bron}")
-        with rc2:
-            if st.button("🔄 Sync nu", key="adm_rompslomp_sync", use_container_width=True):
-                _doe_rompslomp_sync(revenue)
-                st.rerun()
-
-        with st.expander("📈 Verloop & facturen"):
-            if revenue:
-                _df_rev = pd.DataFrame(
-                    [{"Maand": m, "Omzet (cumulatief)": v} for m, v in sorted(revenue.items())]
-                ).set_index("Maand")
-                st.line_chart(_df_rev, height=200)
-            _facturen = st.session_state.get("_rompslomp_facturen")
-            if _facturen:
-                _df_f = pd.DataFrame([
-                    {"Datum": f["datum"], "Nr": f["nummer"], "Klant": f["naam"],
-                     "Bedrag": f["bedrag"], "Betaald": "✅" if f["betaald"] else "openstaand"}
-                    for f in _facturen if f.get("status") != "concept"
-                ])
-                st.dataframe(_df_f, use_container_width=True, hide_index=True,
-                             column_config={"Bedrag": st.column_config.NumberColumn(format="€%.2f")})
-
-        with st.expander("🔬 Factuur-diagnose (voor omzet-categorieën)"):
-            st.caption("Eenmalige check: zo zie ik onder welk veld de omschrijving van een factuur "
-                       "staat, zodat ik clinics, lactaatmetingen en strippenkaarten betrouwbaar kan "
-                       "herkennen. Klik, bekijk wat er staat en stuur het door.")
-            if st.button("Toon factuurvelden", key="adm_factuur_diag"):
-                _ruw, _err = rompslomp_client.ruwe_facturen(date.today().year, n=6)
-                st.session_state["_factuur_ruw"] = _ruw
-                st.session_state["_factuur_ruw_err"] = _err
-            _ruw = st.session_state.get("_factuur_ruw")
-            if st.session_state.get("_factuur_ruw_err"):
-                st.error(st.session_state["_factuur_ruw_err"])
-            if _ruw:
-                # Overzicht: naam, bedrag, gevonden omschrijving
-                _ov = pd.DataFrame([{
-                    "Klant": rompslomp_client._contact_naam(i),
-                    "Bedrag": rompslomp_client._parse_bedrag(
-                        i.get("price_with_vat") or i.get("price_without_vat")),
-                    "Omschrijving (gevonden)": rompslomp_client._factuur_omschrijving(i),
-                } for i in _ruw])
-                st.dataframe(_ov, use_container_width=True, hide_index=True,
-                             column_config={"Bedrag": st.column_config.NumberColumn(format="€%.2f")})
-                st.caption("Alle ruwe velden van de eerste factuur (zoek waar de omschrijving in zit):")
-                st.json(_ruw[0])
-
-        with st.expander("👥 Rompslomp-contacten (alle gefactureerde klanten)"):
-            st.caption("Iedereen die ooit een factuur kreeg in Rompslomp, met of er een FinalSurge-klant "
-                       "aan gekoppeld is. Contacten zonder koppeling zijn clinics, losse kopers of "
-                       "oud-klanten.")
-            if st.button("Haal Rompslomp-contacten op", key="adm_contacten"):
-                _ct, _cterr = rompslomp_client.get_contacts()
-                st.session_state["_rompslomp_contacten"] = _ct
-                st.session_state["_rompslomp_contacten_err"] = _cterr
-            if st.session_state.get("_rompslomp_contacten_err"):
-                st.error(st.session_state["_rompslomp_contacten_err"])
-            _ct = st.session_state.get("_rompslomp_contacten")
-            if _ct:
-                _gekoppeld = sum(1 for c in _ct if match_contact_fs(c, athletes))
-                st.caption(f"**{len(_ct)} contacten** · {_gekoppeld} gekoppeld aan FinalSurge · "
-                           f"{len(_ct) - _gekoppeld} zonder koppeling.")
-                _cdf = pd.DataFrame([{
-                    "Naam": c["naam"],
-                    "E-mail": c["email"],
-                    "Nr": c["nummer"],
-                    "FinalSurge-klant": match_contact_fs(c, athletes) or "—",
-                } for c in sorted(_ct, key=lambda x: x["naam"])])
-                st.dataframe(_cdf, use_container_width=True, hide_index=True)
-
-        with st.expander("🎯 Bijstellen op je Winst & Verlies (zelden nodig)"):
-            st.caption("Alles loopt automatisch via je facturen en boekingen. Klopt de stand een keer niet "
-                       "met je Rompslomp Winst & Verlies — bijvoorbeeld door een bedrag dat je direct op "
-                       "omzet boekte zonder factuur — vul dan hier je W&V-omzet in. De app onthoudt het verschil.")
-            _ijk_in = st.number_input("Omzet volgens je Rompslomp W&V (€)", min_value=0.0, step=10.0,
-                                      value=float(_api_omzet + correctie), key="adm_kor_ijk")
-            ijc1, ijc2 = st.columns([1, 2])
-            with ijc1:
-                if st.button("Bijstellen", type="primary", key="adm_kor_ijk_save"):
-                    intake_store.save_kor_correctie(round(_ijk_in - _api_omzet, 2))
-                    st.rerun()
-            with ijc2:
-                if correctie:
-                    st.caption(f"Huidige bijstelling: **{_eur(correctie)}** bovenop de automatische "
-                               f"**{_eur(_api_omzet)}**.")
-    else:
-        st.caption("💡 Nog niet gekoppeld met Rompslomp. Zet ROMPSLOMP_API_TOKEN in de Streamlit-secrets "
-                   "voor automatische omzet, of voer hieronder handmatig in.")
-        with st.expander("➕ Omzetbedrag handmatig invoeren"):
-            cm1, cm2, cm3 = st.columns([1.2, 1.5, 1])
-            with cm1:
-                _maand = st.text_input("Maand (YYYY-MM)", value=date.today().strftime("%Y-%m"),
-                                       key="adm_rev_maand")
-            with cm2:
-                _bedrag = st.number_input("Cumulatief bedrag (€)", min_value=0.0, step=100.0,
-                                          value=float(proj["huidig"]), key="adm_rev_bedrag")
-            with cm3:
-                st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
-                if st.button("Opslaan", type="primary", key="adm_rev_save", use_container_width=True):
-                    revenue[_maand.strip()] = round(float(_bedrag), 2)
-                    intake_store.save_revenue(revenue)
+    # ══ TAB 2 — FACTURATIE (alles waar je iets mee moet) ══
+    with tab_fact:
+        if rompslomp_client.is_configured():
+            fc_sync1, fc_sync2 = st.columns([3, 1], vertical_alignment="center")
+            with fc_sync1:
+                st.caption("Facturen en omzet komen automatisch uit Rompslomp "
+                           "(één sync per dag bij het openen van de module).")
+            with fc_sync2:
+                if st.button("🔄 Sync nu", key="adm_rompslomp_sync", use_container_width=True):
+                    _doe_rompslomp_sync(revenue)
                     st.rerun()
 
-    st.divider()
+            _niet_gef = niet_gefactureerde_klanten(athletes, admin, facturen) if facturen else []
+            if _niet_gef:
+                st.markdown(f"**🧾 Nog niet gefactureerd dit jaar ({len(_niet_gef)})**")
+                st.caption("Actieve, niet-gratis klanten zonder gematchte factuur. Geregeld? "
+                           "Vul 'Vooruitbetaald t/m' in of pas de status aan op het tabblad Klanten.")
+                st.dataframe(pd.DataFrame([{
+                    "Naam": a["name"],
+                    "E-mail": a.get("email", "") or "",
+                    "Pakket": klant_pakket(a, admin),
+                    "Prijs/4wk": round(klant_prijs(a, admin, prijzen), 2),
+                } for a in _niet_gef]), hide_index=True, use_container_width=True,
+                    column_config={"Prijs/4wk": st.column_config.NumberColumn(format="€ %.2f")})
+            elif facturen:
+                st.caption("✅ Alle actieve klanten hebben dit jaar een factuur.")
 
-    # ── KLANTENLIJST ──
-    st.markdown("### 👥 Klantenlijst")
-    st.caption("Live uit FinalSurge. Het pakket wordt automatisch afgeleid uit de FinalSurge-groep; "
-               "je kunt het overschrijven. Vink 'Gratis' aan bij vriendendiensten en vul 'Eigen prijs/4wk' "
-               "in bij klanten met een afwijkende (bijv. oude) prijs. Coach, status, betaalcyclus en notitie "
-               "stel je hier ook in. Alles wordt bewaard en nooit door een sync overschreven.")
+            _open_f = [f for f in (facturen or [])
+                       if not f.get("betaald") and f.get("status") != "concept"]
+            if _open_f:
+                st.markdown(f"**📄 Openstaand ({len(_open_f)} · "
+                            f"{_eur0(sum(f.get('bedrag', 0) for f in _open_f))})**")
+                st.dataframe(pd.DataFrame([{
+                    "Datum": f["datum"], "Nr": f.get("nummer", ""), "Klant": f["naam"],
+                    "Bedrag": f["bedrag"],
+                } for f in sorted(_open_f, key=lambda x: x["datum"])]),
+                    hide_index=True, use_container_width=True,
+                    column_config={"Bedrag": st.column_config.NumberColumn(format="€ %.2f")})
 
-    with st.expander("⚙️ Pakketprijzen (per 4 weken)"):
-        st.caption("Prijs per pakket — bepaalt de geschatte jaaromzet van je klanten.")
-        _pcols = st.columns(len(PAKKET_PRIJZEN_STD))
-        _nieuw_prijzen = {}
-        for _i, _pk in enumerate(PAKKET_PRIJZEN_STD):
-            with _pcols[_i]:
-                _nieuw_prijzen[_pk] = st.number_input(
-                    _pk, min_value=0, step=5, value=int(prijzen.get(_pk, 0)),
-                    key=f"prijs_{_pk}",
+            with st.expander(f"📋 Alle facturen dit jaar ({len(facturen or [])})"):
+                if facturen:
+                    st.dataframe(pd.DataFrame([{
+                        "Datum": f["datum"], "Nr": f.get("nummer", ""), "Klant": f["naam"],
+                        "Omschrijving": f.get("omschrijving", ""), "Bedrag": f["bedrag"],
+                        "Betaald": "✅" if f.get("betaald") else "openstaand",
+                    } for f in sorted(facturen, key=lambda x: x["datum"], reverse=True)
+                        if f.get("status") != "concept"]),
+                        hide_index=True, use_container_width=True,
+                        column_config={"Bedrag": st.column_config.NumberColumn(format="€ %.2f")})
+                else:
+                    st.caption("Nog geen facturen geladen — klik op Sync nu.")
+        else:
+            st.caption("💡 Nog niet gekoppeld met Rompslomp. Zet ROMPSLOMP_API_TOKEN in de "
+                       "Streamlit-secrets voor automatische omzet, of voer op het tabblad "
+                       "Beheer handmatig een omzetbedrag in.")
+
+    # ══ TAB 3 — KLANTEN ══
+    with tab_klant:
+        st.caption("Live uit FinalSurge; het pakket volgt de FinalSurge-groep (overschrijven kan). "
+                   "'Gratis' = vriendendienst, 'Eigen prijs/4wk' = afwijkende (oude) prijs, "
+                   "'Vooruitbetaald t/m' = ineens vooruitbetaald. Wordt nooit door een sync overschreven.")
+
+        with st.expander("⚙️ Pakketprijzen (per 4 weken)"):
+            _pcols = st.columns(len(PAKKET_PRIJZEN_STD))
+            _nieuw_prijzen = {}
+            for _i, _pk in enumerate(PAKKET_PRIJZEN_STD):
+                with _pcols[_i]:
+                    _nieuw_prijzen[_pk] = st.number_input(
+                        _pk, min_value=0, step=5, value=int(prijzen.get(_pk, 0)),
+                        key=f"prijs_{_pk}",
+                    )
+            if st.button("💾 Prijzen opslaan", key="adm_save_prijzen"):
+                ok, err = intake_store.save_pakket_prijzen(_nieuw_prijzen)
+                if ok:
+                    st.success("Pakketprijzen opgeslagen.")
+                    st.rerun()
+                else:
+                    st.error(f"Opslaan mislukt: {err}")
+
+        rows = []
+        for a in athletes:
+            v = admin.get(a["user_key"], {})
+            pakket = klant_pakket(a, admin)
+            gratis = bool(v.get("gratis"))
+            eigen = float(v.get("prijs_override") or 0)
+            vb_val = None
+            if v.get("vooruitbetaald_tot"):
+                try:
+                    vb_val = datetime.fromisoformat(str(v["vooruitbetaald_tot"])).date()
+                except ValueError:
+                    vb_val = None
+            rows.append({
+                "user_key": a["user_key"],
+                "Naam": a["name"],
+                "E-mail": a.get("email", "") or "",
+                "Pakket": pakket,
+                "Gratis": gratis,
+                "Eigen prijs/4wk": eigen,
+                "Prijs/4wk": round(klant_prijs(a, admin, prijzen), 2),
+                "Coach": v.get("coach", "—"),
+                "Status": v.get("status", "Actief"),
+                "Betaalcyclus": v.get("cyclus", "4 weken"),
+                "Vooruitbetaald t/m": vb_val,
+                "Notitie": v.get("notitie", ""),
+            })
+        df = pd.DataFrame(rows)
+        df["Vooruitbetaald t/m"] = pd.to_datetime(df["Vooruitbetaald t/m"], errors="coerce")
+
+        edited = st.data_editor(
+            df,
+            key="adm_editor",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "user_key": None,  # verbergen
+                "Naam": st.column_config.TextColumn(disabled=True),
+                "E-mail": st.column_config.TextColumn(disabled=True),
+                "Pakket": st.column_config.SelectboxColumn(options=PAKKETTEN, required=True,
+                           help="Automatisch uit de groep; overschrijven kan."),
+                "Gratis": st.column_config.CheckboxColumn(
+                           help="Vriendendienst: telt mee als actieve klant, maar levert €0 omzet "
+                                "en wordt niet in Rompslomp verwacht."),
+                "Eigen prijs/4wk": st.column_config.NumberColumn(min_value=0, step=5, format="€%.2f",
+                           help="Laat op €0 voor de standaard pakketprijs. Vul het werkelijke bedrag in "
+                                "bij een afwijkende prijs, bijv. de oude prijs van vóór de verhoging."),
+                "Prijs/4wk": st.column_config.NumberColumn(disabled=True, format="€%.2f",
+                           help="Effectieve prijs (berekend): eigen prijs indien ingevuld, anders de "
+                                "pakketprijs. €0,00 bij een vriendendienst."),
+                "Coach": st.column_config.SelectboxColumn(options=COACHES, required=True),
+                "Status": st.column_config.SelectboxColumn(options=STATUSSEN, required=True),
+                "Betaalcyclus": st.column_config.SelectboxColumn(options=CYCLI, required=True),
+                "Vooruitbetaald t/m": st.column_config.DateColumn(format="DD-MM-YYYY",
+                           help="Vul een datum in als de klant vooruit/ineens betaald heeft. Tot die "
+                                "datum valt hij buiten het 'nog niet gefactureerd'-signaal."),
+                "Notitie": st.column_config.TextColumn(),
+            },
+        )
+
+        if st.button("💾 Klantgegevens opslaan", type="primary", key="adm_save_clients"):
+            nieuw = dict(admin)
+            for _, r in edited.iterrows():
+                # Pakket alleen opslaan als override wanneer het afwijkt van de
+                # groep-afleiding; anders leeg laten zodat het de groep blijft volgen.
+                _afgeleid = pakket_van_groep(
+                    next((a.get("group", "") for a in athletes if a["user_key"] == r["user_key"]), "")
                 )
-        if st.button("💾 Prijzen opslaan", key="adm_save_prijzen"):
-            ok, err = intake_store.save_pakket_prijzen(_nieuw_prijzen)
+                _pakket_val = r["Pakket"] if r["Pakket"] != _afgeleid else ""
+                _vb = r["Vooruitbetaald t/m"]
+                _vb_iso = _vb.date().isoformat() if pd.notna(_vb) else None
+                nieuw[r["user_key"]] = {
+                    "pakket": _pakket_val,
+                    "prijs_override": float(r["Eigen prijs/4wk"]) or None,
+                    "gratis": bool(r["Gratis"]),
+                    "coach": r["Coach"],
+                    "status": r["Status"],
+                    "cyclus": r["Betaalcyclus"],
+                    "vooruitbetaald_tot": _vb_iso,
+                    "notitie": r["Notitie"] or "",
+                }
+            ok, err = _save_admin(nieuw)
             if ok:
-                st.success("Pakketprijzen opgeslagen.")
+                st.success("Klantgegevens opgeslagen.")
                 st.rerun()
             else:
                 st.error(f"Opslaan mislukt: {err}")
 
-    rows = []
-    for a in athletes:
-        v = admin.get(a["user_key"], {})
-        pakket = klant_pakket(a, admin)
-        gratis = bool(v.get("gratis"))
-        eigen = float(v.get("prijs_override") or 0)
-        vb_val = None
-        if v.get("vooruitbetaald_tot"):
-            try:
-                vb_val = datetime.fromisoformat(str(v["vooruitbetaald_tot"])).date()
-            except ValueError:
-                vb_val = None
-        rows.append({
-            "user_key": a["user_key"],
-            "Naam": a["name"],
-            "E-mail": a.get("email", "") or "",
-            "Pakket": pakket,
-            "Gratis": gratis,
-            "Eigen prijs/4wk": eigen,
-            "Prijs/4wk": round(klant_prijs(a, admin, prijzen), 2),
-            "Coach": v.get("coach", "—"),
-            "Status": v.get("status", "Actief"),
-            "Betaalcyclus": v.get("cyclus", "4 weken"),
-            "Vooruitbetaald t/m": vb_val,
-            "Notitie": v.get("notitie", ""),
-        })
-    df = pd.DataFrame(rows)
-    df["Vooruitbetaald t/m"] = pd.to_datetime(df["Vooruitbetaald t/m"], errors="coerce")
+    # ══ TAB 4 — BEHEER (instellingen en zelden-nodig) ══
+    with tab_beheer:
+        st.markdown("**⚙️ Potjes-instellingen**")
+        st.caption("Bepalen de verdeling op het dashboard. Stem de percentages af met je boekhouder.")
+        pi1, pi2, pi3 = st.columns(3)
+        try:
+            _inst = {**{"ib_pct": 30, "buffer_pct": 10, "kosten_pm": 250},
+                     **(intake_store.load_btw_instellingen() or {})}
+        except Exception:
+            _inst = {"ib_pct": 30, "buffer_pct": 10, "kosten_pm": 250}
+        with pi1:
+            _ib_in = st.number_input("IB-reserve (% van winst)", min_value=0.0, max_value=60.0,
+                                     step=1.0, value=float(_inst["ib_pct"]), key="adm_ib_pct")
+        with pi2:
+            _buf_in = st.number_input("Buffer (% van winst)", min_value=0.0, max_value=50.0,
+                                      step=1.0, value=float(_inst["buffer_pct"]), key="adm_buf_pct")
+        with pi3:
+            _kos_in = st.number_input("Kosten per maand (€)", min_value=0.0, step=25.0,
+                                      value=float(_inst["kosten_pm"]), key="adm_kosten_pm")
+        if st.button("💾 Potjes opslaan", key="adm_potjes_save"):
+            ok, err = intake_store.save_btw_instellingen(
+                {"ib_pct": _ib_in, "buffer_pct": _buf_in, "kosten_pm": _kos_in})
+            if ok:
+                st.success("Opgeslagen.")
+                st.rerun()
+            else:
+                st.error(f"Opslaan mislukt: {err}")
 
-    edited = st.data_editor(
-        df,
-        key="adm_editor",
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "user_key": None,  # verbergen
-            "Naam": st.column_config.TextColumn(disabled=True),
-            "E-mail": st.column_config.TextColumn(disabled=True),
-            "Pakket": st.column_config.SelectboxColumn(options=PAKKETTEN, required=True,
-                       help="Automatisch uit de groep; overschrijven kan."),
-            "Gratis": st.column_config.CheckboxColumn(
-                       help="Vriendendienst: telt mee als actieve klant, maar levert €0 omzet "
-                            "en wordt niet in Rompslomp verwacht."),
-            "Eigen prijs/4wk": st.column_config.NumberColumn(min_value=0, step=5, format="€%.2f",
-                       help="Laat op €0 voor de standaard pakketprijs. Vul het werkelijke bedrag in "
-                            "bij een afwijkende prijs, bijv. de oude prijs van vóór de verhoging."),
-            "Prijs/4wk": st.column_config.NumberColumn(disabled=True, format="€%.2f",
-                       help="Effectieve prijs (berekend): eigen prijs indien ingevuld, anders de "
-                            "pakketprijs. €0,00 bij een vriendendienst."),
-            "Coach": st.column_config.SelectboxColumn(options=COACHES, required=True),
-            "Status": st.column_config.SelectboxColumn(options=STATUSSEN, required=True),
-            "Betaalcyclus": st.column_config.SelectboxColumn(options=CYCLI, required=True),
-            "Vooruitbetaald t/m": st.column_config.DateColumn(format="DD-MM-YYYY",
-                       help="Vul een datum in als de klant vooruit/ineens betaald heeft. Tot die "
-                            "datum valt hij buiten het 'nog niet gefactureerd'-signaal."),
-            "Notitie": st.column_config.TextColumn(),
-        },
-    )
+        st.divider()
 
-    if st.button("💾 Klantgegevens opslaan", type="primary", key="adm_save_clients"):
-        nieuw = dict(admin)
-        for _, r in edited.iterrows():
-            # Pakket alleen opslaan als override wanneer het afwijkt van de
-            # groep-afleiding; anders leeg laten zodat het de groep blijft volgen.
-            _afgeleid = pakket_van_groep(
-                next((a.get("group", "") for a in athletes if a["user_key"] == r["user_key"]), "")
-            )
-            _pakket_val = r["Pakket"] if r["Pakket"] != _afgeleid else ""
-            _vb = r["Vooruitbetaald t/m"]
-            _vb_iso = _vb.date().isoformat() if pd.notna(_vb) else None
-            nieuw[r["user_key"]] = {
-                "pakket": _pakket_val,
-                "prijs_override": float(r["Eigen prijs/4wk"]) or None,
-                "gratis": bool(r["Gratis"]),
-                "coach": r["Coach"],
-                "status": r["Status"],
-                "cyclus": r["Betaalcyclus"],
-                "vooruitbetaald_tot": _vb_iso,
-                "notitie": r["Notitie"] or "",
-            }
-        ok, err = _save_admin(nieuw)
-        if ok:
-            st.success("Klantgegevens opgeslagen.")
-            st.rerun()
+        if rompslomp_client.is_configured():
+            _jaar = str(date.today().year)
+            _api_omzet = max((v for k, v in revenue.items() if k.startswith(_jaar)), default=0.0)
+
+            with st.expander("🎯 Bijstellen op je Winst & Verlies (zelden nodig)"):
+                st.caption("Alles loopt automatisch via je facturen en boekingen. Klopt de stand een "
+                           "keer niet met je Rompslomp Winst & Verlies — bijvoorbeeld door een bedrag "
+                           "dat je direct op omzet boekte zonder factuur — vul dan hier je W&V-omzet "
+                           "in. De app onthoudt het verschil.")
+                _ijk_in = st.number_input("Omzet volgens je Rompslomp W&V (€)", min_value=0.0, step=10.0,
+                                          value=float(_api_omzet + correctie), key="adm_kor_ijk")
+                ijc1, ijc2 = st.columns([1, 2])
+                with ijc1:
+                    if st.button("Bijstellen", type="primary", key="adm_kor_ijk_save"):
+                        intake_store.save_kor_correctie(round(_ijk_in - _api_omzet, 2))
+                        st.rerun()
+                with ijc2:
+                    if correctie:
+                        st.caption(f"Huidige bijstelling: **{_eur(correctie)}** bovenop de "
+                                   f"automatische **{_eur(_api_omzet)}**.")
+
+            with st.expander("👥 Rompslomp-contacten (koppelingscontrole)"):
+                st.caption("Iedereen die ooit een factuur kreeg in Rompslomp, met of er een "
+                           "FinalSurge-klant aan gekoppeld is. Zonder koppeling = clinics, losse "
+                           "kopers of oud-klanten.")
+                if st.button("Haal Rompslomp-contacten op", key="adm_contacten"):
+                    _ct, _cterr = rompslomp_client.get_contacts()
+                    st.session_state["_rompslomp_contacten"] = _ct
+                    st.session_state["_rompslomp_contacten_err"] = _cterr
+                if st.session_state.get("_rompslomp_contacten_err"):
+                    st.error(st.session_state["_rompslomp_contacten_err"])
+                _ct = st.session_state.get("_rompslomp_contacten")
+                if _ct:
+                    _gekoppeld = sum(1 for c in _ct if match_contact_fs(c, athletes))
+                    st.caption(f"**{len(_ct)} contacten** · {_gekoppeld} gekoppeld aan FinalSurge · "
+                               f"{len(_ct) - _gekoppeld} zonder koppeling.")
+                    st.dataframe(pd.DataFrame([{
+                        "Naam": c["naam"],
+                        "E-mail": c["email"],
+                        "Nr": c["nummer"],
+                        "FinalSurge-klant": match_contact_fs(c, athletes) or "—",
+                    } for c in sorted(_ct, key=lambda x: x["naam"])]),
+                        use_container_width=True, hide_index=True)
         else:
-            st.error(f"Opslaan mislukt: {err}")
+            with st.expander("➕ Omzetbedrag handmatig invoeren"):
+                cm1, cm2, cm3 = st.columns([1.2, 1.5, 1])
+                with cm1:
+                    _maand = st.text_input("Maand (YYYY-MM)", value=date.today().strftime("%Y-%m"),
+                                           key="adm_rev_maand")
+                with cm2:
+                    _bedrag = st.number_input("Cumulatief bedrag (€)", min_value=0.0, step=100.0,
+                                              value=float(proj["huidig"]), key="adm_rev_bedrag")
+                with cm3:
+                    st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
+                    if st.button("Opslaan", type="primary", key="adm_rev_save", use_container_width=True):
+                        revenue[_maand.strip()] = round(float(_bedrag), 2)
+                        intake_store.save_revenue(revenue)
+                        st.rerun()

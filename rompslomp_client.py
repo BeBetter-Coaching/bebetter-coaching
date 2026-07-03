@@ -222,29 +222,6 @@ def get_invoices(year: int | None = None) -> tuple[list[dict], str]:
     return facturen, ""
 
 
-def ruwe_facturen(year: int | None = None, n: int = 6) -> tuple[list, str]:
-    """Geeft de ruwe JSON van de eerste n facturen terug (voor diagnose van velden)."""
-    if not is_configured():
-        return [], "Rompslomp niet geconfigureerd."
-    cid = _company_id()
-    if not cid:
-        return [], "Geen bedrijf (company_id) beschikbaar."
-    url = f"{_base()}/companies/{cid}/sales_invoices"
-    try:
-        resp = _session.get(url, headers=_headers(), timeout=_TIMEOUT,
-                            params={"page": 1, "per_page": 50})
-        if resp.status_code in (401, 403):
-            return [], f"Geen toegang ({resp.status_code})."
-        resp.raise_for_status()
-        data = resp.json()
-        items = data if isinstance(data, list) else (data.get("data") or data.get("sales_invoices") or [])
-        if year:
-            items = [i for i in items if (i.get("date") or "").startswith(str(year))]
-        return items[:n], ""
-    except Exception as e:
-        return [], str(e)
-
-
 def get_contacts() -> tuple[list[dict], str]:
     """
     Haal alle contacten (klanten) op uit Rompslomp — iedereen die ooit een
