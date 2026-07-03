@@ -436,6 +436,15 @@ class TestBtwOmschakeling:
         assert rc._is_kosten_account({"type": "expense"}) is True
         assert rc._is_kosten_account({"type": "revenue", "path": "Omzet"}) is False
 
+    def test_uitgave_telt_als_kost(self):
+        # balans-uitgaven (voorraad) tellen niet mee als kosten — net als de W&V
+        import rompslomp_client as rc
+        kost = {"type_account": {"type": "costs", "path": "profit.costs.selling.representation"}}
+        voorraad = {"type_account": {"type": "balance", "path": "activa.current_assets.stock"}}
+        assert rc._uitgave_telt_als_kost(kost) is True
+        assert rc._uitgave_telt_als_kost(voorraad) is False
+        assert rc._uitgave_telt_als_kost({}) is True  # onbekend → meetellen
+
     def test_uitgave_bedrag_uit_invoice_lines(self):
         # expenses-endpoint: bedragen zitten in de regels, niet op het hoofdniveau
         import rompslomp_client as rc

@@ -445,10 +445,27 @@ def _uitgave_bedrag(item: dict) -> float:
     return round(totaal, 2)
 
 
+def _uitgave_telt_als_kost(item: dict) -> bool:
+    """
+    True als een uitgave op een kostenrekening staat. Uitgaven op een
+    balansrekening (bijv. voorraad-inkoop, activa.current_assets.stock)
+    tellen op de W&V niet als kosten — hier dus ook niet.
+    """
+    ta = item.get("type_account")
+    if isinstance(ta, dict):
+        t = (ta.get("type") or "").lower()
+        if t and t != "costs":
+            return False
+        pad = (ta.get("path") or "").lower()
+        if pad.startswith(("activa", "passiva")):
+            return False
+    return True
+
+
 def get_uitgaven_ytd(year: int) -> tuple[float, int, str]:
     """
-    Som van de uitgaven (kosten) dit jaar uit het expenses-endpoint.
-    Geeft (bedrag, aantal, endpoint). Concepten tellen niet mee.
+    Som van de uitgaven op KOSTENrekeningen dit jaar (expenses-endpoint).
+    Geeft (bedrag, aantal, endpoint). Concepten en balans-uitgaven tellen niet.
     """
     items, err = _paged("expenses", ("data", "expenses"))
     if err or not items:
@@ -461,6 +478,8 @@ def get_uitgaven_ytd(year: int) -> tuple[float, int, str]:
             continue
         d = (it.get("date") or it.get("invoice_date") or "")[:10]
         if not d.startswith(str(year)):
+            continue
+        if not _uitgave_telt_als_kost(it):
             continue
         bedrag = _uitgave_bedrag(it)
         if bedrag:
@@ -485,12 +504,15 @@ def get_uitgaven_lijst(year: int) -> tuple[list[dict], str]:
             str(li.get("description") or "").strip()
             for li in (it.get("invoice_lines") or []) if isinstance(li, dict)
             and (li.get("description") or "").strip())[:120]
+        ta = it.get("type_account")
+        rekening = (ta.get("path_name") or ta.get("name") or "") if isinstance(ta, dict) else str(ta or "")
         lijst.append({
             "datum": d,
             "naam": _contact_naam(it),
             "omschrijving": omschrijving,
             "bedrag": _uitgave_bedrag(it),
-            "rekening": str(it.get("type_account") or ""),
+            "rekening": rekening,
+            "telt als kost": _uitgave_telt_als_kost(it),
             "state": it.get("state") or "",
         })
     lijst.sort(key=lambda x: x["datum"], reverse=True)
