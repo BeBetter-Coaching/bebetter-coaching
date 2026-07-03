@@ -283,6 +283,52 @@ def _auto_dossier_note(workout: dict):
     except Exception:
         pass
 
+
+def _coach_profiel(athlete_key: str) -> str:
+    """Coach-geheugen van een atleet (sessie-gecachet, 1 opslag-load per sessie)."""
+    if "_profielen_cache" not in st.session_state:
+        try:
+            st.session_state["_profielen_cache"] = intake_store.load_profielen()
+        except Exception:
+            st.session_state["_profielen_cache"] = {}
+    return (st.session_state["_profielen_cache"].get(athlete_key) or {}).get("profiel", "")
+
+
+def _leer_profiel(workout: dict, coach_tekst: str):
+    """
+    Werk het coach-geheugen van de atleet bij met deze geposte interactie.
+    Draait op een achtergrond-thread zodat het posten nooit trager wordt;
+    best-effort: een fout mag het posten nooit blokkeren.
+    """
+    athlete_key = workout.get("athlete_key")
+    if not athlete_key or not (coach_tekst or "").strip():
+        return
+    athlete_tekst = "\n".join(
+        t for t in [workout.get("post_notes", "")] + (workout.get("athlete_comments") or [])
+        if t and t.strip()
+    )
+    workout_naam = workout.get("workout_name", "")
+
+    def _werk():
+        try:
+            profielen = intake_store.load_profielen()
+            huidig = profielen.get(athlete_key) or {}
+            nieuw = ai_feedback.update_athlete_profiel(
+                huidig.get("profiel", ""), athlete_tekst, coach_tekst, workout_naam)
+            if nieuw and nieuw != huidig.get("profiel", ""):
+                profielen[athlete_key] = {
+                    "profiel": nieuw,
+                    "bijgewerkt": date.today().isoformat(),
+                    "n": huidig.get("n", 0) + 1,
+                }
+                intake_store.save_profielen(profielen)
+        except Exception:
+            pass
+
+    import threading
+    threading.Thread(target=_werk, daemon=True).start()
+
+
 def _laps_chart(details: dict):
     """
     Compacte pace/HF-grafiek per km uit de lapdata van een workout.
@@ -2033,6 +2079,7 @@ elif page == "feedback":
                                 _thread = workouts[i].get("thread", [])
                                 _last_van = _thread[-1].get("van") if _thread else None
                                 _has_coach = any(m.get("van") == "coach" for m in _thread)
+                                workouts[i]["coach_profiel"] = _coach_profiel(workouts[i]["athlete_key"])
                                 if _thread and _last_van == "atleet" and _has_coach:
                                     fb = ai_feedback.generate_reply(workouts[i], _thread)
                                 else:
@@ -2176,6 +2223,7 @@ elif page == "feedback":
                             if st.button(btn_label, key=f"gen_{i}", type="primary"):
                                 with st.spinner("Concept schrijven..."):
                                     try:
+                                        workout["coach_profiel"] = _coach_profiel(workout["athlete_key"])
                                         if has_athlete_followup:
                                             fb = ai_feedback.generate_reply(workout, thread)
                                         else:
@@ -2219,6 +2267,7 @@ elif page == "feedback":
                                         st.session_state.pop(f"zelf_{wk}", None)
                                         _day_stats_mark_done(posted=True)
                                         _auto_dossier_note(workout)
+                                        _leer_profiel(workout, edited)
                                         _session_log = st.session_state.setdefault("session_feedback_log", [])
                                         _session_log.append({
                                             "athlete_name": workout["athlete_name"],
@@ -2255,6 +2304,7 @@ elif page == "feedback":
                                     st.session_state[f"posted_{wk}"] = True
                                     _day_stats_mark_done(posted=True)
                                     _auto_dossier_note(workout)
+                                    _leer_profiel(workout, edited)
                                     # Sla op voor sessie-samenvatting
                                     _session_log = st.session_state.setdefault("session_feedback_log", [])
                                     _session_log.append({

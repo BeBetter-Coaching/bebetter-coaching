@@ -380,6 +380,32 @@ class TestBelasting:
 
 
 # ---------------------------------------------------------------------------
+# ai_feedback.update_athlete_profiel — vangnetten (gemockte AI)
+# ---------------------------------------------------------------------------
+
+class TestProfielVangnet:
+    @staticmethod
+    def _mock_ai(monkeypatch, antwoord: str):
+        import ai_feedback
+        resp = type("R", (), {"content": [type("T", (), {"text": antwoord})()]})
+        monkeypatch.setattr(ai_feedback, "create_message", lambda **k: resp)
+        return ai_feedback
+
+    def test_normaal_antwoord_wordt_profiel(self, monkeypatch):
+        af = self._mock_ai(monkeypatch, "Heeft last van haar achillespees. Houdt van data.")
+        out = af.update_athlete_profiel("oud", "ging goed", "mooi gedaan")
+        assert "achillespees" in out
+
+    def test_ontspoord_lang_antwoord_behoudt_oud_profiel(self, monkeypatch):
+        af = self._mock_ai(monkeypatch, "x" * 2000)
+        assert af.update_athlete_profiel("oud profiel", "a", "c") == "oud profiel"
+
+    def test_leeg_antwoord_behoudt_oud_profiel(self, monkeypatch):
+        af = self._mock_ai(monkeypatch, "")
+        assert af.update_athlete_profiel("oud profiel", "a", "c") == "oud profiel"
+
+
+# ---------------------------------------------------------------------------
 # fs_client.get_training_log — parallelle lap-fetch (gemockte API)
 # ---------------------------------------------------------------------------
 

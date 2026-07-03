@@ -1,6 +1,7 @@
 .fs_auth_token
 .auth_tokens.json
 .belasting.json
+.profielen.json
 .builder_state.json
 .feedback_skipped.json
 builder_debug.txt

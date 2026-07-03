@@ -112,6 +112,24 @@ def is_cloud_backed() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Coach-profielen per atleet (meegroeiend feedback-geheugen)
+# ---------------------------------------------------------------------------
+
+_PROFIELEN_LOCAL = os.path.join(_BASE_DIR, ".profielen.json")
+
+
+def load_profielen() -> dict:
+    """Laad coach-profielen. Dict: user_key → {profiel, bijgewerkt, n}."""
+    return _load_json("profielen.json", _PROFIELEN_LOCAL)
+
+
+def save_profielen(data: dict) -> tuple[bool, str]:
+    """Sla coach-profielen op."""
+    return _save_json("profielen.json", _PROFIELEN_LOCAL, data,
+                      "Update coach-profielen via app")
+
+
+# ---------------------------------------------------------------------------
 # Belasting-signalering (dagstand, gedeeld tussen coaches)
 # ---------------------------------------------------------------------------
 

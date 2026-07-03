@@ -346,13 +346,23 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
         f"niet op het tijdstip."
     )
 
+    # Coach-geheugen: wat we uit eerdere gesprekken over deze atleet weten
+    profiel = (workout_data.get("coach_profiel") or "").strip()
+    profiel_section = (
+        f"\n\nWAT JE WEET OVER {first_name.upper()} (opgebouwd uit eerdere gesprekken):\n"
+        f"{profiel}\n"
+        f"Gebruik dit voor toon en context. Herhaal het niet letterlijk terug, "
+        f"verzin er niets bij, en benoem het alleen als het relevant is voor deze training."
+        if profiel else ""
+    )
+
     context = f"""Training: {workout_name}
 
 WAT WAS DE BEDOELING (workout builder):
 {plan_text}{zones_section}{garmin_section}
 
 Samenvattende data:
-{activity_summary}{lap_section}{datum_section}
+{activity_summary}{lap_section}{datum_section}{profiel_section}
 
 Wat {first_name} zelf schrijft/zegt:
 {athlete_input}"""
@@ -861,6 +871,44 @@ def check_dossier_signal(workout_data: dict) -> str | None:
     if not out or out.upper().startswith("NEE") or len(out) < 8:
         return None
     return out
+
+
+_PROFIEL_SYSTEM = """Je onderhoudt een compact coach-geheugen over één hardloop-atleet, voor het schrijven van persoonlijke feedback.
+
+Je krijgt het huidige profiel plus één nieuwe interactie (wat de atleet schreef en wat de coach antwoordde). Geef het BIJGEWERKTE profiel terug.
+
+WAT ERIN HOORT (alleen als het uit de interacties blijkt):
+- Blessures/fysieke aandachtspunten en hun verloop
+- Wat deze atleet motiveert en waar hij/zij op aanslaat (datagericht? gevoel? humor?)
+- Terugkerende thema's (slaap, werkstress, twijfel, wedstrijdspanning)
+- Voorkeuren en eigenaardigheden die de coach benoemt of bevestigt
+
+REGELS:
+- Maximaal 120 woorden, losse feitelijke zinnen, geen opsommingstekens of streepjes
+- Werk bestaande punten bij in plaats van toe te voegen; verwijder wat verouderd of eenmalig is
+- GEEN trainingslogboek (geen datums, tempo's of losse trainingen), alleen wat blijvend relevant is voor de coaching
+- Verzin niets; bij een nietszeggende interactie geef je het profiel vrijwel ongewijzigd terug
+- Nederlands. Antwoord met ALLEEN de profieltekst."""
+
+
+def update_athlete_profiel(oud_profiel: str, athlete_tekst: str,
+                           coach_tekst: str, workout_naam: str = "") -> str:
+    """Werk het coach-geheugen bij met één geposte feedback-interactie (Haiku)."""
+    inhoud = (f"HUIDIG PROFIEL:\n{oud_profiel.strip() or '(nog leeg)'}\n\n"
+              f"NIEUWE INTERACTIE ({workout_naam or 'training'}):\n"
+              f"Atleet schreef: {athlete_tekst.strip()[:1200] or '(niets)'}\n"
+              f"Coach antwoordde: {coach_tekst.strip()[:1200]}")
+    response = create_message(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=300,
+        system=_PROFIEL_SYSTEM,
+        messages=[{"role": "user", "content": inhoud}],
+    )
+    nieuw = _clean_text(response.content[0].text.strip())
+    # Vangnet: een leeg of ontspoord (veel te lang) antwoord nooit opslaan
+    if not nieuw or len(nieuw) > 1500:
+        return oud_profiel
+    return nieuw
 
 
 _BELASTING_SYSTEM = """Je vat belasting-signalen over een hardloper samen voor de coach, in maximaal twee korte zinnen.

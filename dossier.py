@@ -542,6 +542,38 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
         else:
             st.caption("Nog geen notities.")
 
+    # ── Coach-geheugen (meegroeiend feedback-profiel) ──
+    with st.expander("🧠 Coach-geheugen (wat de AI over deze atleet weet)"):
+        st.caption("Wordt automatisch bijgewerkt bij elke feedback die je post en gaat mee "
+                   "in nieuwe concept-feedback. Klopt er iets niet (meer)? Pas de tekst "
+                   "gewoon aan — jouw versie is leidend.")
+        if "_profielen_cache" not in st.session_state:
+            try:
+                st.session_state["_profielen_cache"] = intake_store.load_profielen()
+            except Exception:
+                st.session_state["_profielen_cache"] = {}
+        _profielen = st.session_state["_profielen_cache"]
+        _prof = _profielen.get(user_key) or {}
+        if _prof.get("bijgewerkt"):
+            st.caption(f"Laatst bijgewerkt: {_prof['bijgewerkt']} · "
+                       f"opgebouwd uit {_prof.get('n', 0)} feedback-momenten")
+        _prof_txt = st.text_area(
+            "Profiel", value=_prof.get("profiel", ""), height=140,
+            key=f"prof_{user_key}", label_visibility="collapsed",
+            placeholder="Nog leeg — groeit vanzelf zodra je feedback post op deze atleet.")
+        if st.button("💾 Geheugen opslaan", key=f"prof_save_{user_key}"):
+            _profielen[user_key] = {
+                "profiel": _prof_txt.strip(),
+                "bijgewerkt": date.today().isoformat(),
+                "n": _prof.get("n", 0),
+            }
+            ok, err = intake_store.save_profielen(_profielen)
+            if ok:
+                st.session_state["_profielen_cache"] = _profielen
+                st.success("Opgeslagen.")
+            else:
+                st.error(f"Opslaan mislukt: {err}")
+
     st.markdown("---")
 
     # ── Trainingsdata (on demand, gecachet per sessie) ──
