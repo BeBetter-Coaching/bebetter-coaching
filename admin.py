@@ -32,8 +32,26 @@ STATUSSEN = ["Actief", "On hold", "Opgezegd"]
 CYCLI = ["4 weken", "12 weken", "Jaar"]
 
 KOR_GRENS = 20_000
+# Per 1 augustus 2026 verlaat BeBetter de KOR en wordt btw gerekend.
+# Tot die datum: KOR-bewaking + rek-monitor; daarna: btw-modus.
+KOR_TOT = date(2026, 8, 1)
+BTW_PCT = 21
 # 4-weken-pakket → 13 periodes per jaar (52 / 4)
 PERIODES_PER_JAAR = 13
+
+# Standaard omschakel-to-do's (KOR → btw). Volgorde = logische werkvolgorde.
+BTW_TODO_STANDAARD = [
+    "Afmelden KOR bij de Belastingdienst (vóór 1 augustus) — juiste melding checken met je boekhouder",
+    "Btw-tarief per dienst bevestigen met je boekhouder (21%, evt. uitzonderingen voor sport)",
+    "Btw-nummer controleren en op het factuursjabloon zetten",
+    "Rompslomp: btw aanzetten en alle producten op het juiste btw-tarief",
+    "Nieuwe pakketprijzen (+21%) instellen voor nieuwe klanten vanaf 1 augustus",
+    "Bestaande klanten: bevestigen dat hun prijs gelijk blijft (btw absorbeer jij)",
+    "Apart btw-potje (spaarrekening) openen en automatisch vullen",
+    "Bonnetjes en inkoopfacturen bewaren: voorbelasting terugvragen kan vanaf 1 augustus",
+    "IB-reservepercentage afstemmen met je boekhouder",
+    "Eerste btw-aangifte (Q3 2026, aangifte in oktober) inplannen",
+]
 
 # Startdata KOR (cumulatief per maand, uit Rompslomp)
 REVENUE_SEED = {
@@ -265,14 +283,72 @@ def factuur_categorie(naam: str, omschrijving: str, bedrag: float = 0) -> str:
 
 
 def omzet_per_categorie(facturen: list) -> dict:
-    """Werkelijk gefactureerde omzet per categorie (uit Rompslomp-facturen)."""
+    """Werkelijk gefactureerde omzet per categorie (excl. btw na de omschakeling)."""
     per: dict[str, float] = {}
     for f in facturen or []:
         if f.get("status") == "concept":
             continue
         cat = factuur_categorie(f.get("naam", ""), f.get("omschrijving", ""), f.get("bedrag", 0))
-        per[cat] = per.get(cat, 0.0) + float(f.get("bedrag", 0) or 0)
+        per[cat] = per.get(cat, 0.0) + rompslomp_client.factuur_omzet(f)
     return {k: v for k, v in per.items() if v}
+
+
+def btw_stand(facturen: list, vandaag: date | None = None) -> dict:
+    """
+    Btw-overzicht sinds de omschakeling: totaal af te dragen, omzet excl.,
+    en de stand van het lopende aangiftekwartaal.
+    """
+    vandaag = vandaag or date.today()
+    btw_totaal = 0.0
+    omzet_excl = 0.0
+    kw_start_maand = ((vandaag.month - 1) // 3) * 3 + 1
+    kw_start = date(vandaag.year, kw_start_maand, 1).isoformat()
+    kwartaal_nr = (vandaag.month - 1) // 3 + 1
+    btw_kwartaal = 0.0
+
+    for f in facturen or []:
+        if f.get("status") == "concept":
+            continue
+        b = rompslomp_client.factuur_btw(f)
+        if b <= 0:
+            continue
+        btw_totaal += b
+        omzet_excl += rompslomp_client.factuur_omzet(f)
+        if (f.get("datum") or "") >= kw_start:
+            btw_kwartaal += b
+
+    # Aangifte: in de maand ná het kwartaaleinde
+    aangifte_maand = VOLLE_MAANDEN[(kwartaal_nr * 3) % 12]
+    return {
+        "btw_totaal": round(btw_totaal, 2),
+        "omzet_excl": round(omzet_excl, 2),
+        "kwartaal": f"Q{kwartaal_nr}",
+        "btw_kwartaal": round(btw_kwartaal, 2),
+        "aangifte_label": f"aangifte in {aangifte_maand}",
+    }
+
+
+def potjes_advies(omzet_netto_ytd: float, kosten_pm: float, ib_pct: float,
+                  buffer_pct: float, btw_pot: float, vandaag: date | None = None) -> dict:
+    """
+    Indicatieve verdeling van wat er tot nu toe verdiend is:
+    IB-pot en buffer als percentage van de winst; wat overblijft is in
+    beginsel privé te onttrekken. Geen belastingadvies — rekenhulp.
+    """
+    vandaag = vandaag or date.today()
+    kosten_ytd = round(kosten_pm * vandaag.month, 2)
+    winst = max(omzet_netto_ytd - kosten_ytd, 0.0)
+    ib_pot = round(winst * ib_pct / 100, 2)
+    buffer = round(winst * buffer_pct / 100, 2)
+    prive = round(winst - ib_pot - buffer, 2)
+    return {
+        "kosten_ytd": kosten_ytd,
+        "winst": round(winst, 2),
+        "ib_pot": ib_pot,
+        "buffer": buffer,
+        "btw_pot": round(btw_pot, 2),
+        "prive": prive,
+    }
 
 
 def facturen_per_categorie(facturen: list) -> dict:
@@ -533,33 +609,114 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     _k3_sub = (f"{gratis_n} vriendendienst · " if gratis_n else "") + f"{len(on_hold)} on hold"
     k3.markdown(_card("Actieve klanten", str(len(actief)),
                       f"<div class='bb-card-sub'>{_k3_sub}</div>"), unsafe_allow_html=True)
-    k4.markdown(_card("Ruimte tot KOR-grens", _eur0(ruimte),
-                      f"<div class='bb-card-sub'>van {_eur0(KOR_GRENS)}</div>"), unsafe_allow_html=True)
+    btw_modus = date.today() >= KOR_TOT
+    btw = btw_stand(facturen) if btw_modus else None
+    if btw_modus:
+        k4.markdown(_card("Btw-pot (af te dragen)", _eur0(btw["btw_totaal"]),
+                          f"<div class='bb-card-sub'>{btw['kwartaal']}: {_eur0(btw['btw_kwartaal'])} · "
+                          f"{btw['aangifte_label']}</div>"), unsafe_allow_html=True)
+    else:
+        k4.markdown(_card("Ruimte tot KOR-grens", _eur0(ruimte),
+                          f"<div class='bb-card-sub'>van {_eur0(KOR_GRENS)} · KOR t/m 31 juli</div>"),
+                    unsafe_allow_html=True)
 
     st.write("")
 
-    # ── KOR-status gauge ──
-    st.markdown("<div class='bb-section-title'>KOR-status</div>", unsafe_allow_html=True)
-    gc1, gc2 = st.columns([1, 3.2])
-    with gc1:
-        st.markdown(f"<div class='kor-pct'>{pct_kor:.1f}%</div>"
-                    f"<div class='kor-pct-sub'>benut van de KOR-grens</div>", unsafe_allow_html=True)
-        if proj.get("datum_grens"):
-            dg = proj["datum_grens"]
-            st.markdown(f"<div class='kor-pct-sub'>Bij dit tempo bereikt rond "
-                        f"<b>{VOLLE_MAANDEN[dg.month - 1]} {dg.year}</b></div>", unsafe_allow_html=True)
-    with gc2:
-        fillpct = min(pct_kor, 100)
-        st.markdown(
-            "<div style='display:flex;justify-content:space-between;font-size:.8rem;color:#8FA8CE;margin-bottom:6px'>"
-            f"<span>{_eur0(omzet_ytd)} gebruikt</span><span>{_eur0(KOR_GRENS)} KOR-grens</span></div>"
-            f"<div class='kor-bar'><div class='kor-fill' style='width:{fillpct}%'></div>"
-            f"<div class='kor-marker' style='left:{fillpct}%'></div></div>"
-            "<div class='kor-leg'>"
-            "<span><span class='kor-dot' style='background:#16a34a'></span>Veilig (&lt; 80%)</span>"
-            "<span><span class='kor-dot' style='background:#f59e0b'></span>Let op (80% - 100%)</span>"
-            "<span><span class='kor-dot' style='background:#d92d20'></span>Grens overschreden (&gt; 100%)</span>"
-            "</div>", unsafe_allow_html=True)
+    if not btw_modus:
+        # ── KOR-status gauge + rek-monitor (t/m 31 juli) ──
+        st.markdown("<div class='bb-section-title'>KOR-status · t/m 31 juli</div>",
+                    unsafe_allow_html=True)
+        gc1, gc2 = st.columns([1, 3.2])
+        with gc1:
+            st.markdown(f"<div class='kor-pct'>{pct_kor:.1f}%</div>"
+                        f"<div class='kor-pct-sub'>benut van de KOR-grens</div>", unsafe_allow_html=True)
+            _dagen_rek = (KOR_TOT - date.today()).days
+            st.markdown(f"<div class='kor-pct-sub'>Nog <b>{_dagen_rek} dagen</b> tot de btw-start "
+                        f"(1 augustus)</div>", unsafe_allow_html=True)
+        with gc2:
+            fillpct = min(pct_kor, 100)
+            st.markdown(
+                "<div style='display:flex;justify-content:space-between;font-size:.8rem;color:#8FA8CE;margin-bottom:6px'>"
+                f"<span>{_eur0(omzet_ytd)} gebruikt</span><span>{_eur0(KOR_GRENS)} KOR-grens</span></div>"
+                f"<div class='kor-bar'><div class='kor-fill' style='width:{fillpct}%'></div>"
+                f"<div class='kor-marker' style='left:{fillpct}%'></div></div>"
+                "<div class='kor-leg'>"
+                "<span><span class='kor-dot' style='background:#16a34a'></span>Veilig (&lt; 80%)</span>"
+                "<span><span class='kor-dot' style='background:#f59e0b'></span>Let op (80% - 100%)</span>"
+                "<span><span class='kor-dot' style='background:#d92d20'></span>Grens overschreden (&gt; 100%)</span>"
+                "</div>", unsafe_allow_html=True)
+            # Rek-monitor: de grens mag vóór 1 aug NIET geraakt worden
+            if ruimte > 0:
+                st.markdown(
+                    f"<div class='kor-pct-sub' style='margin-top:8px'>🎯 <b>Rek-monitor:</b> nog maximaal "
+                    f"<b>{_eur0(ruimte)}</b> factureren t/m 31 juli. Alles daarboven doorschuiven naar "
+                    f"augustus (wordt dan btw-omzet). Raak je de grens eerder, dan stopt de KOR op dat "
+                    f"moment, niet op 1 augustus.</div>", unsafe_allow_html=True)
+            else:
+                st.error("De KOR-grens is geraakt — de KOR is daarmee al vervallen. "
+                         "Overleg met je boekhouder over de gevolgen voor de grensoverschrijdende factuur.")
+    else:
+        # ── Btw-overzicht (vanaf 1 augustus) ──
+        st.markdown("<div class='bb-section-title'>Btw · sinds 1 augustus</div>",
+                    unsafe_allow_html=True)
+        bc1, bc2, bc3 = st.columns(3)
+        bc1.markdown(_card("Omzet excl. btw (sinds 1 aug)", _eur0(btw["omzet_excl"])),
+                     unsafe_allow_html=True)
+        bc2.markdown(_card(f"Af te dragen {btw['kwartaal']}", _eur0(btw["btw_kwartaal"]),
+                           f"<div class='bb-card-sub'>{btw['aangifte_label']}</div>"),
+                     unsafe_allow_html=True)
+        bc3.markdown(_card("Btw totaal (sinds 1 aug)", _eur0(btw["btw_totaal"]),
+                           "<div class='bb-card-sub'>zet dit bedrag apart</div>"),
+                     unsafe_allow_html=True)
+        st.caption("Berekend uit je Rompslomp-facturen (incl. minus excl. per factuur). "
+                   "De KOR-periode t/m 31 juli telt hier niet in mee.")
+
+    st.write("")
+
+    # ── Potjes: waar moet je omzet heen ──
+    st.markdown("<div class='bb-section-title'>Potjes · indicatief</div>", unsafe_allow_html=True)
+    try:
+        inst = {**{"ib_pct": 30, "buffer_pct": 10, "kosten_pm": 250},
+                **(intake_store.load_btw_instellingen() or {})}
+    except Exception:
+        inst = {"ib_pct": 30, "buffer_pct": 10, "kosten_pm": 250}
+    potjes = potjes_advies(omzet_ytd, inst["kosten_pm"], inst["ib_pct"],
+                           inst["buffer_pct"], (btw or {}).get("btw_totaal", 0.0))
+    p1, p2, p3, p4 = st.columns(4)
+    p1.markdown(_card("IB-pot (inkomstenbelasting)", _eur0(potjes["ib_pot"]),
+                      f"<div class='bb-card-sub'>{inst['ib_pct']:.0f}% van {_eur0(potjes['winst'])} winst</div>"),
+                unsafe_allow_html=True)
+    p2.markdown(_card("Btw-pot", _eur0(potjes["btw_pot"]),
+                      "<div class='bb-card-sub'>af te dragen, niet jouw geld</div>"),
+                unsafe_allow_html=True)
+    p3.markdown(_card("Buffer", _eur0(potjes["buffer"]),
+                      f"<div class='bb-card-sub'>{inst['buffer_pct']:.0f}% van de winst</div>"),
+                unsafe_allow_html=True)
+    p4.markdown(_card("Privé te onttrekken", _eur0(potjes["prive"]),
+                      "<div class='bb-card-sub'>winst minus IB-pot en buffer</div>"),
+                unsafe_allow_html=True)
+    st.caption(f"Rekenhulp, geen belastingadvies: winst = netto-omzet YTD ({_eur0(omzet_ytd)}) minus "
+               f"geschatte kosten ({_eur0(potjes['kosten_ytd'])} = {_eur0(inst['kosten_pm'])}/mnd). "
+               "Stem de percentages af met je boekhouder.")
+    with st.expander("⚙️ Potjes-instellingen"):
+        pi1, pi2, pi3 = st.columns(3)
+        with pi1:
+            _ib_in = st.number_input("IB-reserve (% van winst)", min_value=0.0, max_value=60.0,
+                                     step=1.0, value=float(inst["ib_pct"]), key="adm_ib_pct")
+        with pi2:
+            _buf_in = st.number_input("Buffer (% van winst)", min_value=0.0, max_value=50.0,
+                                      step=1.0, value=float(inst["buffer_pct"]), key="adm_buf_pct")
+        with pi3:
+            _kos_in = st.number_input("Kosten per maand (€)", min_value=0.0, step=25.0,
+                                      value=float(inst["kosten_pm"]), key="adm_kosten_pm")
+        if st.button("💾 Instellingen opslaan", key="adm_potjes_save"):
+            ok, err = intake_store.save_btw_instellingen(
+                {"ib_pct": _ib_in, "buffer_pct": _buf_in, "kosten_pm": _kos_in})
+            if ok:
+                st.success("Opgeslagen.")
+                st.rerun()
+            else:
+                st.error(f"Opslaan mislukt: {err}")
 
     st.write("")
 
@@ -629,7 +786,7 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
                      + [c for c in cat_groepen if c not in CATEGORIE_VOLGORDE])
         for cat in _volgorde:
             items = sorted(cat_groepen[cat], key=lambda f: f.get("datum", ""), reverse=True)
-            som = sum(float(f.get("bedrag", 0) or 0) for f in items)
+            som = sum(rompslomp_client.factuur_omzet(f) for f in items)
             with st.expander(f"{cat} — {_eur0(som)} · {len(items)} facturen"):
                 st.dataframe(
                     pd.DataFrame([{
@@ -661,12 +818,15 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     with fc2:
         st.markdown("<div class='bb-section-title'>Signalen</div>", unsafe_allow_html=True)
         sig_html = ""
-        if pct_kor >= 100:
+        if btw_modus:
+            sig_html += _sig("&#129534;", f"Btw {btw['kwartaal']}: {_eur0(btw['btw_kwartaal'])} af te dragen",
+                             f"{btw['aangifte_label'].capitalize()}. Zorg dat de btw-pot gevuld is.")
+        elif pct_kor >= 100:
             sig_html += _sig("&#128680;", "KOR-grens overschreden",
                              f"{pct_kor:.1f}% benut. Let op de fiscale gevolgen.")
         elif pct_kor >= 70:
             sig_html += _sig("&#9888;&#65039;", f"KOR-grens nadert: {pct_kor:.1f}% benut",
-                             "Houd je omzet in de gaten om binnen de KOR te blijven.")
+                             f"Nog {_eur0(ruimte)} factureerbaar t/m 31 juli; schuif de rest naar augustus.")
         else:
             sig_html += _sig("&#9989;", f"Ruim binnen KOR: {pct_kor:.1f}% benut",
                              f"Nog {_eur0(ruimte)} ruimte tot de grens.")
@@ -740,6 +900,65 @@ def render_admin(athletes_by_group: dict):
     facturen = st.session_state.get("_rompslomp_facturen") or []
 
     # ── VISUEEL DASHBOARD ──
+    # ── Omschakel-to-do (KOR → btw per 1 aug) ──
+    if "_btw_todo" not in st.session_state:
+        try:
+            _opgeslagen = intake_store.load_btw_todo()
+        except Exception:
+            _opgeslagen = {}
+        if not _opgeslagen.get("items"):
+            _opgeslagen = {"items": [
+                {"id": f"std{i}", "tekst": t, "done": False, "custom": False}
+                for i, t in enumerate(BTW_TODO_STANDAARD)]}
+        st.session_state["_btw_todo"] = _opgeslagen
+    _todo = st.session_state["_btw_todo"]
+    _items = _todo.get("items", [])
+    _n_done = sum(1 for i in _items if i.get("done"))
+    _alles_klaar = _items and _n_done == len(_items)
+
+    def _save_todo():
+        st.session_state["_btw_todo"] = _todo
+        try:
+            intake_store.save_btw_todo(_todo)
+        except Exception:
+            pass
+
+    with st.expander(
+        f"{'✅' if _alles_klaar else '🔀'} Omschakeling KOR → btw (per 1 aug) · "
+        f"{_n_done}/{len(_items)} gedaan",
+        expanded=not _alles_klaar and date.today() >= KOR_TOT - timedelta(days=45),
+    ):
+        st.caption("Jouw checklist voor de overstap. Vinkjes worden gedeeld opgeslagen, "
+                   "dus jij en Remco zien dezelfde stand. Eigen punten toevoegen kan onderaan.")
+        for _it in _items:
+            c_chk, c_del = st.columns([8, 1], vertical_alignment="center")
+            with c_chk:
+                _nieuw = st.checkbox(_it["tekst"], value=bool(_it.get("done")),
+                                     key=f"btwtodo_{_it['id']}")
+                if _nieuw != bool(_it.get("done")):
+                    _it["done"] = _nieuw
+                    _save_todo()
+                    st.rerun()
+            with c_del:
+                if _it.get("custom") and st.button("🗑", key=f"btwtodo_del_{_it['id']}",
+                                                   help="Eigen punt verwijderen"):
+                    _todo["items"] = [x for x in _items if x["id"] != _it["id"]]
+                    _save_todo()
+                    st.rerun()
+        with st.form("btw_todo_add", clear_on_submit=True):
+            c_in, c_btn = st.columns([4, 1], vertical_alignment="bottom")
+            with c_in:
+                _nieuw_punt = st.text_input("Eigen punt toevoegen",
+                                            placeholder="bijv. prijsbrief naar klanten sturen")
+            with c_btn:
+                if st.form_submit_button("➕", use_container_width=True) and _nieuw_punt.strip():
+                    from uuid import uuid4
+                    _todo.setdefault("items", []).append(
+                        {"id": f"c{uuid4().hex[:8]}", "tekst": _nieuw_punt.strip(),
+                         "done": False, "custom": True})
+                    _save_todo()
+                    st.rerun()
+
     st.markdown("### 📊 Administratie-dashboard")
     st.caption("Financiële cockpit · data uit Rompslomp en FinalSurge")
     _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,

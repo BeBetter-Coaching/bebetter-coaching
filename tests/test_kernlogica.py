@@ -380,6 +380,69 @@ class TestBelasting:
 
 
 # ---------------------------------------------------------------------------
+# KOR → btw-omschakeling (1 aug 2026)
+# ---------------------------------------------------------------------------
+
+class TestBtwOmschakeling:
+    def test_factuur_omzet_kor_periode_is_incl(self):
+        import rompslomp_client as rc
+        f = {"datum": "2026-07-15", "bedrag": 55.0, "bedrag_excl": 55.0, "bedrag_incl": 55.0}
+        assert rc.factuur_omzet(f) == 55.0
+        assert rc.factuur_btw(f) == 0.0  # KOR: geen btw, ook al zou er een verschil staan
+
+    def test_factuur_omzet_btw_periode_is_excl(self):
+        import rompslomp_client as rc
+        f = {"datum": "2026-08-05", "bedrag": 66.55, "bedrag_excl": 55.0, "bedrag_incl": 66.55}
+        assert rc.factuur_omzet(f) == 55.0
+        assert rc.factuur_btw(f) == 11.55
+
+    def test_btw_stand_kwartaal(self):
+        from datetime import date
+        facturen = [
+            {"datum": "2026-07-10", "bedrag": 100, "bedrag_excl": 100, "bedrag_incl": 100,
+             "status": "published"},  # KOR → telt niet
+            {"datum": "2026-08-05", "bedrag": 121, "bedrag_excl": 100, "bedrag_incl": 121,
+             "status": "published"},  # Q3
+            {"datum": "2026-10-02", "bedrag": 60.5, "bedrag_excl": 50, "bedrag_incl": 60.5,
+             "status": "published"},  # Q4
+            {"datum": "2026-08-09", "bedrag": 121, "bedrag_excl": 100, "bedrag_incl": 121,
+             "status": "concept"},    # concept → telt niet
+        ]
+        s = admin.btw_stand(facturen, vandaag=date(2026, 10, 15))
+        assert s["btw_totaal"] == 31.5           # 21 + 10.5
+        assert s["omzet_excl"] == 150.0
+        assert s["kwartaal"] == "Q4" and s["btw_kwartaal"] == 10.5
+        assert "januari" in s["aangifte_label"]  # Q4-aangifte in januari
+
+    def test_potjes_advies(self):
+        from datetime import date
+        p = admin.potjes_advies(omzet_netto_ytd=18000, kosten_pm=250, ib_pct=30,
+                                buffer_pct=10, btw_pot=500, vandaag=date(2026, 8, 15))
+        assert p["kosten_ytd"] == 2000.0         # 8 maanden × 250
+        assert p["winst"] == 16000.0
+        assert p["ib_pot"] == 4800.0
+        assert p["buffer"] == 1600.0
+        assert p["btw_pot"] == 500.0
+        assert p["prive"] == 9600.0              # winst − ib − buffer
+        assert p["ib_pot"] + p["buffer"] + p["prive"] == p["winst"]
+
+    def test_potjes_geen_negatieve_winst(self):
+        from datetime import date
+        p = admin.potjes_advies(1000, 500, 30, 10, 0, vandaag=date(2026, 6, 1))
+        assert p["winst"] == 0.0 and p["prive"] == 0.0
+
+    def test_categorie_omzet_excl_na_omschakeling(self):
+        fac = [
+            {"naam": "A", "omschrijving": "Comfort", "datum": "2026-07-01",
+             "bedrag": 55, "bedrag_excl": 55, "bedrag_incl": 55, "status": "published"},
+            {"naam": "B", "omschrijving": "Comfort", "datum": "2026-08-10",
+             "bedrag": 66.55, "bedrag_excl": 55, "bedrag_incl": 66.55, "status": "published"},
+        ]
+        per = admin.omzet_per_categorie(fac)
+        assert per == {"Coaching": 110.0}  # 55 incl (KOR) + 55 excl (btw)
+
+
+# ---------------------------------------------------------------------------
 # briefing — week-aggregatie
 # ---------------------------------------------------------------------------
 

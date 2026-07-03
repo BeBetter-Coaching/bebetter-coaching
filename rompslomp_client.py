@@ -384,8 +384,29 @@ def get_journal_revenue_per_maand(year: int) -> tuple[dict, str]:
     return per_maand, ""
 
 
+# Vanaf deze datum is BeBetter btw-plichtig (KOR verlaten per 1 aug 2026).
+# Omzet telt vanaf dan EXCLUSIEF btw; de btw is immers niet van ons.
+BTW_START = "2026-08-01"
+
+
+def factuur_omzet(f: dict) -> float:
+    """Omzetbedrag van een factuur: excl. btw vanaf BTW_START, daarvoor incl (KOR)."""
+    if (f.get("datum") or "") >= BTW_START and f.get("bedrag_excl"):
+        return float(f["bedrag_excl"])
+    return float(f.get("bedrag") or 0)
+
+
+def factuur_btw(f: dict) -> float:
+    """Btw-bedrag van een factuur (0 in de KOR-periode)."""
+    if (f.get("datum") or "") < BTW_START:
+        return 0.0
+    incl = float(f.get("bedrag_incl") or 0)
+    excl = float(f.get("bedrag_excl") or 0)
+    return round(incl - excl, 2) if incl > excl > 0 else 0.0
+
+
 def _invoice_revenue_per_maand(year: int) -> tuple[dict, str]:
-    """Omzet per maand uit verkoopfacturen (geen concepten)."""
+    """Omzet per maand uit verkoopfacturen (geen concepten; excl. btw na BTW_START)."""
     facturen, err = get_invoices(year)
     if err:
         return {}, err
@@ -395,7 +416,7 @@ def _invoice_revenue_per_maand(year: int) -> tuple[dict, str]:
             continue
         maand = f["datum"][:7]
         if len(maand) == 7:
-            per_maand[maand] = per_maand.get(maand, 0.0) + f["bedrag"]
+            per_maand[maand] = per_maand.get(maand, 0.0) + factuur_omzet(f)
     return per_maand, ""
 
 

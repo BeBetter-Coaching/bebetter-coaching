@@ -112,6 +112,36 @@ def is_cloud_backed() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# BTW-omschakeling: to-do-lijst + potjes-instellingen (admin, gedeeld)
+# ---------------------------------------------------------------------------
+
+_BTW_TODO_LOCAL = os.path.join(_BASE_DIR, ".btw_todo.json")
+_BTW_INSTELLINGEN_LOCAL = os.path.join(_BASE_DIR, ".btw_instellingen.json")
+
+
+def load_btw_todo() -> dict:
+    """Laad de omschakel-to-do-lijst: {items: [{id, tekst, done, custom}]}."""
+    return _load_json("btw_todo.json", _BTW_TODO_LOCAL)
+
+
+def save_btw_todo(data: dict) -> tuple[bool, str]:
+    """Sla de omschakel-to-do-lijst op."""
+    return _save_json("btw_todo.json", _BTW_TODO_LOCAL, data,
+                      "Update btw-omschakel-todo via app")
+
+
+def load_btw_instellingen() -> dict:
+    """Laad potjes-instellingen: {ib_pct, buffer_pct, kosten_pm, btw_pct}."""
+    return _load_json("btw_instellingen.json", _BTW_INSTELLINGEN_LOCAL)
+
+
+def save_btw_instellingen(data: dict) -> tuple[bool, str]:
+    """Sla potjes-instellingen op."""
+    return _save_json("btw_instellingen.json", _BTW_INSTELLINGEN_LOCAL, data,
+                      "Update btw/potjes-instellingen via app")
+
+
+# ---------------------------------------------------------------------------
 # Weekbriefing (1x per week, gedeeld tussen coaches)
 # ---------------------------------------------------------------------------
 
