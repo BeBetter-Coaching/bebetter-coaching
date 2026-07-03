@@ -596,9 +596,14 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     ruimte = max(proj["resterend"], 0)
     pct_kor = (omzet_ytd / KOR_GRENS * 100) if KOR_GRENS else 0
 
-    # Delta omzet deze maand vs vorige maand
+    # Delta omzet deze maand vs vorige maand. Een net gestarte maand zonder
+    # facturen is geen daling van 100% — dan tonen we neutraal de vorige maand.
     maand_delta = ""
-    if len(sorted_m) >= 2 and maand_omzet[sorted_m[-2]]:
+    if omzet_maand == 0 and len(sorted_m) >= 2:
+        maand_delta = (f"<div class='bb-card-sub'>nog geen facturen · "
+                       f"{NL_MAANDEN[sorted_m[-2] - 1].lower()}: "
+                       f"{_eur0(maand_omzet[sorted_m[-2]])}</div>")
+    elif len(sorted_m) >= 2 and maand_omzet[sorted_m[-2]]:
         pct = (maand_omzet[sorted_m[-1]] - maand_omzet[sorted_m[-2]]) / maand_omzet[sorted_m[-2]] * 100
         kl, tk = ("up", "+") if pct >= 0 else ("down", "")
         maand_delta = f"<div class='bb-card-delta {kl}'>{tk}{pct:.1f}% t.o.v. vorige maand</div>"
@@ -1185,6 +1190,38 @@ def render_admin(athletes_by_group: dict):
                     if correctie:
                         st.caption(f"Huidige bijstelling: **{_eur(correctie)}** bovenop de "
                                    f"automatische **{_eur(_api_omzet)}**.")
+
+            with st.expander("🔍 Kosten-check (kloppen de kosten in de potjes?)"):
+                st.caption("Laat per grootboekrekening zien welke kosten de app uit Rompslomp "
+                           "haalt. Staat hier €0 terwijl je wél kosten hebt geboekt, dan toont "
+                           "de tweede tabel alle grootboekpaden in je boekingen zodat we de "
+                           "detectie kunnen bijstellen.")
+                if st.button("Check kosten", key="adm_kosten_check"):
+                    _kpr, _ke = rompslomp_client.get_kosten_per_rekening(date.today().year)
+                    _paden, _pe = rompslomp_client.journal_paden(date.today().year)
+                    st.session_state["_kosten_check"] = (_kpr, _ke, _paden, _pe)
+                if "_kosten_check" in st.session_state:
+                    _kpr, _ke, _paden, _pe = st.session_state["_kosten_check"]
+                    if _ke:
+                        st.error(f"Kosten ophalen mislukt: {_ke}")
+                    elif _kpr:
+                        st.dataframe(pd.DataFrame(
+                            [{"Rekening": k, "Bedrag": v} for k, v in sorted(_kpr.items())]),
+                            hide_index=True, use_container_width=True,
+                            column_config={"Bedrag": st.column_config.NumberColumn(format="€ %.2f")})
+                        st.caption(f"Totaal: **{_eur(sum(_kpr.values()))}** — dit bedrag gebruiken "
+                                   "de potjes als werkelijke kosten.")
+                    else:
+                        st.warning("Geen kosten gevonden op kostenrekeningen. Hieronder alle "
+                                   "grootboekpaden in je boekingen — stuur een screenshot door, "
+                                   "dan stel ik de detectie bij.")
+                        if _paden:
+                            st.dataframe(pd.DataFrame(_paden), hide_index=True,
+                                         use_container_width=True,
+                                         column_config={"saldo": st.column_config.NumberColumn(
+                                             format="€ %.2f")})
+                        elif _pe:
+                            st.error(f"Boekingen ophalen mislukt: {_pe}")
 
             with st.expander("👥 Rompslomp-contacten (koppelingscontrole)"):
                 st.caption("Iedereen die ooit een factuur kreeg in Rompslomp, met of er een "

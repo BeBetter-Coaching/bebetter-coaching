@@ -371,43 +371,86 @@ def get_journal_revenue_per_maand(year: int) -> tuple[dict, str]:
 def _path_is_kosten(path: str) -> bool:
     """Herken een kosten-grootboekpad."""
     p = (path or "").lower()
-    return any(k in p for k in ("kosten", "cost", "expense", "uitgaven"))
+    return any(k in p for k in ("kosten", "cost", "expense", "uitgav", "inkoop", "purchase"))
 
 
 def _is_kosten_account(acc: dict) -> bool:
     """True als een grootboekrekening een kostenrekening is."""
     t = (acc.get("type") or "").lower()
-    if t in ("expense", "cost", "costs"):
+    if t in ("expense", "expenses", "cost", "costs", "purchase", "kosten"):
         return True
-    return _path_is_kosten(acc.get("path") or acc.get("path_name") or "")
+    return _path_is_kosten(acc.get("path") or acc.get("path_name") or acc.get("name") or "")
 
 
-def get_kosten_ytd(year: int) -> tuple[float, str]:
+def _line_path(line: dict) -> str:
+    """Grootboekpad van een journaalregel, over de mogelijke veldvormen heen."""
+    acc = line.get("account")
+    if isinstance(acc, dict):
+        p = acc.get("path") or acc.get("path_name") or acc.get("name")
+        if p:
+            return str(p)
+    return str(line.get("account_path") or line.get("account_path_name")
+               or line.get("account_name") or "")
+
+
+def get_kosten_per_rekening(year: int) -> tuple[dict, str]:
     """
-    Werkelijke kosten dit jaar uit de journaalboekingen: som van
-    (debet - credit) op kostenrekeningen. Best effort; bij fout (0.0, reden).
+    Werkelijke kosten dit jaar per grootboekrekening (uit de journaalboekingen):
+    {pad: som van (debet - credit)}. Best effort; bij fout ({}, reden).
     """
     accounts, _ = get_accounts()
-    kosten_ids = {a.get("id") for a in accounts if _is_kosten_account(a)}
+    kosten_accounts = {a.get("id"): (a.get("path") or a.get("path_name")
+                                     or a.get("name") or "Kosten")
+                       for a in accounts if _is_kosten_account(a)}
 
     entries, err = _paged("journal_entries", ("data", "journal_entries"))
     if err:
-        return 0.0, err
+        return {}, err
 
-    totaal = 0.0
+    per: dict[str, float] = {}
     for e in entries:
         datum = (e.get("date") or "")[:10]
         if not datum.startswith(str(year)):
             continue
         for line in (e.get("lines") or []):
-            is_kost = (line.get("account_id") in kosten_ids
-                       or _path_is_kosten(line.get("account_path")))
+            pad = _line_path(line)
+            is_kost = line.get("account_id") in kosten_accounts or _path_is_kosten(pad)
             if not is_kost:
                 continue
-            debet = _parse_bedrag(line.get("debit_amount"))
-            credit = _parse_bedrag(line.get("credit_amount"))
-            totaal += debet - credit
-    return round(totaal, 2), ""
+            label = pad or kosten_accounts.get(line.get("account_id"), "Kosten")
+            bedrag = _parse_bedrag(line.get("debit_amount")) - _parse_bedrag(line.get("credit_amount"))
+            per[label] = per.get(label, 0.0) + bedrag
+    return {k: round(v, 2) for k, v in per.items()}, ""
+
+
+def get_kosten_ytd(year: int) -> tuple[float, str]:
+    """Totale werkelijke kosten dit jaar. Best effort; bij fout (0.0, reden)."""
+    per, err = get_kosten_per_rekening(year)
+    if err:
+        return 0.0, err
+    return round(sum(per.values()), 2), ""
+
+
+def journal_paden(year: int, max_n: int = 25) -> tuple[list[dict], str]:
+    """
+    Alle unieke grootboekpaden in de journaalboekingen van dit jaar met hun
+    saldo (debet - credit). Diagnose: laat zien wat er WEL in de boekingen zit
+    als de kosten-detectie niets vindt.
+    """
+    entries, err = _paged("journal_entries", ("data", "journal_entries"))
+    if err:
+        return [], err
+    per: dict[str, float] = {}
+    for e in entries:
+        if not (e.get("date") or "").startswith(str(year)):
+            continue
+        for line in (e.get("lines") or []):
+            pad = _line_path(line) or "(zonder pad)"
+            per[pad] = per.get(pad, 0.0) + (
+                _parse_bedrag(line.get("debit_amount")) - _parse_bedrag(line.get("credit_amount")))
+    rijen = [{"pad": k, "saldo": round(v, 2), "kosten?": _path_is_kosten(k)}
+             for k, v in sorted(per.items())]
+    return rijen[:max_n], ""
 
 
 # Vanaf deze datum is BeBetter btw-plichtig (KOR verlaten per 1 aug 2026).
