@@ -1444,14 +1444,11 @@ if page == "home":
             except Exception:
                 pass
 
-    # Belasting-signalering: 1x per dag berekend (gedeeld opgeslagen), daarna
-    # kost het per sessie maar één opslag-load.
+    # Belasting-stand: homepage LEEST alleen de opgeslagen dagstand (1 goedkope
+    # opslag-load per sessie). De berekening zelf draait pas bij het openen van
+    # de Teampuls-pagina — de homepage mag daar geen laadtijd voor betalen.
     if "belasting_data" not in st.session_state:
-        try:
-            with st.spinner("Belasting-signalen checken…"):
-                st.session_state["belasting_data"] = belasting.dagelijkse_check(_all_athletes)
-        except Exception:
-            st.session_state["belasting_data"] = {"datum": "", "resultaten": []}
+        st.session_state["belasting_data"] = belasting.laad_stand()
 
     day_stats = st.session_state.get("day_stats")
     # Gepost vandaag: FinalSurge-telling (alle coaches/apparaten, bij laatste
@@ -1502,12 +1499,20 @@ if page == "home":
 
             # Tegels zijn klikbare knoppen — kleur per status via dynamische CSS
             _TILE_COLORS = {"done": "#5DCAA5", "attention": "#FAC775", "": "#FFFFFF"}
+            # Belasting-tegel: leest alleen de opgeslagen stand (geen berekening)
+            _bel_stand = st.session_state.get("belasting_data") or {}
+            _bel_zicht = belasting.zichtbare_resultaten(_bel_stand)
+            _bel_hoog = sum(1 for r in _bel_zicht if r.get("ernst") == "hoog")
+            _bel_vers = _bel_stand.get("datum") == date.today().isoformat()
+            _puls_cls = "attention" if _bel_zicht else ("done" if _bel_vers else "")
+
             _tile_states = {
                 "tile_fb": fb_cls,
                 "tile_posted": "done",
                 "tile_alerts": _alert_cls,
                 "tile_schema": schema_cls,
                 "tile_races": race_cls,
+                "tile_puls": _puls_cls,
             }
             _tile_css = "\n".join(
                 f".st-key-{_k} [data-testid='stButton'] button[kind='secondary'] p strong "
@@ -1533,7 +1538,7 @@ if page == "home":
                 go_to("feedback")
 
             with st.container(key="bb_day_tiles"):
-                t1, t2, t3, t4, t5 = st.columns(5)
+                t1, t2, t3, t4, t5, t6 = st.columns(6)
                 with t1:
                     if st.button(f"**{fb_pending}**  \nWachten op feedback",
                                  key="tile_fb", use_container_width=True):
@@ -1557,6 +1562,13 @@ if page == "home":
                     if st.button(f"**{races_coming}**  \nRaces komende 7 dgn",
                                  key="tile_races", use_container_width=True):
                         go_to("races")
+                with t6:
+                    _puls_val = str(len(_bel_zicht)) if _bel_vers or _bel_zicht else "—"
+                    if st.button(f"**{_puls_val}**  \nBelasting-signalen",
+                                 key="tile_puls", use_container_width=True,
+                                 help="Wie loopt uit de pas qua volume, gevoel of klachten. "
+                                      "Klik voor de Teampuls met onderbouwing per atleet."):
+                        go_to("puls")
 
             st.markdown(f"""
             <div class="bb-day-panel" style="padding:0.9rem 1.6rem 1rem 1.6rem; margin-top:0.3rem;">
@@ -1618,104 +1630,6 @@ if page == "home":
             </div>
             """, unsafe_allow_html=True)
 
-    # ── Belasting-signalering: wie loopt uit de pas ──
-    _bel_data = st.session_state.get("belasting_data") or {}
-    _bel = belasting.zichtbare_resultaten(_bel_data)
-    if _bel:
-        _n_hoog = sum(1 for r in _bel if r["ernst"] == "hoog")
-        # Alleen bij de éérste keer deze sessie automatisch openklappen (en
-        # alleen bij een hoog signaal) — daarna dicht blijven, niet blijven springen.
-        _bel_auto_open = _n_hoog > 0 and not st.session_state.get("_bel_auto_opened")
-        if _bel_auto_open:
-            st.session_state["_bel_auto_opened"] = True
-        with st.expander(
-            f"🩺 Belasting: {len(_bel)} atle{'et' if len(_bel) == 1 else 'ten'} om even mee te kijken"
-            + (f" ({_n_hoog} hoog)" if _n_hoog else ""),
-            expanded=_bel_auto_open,
-        ):
-            st.caption("Signalen uit volume, gevoel, RPE en notities van de laatste weken. "
-                       "Geen diagnose, wel een seintje om even mee te kijken. "
-                       "**Gezien** dempt de atleet 7 dagen; bij escalatie komt hij eerder terug.")
-            for _r in _bel:
-                _ico = "🔴" if _r["ernst"] == "hoog" else "⚠️"
-                c_bel, c_seen, c_dos = st.columns([3.4, 1.1, 1.1], vertical_alignment="center")
-                with c_bel:
-                    st.markdown(f"{_ico} **{_esc(_r['naam'])}** ({_esc(_r.get('group', ''))})  \n"
-                                + "  \n".join(f"· {_esc(s)}" for s in _r["signalen"]))
-                    if _r.get("duiding"):
-                        st.caption(f"💬 {_r['duiding']}")
-                with c_seen:
-                    if st.button("✓ Gezien", key=f"bel_seen_{_r['user_key']}",
-                                 use_container_width=True,
-                                 help="7 dagen niet meer tonen (voor beide coaches); "
-                                      "bij verergering komt de atleet eerder terug"):
-                        st.session_state["belasting_data"] = belasting.markeer_gezien(
-                            _bel_data, _r["user_key"], _r["ernst"])
-                        st.rerun()
-                with c_dos:
-                    if st.button("Dossier →", key=f"bel_dos_{_r['user_key']}",
-                                 use_container_width=True):
-                        st.session_state["dossier_user_key"] = _r["user_key"]
-                        go_to("dossier")
-    elif _bel_data.get("datum"):
-        st.caption(f"🩺 Geen belasting-signalen ({_bel_data['datum']}) — iedereen binnen de marge.")
-
-    # ── Weekbriefing: het maandagochtend-overzicht ──
-    if "weekbriefing" not in st.session_state:
-        try:
-            st.session_state["weekbriefing"] = intake_store.load_weekbriefing()
-        except Exception:
-            st.session_state["weekbriefing"] = {}
-    _wb = st.session_state["weekbriefing"]
-    _wk_nu = briefing.week_label()
-
-    def _maak_weekbriefing(force: bool = False) -> dict:
-        _bel_res = (st.session_state.get("belasting_data") or {}).get("resultaten", [])
-        _schema_rows = st.session_state.get("schema_data") or []
-        _schema_namen = [r["name"] for r in _schema_rows
-                         if r.get("days_left") is None or r["days_left"] <= 7]
-        _races_lijst = (day_stats or {}).get("races_list", [])
-        _fact: list[str] = []
-        try:
-            if rompslomp_client.is_configured():
-                _facturen, _fe = rompslomp_client.get_invoices(date.today().year)
-                if not _fe:
-                    _fact = [a["name"] for a in admin.niet_gefactureerde_klanten(
-                        _all_athletes, intake_store.load_admin_clients(), _facturen)]
-        except Exception:
-            pass  # facturatie is bonus in de briefing
-        return briefing.weekbriefing(_all_athletes, _bel_res, _schema_namen,
-                                     _races_lijst, _fact, forceer=force)
-
-    if _wb.get("week") != _wk_nu:
-        with st.spinner("Weekbriefing samenstellen…"):
-            try:
-                _wb = _maak_weekbriefing()
-                st.session_state["weekbriefing"] = _wb
-                st.session_state["_wb_vers"] = True
-            except Exception:
-                pass
-
-    if _wb.get("tekst"):
-        # Alleen open direct na het (her)genereren — daarna altijd dicht.
-        _wb_vers = st.session_state.pop("_wb_vers", False)
-        with st.expander(f"📰 Weekbriefing · week {_wk_nu.split('-W')[1]}",
-                         expanded=_wb_vers):
-            _ws = _wb.get("stats", {})
-            st.caption(f"Gemaakt op {_wb.get('gemaakt', '')} · gedeeld met beide coaches · "
-                       f"{_ws.get('n_trainingen', '?')} trainingen · ±{_ws.get('km_totaal', '?')} km · "
-                       f"{_ws.get('n_actief', '?')}/{_ws.get('n_atleten', '?')} atleten actief")
-            st.markdown(_wb["tekst"])
-            if st.button("🔄 Vernieuw briefing", key="wb_refresh",
-                         help="Verzamelt de weekdata opnieuw en schrijft een verse briefing"):
-                with st.spinner("Weekbriefing samenstellen…"):
-                    try:
-                        st.session_state["weekbriefing"] = _maak_weekbriefing(force=True)
-                        st.session_state["_wb_vers"] = True
-                    except Exception as _wbe:
-                        st.error(f"Briefing vernieuwen mislukt: {_wbe}")
-                st.rerun()
-
     st.markdown('<p class="bb-section-label">Modules</p>', unsafe_allow_html=True)
 
     # ── Startlijst: modules in proces-volgorde (atleet-levenscyclus) ──
@@ -1728,6 +1642,7 @@ if page == "home":
         ("06", "📅", "Schema-verloop", "De bewaking: wiens schema loopt af? Daarna begint de cyclus opnieuw bij schema bouwen.", "Wekelijks", "btn_schema", "schema", "secondary", False),
         ("07", "👤", "Atleet-dossiers", "Alles per atleet op één plek: intake, notities, compliance, trends, races en zones.", "Overzicht", "btn_atleten", "atleten", "secondary", False),
         ("08", "🗃️", "Administratie", "Financiële cockpit: KOR-bewaking, omzet per categorie, facturen en klantadministratie. Afgeschermd met pincode.", "Beheer", "btn_admin", "admin", "secondary", False),
+        ("09", "🩺", "Teampuls", "Belasting-signalen (wie loopt uit de pas) en de weekbriefing — het team-overzicht, met onderbouwing per atleet.", "Signalen", "btn_puls", "puls", "secondary", False),
     ]
 
     for _i, (_num, _icon, _titel, _desc, _tag, _btn_key, _page, _btn_type, _featured) in enumerate(_modules):
@@ -1879,6 +1794,138 @@ elif page == "admin":
 
 # ===========================================================================
 # PAGINA: FEEDBACK — GROEPEN TUSSENMENU
+# ===========================================================================
+# PAGINA: TEAMPULS (module 9) — belasting-signalen + weekbriefing
+# ===========================================================================
+
+elif page == "puls":
+    module_header("Teampuls", "🩺")
+
+    # ── Belasting-signalen ──
+    # Berekening draait hier (niet op de homepage): 1x per dag automatisch,
+    # daarna alleen via de knop. De stand wordt gedeeld opgeslagen.
+    _bel_data = st.session_state.get("belasting_data") or belasting.laad_stand()
+    _vandaag_iso = date.today().isoformat()
+    if _bel_data.get("datum") != _vandaag_iso:
+        with st.spinner("Belasting-signalen berekenen (alle atleten)…"):
+            try:
+                _bel_data = belasting.dagelijkse_check(_all_athletes)
+            except Exception as _be:
+                st.warning(f"Berekenen mislukt ({_be}) — laatst bekende stand wordt getoond.")
+        st.session_state["belasting_data"] = _bel_data
+
+    _bel = belasting.zichtbare_resultaten(_bel_data)
+    _n_hoog = sum(1 for r in _bel if r.get("ernst") == "hoog")
+
+    ph_kop, ph_knop = st.columns([4, 1], vertical_alignment="center")
+    with ph_kop:
+        st.markdown(f"#### Belasting-signalen · {_bel_data.get('datum', '—')}")
+        st.caption("Signalen uit volume, gevoel, RPE en notities. Geen diagnose, wel een seintje "
+                   "om mee te kijken. **Gezien** dempt 7 dagen (voor beide coaches); bij "
+                   "escalatie komt de atleet eerder terug. Klap de onderbouwing open om te "
+                   "controleren welke trainingen zijn geteld.")
+    with ph_knop:
+        if st.button("🔄 Herbereken", key="puls_recalc", use_container_width=True):
+            with st.spinner("Belasting-signalen berekenen…"):
+                try:
+                    st.session_state["belasting_data"] = belasting.dagelijkse_check(
+                        _all_athletes, forceer=True)
+                except Exception as _be:
+                    st.error(f"Berekenen mislukt: {_be}")
+            st.rerun()
+
+    if not _bel:
+        st.success("Geen belasting-signalen — iedereen binnen de marge.")
+    for _r in _bel:
+        _ico = "🔴" if _r["ernst"] == "hoog" else "⚠️"
+        c_bel, c_seen, c_dos = st.columns([3.4, 1.1, 1.1], vertical_alignment="center")
+        with c_bel:
+            st.markdown(f"{_ico} **{_esc(_r['naam'])}** ({_esc(_r.get('group', ''))})  \n"
+                        + "  \n".join(f"· {_esc(s)}" for s in _r["signalen"]))
+            if _r.get("duiding"):
+                st.caption(f"💬 {_r['duiding']}")
+            _mx = _r.get("metrics") or {}
+            _runs = _mx.get("runs_recent") or []
+            if _runs or _mx:
+                with st.expander("🔍 Onderbouwing (welke trainingen zijn geteld)"):
+                    if _runs:
+                        st.markdown("**Geteld in de recente week:**  \n" + "  \n".join(
+                            f"· {r['datum']}: {r['km']} km"
+                            + (f" ({_esc(r['naam'])})" if r.get('naam') else "")
+                            for r in _runs))
+                    st.caption(
+                        f"Recente week: {_mx.get('km_recent', '?')} km · basis: "
+                        f"{_mx.get('km_basis_week', '?')} km/wk (gem. van de 4 weken ervoor) · "
+                        f"gevoel {_mx.get('gevoel_recent', '—')} vs {_mx.get('gevoel_basis', '—')} · "
+                        f"RPE {_mx.get('rpe_recent', '—')} vs {_mx.get('rpe_basis', '—')}. "
+                        "Klopt een geteld aantal km niet met FinalSurge? Meld het — dan zit er "
+                        "een dubbeltelling in die we gericht kunnen fixen.")
+        with c_seen:
+            if st.button("✓ Gezien", key=f"puls_seen_{_r['user_key']}", use_container_width=True,
+                         help="7 dagen niet meer tonen (voor beide coaches); "
+                              "bij verergering komt de atleet eerder terug"):
+                st.session_state["belasting_data"] = belasting.markeer_gezien(
+                    _bel_data, _r["user_key"], _r["ernst"])
+                st.rerun()
+        with c_dos:
+            if st.button("Dossier →", key=f"puls_dos_{_r['user_key']}", use_container_width=True):
+                st.session_state["dossier_user_key"] = _r["user_key"]
+                go_to("dossier")
+
+    st.markdown("---")
+
+    # ── Weekbriefing ──
+    if "weekbriefing" not in st.session_state:
+        try:
+            st.session_state["weekbriefing"] = intake_store.load_weekbriefing()
+        except Exception:
+            st.session_state["weekbriefing"] = {}
+    _wb = st.session_state["weekbriefing"]
+    _wk_nu = briefing.week_label()
+
+    def _maak_weekbriefing(force: bool = False) -> dict:
+        _bel_res = (st.session_state.get("belasting_data") or {}).get("resultaten", [])
+        _schema_rows = st.session_state.get("schema_data") or []
+        _schema_namen = [r["name"] for r in _schema_rows
+                         if r.get("days_left") is None or r["days_left"] <= 7]
+        _races_lijst = (st.session_state.get("day_stats") or {}).get("races_list", [])
+        _fact = []
+        try:
+            if rompslomp_client.is_configured():
+                _facturen, _fe = rompslomp_client.get_invoices(date.today().year)
+                if not _fe:
+                    _fact = [a["name"] for a in admin.niet_gefactureerde_klanten(
+                        _all_athletes, intake_store.load_admin_clients(), _facturen)]
+        except Exception:
+            pass  # facturatie is bonus in de briefing
+        return briefing.weekbriefing(_all_athletes, _bel_res, _schema_namen,
+                                     _races_lijst, _fact, forceer=force)
+
+    st.markdown(f"#### 📰 Weekbriefing · week {_wk_nu.split('-W')[1]}")
+    if _wb.get("week") != _wk_nu:
+        with st.spinner("Weekbriefing samenstellen…"):
+            try:
+                _wb = _maak_weekbriefing()
+                st.session_state["weekbriefing"] = _wb
+            except Exception as _wbe:
+                st.warning(f"Briefing maken mislukt: {_wbe}")
+
+    if _wb.get("tekst"):
+        _ws = _wb.get("stats", {})
+        st.caption(f"Gemaakt op {_wb.get('gemaakt', '')} · gedeeld met beide coaches · "
+                   f"{_ws.get('n_trainingen', '?')} trainingen · ±{_ws.get('km_totaal', '?')} km · "
+                   f"{_ws.get('n_actief', '?')}/{_ws.get('n_atleten', '?')} atleten actief")
+        st.markdown(_wb["tekst"])
+        if st.button("🔄 Vernieuw briefing", key="wb_refresh",
+                     help="Verzamelt de weekdata opnieuw en schrijft een verse briefing"):
+            with st.spinner("Weekbriefing samenstellen…"):
+                try:
+                    st.session_state["weekbriefing"] = _maak_weekbriefing(force=True)
+                except Exception as _wbe:
+                    st.error(f"Briefing vernieuwen mislukt: {_wbe}")
+            st.rerun()
+
+
 # ===========================================================================
 
 elif page == "feedback_groups":

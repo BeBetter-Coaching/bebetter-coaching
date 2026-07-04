@@ -29,14 +29,54 @@ RPE_DREMPEL = 1.5            # punten zwaarder (schaal 1-10)
 RPE_VOLUME_MAX = 1.15        # RPE-drift telt alleen als volume NIET fors steeg
 MIN_DATAPUNTEN = 3           # minimaal aantal scores per venster
 
-# Fysieke-klacht-patronen (bewust alleen negatief — geen PR/record zoals de
-# dossier-signaallijst, die vangt ook positieve uitschieters)
-_KLACHT_PATRONEN = [
-    r"blessure", r"geblesseerd", r"\bpijn", r"pijnlijk", r"fysio", r"\bziek\b",
-    r"griep", r"koorts", r"overtraind", r"uitgeput", r"doodmoe", r"geen energie",
-    r"kramp", r"scheen", r"achilles", r"hamstring", r"\bkuit", r"\blies\b",
-    r"\benkel", r"\bknie", r"\brug\b",
+# Fysieke klachtdetectie op ZINSNIVEAU, met negatieherkenning.
+# "Beetje pijn aan mijn knie" = klacht; "geen pijn meer" of "knie voelde
+# prima" is er juist géén — anders flagt elk positief bericht een signaal.
+_KERN_KLACHTEN = [
+    r"blessure", r"geblesseerd", r"\bpijn(?!vrij)", r"pijnlijk", r"fysio",
+    r"\bziek\b", r"griep", r"koorts", r"overtraind", r"uitgeput", r"doodmoe",
+    r"kramp", r"last van", r"\bstijf", r"gevoelig", r"zeurt", r"geïrriteerd",
+    r"ontstoken", r"ontsteking",
 ]
+# Lichaamsdelen tellen alleen mee als in DEZELFDE zin ook een kernklacht staat
+_LICHAAMSDELEN = [
+    r"scheen", r"achilles", r"hamstring", r"\bkuit", r"\blies\b", r"\benkel",
+    r"\bknie", r"\brug\b", r"\bvoet", r"\bheup", r"\bzool", r"\bhiel",
+]
+_NEGATIES = re.compile(
+    r"\b(geen|niet|zonder|nauwelijks|amper|nooit|minder|weinig)\b")
+_OPGELOST = re.compile(
+    r"\b(weg|over|voorbij|verdwenen|hersteld|opgelost|prima|goed|beter)\b")
+
+
+def _vind_klachten(tekst: str) -> list[str]:
+    """Vind echte fysieke klachten in een notitie; negaties en 'het gaat weer
+    goed'-zinnen tellen niet. Geeft de gevonden kernwoorden terug."""
+    gevonden: list[str] = []
+    for zin in re.split(r"[.!?\n]+", tekst.lower()):
+        if not zin.strip():
+            continue
+        kern = None
+        for pat in _KERN_KLACHTEN:
+            m = re.search(pat, zin)
+            if m:
+                # Negatie vlak vóór ("geen pijn") of oplossing vlak ná
+                # ("pijn is weg") → geen klacht
+                venster_voor = zin[max(0, m.start() - 30):m.start()]
+                venster_na = zin[m.end():m.end() + 25]
+                if _NEGATIES.search(venster_voor) or _OPGELOST.search(venster_na):
+                    continue
+                kern = m.group(0).strip()
+                break
+        if not kern:
+            continue
+        # Lichaamsdeel in dezelfde zin maakt de klacht specifieker
+        deel = next((dm.group(0).strip() for dp in _LICHAAMSDELEN
+                     if (dm := re.search(dp, zin))), "")
+        label = f"{kern} ({deel})" if deel else kern
+        if label not in gevonden:
+            gevonden.append(label)
+    return gevonden
 
 
 def _gem(vals: list[float]) -> float | None:
@@ -62,6 +102,7 @@ def analyse_belasting(entries: list[dict], vandaag: date | None = None) -> dict 
     felt_recent, felt_basis = [], []
     rpe_recent, rpe_basis = [], []
     klachten: list[str] = []
+    runs_recent: list[dict] = []
 
     for e in entries:
         try:
@@ -74,6 +115,11 @@ def analyse_belasting(entries: list[dict], vandaag: date | None = None) -> dict 
         km = _run_km(e)
         if d > grens_7d:
             km_recent += km
+            if km > 0:
+                # Onderbouwing: precies deze runs zijn geteld (controleerbaar)
+                runs_recent.append({"datum": d.isoformat(),
+                                    "naam": (e.get("name") or "")[:40],
+                                    "km": round(km, 1)})
         elif d > grens_basis:
             km_basis += km
             if _is_run(e) and km > 0:
@@ -93,13 +139,11 @@ def analyse_belasting(entries: list[dict], vandaag: date | None = None) -> dict 
             elif d > grens_basis_scores:
                 basis.append(v)
 
-        # Klachtwoorden in recente notities
+        # Echte klachten in recente notities (negaties/opgelost tellen niet)
         if d > grens_14d and e.get("post_notes"):
-            tekst = e["post_notes"].lower()
-            for pat in _KLACHT_PATRONEN:
-                m = re.search(pat, tekst)
-                if m and m.group(0).strip() not in klachten:
-                    klachten.append(m.group(0).strip())
+            for k in _vind_klachten(e["post_notes"]):
+                if k not in klachten:
+                    klachten.append(k)
 
     signalen: list[str] = []
     codes: list[str] = []
@@ -150,8 +194,38 @@ def analyse_belasting(entries: list[dict], vandaag: date | None = None) -> dict 
             "gevoel_recent": g_rec, "gevoel_basis": g_bas,
             "rpe_recent": r_rec, "rpe_basis": r_bas,
             "klachten": klachten,
+            "runs_recent": sorted(runs_recent, key=lambda r: r["datum"]),
         },
     }
+
+
+def _ontdubbel_entries(entries: list[dict]) -> list[dict]:
+    """
+    Dezelfde run kan dubbel binnenkomen: één keer als geplande (afgeronde)
+    workout en één keer als losse horloge-sync met een eigen key. Twee
+    voltooide runs op dezelfde dag met (vrijwel) dezelfde afstand tellen we
+    daarom één keer — de variant mét naam/structuur wint.
+    """
+    per_dag: dict[str, list[dict]] = {}
+    uit: list[dict] = []
+    for e in entries:
+        if not (e.get("completed") and _is_run(e) and (e.get("actual_km") or 0) > 0):
+            uit.append(e)
+            continue
+        dag = (e.get("date") or "")[:10]
+        dubbel = None
+        for ander in per_dag.get(dag, []):
+            if abs(float(ander.get("actual_km") or 0) - float(e.get("actual_km") or 0)) <= 0.3:
+                dubbel = ander
+                break
+        if dubbel is None:
+            per_dag.setdefault(dag, []).append(e)
+            uit.append(e)
+        elif not dubbel.get("name") and e.get("name"):
+            # zelfde run, maar deze variant heeft de workoutnaam → vervang
+            uit[uit.index(dubbel)] = e
+            per_dag[dag][per_dag[dag].index(dubbel)] = e
+    return uit
 
 
 def _entry_van_workout(w: dict) -> dict:
@@ -160,6 +234,7 @@ def _entry_van_workout(w: dict) -> dict:
     act = acts[0] if acts else {}
     return {
         "date": (w.get("workout_date") or "")[:10],
+        "name": (w.get("name") or "").strip(),
         "activity_type": (w.get("activity_type_name")
                           or act.get("activity_type_name") or ""),
         "actual_km": fs_client._norm_km(act.get("amount"), act.get("amount_type")),
@@ -194,7 +269,7 @@ def check_alle(athletes: list[dict], on_hold: dict | None = None,
 
     def _fetch(a):
         workouts = fs_client.get_workouts_deduped(a["user_key"], start, vandaag)
-        entries = [_entry_van_workout(w) for w in workouts]
+        entries = _ontdubbel_entries([_entry_van_workout(w) for w in workouts])
         res = analyse_belasting(entries, vandaag)
         if not res:
             return None
@@ -206,6 +281,15 @@ def check_alle(athletes: list[dict], on_hold: dict | None = None,
     resultaten = [r for r in fs_client._parallel_per_athlete(todo, _fetch) if r]
     # Hoog eerst, dan alfabetisch
     return sorted(resultaten, key=lambda r: (r["ernst"] != "hoog", r["naam"]))
+
+
+def laad_stand() -> dict:
+    """Alleen de opgeslagen dagstand lezen (géén berekening, geen FS-calls).
+    Voor de homepage-tegel: die mag nooit laadtijd kosten."""
+    try:
+        return intake_store.load_belasting()
+    except Exception:
+        return {}
 
 
 def dagelijkse_check(athletes: list[dict], forceer: bool = False) -> dict:

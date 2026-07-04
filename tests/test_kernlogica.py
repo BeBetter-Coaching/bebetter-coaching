@@ -345,7 +345,7 @@ class TestBelasting:
             _run_entry(2, 5.0, notes="Beetje pijn aan mijn achillespees vandaag")]
         res = belasting.analyse_belasting(log)
         assert res is not None and "klachten" in res["codes"]
-        assert "pijn" in res["metrics"]["klachten"]
+        assert "pijn (achilles)" in res["metrics"]["klachten"]
 
     def test_twee_signalen_is_hoog(self):
         log = _stabiele_basis(felt=2) + [
@@ -362,6 +362,41 @@ class TestBelasting:
             e["activity_type"] = "Fietsen"
             log.append(e)
         assert belasting.analyse_belasting(log) is None
+
+    def test_klachten_negaties_tellen_niet(self):
+        # de bug: positieve berichten ("geen pijn", "pijnvrij") gaven klacht-signalen
+        assert belasting._vind_klachten("Beetje pijn aan mijn knie vandaag") == ["pijn (knie)"]
+        assert belasting._vind_klachten("Geen pijn meer gevoeld, ging lekker!") == []
+        assert belasting._vind_klachten("Helemaal pijnvrij gelopen vandaag") == []
+        assert belasting._vind_klachten("De pijn is gelukkig weg") == []
+        assert belasting._vind_klachten("Knie voelde prima, lekker gelopen") == []
+        assert belasting._vind_klachten("Nauwelijks last van mijn kuit") == []
+        assert belasting._vind_klachten("Last van mijn achillespees na het lopen") == ["last van (achilles)"]
+
+    def test_zelfde_run_dubbel_gesynct_telt_een_keer(self):
+        # planned workout (afgerond) + losse horloge-sync = dezelfde run
+        entries = [
+            {"date": "2026-07-01", "name": "Duurloop Z2", "activity_type": "Hardlopen",
+             "actual_km": 10.0, "completed": True, "felt": 2, "effort": 5, "post_notes": ""},
+            {"date": "2026-07-01", "name": "", "activity_type": "Hardlopen",
+             "actual_km": 10.1, "completed": True, "felt": None, "effort": None, "post_notes": ""},
+            {"date": "2026-07-02", "name": "Intervallen", "activity_type": "Hardlopen",
+             "actual_km": 8.0, "completed": True, "felt": 3, "effort": 7, "post_notes": ""},
+        ]
+        uit = belasting._ontdubbel_entries(entries)
+        runs = [e for e in uit if e.get("actual_km")]
+        assert len(runs) == 2                       # 10 km telt één keer
+        assert sum(e["actual_km"] for e in runs) == 18.0
+        assert any(e["name"] == "Duurloop Z2" for e in runs)  # variant mét naam wint
+
+    def test_twee_echte_runs_zelfde_dag_blijven(self):
+        entries = [
+            {"date": "2026-07-01", "name": "Ochtendloop", "activity_type": "Hardlopen",
+             "actual_km": 8.0, "completed": True, "felt": None, "effort": None, "post_notes": ""},
+            {"date": "2026-07-01", "name": "Avondloop", "activity_type": "Hardlopen",
+             "actual_km": 5.0, "completed": True, "felt": None, "effort": None, "post_notes": ""},
+        ]
+        assert len(belasting._ontdubbel_entries(entries)) == 2
 
     def test_gezien_dempt_en_escalatie_doorbreekt(self, monkeypatch):
         import intake_store
