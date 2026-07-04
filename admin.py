@@ -1274,14 +1274,23 @@ def render_admin(athletes_by_group: dict):
                         if _ule:
                             st.error(_ule)
                         elif _ul:
+                            _gesplitst = [u for u in _ul if u.get("gesplitst")]
+                            if _gesplitst:
+                                st.caption(f"🔎 {len(_gesplitst)} gesplitste boekingen (bankbedrag ≠ "
+                                           "kostendeel, bijv. deels privé of beperkt aftrekbaar) — "
+                                           "alleen het kostendeel telt mee:")
+                                st.dataframe(pd.DataFrame(_gesplitst), hide_index=True,
+                                             use_container_width=True, column_config={
+                                                 "bankbedrag": st.column_config.NumberColumn(format="€ %.2f"),
+                                                 "geteld als kost": st.column_config.NumberColumn(format="€ %.2f")})
                             st.dataframe(pd.DataFrame(_ul), hide_index=True,
-                                         use_container_width=True,
-                                         column_config={"bedrag": st.column_config.NumberColumn(
-                                             format="€ %.2f")})
-                            st.caption(f"{len(_ul)} uitgaven · som {_eur(sum(u['bedrag'] for u in _ul))}. "
-                                       "Zie je een uitgave die op de W&V niet als kost telt "
-                                       "(kolom 'rekening'), geef de rekeningnaam door — dan sluit "
-                                       "ik die categorie uit.")
+                                         use_container_width=True, column_config={
+                                             "bankbedrag": st.column_config.NumberColumn(format="€ %.2f"),
+                                             "geteld als kost": st.column_config.NumberColumn(format="€ %.2f")})
+                            st.caption(f"{len(_ul)} uitgaven · kostendeel-som "
+                                       f"{_eur(sum(u['geteld als kost'] for u in _ul))} "
+                                       f"(bankbedragen samen {_eur(sum(u['bankbedrag'] for u in _ul))}). "
+                                       "Dit kostendeel-totaal hoort gelijk te zijn aan je W&V-kostenregel.")
                     if st.button("🛰️ API verkennen (welke endpoints bestaan er?)",
                                  key="adm_api_verkenner"):
                         st.session_state["_api_verkenner"] = rompslomp_client.api_verkenner()

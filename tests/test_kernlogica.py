@@ -445,6 +445,45 @@ class TestBtwOmschakeling:
         assert rc._uitgave_telt_als_kost(voorraad) is False
         assert rc._uitgave_telt_als_kost({}) is True  # onbekend → meetellen
 
+    def test_gesplitste_boeking_telt_alleen_kostenregel(self):
+        # Vier echte voorbeelden: alleen de kostenregel telt, privé/beperkt deel valt af
+        import rompslomp_client as rc
+        montimar = {"invoice_lines": [
+            {"price_with_vat": "128.00", "account_path": "profit.costs.selling.representation"},
+            {"price_with_vat": "32.00", "account_path": "passiva.equity.partner_1"}]}
+        marktkraam = {"invoice_lines": [
+            {"price_with_vat": "143.05", "account_path": "profit.costs.selling.marketing"},
+            {"price_with_vat": "35.76", "account_path": "passiva.equity.partner_1"}]}
+        autowas = {"invoice_lines": [
+            {"price_with_vat": "27.50", "account_path": "profit.costs.car.car_costs"},
+            {"price_with_vat": "27.49", "account_path": "passiva.equity.partner_1"}]}
+        assert rc._uitgave_kosten_bedrag(montimar) == 128.00      # niet 160
+        assert rc._uitgave_kosten_bedrag(marktkraam) == 143.05    # niet 178,81
+        assert rc._uitgave_kosten_bedrag(autowas) == 27.50        # niet 54,99
+        # De vier voorbeelden samen: 122,74 minder dan de bankbedragen
+        bank = 160.00 + 178.81 + 54.99 + 54.99
+        kost = sum(rc._uitgave_kosten_bedrag(x) for x in
+                   (montimar, marktkraam, autowas, autowas))
+        assert round(bank - kost, 2) == 122.74
+
+    def test_enkele_kostenregel_ongewijzigd(self):
+        import rompslomp_client as rc
+        # normale uitgave met één kostenregel blijft volledig meetellen
+        item = {"type_account": {"type": "costs", "path": "profit.costs.other_costs.subscriptions"},
+                "invoice_lines": [{"price_with_vat": "32.07",
+                                   "account_path": "profit.costs.other_costs.subscriptions"}]}
+        assert rc._uitgave_kosten_bedrag(item) == 32.07
+
+    def test_regel_zonder_rekening_volgt_uitgave(self):
+        import rompslomp_client as rc
+        # regel zonder account -> beslist op uitgave-niveau (fallback, oud gedrag)
+        kost = {"type_account": {"type": "costs", "path": "profit.costs.x"},
+                "invoice_lines": [{"price_with_vat": "50.00"}]}
+        voorraad = {"type_account": {"type": "balance", "path": "activa.current_assets.stock"},
+                    "invoice_lines": [{"price_with_vat": "50.00"}]}
+        assert rc._uitgave_kosten_bedrag(kost) == 50.00
+        assert rc._uitgave_kosten_bedrag(voorraad) == 0.0
+
     def test_uitgave_bedrag_uit_invoice_lines(self):
         # expenses-endpoint: bedragen zitten in de regels, niet op het hoofdniveau
         import rompslomp_client as rc

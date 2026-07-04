@@ -462,14 +462,76 @@ def _uitgave_telt_als_kost(item: dict) -> bool:
     return True
 
 
+def _kosten_account_ids() -> set:
+    """Ids van alle kostenrekeningen (voor regels die alleen een account_id dragen)."""
+    accounts, _ = get_accounts()
+    return {a.get("id") for a in accounts if _is_kosten_account(a)}
+
+
+def _regel_bedrag(line: dict) -> float:
+    """Bedrag van één factuur-/uitgaveregel (incl. btw; KOR = geen aftrek)."""
+    b = _parse_bedrag(line.get("price_with_vat") or line.get("price_without_vat"))
+    if not b:
+        b = _parse_bedrag(line.get("price_per_unit")) * (_parse_bedrag(line.get("quantity")) or 1.0)
+    return b
+
+
+def _regel_is_kost(line: dict, kosten_ids: set | None) -> bool | None:
+    """
+    True/False als de rekening van deze regel wél/niet een kostenrekening is,
+    None als de regel geen herleidbare rekening heeft (dan beslist de uitgave).
+    """
+    pad = _line_path(line)
+    if pad:
+        return _path_is_kosten(pad)
+    aid = line.get("account_id")
+    if aid is not None and kosten_ids:
+        return aid in kosten_ids
+    return None
+
+
+def _uitgave_kosten_bedrag(item: dict, kosten_ids: set | None = None) -> float:
+    """
+    Het KOSTEN-deel van een uitgave, per regel bepaald — zoals de Rompslomp-W&V.
+    Bij een gesplitste boeking (deels privé/beperkt aftrekbaar) telt alleen de
+    regel op een kostenrekening; de privé-/balansregel valt af.
+    """
+    lines = [l for l in (item.get("invoice_lines") or []) if isinstance(l, dict)]
+    if not lines:
+        # Geen regels: val terug op het hoofdbedrag als de uitgave op kosten staat.
+        return _uitgave_bedrag(item) if _uitgave_telt_als_kost(item) else 0.0
+
+    totaal = 0.0
+    onbekend = 0.0
+    heeft_regelinfo = False
+    for line in lines:
+        b = _regel_bedrag(line)
+        beslissing = _regel_is_kost(line, kosten_ids)
+        if beslissing is True:
+            totaal += b
+            heeft_regelinfo = True
+        elif beslissing is False:
+            heeft_regelinfo = True  # bewust NIET meetellen (privé/balans)
+        else:
+            onbekend += b           # geen rekening op de regel → uitgave beslist
+    if heeft_regelinfo:
+        # Regels zonder eigen rekening volgen de rekening van de hele uitgave.
+        if onbekend and _uitgave_telt_als_kost(item):
+            totaal += onbekend
+        return round(totaal, 2)
+    # Geen enkele regel had rekening-info → oud gedrag (uitgave-niveau).
+    return _uitgave_bedrag(item) if _uitgave_telt_als_kost(item) else 0.0
+
+
 def get_uitgaven_ytd(year: int) -> tuple[float, int, str]:
     """
-    Som van de uitgaven op KOSTENrekeningen dit jaar (expenses-endpoint).
-    Geeft (bedrag, aantal, endpoint). Concepten en balans-uitgaven tellen niet.
+    Som van het KOSTEN-deel van de uitgaven dit jaar (expenses-endpoint),
+    per regel bepaald. Geeft (bedrag, aantal, endpoint). Concepten tellen niet.
     """
     items, err = _paged("expenses", ("data", "expenses"))
     if err or not items:
         return 0.0, 0, ""
+    kosten_ids = _kosten_account_ids()
     totaal, n = 0.0, 0
     for it in items:
         if not isinstance(it, dict):
@@ -479,9 +541,7 @@ def get_uitgaven_ytd(year: int) -> tuple[float, int, str]:
         d = (it.get("date") or it.get("invoice_date") or "")[:10]
         if not d.startswith(str(year)):
             continue
-        if not _uitgave_telt_als_kost(it):
-            continue
-        bedrag = _uitgave_bedrag(it)
+        bedrag = _uitgave_kosten_bedrag(it, kosten_ids)
         if bedrag:
             totaal += bedrag
             n += 1
@@ -493,6 +553,7 @@ def get_uitgaven_lijst(year: int) -> tuple[list[dict], str]:
     items, err = _paged("expenses", ("data", "expenses"))
     if err:
         return [], err
+    kosten_ids = _kosten_account_ids()
     lijst = []
     for it in items:
         if not isinstance(it, dict):
@@ -506,13 +567,16 @@ def get_uitgaven_lijst(year: int) -> tuple[list[dict], str]:
             and (li.get("description") or "").strip())[:120]
         ta = it.get("type_account")
         rekening = (ta.get("path_name") or ta.get("name") or "") if isinstance(ta, dict) else str(ta or "")
+        bankbedrag = _uitgave_bedrag(it)                       # volledige uitgave
+        kosten = _uitgave_kosten_bedrag(it, kosten_ids)        # alleen kostenregels
         lijst.append({
             "datum": d,
             "naam": _contact_naam(it),
             "omschrijving": omschrijving,
-            "bedrag": _uitgave_bedrag(it),
+            "bankbedrag": bankbedrag,
+            "geteld als kost": kosten,
+            "gesplitst": abs(bankbedrag - kosten) > 0.005,
             "rekening": rekening,
-            "telt als kost": _uitgave_telt_als_kost(it),
             "state": it.get("state") or "",
         })
     lijst.sort(key=lambda x: x["datum"], reverse=True)
