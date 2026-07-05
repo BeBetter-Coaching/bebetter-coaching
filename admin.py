@@ -694,22 +694,23 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
     else:
         _kor_cls = "alert" if pct_kor >= 100 else ("warn" if pct_kor >= 90 else "")
         k4.markdown(_card("Ruimte tot KOR-grens", _eur0(ruimte),
-                          f"<div class='bb-card-sub'>van {_eur0(KOR_GRENS)} · KOR t/m 31 juli</div>",
+                          f"<div class='bb-card-sub'>van {_eur0(KOR_GRENS)} · afgemeld per 1 aug</div>",
                           _kor_cls), unsafe_allow_html=True)
 
     st.write("")
 
     if not btw_modus:
-        # ── KOR-status gauge + rek-monitor (t/m 31 juli) ──
-        st.markdown("<div class='bb-section-title'>KOR-status · t/m 31 juli</div>",
+        # ── KOR-status gauge + laatste KOR-dagen (definitief afgemeld per 1 aug) ──
+        st.markdown("<div class='bb-section-title'>KOR-status · afgemeld per 1 augustus</div>",
                     unsafe_allow_html=True)
         gc1, gc2 = st.columns([1, 3.2])
         with gc1:
             st.markdown(f"<div class='kor-pct'>{pct_kor:.1f}%</div>"
                         f"<div class='kor-pct-sub'>benut van de KOR-grens</div>", unsafe_allow_html=True)
             _dagen_rek = (KOR_TOT - date.today()).days
-            st.markdown(f"<div class='kor-pct-sub'>Nog <b>{_dagen_rek} dagen</b> tot de btw-start "
-                        f"(1 augustus)</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='kor-pct-sub'>Definitief afgemeld voor de KOR. Nog "
+                        f"<b>{_dagen_rek} dagen</b> tot de btw-start (1 augustus).</div>",
+                        unsafe_allow_html=True)
         with gc2:
             fillpct = min(pct_kor, 100)
             st.markdown(
@@ -722,16 +723,12 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
                 "<span><span class='kor-dot' style='background:#f59e0b'></span>Let op (80% - 100%)</span>"
                 "<span><span class='kor-dot' style='background:#d92d20'></span>Grens overschreden (&gt; 100%)</span>"
                 "</div>", unsafe_allow_html=True)
-            # Rek-monitor: de grens mag vóór 1 aug NIET geraakt worden
-            if ruimte > 0:
-                st.markdown(
-                    f"<div class='kor-pct-sub' style='margin-top:8px'>🎯 <b>Rek-monitor:</b> nog maximaal "
-                    f"<b>{_eur0(ruimte)}</b> factureren t/m 31 juli. Alles daarboven doorschuiven naar "
-                    f"augustus (wordt dan btw-omzet). Raak je de grens eerder, dan stopt de KOR op dat "
-                    f"moment, niet op 1 augustus.</div>", unsafe_allow_html=True)
-            else:
-                st.error("De KOR-grens is geraakt — de KOR is daarmee al vervallen. "
-                         "Overleg met je boekhouder over de gevolgen voor de grensoverschrijdende factuur.")
+            # Definitief afgemeld per 1 aug: facturen t/m 31 juli nog zonder btw
+            st.markdown(
+                "<div class='kor-pct-sub' style='margin-top:8px'>🧾 <b>Overgang:</b> facturen t/m "
+                "<b>31 juli</b> gaan nog <b>zonder btw</b> (KOR); vanaf <b>1 augustus</b> met btw. "
+                "Zet in Rompslomp de btw op je producten dus pas op 1 augustus aan, niet eerder.</div>",
+                unsafe_allow_html=True)
         st.write("")
 
     # ── Rij 2: potjes — waar gaat de winst heen ──
@@ -875,7 +872,7 @@ def _visueel_dashboard(athletes, actief, on_hold, admin, prijzen, proj,
                              f"{pct_kor:.1f}% benut. Let op de fiscale gevolgen.")
         elif pct_kor >= 70:
             sig_html += _sig("&#9888;&#65039;", f"KOR-grens nadert: {pct_kor:.1f}% benut",
-                             f"Nog {_eur0(ruimte)} factureerbaar t/m 31 juli; schuif de rest naar augustus.")
+                             f"Definitief afgemeld per 1 aug. Facturen t/m 31 juli nog zonder btw.")
         else:
             sig_html += _sig("&#9989;", f"Ruim binnen KOR: {pct_kor:.1f}% benut",
                              f"Nog {_eur0(ruimte)} ruimte tot de grens.")
