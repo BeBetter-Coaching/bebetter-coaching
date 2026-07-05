@@ -148,11 +148,14 @@ def _workout_score(e: dict) -> float:
 
 
 def _is_run(e: dict) -> bool:
-    """True als de activiteit hardlopen is (geen fiets/zwem/kracht)."""
+    """True als de activiteit hardlopen is (geen fiets/zwem/kracht/wandelen).
+    Let op: FinalSurge noemt WANDELEN 'Lopen' — dat is dus géén run."""
     t = (e.get("activity_type") or "").strip().lower()
     if not t:
         return True  # onbekend → meenemen
-    return any(k in t for k in ("hardlo", "run", "lop", "trail"))
+    if any(k in t for k in ("wandel", "walk", "hike")):
+        return False
+    return any(k in t for k in ("hardlo", "run", "trail"))
 
 
 def _run_km(e: dict) -> float:

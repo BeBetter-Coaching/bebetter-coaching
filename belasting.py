@@ -93,6 +93,9 @@ def analyse_belasting(entries: list[dict], vandaag: date | None = None) -> dict 
     vandaag = vandaag or date.today()
     grens_7d = vandaag - timedelta(days=7)
     grens_14d = vandaag - timedelta(days=14)
+    # Klachten alleen uit de laatste 7 dagen: een opmerking van vorige week is
+    # geen actueel signaal meer (gevoel/RPE blijven trends over 14 dagen).
+    grens_klachten = vandaag - timedelta(days=7)
     grens_basis = grens_7d - timedelta(days=28)      # volume-basis: 28d vóór de recente week
     grens_basis_scores = grens_14d - timedelta(days=28)  # score-basis: 28d vóór de recente 14d
 
@@ -139,11 +142,13 @@ def analyse_belasting(entries: list[dict], vandaag: date | None = None) -> dict 
             elif d > grens_basis_scores:
                 basis.append(v)
 
-        # Echte klachten in recente notities (negaties/opgelost tellen niet)
-        if d > grens_14d and e.get("post_notes"):
+        # Echte klachten in recente notities (negaties/opgelost tellen niet),
+        # mét datum zodat de coach het signaal kan plaatsen
+        if d > grens_klachten and e.get("post_notes"):
             for k in _vind_klachten(e["post_notes"]):
-                if k not in klachten:
-                    klachten.append(k)
+                _label = f"{k} · {d.strftime('%d-%m')}"
+                if _label not in klachten:
+                    klachten.append(_label)
 
     signalen: list[str] = []
     codes: list[str] = []
@@ -273,8 +278,10 @@ def check_alle(athletes: list[dict], on_hold: dict | None = None,
         res = analyse_belasting(entries, vandaag)
         if not res:
             return None
+        # Alleen verse notities (7 dagen) voeden de AI-duiding — oudere context
+        # leidde tot adviezen over trainingen van vorige week
         notities = " | ".join(e["post_notes"] for e in entries
-                              if e["post_notes"] and e["date"] >= (vandaag - timedelta(days=14)).isoformat())
+                              if e["post_notes"] and e["date"] >= (vandaag - timedelta(days=7)).isoformat())
         return {"user_key": a["user_key"], "naam": a["name"],
                 "group": a.get("group", ""), "notities": notities[:800], **res}
 

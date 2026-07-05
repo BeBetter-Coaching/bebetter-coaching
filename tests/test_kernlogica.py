@@ -345,7 +345,28 @@ class TestBelasting:
             _run_entry(2, 5.0, notes="Beetje pijn aan mijn achillespees vandaag")]
         res = belasting.analyse_belasting(log)
         assert res is not None and "klachten" in res["codes"]
-        assert "pijn (achilles)" in res["metrics"]["klachten"]
+        assert any(k.startswith("pijn (achilles)") for k in res["metrics"]["klachten"])
+
+    def test_klacht_ouder_dan_week_telt_niet(self):
+        # notitie van 11 dagen geleden is geen actueel signaal meer
+        log = _stabiele_basis() + [
+            _run_entry(11, 5.0, notes="Beetje pijn aan mijn achillespees")]
+        res = belasting.analyse_belasting(log)
+        assert res is None or "klachten" not in res["codes"]
+
+    def test_wandeling_lopen_telt_niet_als_hardloopkm(self):
+        # FinalSurge noemt wandelen 'Lopen' — 12,78 km wandelen is geen run-volume
+        assert dossier._is_run({"activity_type": "Lopen"}) is False
+        assert dossier._is_run({"activity_type": "Hardlopen"}) is True
+        assert dossier._is_run({"activity_type": "Trail Run"}) is True
+        assert dossier._run_km({"activity_type": "Lopen", "actual_km": 12.78}) == 0.0
+        wandeling = _run_entry(1, 12.78)
+        wandeling["activity_type"] = "Lopen"
+        log = _stabiele_basis() + [_run_entry(1, 4.13), _run_entry(3, 3.88), wandeling]
+        res = belasting.analyse_belasting(log)
+        if res is not None:
+            assert res["metrics"]["km_recent"] == 8.0  # niet 20.8
+            assert all(r["km"] != 12.8 for r in res["metrics"]["runs_recent"])
 
     def test_twee_signalen_is_hoog(self):
         log = _stabiele_basis(felt=2) + [
