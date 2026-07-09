@@ -1224,6 +1224,7 @@ def get_athlete_zones(user_key: str) -> dict:
             return str(int(v)) if v == int(v) else str(round(v, 1))
 
         lines = []
+        zones_struct = []  # (num, naam, low_bpm/sec, high_bpm/sec) in NATIVE eenheid
         unit = "bpm" if zone_type == "hartslag" else "min/km"
         for i in range(1, 11):
             name = run_zones.get(f"zone_{i}_name")
@@ -1234,6 +1235,14 @@ def get_athlete_zones(user_key: str) -> dict:
             if low_raw is None and high_raw is None:
                 break
             short_name = re.sub(r"^Zone\s*\d+\s*:\s*", "", name).strip()
+            try:
+                zones_struct.append({
+                    "num": i, "naam": short_name,
+                    "low": float(low_raw) if low_raw is not None else None,
+                    "high": float(high_raw) if high_raw is not None else None,
+                })
+            except (TypeError, ValueError):
+                pass
 
             # Voor tempozones: lage seconden = sneller, hoge seconden = langzamer
             # FinalSurge: low = langzame grens (hoge seconden), high = snelle grens (lage seconden)
@@ -1261,6 +1270,7 @@ def get_athlete_zones(user_key: str) -> dict:
             return {
                 "zone_type": zone_type,
                 "zones_text": "\n".join(lines),
+                "zones": zones_struct,
                 "raw": run_zones,
                 "endpoint_used": "ZoneList",
             }
@@ -1269,6 +1279,40 @@ def get_athlete_zones(user_key: str) -> dict:
 
     except Exception as e:
         return {"error": str(e)}
+
+
+def zone_van_waarde(zones: list[dict], waarde: float, is_pace: bool) -> dict | None:
+    """
+    Bepaal in welke zone een waarde valt — deterministisch, zodat de AI dit
+    niet hoeft te raden. Hartslag: bpm (hoger = zwaarder). Tempo: seconden/km
+    (lager = sneller = zwaarder). Grenzen kunnen in beide richtingen opgeslagen
+    zijn; we vergelijken tegen de feitelijke min/max per zone. Geeft {num, naam}
+    of None.
+    """
+    if not zones or waarde is None:
+        return None
+    try:
+        w = float(waarde)
+    except (TypeError, ValueError):
+        return None
+
+    beste = None
+    for z in zones:
+        lo, hi = z.get("low"), z.get("high")
+        grenzen = [g for g in (lo, hi) if g is not None]
+        if not grenzen:
+            continue
+        onder, boven = min(grenzen), max(grenzen)
+        # binnen de band (inclusief ondergrens, exclusief bovengrens om overlap
+        # tussen aangrenzende zones eenduidig te maken)
+        if onder <= w < boven or (w == boven and z is zones[-1]):
+            return {"num": z["num"], "naam": z["naam"]}
+        # onthoud de dichtstbijzijnde zone voor waarden buiten alle banden
+        afstand = 0 if onder <= w <= boven else min(abs(w - onder), abs(w - boven))
+        if beste is None or afstand < beste[0]:
+            beste = (afstand, {"num": z["num"], "naam": z["naam"]})
+    # Buiten alle banden (bijv. hartslag boven de hoogste zone): pak de rand-zone
+    return beste[1] if beste else None
 
 
 def get_calendar_labels(user_key: str, start: date, end: date) -> list[dict]:

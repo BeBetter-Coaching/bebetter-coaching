@@ -1355,7 +1355,7 @@ if page == "home":
                 <p class="bb-kpi-label">Groepen</p>
             </div>
             <div class="bb-kpi">
-                <p class="bb-kpi-value">7</p>
+                <p class="bb-kpi-value">9</p>
                 <p class="bb-kpi-label">Modules</p>
             </div>
         </div>
@@ -2904,6 +2904,7 @@ elif page == "intake":
                         "motivatie": "ik_motivatie", "loopervaring": "ik_loopervaring",
                         "prs": "ik_prs", "eerdere": "ik_eerdere", "slaap": "ik_slaap",
                         "klachten": "ik_klachten", "leuk": "ik_leuk", "niet_leuk": "ik_niet_leuk",
+                        "wat_werkte": "ik_wat_werkte", "wat_niet_werkte": "ik_wat_niet",
                         "wedstrijd": "ik_wedstrijd", "notities": "ik_notities",
                     }
                     _n = 0

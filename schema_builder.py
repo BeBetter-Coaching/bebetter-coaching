@@ -320,6 +320,8 @@ _INTAKE_VELDEN_SPEC = """{
   "klachten": "huidige klachten of fysieke aandachtspunten of leeg",
   "leuk": "waar wordt de atleet blij van in training, of leeg",
   "niet_leuk": "waar ziet de atleet tegenop / wat haat hij, of leeg",
+  "wat_werkte": "wat werkte goed in eerdere trainingen/schema's (aanpak, opbouw), of leeg",
+  "wat_niet_werkte": "wat werkte NIET in eerdere trainingen/schema's, of leeg",
   "wedstrijd": "geprikte wedstrijd + datum, of leeg",
   "notities": "overige relevante info uit het gesprek die nergens anders past"
 }"""
@@ -1009,6 +1011,25 @@ ZONES ({zone_type}): {zones}"""
     return response.content[0].text.strip()
 
 
+_WEEKDAG_MAP = {
+    "maandag": 0, "ma": 0, "dinsdag": 1, "di": 1, "woensdag": 2, "wo": 2, "woe": 2,
+    "donderdag": 3, "do": 3, "don": 3, "vrijdag": 4, "vr": 4, "vrij": 4,
+    "zaterdag": 5, "za": 5, "zat": 5, "zondag": 6, "zo": 6, "zon": 6,
+}
+_WEEKDAG_NL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
+
+
+def _parse_weekdagen(tekst: str) -> list[int]:
+    """Vind de trainingsdagen (0=maandag … 6=zondag) in vrije tekst, op volgorde."""
+    t = (tekst or "").lower()
+    hits = []
+    for naam, num in _WEEKDAG_MAP.items():
+        for m in re.finditer(rf"\b{naam}\b", t):
+            hits.append((m.start(), num))
+    # Weekdag-volgorde (maandag → zondag), ontdubbeld
+    return sorted({num for _, num in hits})
+
+
 def build_csv_prompt(plan_tekst: str, intake: dict) -> str:
     """Vraag de CSV op basis van het goedgekeurde plan."""
     naam = intake.get("naam", "de atleet")
@@ -1024,13 +1045,22 @@ def build_csv_prompt(plan_tekst: str, intake: dict) -> str:
         # Zorg dat startdatum altijd een maandag is (naar vorige maandag afronden indien nodig)
         start_monday = start_dt - timedelta(days=start_dt.weekday())
         weken_aantal = int(intake.get("weken") or 8)
+        # Gekozen trainingsdagen → exacte datum per training, zodat de AI de
+        # dagen niet zelf verzint (di/zo werd anders ma/wo).
+        _dagen = _parse_weekdagen(intake.get("trainingsdagen", ""))
         week_lines = []
         for w in range(weken_aantal):
             mon = start_monday + timedelta(weeks=w)
             sun = mon + timedelta(days=6)
-            week_lines.append(
-                f"  Week {w+1}: maandag {mon.strftime('%m/%d/%Y')} t/m zondag {sun.strftime('%m/%d/%Y')}"
-            )
+            if _dagen:
+                _paren = ", ".join(
+                    f"{_WEEKDAG_NL[dg]} {(mon + timedelta(days=dg)).strftime('%m/%d/%Y')}"
+                    for dg in _dagen)
+                week_lines.append(f"  Week {w+1} ({mon.strftime('%m/%d')} t/m "
+                                  f"{sun.strftime('%m/%d')}): trainingen op → {_paren}")
+            else:
+                week_lines.append(
+                    f"  Week {w+1}: maandag {mon.strftime('%m/%d/%Y')} t/m zondag {sun.strftime('%m/%d/%Y')}")
         week_datums_tekst = "\n".join(week_lines)
     except Exception:
         pass
@@ -1089,9 +1119,11 @@ WEEKKALENDER — gebruik EXACT deze datums:
 
 DATUMREGELS (niet onderhandelbaar):
 - Weken lopen altijd van MAANDAG t/m ZONDAG
-- De eerste training van week 1 valt op of na de maandag van week 1 hierboven
+- Staan er per week "trainingen op → <dagen met datums>", gebruik dan UITSLUITEND
+  die exacte datums. Elke training valt op één van de genoemde trainingsdagen;
+  verzin geen andere weekdagen. Het aantal trainingen per week is gelijk aan het
+  aantal genoemde trainingsdagen (tenzij het plan expliciet minder/meer voorschrijft).
 - Geen enkele training mag vóór de startdatum van week 1 vallen
-- Controleer per training in welke week hij thuishoort en gebruik de bijbehorende datum uit de weekkalender hierboven
 - Datumformaat in de CSV: MM/DD/YYYY
 """ if week_datums_tekst else f"""
 DATUMREGEL: Weken lopen altijd van MAANDAG t/m ZONDAG. Startdatum schema: {startdatum_str}.

@@ -245,15 +245,42 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
 
     athlete_zones_text = ""
     athlete_zone_type = ""   # "tempo" | "hartslag" | ""
+    athlete_zones_struct = []
     if athlete_key:
         try:
             zones_result = _fs.get_athlete_zones(athlete_key)
             if "zones_text" in zones_result:
                 athlete_zone_type = zones_result.get("zone_type", "")   # "tempo" of "hartslag"
+                athlete_zones_struct = zones_result.get("zones", [])
                 zone_type_label = "tempo (min/km)" if athlete_zone_type == "tempo" else "hartslag (bpm)"
                 athlete_zones_text = f"Zones ({zone_type_label}):\n{zones_result['zones_text']}"
         except Exception:
             pass
+
+    # BEREKENDE ZONE — deterministisch uit de zonetabel, zodat de AI dit niet
+    # hoeft te raden (dé oorzaak van 147 bpm dat als Z1 werd geschreven).
+    berekende_zone_regel = ""
+    if athlete_zones_struct and activities:
+        _act = activities[0]
+        if athlete_zone_type == "hartslag":
+            _hr = _act.get("hr_avg")
+            try:
+                _hr = float(_hr) if _hr else None
+            except (TypeError, ValueError):
+                _hr = None
+            _z = _fs.zone_van_waarde(athlete_zones_struct, _hr, is_pace=False) if _hr else None
+            if _z:
+                berekende_zone_regel = (
+                    f"Gemiddeld over de hele training: {int(_hr)} bpm = "
+                    f"Zone {_z['num']} ({_z['naam']}).")
+        elif athlete_zone_type == "tempo":
+            _pace_min = _fs._pace_to_float(_act.get("pace_display") or "")
+            _pace_sec = _pace_min * 60 if _pace_min not in (0, float("inf")) else None
+            _z = _fs.zone_van_waarde(athlete_zones_struct, _pace_sec, is_pace=True) if _pace_sec else None
+            if _z:
+                berekende_zone_regel = (
+                    f"Gemiddeld over de hele training: {_act.get('pace_display')} min/km = "
+                    f"Zone {_z['num']} ({_z['naam']}).")
 
     felt = workout_data.get("felt")
     effort = workout_data.get("effort")
@@ -302,7 +329,18 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
             )
         else:
             zone_instruction = f"ZONES VAN {first_name.upper()} — gebruik ALLEEN deze waarden, niet je eigen aannames."
-        zones_section = f"\n\n{zone_instruction}\n{athlete_zones_text}"
+        # De app heeft de zone van het gemiddelde al berekend uit de tabel.
+        # Die is LEIDEND; de AI mag niet zelf opnieuw indelen (LLM's tellen fout).
+        berekend_blok = ""
+        if berekende_zone_regel:
+            berekend_blok = (
+                f"\n\nBEREKENDE ZONE (door de app bepaald uit de zonetabel — LEIDEND, "
+                f"neem deze zone letterlijk over, deel NIET zelf opnieuw in):\n"
+                f"{berekende_zone_regel}\n"
+                f"Let op: dit is het gemiddelde over de héle training. Bij een interval-/"
+                f"blokkentraining wisselen de zones binnen de training (zie het verloop per "
+                f"km/interval); benoem dan de zones per blok, niet alleen dit gemiddelde.")
+        zones_section = f"\n\n{zone_instruction}\n{athlete_zones_text}{berekend_blok}"
     else:
         zones_section = (
             f"\n\n⚠️ GEEN zones beschikbaar voor {first_name}. "

@@ -123,6 +123,51 @@ class TestParseCsvText:
             schema_builder.parse_csv_text(CSV_VOORBEELD))
 
 
+class TestWeekdagen:
+    def test_afkortingen_en_voluit(self):
+        assert schema_builder._parse_weekdagen("di / zo") == [1, 6]
+        assert schema_builder._parse_weekdagen("dinsdag en zondag") == [1, 6]
+        assert schema_builder._parse_weekdagen("ma, wo, vr, zo") == [0, 2, 4, 6]
+
+    def test_volgorde_en_ontdubbeling(self):
+        assert schema_builder._parse_weekdagen("zondag, dinsdag, dinsdag") == [1, 6]
+
+    def test_geen_valse_match_binnen_woord(self):
+        # 'ma' mag niet matchen binnen 'maximaal'; leeg = geen dagen
+        assert schema_builder._parse_weekdagen("maximaal drie keer") == []
+        assert schema_builder._parse_weekdagen("") == []
+
+
+class TestZoneVanWaarde:
+    HR = [
+        {"num": 1, "naam": "Herstel", "low": 100, "high": 130},
+        {"num": 2, "naam": "Duurloop", "low": 130, "high": 150},
+        {"num": 3, "naam": "Tempo", "low": 150, "high": 165},
+    ]
+
+    def test_hartslag_147_is_zone2(self):
+        # dé bug: 147 bpm werd als Z1 geschreven
+        assert fs_client.zone_van_waarde(self.HR, 147, is_pace=False)["num"] == 2
+
+    def test_ondergrens_inclusief(self):
+        assert fs_client.zone_van_waarde(self.HR, 130, is_pace=False)["num"] == 2
+
+    def test_boven_alles_pakt_hoogste(self):
+        assert fs_client.zone_van_waarde(self.HR, 185, is_pace=False)["num"] == 3
+
+    def test_tempo_seconden_per_km(self):
+        pace = [
+            {"num": 1, "naam": "Rustig", "low": 360, "high": 720},   # 6:00-12:00
+            {"num": 2, "naam": "Duur", "low": 330, "high": 360},     # 5:30-6:00
+        ]
+        assert fs_client.zone_van_waarde(pace, 367, is_pace=True)["num"] == 1  # 6:07
+        assert fs_client.zone_van_waarde(pace, 345, is_pace=True)["num"] == 2  # 5:45
+
+    def test_leeg_geeft_none(self):
+        assert fs_client.zone_van_waarde([], 147, is_pace=False) is None
+        assert fs_client.zone_van_waarde(self.HR, None, is_pace=False) is None
+
+
 class TestBuilderBerekeningen:
     def test_parse_duration(self):
         assert schema_builder._parse_duration_to_min("45:00") == 45
