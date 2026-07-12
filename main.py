@@ -17,6 +17,7 @@ import rompslomp_client
 import base64
 import html as _html_mod
 import io
+import pandas as pd
 import json
 import os
 from pathlib import Path
