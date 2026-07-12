@@ -112,6 +112,36 @@ def is_cloud_backed() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Self-service intake: inbox met inzendingen + de deelbare-link-token
+# ---------------------------------------------------------------------------
+
+_INTAKE_INBOX_LOCAL = os.path.join(_BASE_DIR, ".intake_inbox.json")
+_INTAKE_LINK_LOCAL = os.path.join(_BASE_DIR, ".intake_link.json")
+
+
+def load_intake_inbox() -> dict:
+    """Binnengekomen self-service intakes: {id: {velden..., status, ingezonden}}."""
+    return _load_json("intake_inbox.json", _INTAKE_INBOX_LOCAL)
+
+
+def save_intake_inbox(data: dict) -> tuple[bool, str]:
+    """Sla de intake-inbox op."""
+    return _save_json("intake_inbox.json", _INTAKE_INBOX_LOCAL, data,
+                      "Update intake-inbox via app")
+
+
+def load_intake_link() -> dict:
+    """De geheime token van de deelbare intakelink: {token}."""
+    return _load_json("intake_link.json", _INTAKE_LINK_LOCAL)
+
+
+def save_intake_link(data: dict) -> tuple[bool, str]:
+    """Sla de intakelink-token op."""
+    return _save_json("intake_link.json", _INTAKE_LINK_LOCAL, data,
+                      "Update intakelink-token via app")
+
+
+# ---------------------------------------------------------------------------
 # BTW-omschakeling: to-do-lijst + potjes-instellingen (admin, gedeeld)
 # ---------------------------------------------------------------------------
 

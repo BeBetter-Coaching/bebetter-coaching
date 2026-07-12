@@ -1,5 +1,7 @@
 .fs_auth_token
 .auth_tokens.json
+.intake_inbox.json
+.intake_link.json
 .belasting.json
 .profielen.json
 .weekbriefing.json

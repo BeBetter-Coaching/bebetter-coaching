@@ -1236,6 +1236,16 @@ def setup_screen():
         st.caption("**Windows:** open FinalSurge in Chrome → F12 → Application → Local Storage → https://beta.finalsurge.com → kopieer de waarde van **auth-token**")
 
 
+# ── Publieke self-service intake (vóór de login) ──
+# Klant opent ?intake=<token>; zonder geldige token gebeurt er niets en valt
+# de app gewoon terug op de normale coach-login.
+_intake_q = st.query_params.get("intake", "")
+if _intake_q:
+    import intake_form
+    if intake_form.token_geldig(_intake_q):
+        intake_form.render_publieke_intake()
+        st.stop()
+
 if not _check_password():
     st.stop()
 
@@ -2716,6 +2726,91 @@ elif page == "intake":
     if "intakes" not in st.session_state:
         st.session_state["intakes"] = intake_store.load_intakes()
     intakes = st.session_state["intakes"]
+
+    # ── Self-service intake: inbox met inzendingen + deelbare link ──
+    import intake_form
+    if "_intake_inbox" not in st.session_state:
+        try:
+            st.session_state["_intake_inbox"] = intake_store.load_intake_inbox()
+        except Exception:
+            st.session_state["_intake_inbox"] = {}
+    _inbox = st.session_state["_intake_inbox"]
+    _wachtend = {k: v for k, v in _inbox.items() if v.get("status") == "nieuw"}
+    _INBOX_LABELS = [
+        ("E-mail", "email"), ("Leeftijd", "leeftijd"), ("Horloge", "horloge"),
+        ("Doel", "doel"), ("Wedstrijd", "wedstrijddatum_tekst"),
+        ("Volume/wk", "huidig_volume"), ("Langste loop", "langste_afstand"),
+        ("Referentie", "referentie_prestatie"), ("Loopervaring", "loopervaring"),
+        ("PR's", "prs"), ("Trainingsdagen", "trainingsdagen"), ("Tijd/training", "tijd_per_training"),
+        ("Kwaliteitservaring", "kwaliteitservaring"), ("Ondergrond", "loopondergrond"),
+        ("Eerdere schema's", "eerdere_schemas"), ("Wat werkte", "wat_werkte"),
+        ("Wat niet werkte", "wat_niet_werkte"), ("Vindt leuk", "leuk"), ("Vindt niks", "niet_leuk"),
+        ("Herstel", "herstelcapaciteit"), ("Werkdruk", "werkdruk"), ("Slaap", "slaap"),
+        ("Blessures", "blessurehistorie"), ("Klachten", "huidige_klachten"),
+        ("Andere sporten", "andere_sporten"), ("Motivatie", "motivatie"), ("Overig", "notities"),
+    ]
+
+    with st.expander(f"📨 Binnengekomen intakes van klanten ({len(_wachtend)})",
+                     expanded=bool(_wachtend)):
+        _hdr1, _hdr2 = st.columns([4, 1], vertical_alignment="center")
+        _hdr1.caption("Klanten die je intakelink invulden. Bekijk, en neem over als nieuwe-klant-intake.")
+        if _hdr2.button("🔄 Ververs", key="inbox_refresh", use_container_width=True):
+            st.session_state["_intake_inbox"] = intake_store.load_intake_inbox()
+            st.rerun()
+        if not _wachtend:
+            st.caption("Nog geen nieuwe inzendingen.")
+        for _iid, _sub in sorted(_wachtend.items(), reverse=True):
+            st.markdown(f"**{_esc(_sub.get('naam', '?'))}** — {_esc((_sub.get('doel', '') or '')[:90])}  \n"
+                        f"<span style='color:#8FA8CE;font-size:.8rem'>ingezonden {_sub.get('ingezonden', '')}"
+                        f"{' · ' + _esc(_sub.get('email', '')) if _sub.get('email') else ''}</span>",
+                        unsafe_allow_html=True)
+            _rijen = []
+            for _lbl, _k in _INBOX_LABELS:
+                _v = _sub.get(_k)
+                if isinstance(_v, list):
+                    _v = ", ".join(_v)
+                if _v and str(_v).strip():
+                    _rijen.append({"Vraag": _lbl, "Antwoord": str(_v)})
+            if _rijen:
+                st.dataframe(pd.DataFrame(_rijen), hide_index=True, use_container_width=True)
+            _bt, _bd = st.columns(2)
+            with _bt:
+                if st.button("➕ Overnemen als intake", key=f"inbox_take_{_iid}",
+                             type="primary", use_container_width=True):
+                    _naam = (_sub.get("naam") or "Nieuwe klant").strip()
+                    _key = "nieuw:" + _naam.lower().replace(" ", "_")
+                    _velden = {k: v for k, v in _sub.items() if k not in ("status", "ingezonden")}
+                    intakes[_key] = {"athlete_name": _naam, **_velden,
+                                     "updated_at": date.today().isoformat()}
+                    intake_store.save_intakes(intakes)
+                    st.session_state["intakes"] = intakes
+                    _inbox[_iid]["status"] = "verwerkt"
+                    intake_store.save_intake_inbox(_inbox)
+                    st.session_state["_intake_inbox"] = _inbox
+                    st.success(f"'{_naam}' toegevoegd als nieuwe-klant-intake. Kies hieronder "
+                               f"'Nieuwe klant' → '{_naam}' om te openen, aan te vullen en op te slaan.")
+                    st.rerun()
+            with _bd:
+                if st.button("🗑 Verwijderen", key=f"inbox_del_{_iid}", use_container_width=True):
+                    _inbox.pop(_iid, None)
+                    intake_store.save_intake_inbox(_inbox)
+                    st.session_state["_intake_inbox"] = _inbox
+                    st.rerun()
+            st.divider()
+
+    with st.expander("🔗 Deelbare intakelink (stuur naar een nieuwe klant)"):
+        _tok = intake_form.link_token()
+        st.caption("Stuur deze link naar een klant. Die vult het formulier in zonder in te loggen; "
+                   "de inzending verschijnt hierboven in de inbox.")
+        if _tok:
+            st.markdown("**Zet dit achter je app-URL** (bijv. `https://jouw-app.streamlit.app`):")
+            st.code(f"?intake={_tok}", language=None)
+        else:
+            st.info("Nog geen link aangemaakt.")
+        if st.button("Nieuwe link genereren (oude vervalt)" if _tok else "Genereer intakelink",
+                     key="intake_link_gen"):
+            intake_form.nieuwe_link_token()
+            st.rerun()
 
     if not intake_store.is_cloud_backed():
         st.warning("⚠️ GH_TOKEN niet ingesteld in secrets — intakes worden alleen lokaal opgeslagen "
