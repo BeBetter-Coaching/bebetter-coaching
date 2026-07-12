@@ -2802,10 +2802,10 @@ elif page == "intake":
     with st.expander("🔗 Deelbare intakelink (stuur naar een nieuwe klant)"):
         _tok = intake_form.link_token()
         st.caption("Stuur deze link naar een klant. Die vult het formulier in zonder in te loggen; "
-                   "de inzending verschijnt hierboven in de inbox.")
+                   "de inzending verschijnt hierboven in de inbox. Klik op het kopieer-icoon rechts "
+                   "in het vak.")
         if _tok:
-            st.markdown("**Zet dit achter je app-URL** (bijv. `https://jouw-app.streamlit.app`):")
-            st.code(f"?intake={_tok}", language=None)
+            st.code(intake_form.volledige_intakelink(), language=None)
         else:
             st.info("Nog geen link aangemaakt.")
         if st.button("Nieuwe link genereren (oude vervalt)" if _tok else "Genereer intakelink",

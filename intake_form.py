@@ -16,6 +16,27 @@ import streamlit as st
 
 import intake_store
 
+# Basis-URL van de app, voor de kant-en-klare deelbare intakelink. Overschrijfbaar
+# via de secret APP_URL mocht het adres ooit veranderen (bijv. eigen domein).
+_APP_URL_DEFAULT = "https://bebetter-coaching.streamlit.app"
+
+
+def app_url() -> str:
+    try:
+        val = st.secrets.get("APP_URL", "")
+        if val:
+            return str(val).strip().rstrip("/")
+    except Exception:
+        pass
+    return _APP_URL_DEFAULT
+
+
+def volledige_intakelink() -> str:
+    """De complete, kopieerbare link naar het klantformulier (of leeg zonder token)."""
+    tok = link_token()
+    return f"{app_url()}/?intake={tok}" if tok else ""
+
+
 # Selectie-opties gelijk aan de coach-intake, zodat koppelen 1-op-1 werkt.
 _KWALITEIT = ["Weinig/geen", "Enige ervaring", "Regelmatig"]
 _HERSTEL = ["Langzaam", "Normaal", "Snel"]
