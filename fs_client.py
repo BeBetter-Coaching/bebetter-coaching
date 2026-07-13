@@ -1160,6 +1160,86 @@ def save_workout_builder(
     return resp
 
 
+def get_workout_builder_raw(workout_key: str, user_key: str) -> list[dict]:
+    """Volledige target_options van een workout-builder (voor het omzetten van zones)."""
+    try:
+        data = _get("WorkoutBuilderGet", {
+            "scope": "USER", "scopekey": user_key, "workout_key": workout_key,
+            "array": "true", "newobject": "true",
+        })
+        return (data.get("data") or {}).get("target_options") or []
+    except Exception:
+        return []
+
+
+def _flip_zone_targets(targets, van: str, naar: str) -> int:
+    """Draai zone-doeltypes om in een target-array. Geeft aantal omgezet terug.
+    Alleen ZONE-doelen (pace_zone/hr_zone); vaste pace-doelen (wandelen) blijven."""
+    n = 0
+    for t in (targets or []):
+        if isinstance(t, dict) and t.get("targetType") == van:
+            t["targetType"] = naar
+            n += 1
+    return n
+
+
+def convert_builder_target_type(target_options: list, naar: str = "hr") -> tuple[list, int]:
+    """
+    Zet de zone-doelen van een workout-builder om tussen tempo en hartslag.
+    naar: 'hr' (tempo→hartslag) of 'tempo' (hartslag→tempo). Structuur, zone-
+    nummers en wandel-/open-doelen blijven ongewijzigd. Geeft (nieuwe_opts, aantal).
+    """
+    import copy
+    opts = copy.deepcopy(target_options)
+    van_zone, naar_zone = ("pace_zone", "hr_zone") if naar == "hr" else ("hr_zone", "pace_zone")
+    naar_top = "hr" if naar == "hr" else "pace"
+    flips = 0
+    for opt in opts:
+        if not isinstance(opt, dict):
+            continue
+        for step in opt.get("steps") or []:
+            flips += _flip_zone_targets(step.get("target"), van_zone, naar_zone)
+            for inner in (step.get("data") or []):
+                flips += _flip_zone_targets(inner.get("target"), van_zone, naar_zone)
+        if flips and opt.get("target") in ("pace", "hr"):
+            opt["target"] = naar_top
+    return opts, flips
+
+
+def convert_schema_zones(user_key: str, start: date, end: date, naar: str = "hr",
+                         progress_callback=None) -> dict:
+    """
+    Zet alle geplande workouts in [start, end] om van tempo↔hartslag (alleen de
+    zone-doelen). Uitgevoerde trainingen en trainingen zonder builder-structuur
+    worden overgeslagen. Geeft een rapport {omgezet, overgeslagen, fouten, n_todo}.
+    """
+    workouts = get_workouts(user_key, start, end)
+    todo = [w for w in workouts if not is_executed_workout(w) and w.get("key")]
+    omgezet, overgeslagen, fouten = [], [], []
+    for i, w in enumerate(todo):
+        wk = w["key"]
+        naam = (w.get("name") or "").strip() or "training"
+        datum = (w.get("workout_date") or "")[:10]
+        if progress_callback:
+            progress_callback(i, len(todo), f"{datum} {naam}")
+        try:
+            raw = get_workout_builder_raw(wk, user_key)
+            if not raw:
+                overgeslagen.append(f"{datum} · {naam} (geen structuur)")
+                continue
+            conv, flips = convert_builder_target_type(raw, naar)
+            if flips == 0:
+                _al = "hartslag" if naar == "hr" else "tempo"
+                overgeslagen.append(f"{datum} · {naam} (geen zones om te zetten, al op {_al}?)")
+                continue
+            save_workout_builder(user_key, wk, conv, naam)
+            omgezet.append(f"{datum} · {naam} ({flips} stappen)")
+        except Exception as e:
+            fouten.append(f"{datum} · {naam}: {e}")
+    return {"omgezet": omgezet, "overgeslagen": overgeslagen,
+            "fouten": fouten, "n_todo": len(todo)}
+
+
 def delete_workout(workout_key: str, user_key: str) -> dict:
     """Verwijder een workout van de atleet."""
     return _post("WorkoutDelete", {"key": workout_key}, params={

@@ -2551,6 +2551,47 @@ elif page == "backfill_builder":
     )
     bf_zone_type = "pace" if "tempo" in zone_type_radio else "heart_rate"
 
+    # ── Zones omzetten (tempo ↔ hartslag) van reeds geplande trainingen ──
+    with st.container(border=True):
+        st.markdown("**🔄 Zones omzetten (tempo ↔ hartslag)** — zet reeds geplande trainingen om "
+                    "naar het andere doeltype. Zelfde trainingen, zelfde zone-nummers; alleen "
+                    "tempo↔hartslag. Handig als een atleet na een lactaatmeting op hartslag wil.")
+        _naar_lbl = st.radio("Omzetten naar", ["hartslag", "tempo"], horizontal=True,
+                             key="bf_convert_naar")
+        _naar = "hr" if _naar_lbl == "hartslag" else "tempo"
+        st.caption(f"Alle nog niet uitgevoerde trainingen van **{_esc(selected_name)}** tussen "
+                   f"**{bf_start.strftime('%d-%m-%Y')}** en **{bf_end.strftime('%d-%m-%Y')}** → "
+                   f"**{_naar_lbl}**. Wandel-herstel (vaste pace) blijft ongewijzigd. "
+                   f"Zorg dat de {_naar_lbl}-zones van de atleet in FinalSurge kloppen "
+                   f"(bv. bijgewerkt na de meting).")
+        if st.button(f"🔄 Zet trainingen om naar {_naar_lbl}", key="btn_bf_convert"):
+            _prog = st.progress(0.0)
+            _status = st.empty()
+
+            def _bf_cb(i, n, label):
+                _prog.progress((i + 1) / max(n, 1))
+                _status.caption(f"Bezig: {label} ({i + 1}/{n})")
+
+            _rap = None
+            with st.spinner("Trainingen omzetten…"):
+                try:
+                    _rap = fs_client.convert_schema_zones(bf_athlete_key, bf_start, bf_end,
+                                                          _naar, _bf_cb)
+                except Exception as e:
+                    st.error(f"Omzetten mislukt: {e}")
+            _prog.empty()
+            _status.empty()
+            if _rap:
+                st.success(f"✅ {len(_rap['omgezet'])} van {_rap['n_todo']} trainingen omgezet naar "
+                           f"{_naar_lbl}.")
+                if _rap["omgezet"]:
+                    st.markdown("**Omgezet:**  \n" + "  \n".join(f"· {x}" for x in _rap["omgezet"]))
+                if _rap["overgeslagen"]:
+                    with st.expander(f"Overgeslagen ({len(_rap['overgeslagen'])})"):
+                        st.markdown("  \n".join(f"· {x}" for x in _rap["overgeslagen"]))
+                if _rap["fouten"]:
+                    st.error("Fouten:  \n" + "  \n".join(f"· {x}" for x in _rap["fouten"]))
+
     # ── Scan knop ─────────────────────────────────────────────────────────
     if st.button("🔍 Scan trainingen", type="primary", key="btn_bf_scan"):
         st.session_state.pop("bf_results", None)

@@ -168,6 +168,52 @@ class TestZoneVanWaarde:
         assert fs_client.zone_van_waarde(self.HR, None, is_pace=False) is None
 
 
+class TestZoneOmzetten:
+    def _builder(self):
+        # WU (pace_zone Z1) + repeat[interval pace_zone Z4 / wandel-herstel vaste pace]
+        return [{
+            "name": "Interval", "target": "pace",
+            "steps": [
+                {"type": "step", "target": [
+                    {"targetType": "pace_zone", "zone": 1},
+                    {"targetType": "open", "zone": 0}]},
+                {"type": "repeat", "repeats": 5, "target": [], "data": [
+                    {"type": "step", "target": [
+                        {"targetType": "pace_zone", "zone": 4},
+                        {"targetType": "open", "zone": 0}]},
+                    {"type": "step", "name": "wandelen", "target": [
+                        {"targetType": "pace", "targetLow": "10:00", "targetHigh": "12:00"},
+                        {"targetType": "open", "zone": 0}]},
+                ]},
+            ],
+        }]
+
+    def test_tempo_naar_hartslag(self):
+        opts, n = fs_client.convert_builder_target_type(self._builder(), naar="hr")
+        assert n == 2  # de twee pace_zone-doelen (Z1 + Z4), niet het wandel-pacedoel
+        assert opts[0]["target"] == "hr"
+        # zone-nummers ongewijzigd
+        assert opts[0]["steps"][0]["target"][0] == {"targetType": "hr_zone", "zone": 1}
+        rep = opts[0]["steps"][1]
+        assert rep["data"][0]["target"][0]["targetType"] == "hr_zone"
+        assert rep["data"][0]["target"][0]["zone"] == 4
+        # wandel-herstel blijft een vaste pace, geen hartslag
+        assert rep["data"][1]["target"][0]["targetType"] == "pace"
+
+    def test_al_op_hartslag_geen_wijziging(self):
+        hr = [{"name": "x", "target": "hr", "steps": [
+            {"type": "step", "target": [{"targetType": "hr_zone", "zone": 2}]}]}]
+        _, n = fs_client.convert_builder_target_type(hr, naar="hr")
+        assert n == 0  # niets om te zetten
+
+    def test_hartslag_naar_tempo(self):
+        hr = [{"name": "x", "target": "hr", "steps": [
+            {"type": "step", "target": [{"targetType": "hr_zone", "zone": 3}]}]}]
+        opts, n = fs_client.convert_builder_target_type(hr, naar="tempo")
+        assert n == 1 and opts[0]["target"] == "pace"
+        assert opts[0]["steps"][0]["target"][0]["targetType"] == "pace_zone"
+
+
 class TestBuilderBerekeningen:
     def test_parse_duration(self):
         assert schema_builder._parse_duration_to_min("45:00") == 45
