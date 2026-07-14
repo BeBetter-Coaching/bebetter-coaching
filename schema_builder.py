@@ -1242,13 +1242,14 @@ def parse_csv_text(csv_text: str) -> list[dict]:
 
     reader = csv.DictReader(io.StringIO(csv_clean))
     for row in reader:
-        date_str = row.get("Date", "").strip()
-        activity_type = row.get("ActivityType", "Run").strip()
-        workout_name = row.get("WorkoutName", "").strip()
-        time_min = row.get("PlannedTimeMinutes", "").strip()
-        distance = row.get("PlannedDistance", "").strip()
-        dist_unit = row.get("mi/km/m/y", "km").strip() or "km"
-        description = row.get("WorkoutDescription", "").strip()
+        # csv.DictReader vult ontbrekende kolommen met None → altijd via (… or "")
+        date_str = (row.get("Date") or "").strip()
+        activity_type = (row.get("ActivityType") or "Run").strip() or "Run"
+        workout_name = (row.get("WorkoutName") or "").strip()
+        time_min = (row.get("PlannedTimeMinutes") or "").strip()
+        distance = (row.get("PlannedDistance") or "").strip()
+        dist_unit = (row.get("mi/km/m/y") or "km").strip() or "km"
+        description = (row.get("WorkoutDescription") or "").strip()
 
         # Datum naar YYYY-MM-DD omzetten (input MM/DD/YYYY)
         try:

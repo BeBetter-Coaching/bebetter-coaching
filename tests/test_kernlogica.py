@@ -117,6 +117,15 @@ class TestParseCsvText:
         interval = next(r for r in rows if r["name"] == "Intervallen")
         assert interval["planned_min"] == 45.0
 
+    def test_onvolledige_rij_geeft_geen_crash(self):
+        # csv.DictReader vult ontbrekende kolommen met None -> mocht crashen op .strip()
+        csv = ("Date,ActivityType,WorkoutName,PlannedTimeMinutes,PlannedDistance,mi/km/m/y,WorkoutDescription\n"
+               "07/07/2026,Run,Duurloop,,10,km,Rustige duurloop Z2\n"
+               "07/09/2026,Run,Kort\n")  # rij mist kolommen -> None-waarden
+        rows = schema_builder.parse_csv_text(csv)
+        assert len(rows) == 2
+        assert rows[1]["name"] == "Kort"
+
     def test_csv_in_markdown_blok(self):
         omhuld = f"Hier je schema:\n```csv\n{CSV_VOORBEELD}```\nSucces!"
         assert len(schema_builder.parse_csv_text(omhuld)) == len(
