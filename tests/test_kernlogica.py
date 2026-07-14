@@ -117,6 +117,23 @@ class TestParseCsvText:
         interval = next(r for r in rows if r["name"] == "Intervallen")
         assert interval["planned_min"] == 45.0
 
+    def test_rustdagen_worden_weggelaten(self):
+        csv = ("Date,ActivityType,WorkoutName,PlannedTimeMinutes,PlannedDistance,mi/km/m/y,WorkoutDescription\n"
+               "07/07/2026,Run,Duurloop,,10,km,Duurloop Z2\n"
+               "07/08/2026,Rest,Rustdag,,,,Herstel\n"      # Rest MÉT naam -> toch weg
+               "07/09/2026,Rest,,,,,\n")                    # lege Rest -> weg
+        rows = schema_builder.parse_csv_text(csv)
+        assert len(rows) == 1 and rows[0]["name"] == "Duurloop"
+
+    def test_meerregelige_omschrijving_blijft_heel(self):
+        csv = ('Date,ActivityType,WorkoutName,PlannedTimeMinutes,PlannedDistance,mi/km/m/y,WorkoutDescription\n'
+               '07/07/2026,Run,Interval,,8,km,"Interval | Z4\nWarming-up: 2km Z1\n'
+               'Hoofdblok: 5x 800m Z4 / 400m Z1\nCooling-down: 1km Z1\n---\nScherp op de 800s."\n')
+        rows = schema_builder.parse_csv_text(csv)
+        assert len(rows) == 1
+        assert "Hoofdblok: 5x 800m Z4" in rows[0]["description"]
+        assert rows[0]["description"].count("\n") >= 4
+
     def test_onvolledige_rij_geeft_geen_crash(self):
         # csv.DictReader vult ontbrekende kolommen met None -> mocht crashen op .strip()
         csv = ("Date,ActivityType,WorkoutName,PlannedTimeMinutes,PlannedDistance,mi/km/m/y,WorkoutDescription\n"

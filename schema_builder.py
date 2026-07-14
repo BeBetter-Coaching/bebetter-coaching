@@ -1133,6 +1133,15 @@ DATUMREGEL: Weken lopen altijd van MAANDAG t/m ZONDAG. Startdatum schema: {start
 
 Vandaag is het {vandaag}.
 {week_datums_sectie}
+HARDE REGELS VOOR DE CSV (niet onderhandelbaar):
+- GEEN rustdagen als CSV-regel. Zet ALLEEN de daadwerkelijke trainingen als rijen.
+  Rustdagen laat je gewoon weg (geen ActivityType "Rest", geen lege dagen).
+- ELKE WorkoutDescription is VOLLEDIG en meerregelig volgens het format hieronder
+  (naam+afstand+zone, Warming-up, Hoofdblok, Cooling-down, ---, 1-2 coaching-zinnen).
+  Een losse regel als "Duurloop met strides" is FOUT: onbruikbaar voor de builder.
+- WorkoutDescription bevat komma's en meerdere regels, dus zet dat veld ALTIJD
+  tussen dubbele aanhalingstekens ("...") in de CSV, anders breekt de kolom.
+
 Gebruik exact dit formaat — geen uitleg, alleen de CSV:
 Date,ActivityType,WorkoutName,PlannedTimeMinutes,PlannedDistance,mi/km/m/y,WorkoutDescription
 
@@ -1276,8 +1285,11 @@ def parse_csv_text(csv_text: str) -> list[dict]:
         except ValueError:
             planned_dist = None
 
-        # Skip echte rustdagen (geen naam, geen tijd, geen afstand)
-        if activity_type == "Rest" and not workout_name:
+        # Rustdagen horen NIET in het schema — sla elke Rest-rij over, ongeacht
+        # of de AI er een naam bij zette. Ook lege rijen (geen naam/tijd/afstand).
+        if activity_type.strip().lower() in ("rest", "rustdag", "rust"):
+            continue
+        if not workout_name and not time_min and not distance:
             continue
 
         # Afronden naar heel kilometer
