@@ -1641,29 +1641,48 @@ if page == "home":
             </div>
             """, unsafe_allow_html=True)
 
-    st.markdown('<p class="bb-section-label">Modules</p>', unsafe_allow_html=True)
+    # ── Atleet-zoekbalk: typ een naam → direct naar het dossier ──
+    _zoek_opts = {a["name"]: a["user_key"] for a in _all_athletes}
+    _ZOEK_PLACEHOLDER = "🔍 Zoek een atleet en spring naar het dossier…"
 
-    # ── Startlijst: modules in proces-volgorde (atleet-levenscyclus) ──
-    _modules = [
-        ("01", "📝", "Intake", "Hier begint alles — leg doel, niveau en achtergrond van een nieuwe atleet vast. Wordt automatisch ingeladen bij het bouwen.", "Nieuwe atleet", "btn_intake", "intake", "secondary", False),
-        ("02", "🔨", "Schema bouwen", "Genereer een trainingsplan op doel, niveau en datum. Direct importeren in FinalSurge, inclusief workout builder.", "Planning", "btn_builder", "builder", "secondary", False),
-        ("03", "🔧", "Builder bijvullen", "Vul de workout builder automatisch voor bestaande trainingen met beschrijving maar zonder structuur.", "Onderhoud", "btn_backfill", "backfill_builder", "secondary", False),
-        ("04", "📋", "Feedback", "Atleten reageren op hun training — de AI schrijft een concept in jouw stijl. Jij keurt goed en post met één klik.", "Dagelijks", "btn_feedback", "feedback_groups", "primary", True),
-        ("05", "🏁", "Races", "Het hoogtepunt — aankomende races in één overzicht, met raceplan en persoonlijke succeswens.", "Racedag", "btn_races", "races", "secondary", False),
-        ("06", "📅", "Schema-verloop", "De bewaking: wiens schema loopt af? Daarna begint de cyclus opnieuw bij schema bouwen.", "Wekelijks", "btn_schema", "schema", "secondary", False),
-        ("07", "👤", "Atleet-dossiers", "Alles per atleet op één plek: intake, notities, compliance, trends, races en zones.", "Overzicht", "btn_atleten", "atleten", "secondary", False),
-        ("08", "🗃️", "Administratie", "Financiële cockpit: KOR-bewaking, omzet per categorie, facturen en klantadministratie. Afgeschermd met pincode.", "Beheer", "btn_admin", "admin", "secondary", False),
-        ("09", "🩺", "Teampuls", "Belasting-signalen (wie loopt uit de pas) en de weekbriefing — het team-overzicht, met onderbouwing per atleet.", "Signalen", "btn_puls", "puls", "secondary", False),
+    def _ga_naar_dossier():
+        _naam = st.session_state.get("home_atleet_zoek")
+        if _naam in _zoek_opts:
+            st.session_state["dossier_user_key"] = _zoek_opts[_naam]
+            st.session_state["home_atleet_zoek"] = _ZOEK_PLACEHOLDER  # reset de zoekbalk
+            st.session_state["page"] = "dossier"
+
+    st.selectbox("Zoek atleet", options=[_ZOEK_PLACEHOLDER] + sorted(_zoek_opts),
+                 key="home_atleet_zoek", label_visibility="collapsed",
+                 on_change=_ga_naar_dossier)
+
+    # ── Modules gegroepeerd op ritme (Vandaag / Deze week / Per atleet / Gereedschap) ──
+    # Sleutel → (icoon, titel, omschrijving, tag, btn_key, pagina, btn_type, featured)
+    _MOD = {
+        "feedback": ("📋", "Feedback", "Atleten reageren op hun training — de AI schrijft een concept in jouw stijl. Jij keurt goed en post met één klik.", "Dagelijks", "btn_feedback", "feedback_groups", "primary", True),
+        "schema": ("📅", "Schema-verloop", "De bewaking: wiens schema loopt af? Daarna begint de cyclus opnieuw bij schema bouwen.", "Wekelijks", "btn_schema", "schema", "secondary", False),
+        "puls": ("🩺", "Teampuls", "Belasting-signalen (wie loopt uit de pas) en de weekbriefing — het team-overzicht, met onderbouwing per atleet.", "Signalen", "btn_puls", "puls", "secondary", False),
+        "races": ("🏁", "Races", "Het hoogtepunt — aankomende races in één overzicht, met raceplan en persoonlijke succeswens.", "Racedag", "btn_races", "races", "secondary", False),
+        "admin": ("🗃️", "Administratie", "Financiële cockpit: KOR-bewaking, omzet per categorie, facturen en klantadministratie. Afgeschermd met pincode.", "Beheer", "btn_admin", "admin", "secondary", False),
+        "intake": ("📝", "Intake", "Hier begint alles — leg doel, niveau en achtergrond van een nieuwe atleet vast. Wordt automatisch ingeladen bij het bouwen.", "Nieuwe atleet", "btn_intake", "intake", "secondary", False),
+        "builder": ("🔨", "Schema bouwen", "Genereer een trainingsplan op doel, niveau en datum. Direct importeren in FinalSurge, inclusief workout builder.", "Planning", "btn_builder", "builder", "secondary", False),
+        "atleten": ("👤", "Atleet-dossiers", "Alles per atleet op één plek: intake, notities, compliance, trends, races en zones.", "Overzicht", "btn_atleten", "atleten", "secondary", False),
+        "backfill": ("🔧", "Builder bijvullen & zones", "Vul de workout builder voor bestaande trainingen, of zet een heel schema om tussen tempo en hartslag.", "Onderhoud", "btn_backfill", "backfill_builder", "secondary", False),
+    }
+    _groepen = [
+        ("Vandaag", ["feedback"]),
+        ("Deze week", ["schema", "puls", "races", "admin"]),
+        ("Per atleet", ["intake", "builder", "atleten"]),
     ]
 
-    for _i, (_num, _icon, _titel, _desc, _tag, _btn_key, _page, _btn_type, _featured) in enumerate(_modules):
+    def _render_module_rij(_key, _i):
+        _icon, _titel, _desc, _tag, _btn_key, _page, _btn_type, _featured = _MOD[_key]
         c_row, c_btn = st.columns([8.6, 1.4], vertical_alignment="center")
         with c_row:
             _feat_cls = " featured" if _featured else ""
             _feat_badge = '<span class="bb-mrow-feat">★ Meest gebruikt</span>' if _featured else ""
             st.markdown(f"""
-            <div class="bb-mrow{_feat_cls}" style="animation-delay:{0.05 + _i * 0.06:.2f}s">
-                <span class="bb-mrow-num">{_num}</span>
+            <div class="bb-mrow{_feat_cls}" style="animation-delay:{0.05 + _i * 0.05:.2f}s">
                 <span class="bb-mrow-icon">{_icon}</span>
                 <div class="bb-mrow-body">
                     <p class="bb-mrow-title">{_titel}{_feat_badge}</p>
@@ -1675,6 +1694,16 @@ if page == "home":
         with c_btn:
             if st.button("Open →", type=_btn_type, key=_btn_key, use_container_width=True):
                 go_to(_page)
+
+    _rij_i = 0
+    for _grp_titel, _grp_keys in _groepen:
+        st.markdown(f'<p class="bb-section-label">{_grp_titel}</p>', unsafe_allow_html=True)
+        for _mk in _grp_keys:
+            _render_module_rij(_mk, _rij_i)
+            _rij_i += 1
+
+    with st.expander("⚙️ Gereedschap — onderhoud (zelden nodig)"):
+        _render_module_rij("backfill", _rij_i)
 
     # Debug expander (alleen zichtbaar als je hem openklapt)
     with st.expander("🔧 Debug: coach_athlete_key controle", expanded=False):
