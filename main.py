@@ -1283,7 +1283,7 @@ COACH_ATHLETE_KEY = {a["user_key"]: a.get("coach_athlete_key", a["user_key"])
 # Geldige pagina's — voor het veilig herstellen uit de URL.
 _VALID_PAGES = {
     "home", "admin", "puls", "feedback_groups", "feedback", "backfill_builder",
-    "intake", "races", "schema", "atleten", "dossier", "builder",
+    "intake", "races", "schema", "atleten", "dossier", "builder", "strippenkaart",
 }
 
 # Herstel de pagina uit de URL (?page=...). Bij sessieverlies (mobiel dat de
@@ -1387,7 +1387,7 @@ if page == "home":
                 <p class="bb-kpi-label">Groepen</p>
             </div>
             <div class="bb-kpi">
-                <p class="bb-kpi-value">9</p>
+                <p class="bb-kpi-value">10</p>
                 <p class="bb-kpi-label">Modules</p>
             </div>
         </div>
@@ -1689,11 +1689,12 @@ if page == "home":
         "builder": ("🔨", "Schema bouwen", "Genereer een trainingsplan op doel, niveau en datum. Direct importeren in FinalSurge, inclusief workout builder.", "Planning", "btn_builder", "builder", "secondary", False),
         "atleten": ("👤", "Atleet-dossiers", "Alles per atleet op één plek: intake, notities, compliance, trends, races en zones.", "Overzicht", "btn_atleten", "atleten", "secondary", False),
         "backfill": ("🔧", "Builder bijvullen & zones", "Vul de workout builder voor bestaande trainingen, of zet een heel schema om tussen tempo en hartslag.", "Onderhoud", "btn_backfill", "backfill_builder", "secondary", False),
+        "strippenkaart": ("🎟️", "Strippenkaart", "Losse-trainingen-klanten: tel per training een strip af en zie wie er nog hoeveel over heeft, met een kant-en-klaar appje.", "Per training", "btn_strip", "strippenkaart", "secondary", False),
     }
     _groepen = [
         ("Vandaag", ["feedback"]),
         ("Deze week", ["schema", "puls", "races", "admin"]),
-        ("Per atleet", ["intake", "builder", "atleten"]),
+        ("Per atleet", ["intake", "builder", "atleten", "strippenkaart"]),
     ]
 
     def _render_module_rij(_key, _i):
@@ -1796,6 +1797,118 @@ if page == "home":
                 go_to("admin")
             else:
                 st.rerun()
+
+
+# ===========================================================================
+# PAGINA: STRIPPENKAART (module 10) — losse trainingen aftellen per klant
+# ===========================================================================
+
+elif page == "strippenkaart":
+    module_header("Strippenkaart", "🎟️")
+
+    if "strippenkaarten" not in st.session_state:
+        st.session_state["strippenkaarten"] = intake_store.load_strippenkaarten()
+    _kaarten = st.session_state["strippenkaarten"]
+
+    if not intake_store.is_cloud_backed():
+        st.caption("⚠️ Geen GitHub-opslag actief — wijzigingen staan alleen lokaal op dit apparaat.")
+
+    # ── Nieuwe strippenkaart toevoegen ──
+    with st.expander("➕ Nieuwe strippenkaart", expanded=not _kaarten):
+        c1, c2, c3 = st.columns([3, 2, 1.4])
+        with c1:
+            _nieuw_naam = st.text_input("Naam", key="strip_nieuw_naam", placeholder="bijv. Lisa Jansen")
+        with c2:
+            _nieuw_aantal = st.radio("Aantal trainingen", [10, 20], horizontal=True, key="strip_nieuw_aantal")
+        with c3:
+            st.markdown("<div style='margin-top:1.7rem'></div>", unsafe_allow_html=True)
+            if st.button("Toevoegen", type="primary", key="btn_strip_add"):
+                _n = (_nieuw_naam or "").strip()
+                if not _n:
+                    st.warning("Vul een naam in.")
+                elif _n in _kaarten:
+                    st.warning("Er bestaat al een strippenkaart met deze naam.")
+                else:
+                    _kaarten[_n] = {
+                        "totaal": int(_nieuw_aantal),
+                        "gebruikt": 0,
+                        "historie": [],
+                        "aangemaakt": date.today().isoformat(),
+                    }
+                    _ok, _err = intake_store.save_strippenkaarten(_kaarten)
+                    if _ok:
+                        st.session_state["strippenkaarten"] = _kaarten
+                        st.rerun()
+                    else:
+                        st.error(f"Opslaan mislukt: {_err}")
+
+    if not _kaarten:
+        st.info("Nog geen strippenkaarten. Voeg hierboven de eerste toe.")
+    else:
+        for _naam in sorted(_kaarten.keys()):
+            _k = _kaarten[_naam]
+            _tot = int(_k.get("totaal", 10))
+            _gebr = int(_k.get("gebruikt", 0))
+            _rest = max(0, _tot - _gebr)
+            with st.container(border=True):
+                cc1, cc2 = st.columns([3, 2], vertical_alignment="center")
+                with cc1:
+                    st.markdown(f"**{_naam}**")
+                    st.progress((_gebr / _tot) if _tot else 0.0, text=f"{_rest} van {_tot} over")
+                    if _k.get("historie"):
+                        st.caption("Laatst afgeboekt: " + _k["historie"][-1])
+                with cc2:
+                    b1, b2 = st.columns(2)
+                    with b1:
+                        if st.button("✓ Strip afboeken", key=f"strip_af_{_naam}",
+                                     type="primary", disabled=_rest <= 0):
+                            _k["gebruikt"] = _gebr + 1
+                            _k.setdefault("historie", []).append(date.today().isoformat())
+                            _ok, _err = intake_store.save_strippenkaarten(_kaarten)
+                            if _ok:
+                                st.session_state["strippenkaarten"] = _kaarten
+                                st.session_state["strip_laatste_bericht"] = (
+                                    _naam, max(0, _tot - _k["gebruikt"]), _tot,
+                                )
+                                st.rerun()
+                            else:
+                                st.error(f"Opslaan mislukt: {_err}")
+                    with b2:
+                        if st.button("↩ Terug", key=f"strip_terug_{_naam}", disabled=_gebr <= 0):
+                            _k["gebruikt"] = max(0, _gebr - 1)
+                            if _k.get("historie"):
+                                _k["historie"].pop()
+                            _ok, _err = intake_store.save_strippenkaarten(_kaarten)
+                            if _ok:
+                                st.session_state["strippenkaarten"] = _kaarten
+                                st.rerun()
+
+                # Bericht na afboeken — kopieer voor WhatsApp (app verstuurt niets zelf)
+                _lb = st.session_state.get("strip_laatste_bericht")
+                if _lb and _lb[0] == _naam:
+                    _bn, _br, _bt = _lb
+                    _voornaam = _bn.split()[0] if _bn else _bn
+                    if _br <= 0:
+                        _msg = (f"Hoi {_voornaam}, je hebt zojuist je laatste training van de "
+                                f"strippenkaart afgetekend — de kaart is nu vol. Wil je een "
+                                f"nieuwe? Laat maar weten!")
+                    else:
+                        _msg = (f"Hoi {_voornaam}, top getraind! Je hebt zojuist een training "
+                                f"afgeboekt en hebt nog {_br} van je {_bt} trainingen over. "
+                                f"Tot de volgende!")
+                    st.caption("📩 Bericht voor de atleet — kopieer voor WhatsApp:")
+                    st.code(_msg, language=None)
+
+                with st.expander("Verwijderen"):
+                    if st.button(f"🗑️ Strippenkaart van {_naam} verwijderen", key=f"strip_del_{_naam}"):
+                        _kaarten.pop(_naam, None)
+                        _ok, _err = intake_store.save_strippenkaarten(_kaarten)
+                        if _ok:
+                            st.session_state["strippenkaarten"] = _kaarten
+                            st.session_state.pop("strip_laatste_bericht", None)
+                            st.rerun()
+                        else:
+                            st.error(f"Verwijderen mislukt: {_err}")
 
 
 # ===========================================================================
@@ -4225,59 +4338,11 @@ elif page == "builder":
 
         # ── ZONES ───────────────────────────────────────────────────────────
         if is_new:
-            # Nieuwe klant: VDOT-calculator + handmatig invoer
-            st.markdown("<div class='bb-intake-label'>Zones — VDOT-berekening</div>", unsafe_allow_html=True)
-            st.caption("Vul een recent wedstrijd- of testresultaat in om zones automatisch te berekenen. Sla over als je de zones handmatig wilt invullen.")
-
-            with st.expander("🔢 Bereken zones via VDOT (Jack Daniels)", expanded=True):
-                vc1, vc2, vc3 = st.columns([2, 2, 1])
-                with vc1:
-                    vdot_afstand = st.selectbox(
-                        "Afstand",
-                        options=["5 km", "10 km", "Halve marathon (21,1 km)", "Marathon (42,2 km)", "Andere afstand"],
-                        key="vdot_afstand",
-                    )
-                    if vdot_afstand == "Andere afstand":
-                        vdot_km = st.number_input("Afstand in km", min_value=0.1, value=5.0, step=0.1, key="vdot_km_custom")
-                    else:
-                        afstand_map = {"5 km": 5.0, "10 km": 10.0, "Halve marathon (21,1 km)": 21.0975, "Marathon (42,2 km)": 42.195}
-                        vdot_km = afstand_map[vdot_afstand]
-                with vc2:
-                    vdot_tijd = st.text_input(
-                        "Tijd (uu:mm:ss of mm:ss)",
-                        key="vdot_tijd",
-                        placeholder="bijv. 22:30 of 1:45:00",
-                    )
-                with vc3:
-                    st.markdown("<div style='margin-top:1.7rem'></div>", unsafe_allow_html=True)
-                    calc_btn = st.button("Bereken →", key="btn_vdot_calc", type="primary")
-
-                if calc_btn and vdot_tijd:
-                    try:
-                        # Tijd parsen
-                        parts = vdot_tijd.strip().split(":")
-                        if len(parts) == 2:
-                            t_sec = int(parts[0]) * 60 + int(parts[1])
-                        elif len(parts) == 3:
-                            t_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                        else:
-                            raise ValueError("Ongeldig tijdformaat")
-                        vdot_val = schema_builder.calculate_vdot(vdot_km * 1000, t_sec)
-                        zones_calc = schema_builder.vdot_to_zones_text(vdot_val)
-                        st.session_state["vdot_result"] = vdot_val
-                        st.session_state["vdot_zones_calc"] = zones_calc
-                    except Exception as e:
-                        st.error(f"Berekeningsfout: {e}")
-
-                if st.session_state.get("vdot_result"):
-                    vdot_val = st.session_state["vdot_result"]
-                    zones_calc = st.session_state["vdot_zones_calc"]
-                    st.success(f"**VDOT: {vdot_val:.1f}**")
-                    st.code(zones_calc)
-                    if st.button("✅ Gebruik deze zones", key="btn_use_vdot_zones"):
-                        st.session_state["builder_zones_prefill"] = zones_calc
-                        st.session_state["builder_zone_type_prefill"] = "tempo (min/km)"
-                        st.rerun()
+            # Nieuwe klant: handmatige zone-invoer. De coach bepaalt zelf hoe snel
+            # elke zone is (zonegrenzen staan in FinalSurge) — de app leidt geen
+            # tempo's af.
+            st.markdown("<div class='bb-intake-label'>Zones</div>", unsafe_allow_html=True)
+            st.caption("Vul de zones handmatig in — jij bepaalt hoe snel elke zone is.")
 
             zone_type = st.radio(
                 "Zones op basis van",
@@ -4465,8 +4530,6 @@ elif page == "builder":
                     extra_context_parts.append(f"Leeftijd: {leeftijd} jaar")
                 if horloge:
                     extra_context_parts.append(f"Horloge/GPS: {horloge}")
-                if st.session_state.get("vdot_result"):
-                    extra_context_parts.append(f"VDOT (berekend): {st.session_state['vdot_result']:.1f}")
 
             st.session_state["builder_intake"] = {
                 "naam": naam,
@@ -4572,12 +4635,30 @@ elif page == "builder":
                 if st.button("🔄 Opnieuw genereren", key="btn_regen"):
                     st.session_state["builder_plan"] = None
                     st.session_state["builder_chat_history"] = []
+                    st.session_state.pop("schema_bericht", None)
                     st.rerun()
             with col_next:
                 if st.button("Genereer CSV →", type="primary", key="btn_to_csv",
                              disabled=not bool(st.session_state.get("builder_plan", "").strip())):
                     st.session_state["builder_csv"] = None
                     _set_step(3)
+
+            # WhatsApp-bericht voor de atleet — kort, persoonlijk, met de
+            # bijzonderheden van dit schema. Kopieer-knop (zelfde werkwijze als de
+            # feedback-handover); de app verstuurt niets zelf.
+            with st.expander("💬 WhatsApp-bericht voor de atleet"):
+                if st.button("Genereer bericht", key="btn_schema_msg"):
+                    with st.spinner("Bericht schrijven…"):
+                        try:
+                            _naam = (st.session_state.get("builder_intake") or {}).get("athlete_name", "")
+                            st.session_state["schema_bericht"] = schema_builder.genereer_schema_bericht(
+                                st.session_state.get("builder_plan", ""), _naam,
+                            )
+                        except Exception as e:
+                            st.error(f"Kon geen bericht maken: {e}")
+                if st.session_state.get("schema_bericht"):
+                    st.caption("Kopieer en plak in WhatsApp:")
+                    st.code(st.session_state["schema_bericht"], language=None)
 
         with col_chat:
             st.markdown("**Sparren met AI**")

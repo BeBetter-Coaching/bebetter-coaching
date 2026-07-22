@@ -524,3 +524,20 @@ def garmin_summary_line(user_key: str) -> str:
     if hard and hard.get("hours_ago") is not None and hard["hours_ago"] <= 48:
         parts.append(f"zware sessie {round(hard['hours_ago'])}u geleden")
     return " · ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Strippenkaarten — losse trainingen per klant (10 of 20), aftellen per training
+# ---------------------------------------------------------------------------
+
+_STRIPPEN_LOCAL = os.path.join(_BASE_DIR, ".strippenkaarten.json")
+
+
+def load_strippenkaarten() -> dict:
+    """Laad strippenkaarten. Dict: naam -> {totaal, gebruikt, historie:[iso], aangemaakt}."""
+    return _load_json("strippenkaarten.json", _STRIPPEN_LOCAL)
+
+
+def save_strippenkaarten(data: dict) -> tuple[bool, str]:
+    """Sla strippenkaarten op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("strippenkaarten.json", _STRIPPEN_LOCAL, data, "Update strippenkaarten via app")

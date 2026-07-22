@@ -693,25 +693,6 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
         st.markdown("**🏁 Recente races**")
         st.table(pd.DataFrame(analyse["races"]))
 
-        # Zones-advies op basis van de recentste race met VDOT
-        _laatste = next(
-            (r for r in sorted(analyse["races"], key=lambda x: x["Datum"], reverse=True)
-             if r["VDOT"] != "—"),
-            None,
-        )
-        if _laatste:
-            with st.expander(f"💡 Zones-advies op basis van {_laatste['Race']} (VDOT {_laatste['VDOT']})"):
-                st.caption(
-                    "Tempozones volgens Jack Daniels bij deze racevorm. Vergelijk met de "
-                    "huidige zones hieronder — wijkt het duidelijk af, dan zijn de zones "
-                    "in FinalSurge toe aan een update."
-                )
-                try:
-                    import schema_builder
-                    st.code(schema_builder.vdot_to_zones_text(float(_laatste["VDOT"])))
-                except Exception:
-                    st.caption("Kon geen zones berekenen.")
-
     # ── Zones ──
     with st.expander("🎯 Huidige zones in FinalSurge"):
         zones = data["zones"]

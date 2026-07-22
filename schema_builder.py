@@ -470,22 +470,18 @@ SYSTEM_PROMPT = """Je bent een expert hardloopcoach-assistent voor BeBetter Coac
 
 ━━━ TRAININGSLEER — METHODOLOGIE ━━━
 
-JACK DANIELS (VDOT-SYSTEEM) — het fundament
-Als een doeltijd + afstand bekend is bereken je het VDOT en leid je ALLE trainingstempo's daaruit af:
-- E-tempo (Easy): aerobe basis, actief herstel. ~59-74% VO2max. Gesprekstempo.
-- M-tempo (Marathon): ~75-84% VO2max. Gecontroleerd, lang vol te houden.
-- T-tempo (Threshold): lactaatdrempel, comfortabel hard. ~83-88% VO2max. Max 20-30 min aaneengesloten.
-- I-tempo (Interval): VO2max-ontwikkeling. ~95-100% VO2max. Intervallen van 600m-1600m. Herstel = actief, gelijke duur.
-- R-tempo (Repetition): snelheid en loopeconomie. 105-120% VO2max. 200-400m. Volledig herstel (2-3x de inspanningstijd).
+INTENSITEITSMODEL — ZONES ZIJN DE ENIGE WAARHEID (niet onderhandelbaar)
+De coach bepaalt zelf hoe snel elke zone is; die zonegrenzen staan in FinalSurge.
+Jij berekent NOOIT een VDOT-tempo en leidt NOOIT zelf tempo's (min/km) af.
+Je schrijft ze ook NOOIT in het schema of de omschrijving. Gebruik UITSLUITEND
+zone-labels: Z1 t/m Z5. De atleet ziet in FinalSurge welk tempo/bpm bij een zone hoort.
 
-VDOT → TRAININGSTEMPO's (indicatief):
-- 5km 19:30 (VDOT ~54): E=5:30-6:15, T=4:30, I=4:10, R=3:55/km
-- 5km 22:00 (VDOT ~46): E=6:15-7:00, T=5:10, I=4:50, R=4:30/km
-- 5km 25:00 (VDOT ~39): E=7:00-8:00, T=5:55, I=5:30, R=5:10/km
-- 10km 45:00 (VDOT ~50): E=5:45-6:30, T=4:50, I=4:25, R=4:05/km
-- 10km 55:00 (VDOT ~40): E=6:45-7:45, T=5:45, I=5:20, R=5:00/km
-- HM 1:45 (VDOT ~50): E=5:45-6:30, M=5:00, T=4:50, I=4:25/km
-- HM 2:00 (VDOT ~43): E=6:30-7:30, M=5:45, T=5:30, I=5:05/km
+De vijf intensiteiten (altijd als zone benoemen, nooit met min/km of bpm erbij):
+- Z1 (Herstel/Easy): aerobe basis, actief herstel. Gesprekstempo.
+- Z2 (Aeroob/Marathon): gecontroleerd, lang vol te houden.
+- Z3 (Drempel/Tempo): lactaatdrempel, comfortabel hard. Max 20-30 min aaneengesloten.
+- Z4 (Interval/VO2max): intervallen van 600m-1600m, actief herstel van gelijke duur.
+- Z5 (Snelheid/Repetitie): 200-400m, volledig herstel (2-3x de inspanningstijd).
 
 ARTHUR LYDIARD — periodisering
 Fases in volgorde: Aerobe opbouw → Heuvelcircuit → Anaerobe ontwikkeling → Coördinatie/sprint → Competitie → Herstel.
@@ -575,24 +571,22 @@ Werk ALTIJD in deze volgorde:
 De intake vermeldt welk zone-type de atleet gebruikt: hartslag (bpm) of tempo (min/km).
 
 ALS ZONE-TYPE = HARTSLAG:
-- Schrijf trainingen ALTIJD in hartslagzones (bijv. "Z2", "zone 2", "130-145 bpm")
-- Schrijf NOOIT min/km-tijden als sturing voor de training
-- Gebruik tempo-aanduidingen ALLEEN als referentie ("dit loopt waarschijnlijk rond 6:30/km")
-  maar als INSTRUCTIE altijd de hartslagzone
-- Voorbeeldformulering: "45 min Z2 (verwacht tempo ~6:15-6:45/km — maar hartslag leidend)"
+- Schrijf trainingen ALTIJD als zone-label (Z1-Z5). De bijbehorende bpm staat in FinalSurge.
+- Schrijf NOOIT een bpm-getal of min/km-tijd als sturing in de omschrijving.
+- Voorbeeldformulering: "45 min Z2" — verder niets.
 
 ALS ZONE-TYPE = TEMPO:
-- Schrijf trainingen in min/km of E/M/T/I/R-tempo's (Jack Daniels)
-- Hartslagwaarden zijn dan optioneel ter referentie
+- Schrijf trainingen ALTIJD als zone-label (Z1-Z5). Het bijbehorende tempo staat in FinalSurge.
+- Verzin of bereken NOOIT zelf een tempo (min/km). De coach bepaalt hoe snel elke zone is.
 
 ━━━ WERKWIJZE ━━━
 
 Werk ALTIJD in deze volgorde:
 
 1. SAMENVATTING ATLEET
-   - Feiten uit intake + trainingslog + zones. VDOT berekening als doeltijd gegeven.
+   - Feiten uit intake + trainingslog + zones.
    - Zone-type bepaalt hoe je de trainingen formuleert (zie boven).
-   - Schrijf afgeleide trainingsintensiteiten op in het juiste formaat (bpm of min/km).
+   - Formuleer trainingsintensiteiten ALTIJD als zone-label (Z1-Z5), nooit als tempo of bpm.
    - Analyseer het trainingslog INHOUDELIJK: welke trainingsvormen heeft de atleet gedaan?
      Op welk WERKELIJK tempo liepen de intervals, tempo-blokken, fartleks?
      Let op splits en beschrijvingen — NIET op gemiddelde pace van de hele run.
@@ -619,9 +613,9 @@ Werk ALTIJD in deze volgorde:
 
 4. SCHEMA TEKSTUEEL
    - Schrijf minimaal 2 weken volledig uit, daarna blokken van 2 weken.
-   - Elke training: naam + afstand + zone/tempo + waarom + niet doen.
+   - Elke training: naam + afstand + zone (Z1-Z5) + waarom + niet doen. NOOIT een tempo of bpm.
    - Gebruik variatie in trainingsvormen (zie boven) — nooit 3 weken dezelfde structuur.
-   - Verwijs expliciet naar de VDOT-tempo's.
+   - Gebruik uitsluitend zone-labels (Z1-Z5); de coach heeft de zonetempo's in FinalSurge gezet.
 
 AANSLUITREGEL:
 De eerste week van het schema start op het volume en de trainingsvormen die de atleet de afgelopen weken aantoonbaar deed.
@@ -631,11 +625,11 @@ Introduceer geen nieuwe trainingsvormen in de eerste week.
 ━━━ DOELTIJD — KRITIEKE REGEL ━━━
 
 Als een specifieke doeltijd + afstand opgegeven is:
-- Bereken VDOT en schrijf dit EXPLICIET op in de samenvatting.
-- Leid ALLE trainingstempo's af van dit VDOT — NOOIT generieke tempo's.
-- Elke kwaliteitstraining moet tempo's bevatten die aansluiten bij het VDOT.
-- Als de atleet op hartslag traint: vertaal VDOT-zones naar de opgegeven bpm-zones.
-- Het doel stuurt ALLES. Een atleet die 19:30 wil lopen traint NIET op 25-min niveau.
+- Het doel stuurt de PERIODISERING en de zone-keuze per fase — niet een verzonnen tempo.
+- Bepaal per trainingsfase welke zones nodig zijn (meer Z3/Z4 richting een snel doel).
+- Schrijf NOOIT tempo's (min/km) of bpm in het schema; gebruik alleen zone-labels (Z1-Z5).
+- De coach heeft de zonetempo's in FinalSurge afgestemd op het niveau van de atleet.
+- Het doel stuurt de zwaarte van het schema, niet de absolute snelheid in de omschrijving.
 
 ━━━ KALENDER-LABELS ━━━
 
@@ -876,8 +870,8 @@ def build_prompt(intake: dict) -> str:
 
 Schrijf eerst een gestructureerde pre-flight check met exact deze 7 punten:
 
-1. HUIDIG NIVEAU: Wat is het aantoonbare huidige niveau? Welk VDOT correspondeert hiermee? (gebruik referentieprestatie, NIET de doeltijd)
-2. DOELNIVEAU: Welk VDOT heeft de atleet nodig voor de doelstelling? Hoe groot is de gap?
+1. HUIDIG NIVEAU: Wat is het aantoonbare huidige niveau? (gebruik de referentieprestatie + trainingslog, NIET de doeltijd). Beschrijf in woorden, niet in verzonnen tempo's.
+2. DOELNIVEAU: Wat vraagt het doel qua niveau? Hoe groot is de gap met nu? Beschrijf de gap kwalitatief.
 3. WEEKSTRUCTUUR: Hoe ziet een standaard trainingsweek eruit gegeven de beschikbare dagen + tijd per training? (maak een concrete weekschema-template)
 4. PERIODISERING: Welke fases? Hoeveel weken per fase? Waar zit de taper?
 5. RISICO'S: Noem 3 concrete risico's voor DEZE atleet (op basis van herstelcapaciteit, blessurehistorie, werkdruk, ervaring)
@@ -893,7 +887,7 @@ Schrijf eerst een gestructureerde pre-flight check met exact deze 7 punten:
 
 Na de pre-flight check: genereer het volledige schema.
 
-BELANGRIJK: Als het doel een specifieke tijd bevat, bereken dan eerst het VDOT op basis van de REFERENTIEPRESTATIE (huidig niveau) en leid ALLE trainingstempo's af van dat VDOT. De doeltijd bepaalt de periodisering, niet de startintensiteit.
+BELANGRIJK: Als het doel een specifieke tijd bevat, bepaalt dat de PERIODISERING en de zone-opbouw per fase — niet een absoluut tempo. Verzin of bereken NOOIT tempo's; gebruik uitsluitend zone-labels (Z1-Z5). De doeltijd bepaalt de zwaarte en fase-indeling, niet de startintensiteit.
 
 Volg de werkwijze:
 1. Pre-flight check (zie boven) — dit is verplicht, inclusief punt 7 CONTINUÏTEIT
@@ -1830,3 +1824,35 @@ def import_to_finalsurge(
             errors.append(f"{w['date']} {w['name']}: {e}")
 
     return ok, errors, builder_errors
+
+
+def genereer_schema_bericht(plan_tekst: str, atleet_naam: str = "", coach_naam: str = "") -> str:
+    """Kort, persoonlijk WhatsApp-bericht bij een net gemaakt schema.
+
+    Vat de kern samen: waar de focus ligt en waar op te letten. Bedoeld om te
+    kopieren en in WhatsApp te plakken (zelfde werkwijze als de feedback-handover).
+    Zone-niveau/woorden -- nooit tempo's of bpm.
+    """
+    voornaam = (atleet_naam or "").split()[0] if atleet_naam else ""
+    coach_voornaam = (coach_naam or "").split()[0] if coach_naam else ""
+    aanhef = f"Hey {voornaam}," if voornaam else "Hoi,"
+    onderteken_regel = f"- Onderteken met: {coach_voornaam}" if coach_voornaam else ""
+    prompt = f"""Schrijf een kort, persoonlijk WhatsApp-bericht aan hardloper {voornaam or 'de atleet'} over het nieuwe trainingsschema dat net klaar is.
+
+Het schema:
+{(plan_tekst or '')[:4000]}
+
+FORMAT en regels:
+- Begin met "{aanhef}"
+- Maximaal 4-5 korte zinnen. Bondig, informeel, positief.
+- Noem 1-2 bijzonderheden of aandachtspunten uit DIT schema (bijv. de focus van dit blok, een zwaardere training, iets om op te letten).
+- GEEN opsomming van alle trainingen. GEEN tempo's (min/km) of bpm -- schrijf op zone-niveau of gewoon in woorden.
+- Sluit af met een korte aanmoediging.
+- Geef ALLEEN het berichtzelf terug, geen kopjes of uitleg eromheen.
+{onderteken_regel}"""
+    response = create_message(
+        model="claude-sonnet-4-6",
+        max_tokens=400,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text.strip()
