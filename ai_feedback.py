@@ -58,6 +58,14 @@ ZONE-ACCURACY — KRITIEKE REGELS (niet onderhandelbaar):
    Voorbeeld: Zone 1 = 5:52–12:00 min/km betekent dat ALLES tussen 5:52 en 12:00 min/km Zone 1 is.
    Een tempo van 6:07/km valt BINNEN Zone 1 (want 5:52 < 6:07 < 12:00 op de tijdas). Dit is RUSTIG.
    Maak NOOIT de fout te zeggen dat een langzamer tempo een hogere zone is.
+7. GEMIDDELDE BINNEN DE ZONE = CORRECT UITGEVOERD (niet onderhandelbaar):
+   Als het gemiddelde van een duurloop of aaneengesloten tempoblok BINNEN de zonegrenzen valt
+   (zie 'BEREKENDE ZONE' — door de app berekend), was de intensiteit GOED. Schrijf dan NOOIT
+   "te hard", "te zacht", "te snel" of "te langzaam". De woorden "te hard/zacht" zijn UITSLUITEND
+   toegestaan als het gemiddelde AANTOONBAAR BUITEN de bedoelde zone ligt.
+   Een atleet die netjes middenin zijn zone loopt, doet het per definitie goed — bevestig dat,
+   ga er geen probleem van maken. (Uitzondering: bij interval-/blokkentrainingen wisselt de zone
+   binnen de training; beoordeel dan per blok via de splits, niet via dit gemiddelde.)
 
 PLAN VS UITVOERING:
 Als er een geplande structuur beschikbaar is (workout builder), vergelijk dan ACTIEF de uitvoering daarmee. Was het geplande tempo gehaald? Liep de atleet in de geplande zone? Dat is het meest waardevolle wat je kunt zeggen."""
@@ -339,7 +347,9 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
                 f"{berekende_zone_regel}\n"
                 f"Let op: dit is het gemiddelde over de héle training. Bij een interval-/"
                 f"blokkentraining wisselen de zones binnen de training (zie het verloop per "
-                f"km/interval); benoem dan de zones per blok, niet alleen dit gemiddelde.")
+                f"km/interval); benoem dan de zones per blok, niet alleen dit gemiddelde.\n"
+                f"OORDEEL: valt dit gemiddelde binnen de bedoelde/geplande zone, dan is de "
+                f"training CORRECT uitgevoerd — schrijf dan NIET 'te hard' of 'te zacht'.")
         zones_section = f"\n\n{zone_instruction}\n{athlete_zones_text}{berekend_blok}"
     else:
         zones_section = (

@@ -1280,8 +1280,19 @@ COACH_ATHLETE_KEY = {a["user_key"]: a.get("coach_athlete_key", a["user_key"])
 # Pagina-router
 # ---------------------------------------------------------------------------
 
+# Geldige pagina's — voor het veilig herstellen uit de URL.
+_VALID_PAGES = {
+    "home", "admin", "puls", "feedback_groups", "feedback", "backfill_builder",
+    "intake", "races", "schema", "atleten", "dossier", "builder",
+}
+
+# Herstel de pagina uit de URL (?page=...). Bij sessieverlies (mobiel dat de
+# verbinding herstelt, tabblad dat sliep) gaat session_state verloren en zou de
+# app terugvallen naar 'home'. De URL-parameter overleeft dat wél — net als de
+# login-token (?k=) — dus daaruit herstellen we de laatst actieve pagina.
 if "page" not in st.session_state:
-    st.session_state["page"] = "home"
+    _qp_page = st.query_params.get("page", "")
+    st.session_state["page"] = _qp_page if _qp_page in _VALID_PAGES else "home"
 
 # Verborgen ingang admin (alleen Jip): ?admin=1 in de URL → adminroute.
 # Remco ziet hier niets van; er staat geen knop in het hoofdmenu.
@@ -1290,6 +1301,16 @@ if st.query_params.get("admin") == "1":
     st.query_params.pop("admin", None)
 
 page = st.session_state["page"]
+
+# Houd de URL in sync met de actieve pagina, zodat een reconnect (zie boven)
+# op de juiste plek terugkomt. 'home' laten we schoon (geen ?page in de URL).
+try:
+    if page == "home":
+        st.query_params.pop("page", None)
+    elif st.query_params.get("page") != page:
+        st.query_params["page"] = page
+except Exception:
+    pass
 
 
 def go_to(p: str):
@@ -4396,17 +4417,28 @@ elif page == "builder":
             schema_target = schema_einddatum or wedstrijddatum
             weken_val = str(max(1, (schema_target - startdatum).days // 7)) if schema_target else ""
 
-            # Haal kalender-labels op
+            # Haal kalender-labels op. Venster iets ruimer (7 dagen vóór de
+            # startdatum) zodat een vakantie/afwezigheid die net vóór of over de
+            # startgrens loopt niet gemist wordt.
             labels_tekst = ""
             try:
+                _label_start = startdatum - timedelta(days=7)
                 _end_date = startdatum + timedelta(days=int(weken_val) * 7 + 7) if weken_val else startdatum + timedelta(days=90)
-                labels = fs_client.get_calendar_labels(athlete_key_selected, startdatum, _end_date)
+                labels = fs_client.get_calendar_labels(athlete_key_selected, _label_start, _end_date)
                 if labels:
                     label_regels = [
                         f"  - {l['start_date']}{' t/m ' + l['end_date'] if l['end_date'] != l['start_date'] else ''}: {l['name']}"
                         for l in labels
                     ]
-                    labels_tekst = "KALENDER-LABELS (coach-reminders uit FinalSurge):\n" + "\n".join(label_regels)
+                    # Prominent, instruerend blok — niet slechts een opsomming. Zo
+                    # weegt de AI de labels zwaar i.p.v. ze in de upload-ruis te laten verdwijnen.
+                    labels_tekst = (
+                        "━━━ KALENDER-LABELS — VERPLICHT VERWERKEN ━━━\n"
+                        "Coach-reminders uit FinalSurge (bijv. vakantie, afwezigheid, wedstrijd). "
+                        "Houd het schema hier EXPLICIET rekening mee: plan geen (zware) training "
+                        "tijdens vakantie/afwezigheid, taper vóór een wedstrijd, en benoem dit "
+                        "zichtbaar in de samenvatting.\n" + "\n".join(label_regels)
+                    )
             except Exception:
                 pass
 
