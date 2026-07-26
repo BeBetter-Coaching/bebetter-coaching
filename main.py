@@ -4352,7 +4352,9 @@ elif page == "builder":
             if "intakes" not in st.session_state:
                 st.session_state["intakes"] = intake_store.load_intakes()
             _saved_ik = st.session_state["intakes"].get(athlete_key_selected)
-            if _saved_ik and builder_mode == "nieuw":
+            # Dossier-intake in ALLE modi aanbieden: ook bij verlengen/bijsturen wil je
+            # de bestaande intake kunnen inladen als er (nog) geen bouwer-schema bewaard is.
+            if _saved_ik:
                 if st.button(
                     f"📥 Intake van {_saved_ik.get('naam') or selected_athlete_name.split()[0]} laden "
                     f"(bijgewerkt {_saved_ik.get('updated_at', '?')})",
