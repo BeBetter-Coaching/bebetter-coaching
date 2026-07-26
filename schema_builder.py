@@ -468,6 +468,21 @@ def extract_file_content(uploaded_file) -> dict:
 
 SYSTEM_PROMPT = """Je bent een expert hardloopcoach-assistent voor BeBetter Coaching. Je maakt wetenschappelijk onderbouwde trainingsschema's op basis van bewezen trainingsleer.
 
+━━━ VOORRANGSREGEL (LEES DIT EERST) ━━━
+
+Het bericht van de coach kan een blok "HARDE EISEN" bevatten. Die eisen zijn
+ABSOLUUT en gaan ALTIJD vóór op alle methodologie hieronder. Als de methodologie
+iets anders zou voorschrijven dan een harde eis, wint de harde eis. Voorbeelden:
+opgegeven trainingsdagen, een gevraagde opbouw na afwezigheid/blessure, of een
+expliciete bijstuur-instructie. Negeer nooit een harde eis "omdat de leer het
+anders wil".
+
+BeBetter-DEFAULT — VARIATIE: een trainingsweek is per definitie gevarieerd. Plan
+NOOIT meerdere eentonige duurlopen in dezelfde zone achter elkaar. Elke week bevat
+een mix van trainingsvormen passend bij de fase (rustig, drempel, interval,
+snelheid, fartlek) — tenzij een harde eis (bijv. herstel-opbouw) tijdelijk om
+rustige trainingen vraagt. Dit hoeft de coach niet expliciet te vragen; het is de norm.
+
 ━━━ TRAININGSLEER — METHODOLOGIE ━━━
 
 INTENSITEITSMODEL — ZONES ZIJN DE ENIGE WAARHEID (niet onderhandelbaar)
@@ -792,6 +807,15 @@ def build_prompt(intake: dict) -> str:
     race_prioriteit = intake.get("race_prioriteit", "")
     tussenraces = intake.get("tussenraces", "")
     coach_notitie = intake.get("coach_notitie", "")
+    # Bijstuur-/herstelinstructie eruit lichten: main.py zet die als eerste regel
+    # "⚠️ BIJSTURING SCHEMA — ..." in de coach-notitie. Die hoort als HARDE EIS
+    # bovenaan, niet als losse bullet tussen de rest.
+    bijstuur_instructie = ""
+    if coach_notitie:
+        _cn_regels = coach_notitie.splitlines()
+        if _cn_regels and _cn_regels[0].startswith("⚠️ BIJSTURING SCHEMA"):
+            bijstuur_instructie = _cn_regels[0].split("—", 1)[-1].strip()
+            coach_notitie = "\n".join(_cn_regels[1:]).strip()
     wat_werkte = intake.get("wat_werkte", "")
     wat_niet_werkte = intake.get("wat_niet_werkte", "")
     op_tijd = intake.get("op_tijd", False)
@@ -862,7 +886,36 @@ def build_prompt(intake: dict) -> str:
 
     tijd_override_sectie = _TIJD_OVERRIDE if op_tijd else ""
 
-    return f"""Hier is de intake voor een nieuw trainingsschema:
+    # ── HARDE EISEN — bovenaan, met voorrang op de methodologie ──
+    harde_regels = []
+    _dagen_nums = _parse_weekdagen(trainingsdagen)
+    if _dagen_nums:
+        _dagen_namen = ", ".join(_WEEKDAG_NL[d] for d in _dagen_nums)
+        harde_regels.append(
+            f"TRAININGSDAGEN: plan trainingen UITSLUITEND op {_dagen_namen}. "
+            f"Verzin geen andere weekdagen. Het aantal trainingen per week is gelijk "
+            f"aan het aantal genoemde dagen ({len(_dagen_nums)}), tenzij een herstel-/"
+            f"deloadweek expliciet om minder vraagt."
+        )
+    harde_regels.append(
+        "VARIATIE: elke week een mix van trainingsvormen (rustig/drempel/interval/"
+        "snelheid/fartlek) passend bij de fase. NOOIT meerdere eentonige duurlopen in "
+        "dezelfde zone achter elkaar."
+    )
+    if bijstuur_instructie:
+        harde_regels.append(
+            f"BIJSTURING/HERSTEL (leidend): {bijstuur_instructie} "
+            "Bouw week 1 bewust conservatief op, introduceer GEEN zware blokken of "
+            "intervallen direct, en hervat variatie/intensiteit pas geleidelijk over "
+            "de weken. Dit gaat vóór op een 'normale' opbouw."
+        )
+    harde_eisen_sectie = (
+        "━━━ HARDE EISEN — VERPLICHT, GAAN VOOR OP ALLE METHODOLOGIE ━━━\n"
+        + "\n".join(f"{i+1}. {r}" for i, r in enumerate(harde_regels))
+        + "\n\n"
+    )
+
+    return f"""{harde_eisen_sectie}Hier is de intake voor een nieuw trainingsschema:
 
 {intake_tekst}{upload_sectie}
 

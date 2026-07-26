@@ -4170,8 +4170,11 @@ elif page == "builder":
                 "Atleet *", options=list(athlete_options.keys()), key="builder_athlete",
             )
             athlete_key_selected = athlete_options[selected_athlete_name]
-            if "builder_naam" not in st.session_state:
+            # Voornaam betrouwbaar overnemen — óók bij wisselen van atleet (niet
+            # alleen de eerste keer). Anders bleef de naam van de vorige atleet staan.
+            if st.session_state.get("_builder_last_athlete") != athlete_key_selected:
                 st.session_state["builder_naam"] = selected_athlete_name.split()[0] if selected_athlete_name else ""
+                st.session_state["_builder_last_athlete"] = athlete_key_selected
 
             # ── Koppeling met intake-module: gegevens automatisch inladen ──
             if "intakes" not in st.session_state:
@@ -4400,7 +4403,13 @@ elif page == "builder":
             with c_of:
                 st.markdown("<div style='padding-top:1.8rem; color:#8FA8CE; font-size:0.8rem;'>of kies datum:</div>", unsafe_allow_html=True)
 
-            _einddatum_auto = startdatum + timedelta(weeks=int(weken_keuze))
+            # Maandag-uitgelijnd: einddatum = zondag van week N (geteld vanaf de maandag
+            # van de startweek), zodat weken → datum → weken consistent terugrekent en
+            # aansluit op hoe build_csv_prompt de weken opbouwt.
+            _einddatum_auto = (
+                startdatum - timedelta(days=startdatum.weekday())
+                + timedelta(weeks=int(weken_keuze)) - timedelta(days=1)
+            )
             c_datum1, c_datum2 = st.columns(2)
             with c_datum1:
                 schema_einddatum = st.date_input(
@@ -4422,7 +4431,12 @@ elif page == "builder":
                 )
             schema_target = schema_einddatum or wedstrijddatum
             if schema_target and startdatum:
-                weken_berekend = max(1, (schema_target - startdatum).days // 7)
+                # Maandag-uitgelijnd tellen — consistent met build_csv_prompt dat weken
+                # vanaf de maandag van de startweek t/m de zondag van de eindweek opbouwt.
+                # Floor-deling vanaf een losse startdatum telde eerder een week te veel/weinig.
+                _start_monday = startdatum - timedelta(days=startdatum.weekday())
+                _end_sunday = schema_target + timedelta(days=(6 - schema_target.weekday()))
+                weken_berekend = max(1, ((_end_sunday - _start_monday).days + 1) // 7)
                 if weken_berekend > 20:
                     st.warning(f"⚠️ {weken_berekend} weken is erg lang — overweeg dit schema in 2 blokken te splitsen.")
                 else:
@@ -4453,6 +4467,14 @@ elif page == "builder":
                 "Trainingsdagen *", key="builder_dagen",
                 placeholder="bijv. ma / wo / vr / zo",
             )
+            # Toon direct welke dagen de app herkent — zo zie je meteen of de AI
+            # de juiste dagen krijgt (voorkomt di/do → wo/vr verrassingen).
+            if trainingsdagen:
+                _herkend = schema_builder._parse_weekdagen(trainingsdagen)
+                if _herkend:
+                    st.caption("Herkend: " + ", ".join(schema_builder._WEEKDAG_NL[d] for d in _herkend))
+                else:
+                    st.caption("⚠️ Geen weekdagen herkend — de AI kiest dan zelf de dagen. Gebruik bijv. ma/wo/vr.")
             tijd_per_training = st.text_input(
                 "Tijd per training *", key="builder_tijd_per_training",
                 placeholder="bijv. ma: 45min, wo: 60min, zo: 90min",
@@ -4678,7 +4700,13 @@ elif page == "builder":
 
         if st.button("Genereer plan →", type="primary", disabled=not all_filled, key="btn_gen_plan"):
             schema_target = schema_einddatum or wedstrijddatum
-            weken_val = str(max(1, (schema_target - startdatum).days // 7)) if schema_target else ""
+            # Maandag-uitgelijnd (identiek aan de weergave hierboven + build_csv_prompt).
+            if schema_target:
+                _sm = startdatum - timedelta(days=startdatum.weekday())
+                _es = schema_target + timedelta(days=(6 - schema_target.weekday()))
+                weken_val = str(max(1, ((_es - _sm).days + 1) // 7))
+            else:
+                weken_val = ""
 
             # Haal kalender-labels op. Venster iets ruimer (7 dagen vóór de
             # startdatum) zodat een vakantie/afwezigheid die net vóór of over de
