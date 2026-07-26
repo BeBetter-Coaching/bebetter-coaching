@@ -4224,25 +4224,31 @@ elif page == "builder":
         # ── Modus-keuze: tegels als ingang i.p.v. één groot formulier ──────────
         if not st.session_state.get("builder_mode"):
             st.markdown("<div class='bb-intake-label'>Waarmee wil je beginnen?</div>", unsafe_allow_html=True)
-            _t1, _t2, _t3 = st.columns(3, gap="medium")
-            with _t1:
-                st.markdown("#### 🆕 Nieuw schema")
-                st.caption("Volledige intake voor een nieuwe atleet of een frisse start.")
-                if st.button("Kies nieuw", key="mode_nieuw", use_container_width=True, type="primary"):
-                    st.session_state["builder_mode"] = "nieuw"
-                    st.rerun()
-            with _t2:
-                st.markdown("#### 🔁 Verlengen")
-                st.caption("Vervolgblok naar hetzelfde doel — sluit aan op het lopende schema. Intake komt uit het vorige schema.")
-                if st.button("Kies verlengen", key="mode_verlengen", use_container_width=True):
-                    st.session_state["builder_mode"] = "verlengen"
-                    st.rerun()
-            with _t3:
-                st.markdown("#### 🩹 Bijsturen")
-                st.caption("Resterende trainingen wissen en de weken opnieuw opbouwen (beter/slechter dan gepland, herstel na afwezigheid).")
-                if st.button("Kies bijsturen", key="mode_bijsturen", use_container_width=True):
-                    st.session_state["builder_mode"] = "bijsturen"
-                    st.rerun()
+            _tiles = [
+                ("nieuw", "🆕", "Nieuw schema",
+                 "Volledige intake voor een nieuwe atleet of een frisse start.",
+                 "Kies nieuw", "primary"),
+                ("verlengen", "🔁", "Verlengen",
+                 "Vervolgblok naar hetzelfde doel — sluit aan op het lopende schema. Intake uit het vorige schema.",
+                 "Kies verlengen", "secondary"),
+                ("bijsturen", "🩹", "Bijsturen",
+                 "Resterende trainingen wissen en de weken opnieuw opbouwen — beter/slechter dan gepland of herstel na afwezigheid.",
+                 "Kies bijsturen", "secondary"),
+            ]
+            _tcols = st.columns(3, gap="large")
+            for _col, (_mkey, _icon, _titel, _desc, _btn, _btype) in zip(_tcols, _tiles):
+                with _col:
+                    st.markdown(f"""
+                    <div class="bb-card">
+                        <div class="bb-card-icon">{_icon}</div>
+                        <p class="bb-card-title">{_esc(_titel)}</p>
+                        <p class="bb-card-desc">{_esc(_desc)}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.markdown("")
+                    if st.button(_btn, key=f"mode_{_mkey}", type=_btype, use_container_width=True):
+                        st.session_state["builder_mode"] = _mkey
+                        st.rerun()
             st.stop()
 
         builder_mode = st.session_state["builder_mode"]
