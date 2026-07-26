@@ -5,6 +5,7 @@ atleten, en de lijst met opgeslagen intakes. Aangeroepen vanuit main.py als
 intake_page.render(athletes_by_group). Gedrag is identiek aan voorheen.
 """
 import html as _html_mod
+from datetime import date
 
 import pandas as pd
 import streamlit as st
