@@ -4225,8 +4225,11 @@ elif page == "builder":
                 "Doelstelling *", key="builder_doel", height=70,
                 placeholder="bijv. 10km in sub 55min, of: HYROX afmaken in Amsterdam",
             )
-            # Init één keer, daarna alleen via key — zo mag de verleng-knop hieronder
-            # de datum zetten zonder Streamlit-waarschuwing (default vs session-state).
+            # Pas een uitgestelde startdatum toe (gezet door de verleng-/bijstuur-knop)
+            # VÓÓR de date_input instantieert — een widget-key mag daarna niet meer
+            # via session_state gewijzigd worden.
+            if "_pending_start" in st.session_state:
+                st.session_state["builder_startdatum"] = st.session_state.pop("_pending_start")
             if "builder_startdatum" not in st.session_state:
                 st.session_state["builder_startdatum"] = date.today() + timedelta(days=(7 - date.today().weekday()))
             startdatum = st.date_input(
@@ -4247,13 +4250,87 @@ elif page == "builder":
                 with st.spinner("Laatste geplande training zoeken…"):
                     _last = fs_client.get_last_planned_date(athlete_key_selected)
                 if _last:
-                    st.session_state["builder_startdatum"] = date.fromisoformat(_last) + timedelta(days=1)
-                    st.session_state["_verleng_msg"] = f"Startdatum gezet op {(date.fromisoformat(_last) + timedelta(days=1)).strftime('%d-%m-%Y')} (laatste training: {date.fromisoformat(_last).strftime('%d-%m-%Y')})."
+                    _nieuwe_start = date.fromisoformat(_last) + timedelta(days=1)
+                    st.session_state["_pending_start"] = _nieuwe_start
+                    st.session_state["_verleng_msg"] = f"Startdatum gezet op {_nieuwe_start.strftime('%d-%m-%Y')} (laatste training: {date.fromisoformat(_last).strftime('%d-%m-%Y')})."
                 else:
                     st.session_state["_verleng_msg"] = "⚠️ Geen geplande trainingen gevonden — stel de startdatum handmatig in."
                 st.rerun()
             if st.session_state.get("_verleng_msg"):
                 st.caption(st.session_state.pop("_verleng_msg"))
+
+            # ── Bijsturen: resterende geplande trainingen wissen in FinalSurge ──
+            # Voor als iemand beter/slechter loopt dan gepland: wis de resterende
+            # trainingen vanaf een datum en bouw die weken opnieuw. Verleden en al
+            # uitgevoerde trainingen blijven staan (alleen geplande, datum >= vanaf).
+            with st.expander("🩹 Bijsturen — resterende trainingen wissen (FinalSurge)"):
+                if st.session_state.get("bs_msg"):
+                    st.success(st.session_state.pop("bs_msg"))
+                st.caption(
+                    "Verwijdert de **geplande** trainingen vanaf een datum, zodat je de "
+                    "resterende weken opnieuw kunt bouwen. Het verleden en al uitgevoerde "
+                    "trainingen blijven staan. Combineer met '🔁 Vorig schema terugladen'."
+                )
+                _bs_vanaf = st.date_input(
+                    "Wis geplande trainingen vanaf",
+                    value=st.session_state.get("builder_startdatum", date.today()),
+                    key="bs_vanaf", format="DD/MM/YYYY",
+                )
+                if st.button("🔍 Toon geplande trainingen", key="bs_show", use_container_width=True):
+                    with st.spinner("Ophalen uit FinalSurge…"):
+                        st.session_state["bs_lijst"] = fs_client.get_planned_workouts_from(athlete_key_selected, _bs_vanaf)
+                    st.session_state["bs_lijst_key"] = athlete_key_selected
+                    st.session_state.pop("bs_confirm", None)
+
+                _lijst = (
+                    st.session_state.get("bs_lijst")
+                    if st.session_state.get("bs_lijst_key") == athlete_key_selected
+                    else None
+                )
+                if _lijst is not None:
+                    if not _lijst:
+                        st.info("Geen geplande trainingen gevonden vanaf die datum.")
+                    else:
+                        st.markdown(f"**{len(_lijst)} geplande trainingen worden verwijderd:**")
+                        for _w in _lijst[:40]:
+                            st.markdown(f"- {date.fromisoformat(_w['date']).strftime('%d-%m')} — {_w['name']}")
+                        if len(_lijst) > 40:
+                            st.caption(f"…en nog {len(_lijst) - 40} meer.")
+                        _confirm = st.checkbox(
+                            f"Ja, verwijder deze {len(_lijst)} trainingen definitief uit FinalSurge",
+                            key="bs_confirm",
+                        )
+                        if st.button("🗑️ Verwijderen", disabled=not _confirm, key="bs_delete"):
+                            _prog = st.progress(0)
+                            _fout = []
+                            for _i, _w in enumerate(_lijst):
+                                try:
+                                    fs_client.delete_workout(_w["key"], athlete_key_selected)
+                                except Exception as _e:
+                                    _fout.append(f"{_w['date']} {_w['name']}: {_e}")
+                                _prog.progress((_i + 1) / len(_lijst))
+                            _prog.empty()
+                            _gelukt = len(_lijst) - len(_fout)
+                            if _fout:
+                                # Deels mislukt: blijf staan zodat de coach ziet wat faalde
+                                # en het opnieuw kan proberen. Startdatum niet aanpassen.
+                                st.warning(f"{_gelukt}/{len(_lijst)} verwijderd — {len(_fout)} mislukt.")
+                                with st.expander("Fouten bekijken"):
+                                    for _f in _fout:
+                                        st.code(_f)
+                                # Ververs de lijst zodat gelukte deletes eruit vallen
+                                st.session_state["bs_lijst"] = fs_client.get_planned_workouts_from(athlete_key_selected, _bs_vanaf)
+                            else:
+                                # Volledig gelukt: melding bewaren, startdatum klaarzetten
+                                # (via pending — de date_input is deze run al geïnstantieerd).
+                                st.session_state["bs_msg"] = (
+                                    f"✅ {_gelukt} trainingen verwijderd. Startdatum is klaargezet op "
+                                    f"{_bs_vanaf.strftime('%d-%m-%Y')} — bouw nu de resterende weken opnieuw."
+                                )
+                                st.session_state["_pending_start"] = _bs_vanaf
+                                st.session_state.pop("bs_lijst", None)
+                                st.session_state.pop("bs_confirm", None)
+                                st.rerun()
 
             # Aantal weken OF vaste einddatum — twee ingangen
             c_wk, c_of = st.columns([3, 1])
