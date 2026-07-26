@@ -541,3 +541,34 @@ def load_strippenkaarten() -> dict:
 def save_strippenkaarten(data: dict) -> tuple[bool, str]:
     """Sla strippenkaarten op. Geeft (gelukt, foutmelding) terug."""
     return _save_json("strippenkaarten.json", _STRIPPEN_LOCAL, data, "Update strippenkaarten via app")
+
+
+_LAATSTE_INTAKE_LOCAL = os.path.join(_BASE_DIR, ".laatste_intakes.json")
+
+
+def load_laatste_intakes() -> dict:
+    """Laatste builder-intake per atleet. Dict: athlete_key -> builder_intake-dict.
+
+    Basis voor 'verlengen' (vervolgblok naar hetzelfde doel) en 'bijsturen'
+    (resterende weken herbouwen) zonder de intake opnieuw in te vullen.
+    """
+    return _load_json("laatste_intakes.json", _LAATSTE_INTAKE_LOCAL)
+
+
+def save_laatste_intake(athlete_key: str, intake: dict) -> tuple[bool, str]:
+    """Bewaar de laatst gebruikte builder-intake voor één atleet.
+
+    Slaat alleen herbruikbare velden op (geen zware upload-content/afbeeldingen),
+    zodat het bestand klein blijft. Geeft (gelukt, foutmelding) terug.
+    """
+    if not athlete_key:
+        return False, "geen athlete_key"
+    data = load_laatste_intakes()
+    # Laat vluchtige/zware velden weg: die horen bij één specifieke run.
+    _skip = {"uploaded_summary", "uploaded_images", "startdatum"}
+    bewaard = {k: v for k, v in (intake or {}).items() if k not in _skip}
+    from datetime import datetime as _dt
+    bewaard["_opgeslagen"] = _dt.now().isoformat(timespec="seconds")
+    data[athlete_key] = bewaard
+    return _save_json("laatste_intakes.json", _LAATSTE_INTAKE_LOCAL, data,
+                      "Update laatste intake via app")

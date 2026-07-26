@@ -4180,6 +4180,46 @@ elif page == "builder":
                     # Voorkom dat de sync-blok dit overschrijft
                     st.session_state["builder_fields_loaded"] = True
                     st.rerun()
+
+            # ── Verlengen / bijsturen: laatst gebouwde schema-intake terugladen ──
+            # Bevat de exacte bouwer-velden (doel, zones, volume, dagen…) van het
+            # vorige schema, zodat je een vervolgblok of aanpassing niet opnieuw
+            # hoeft in te vullen. Startdatum wordt bewust NIET teruggezet.
+            if "laatste_intakes" not in st.session_state:
+                st.session_state["laatste_intakes"] = intake_store.load_laatste_intakes()
+            _prev_ik = st.session_state["laatste_intakes"].get(athlete_key_selected)
+            if _prev_ik:
+                _opg = (_prev_ik.get("_opgeslagen", "") or "")[:10]
+                if st.button(
+                    f"🔁 Vorig schema terugladen — verlengen/bijsturen"
+                    + (f" (van {_opg})" if _opg else ""),
+                    key="btn_load_laatste_intake",
+                    use_container_width=True,
+                    help="Vult de intake van het vorige schema in (doel, zones, volume, "
+                         "trainingsdagen…). Handig om door te bouwen naar hetzelfde doel of "
+                         "de resterende weken bij te sturen. Kies daarna zelf de nieuwe startdatum.",
+                ):
+                    st.session_state["builder_naam"]              = _prev_ik.get("naam", "")
+                    st.session_state["builder_doel"]              = _prev_ik.get("doel", "")
+                    st.session_state["builder_volume"]            = _prev_ik.get("huidig_volume", "")
+                    st.session_state["builder_dagen"]             = _prev_ik.get("trainingsdagen", "")
+                    st.session_state["builder_referentie"]        = _prev_ik.get("referentie_prestatie", "")
+                    st.session_state["builder_tijd_per_training"] = _prev_ik.get("tijd_per_training", "")
+                    st.session_state["builder_langste_afstand"]   = _prev_ik.get("langste_afstand", "")
+                    st.session_state["builder_blessure"]          = _prev_ik.get("blessurehistorie", "")
+                    st.session_state["builder_andere"]            = _prev_ik.get("andere_sporten", "")
+                    st.session_state["builder_coach_notitie"]     = _prev_ik.get("coach_notitie", "")
+                    st.session_state["builder_wat_werkte"]        = _prev_ik.get("wat_werkte", "")
+                    st.session_state["builder_wat_niet_werkte"]   = _prev_ik.get("wat_niet_werkte", "")
+                    st.session_state["builder_tussenraces"]       = _prev_ik.get("tussenraces", "")
+                    st.session_state["builder_werkdruk"]          = _prev_ik.get("werkdruk", "Normaal")
+                    st.session_state["builder_op_tijd"]           = _prev_ik.get("op_tijd", False)
+                    _pzt = _prev_ik.get("zone_type", "tempo")
+                    st.session_state["builder_zone_type"]         = "hartslag (bpm)" if _pzt == "hartslag" else "tempo (min/km)"
+                    _psed = _prev_ik.get("schema_einddatum", "")
+                    st.session_state["builder_schema_einddatum"]  = date.fromisoformat(_psed) if _psed else None
+                    st.session_state["builder_fields_loaded"] = True
+                    st.rerun()
             naam = st.text_input("Naam in coaching-tekst *", key="builder_naam", placeholder="bijv. Lisa")
             doel = st.text_area(
                 "Doelstelling *", key="builder_doel", height=70,
@@ -4571,6 +4611,15 @@ elif page == "builder":
             st.session_state.pop("vdot_result", None)
             st.session_state.pop("vdot_zones_calc", None)
             _save_builder_state()
+            # Bewaar deze intake per atleet zodat we later kunnen verlengen/bijsturen
+            # zonder alles opnieuw in te vullen. Stil falen: opslag mag de bouw nooit blokkeren.
+            try:
+                if athlete_key_selected:
+                    intake_store.save_laatste_intake(athlete_key_selected, st.session_state["builder_intake"])
+                    # Ververs de sessie-cache zodat de teruglaad-knop meteen klopt
+                    st.session_state["laatste_intakes"] = intake_store.load_laatste_intakes()
+            except Exception:
+                pass
             st.rerun()
 
     # ===========================================================================
