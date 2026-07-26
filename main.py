@@ -4225,12 +4225,35 @@ elif page == "builder":
                 "Doelstelling *", key="builder_doel", height=70,
                 placeholder="bijv. 10km in sub 55min, of: HYROX afmaken in Amsterdam",
             )
+            # Init één keer, daarna alleen via key — zo mag de verleng-knop hieronder
+            # de datum zetten zonder Streamlit-waarschuwing (default vs session-state).
+            if "builder_startdatum" not in st.session_state:
+                st.session_state["builder_startdatum"] = date.today() + timedelta(days=(7 - date.today().weekday()))
             startdatum = st.date_input(
                 "Startdatum schema *",
-                value=date.today() + timedelta(days=(7 - date.today().weekday())),
                 key="builder_startdatum",
                 format="DD/MM/YYYY",
             )
+            # Verlengen: zet de start op de dag ná de laatste geplande training,
+            # zodat je een vervolgblok bouwt dat naadloos aansluit op het huidige schema.
+            if st.button(
+                "📆 Verlengen: start ná laatste geplande training",
+                key="btn_verleng_startdatum",
+                use_container_width=True,
+                help="Zoekt de laatste geplande training van deze atleet in FinalSurge "
+                     "en zet de startdatum op de dag erna. Combineer met '🔁 Vorig schema "
+                     "terugladen' om door te bouwen naar hetzelfde doel.",
+            ):
+                with st.spinner("Laatste geplande training zoeken…"):
+                    _last = fs_client.get_last_planned_date(athlete_key_selected)
+                if _last:
+                    st.session_state["builder_startdatum"] = date.fromisoformat(_last) + timedelta(days=1)
+                    st.session_state["_verleng_msg"] = f"Startdatum gezet op {(date.fromisoformat(_last) + timedelta(days=1)).strftime('%d-%m-%Y')} (laatste training: {date.fromisoformat(_last).strftime('%d-%m-%Y')})."
+                else:
+                    st.session_state["_verleng_msg"] = "⚠️ Geen geplande trainingen gevonden — stel de startdatum handmatig in."
+                st.rerun()
+            if st.session_state.get("_verleng_msg"):
+                st.caption(st.session_state.pop("_verleng_msg"))
 
             # Aantal weken OF vaste einddatum — twee ingangen
             c_wk, c_of = st.columns([3, 1])

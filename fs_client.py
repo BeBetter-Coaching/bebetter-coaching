@@ -1421,6 +1421,37 @@ def get_calendar_labels(user_key: str, start: date, end: date) -> list[dict]:
 _MIN_SCHEMA_WORKOUTS = 4  # minder dan 4 geplande trainingen = "los schema", niet tellen
 
 
+def get_planned_workouts_from(user_key: str, vanaf: date, horizon_days: int = 180) -> list[dict]:
+    """Geplande (gestructureerde, niet-race) trainingen voor één atleet vanaf een datum.
+
+    Basis voor 'verlengen' (laatste datum bepalen) en 'bijsturen' (resterende
+    trainingen tonen/verwijderen). Alleen echte schema-trainingen, gesorteerd op datum.
+    Elk item: {'key', 'date' (YYYY-MM-DD), 'name'}.
+    """
+    end = vanaf + timedelta(days=horizon_days)
+    try:
+        workouts = get_workouts(user_key, vanaf, end)
+    except Exception:
+        return []
+    out = []
+    for w in workouts:
+        wd = w.get("workout_date")
+        if not wd or not w.get("has_structured_workout") or w.get("is_race"):
+            continue
+        d = wd[:10]
+        if d < vanaf.isoformat():
+            continue
+        out.append({"key": w.get("key"), "date": d, "name": w.get("name", "") or "training"})
+    out.sort(key=lambda x: x["date"])
+    return out
+
+
+def get_last_planned_date(user_key: str, horizon_days: int = 180) -> str | None:
+    """Datum (YYYY-MM-DD) van de laatste geplande training vanaf vandaag, of None."""
+    planned = get_planned_workouts_from(user_key, date.today(), horizon_days)
+    return planned[-1]["date"] if planned else None
+
+
 def get_schema_end_dates(
     horizon_days: int = 60,
     on_hold_keys: set | None = None,
