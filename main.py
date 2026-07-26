@@ -1491,6 +1491,21 @@ if page == "home":
     logo_wit_b64 = _logo_b64("assets/logo_wit.png")
     n_athletes = sum(len(m) for m in athletes_by_group.values())
     n_groups = len(athletes_by_group)
+
+    # Modules — één bron van waarheid (ook voor de KPI in de hero, geen hardcoded getal).
+    _MOD = {
+        "feedback": ("📋", "Feedback", "Atleten reageren op hun training — de AI schrijft een concept in jouw stijl. Jij keurt goed en post met één klik.", "Dagelijks", "btn_feedback", "feedback_groups", "primary", True),
+        "schema": ("📅", "Schema-verloop", "De bewaking: wiens schema loopt af? Daarna begint de cyclus opnieuw bij schema bouwen.", "Wekelijks", "btn_schema", "schema", "secondary", False),
+        "puls": ("🩺", "Teampuls", "Belasting-signalen (wie loopt uit de pas) en de weekbriefing — het team-overzicht, met onderbouwing per atleet.", "Signalen", "btn_puls", "puls", "secondary", False),
+        "races": ("🏁", "Races", "Het hoogtepunt — aankomende races in één overzicht, met raceplan en persoonlijke succeswens.", "Racedag", "btn_races", "races", "secondary", False),
+        "admin": ("🗃️", "Administratie", "Financiële cockpit: KOR-bewaking, omzet per categorie, facturen en klantadministratie. Afgeschermd met pincode.", "Beheer", "btn_admin", "admin", "secondary", False),
+        "intake": ("📝", "Intake", "Hier begint alles — leg doel, niveau en achtergrond van een nieuwe atleet vast. Wordt automatisch ingeladen bij het bouwen.", "Nieuwe atleet", "btn_intake", "intake", "secondary", False),
+        "builder": ("🔨", "Schema bouwen", "Genereer een trainingsplan op doel, niveau en datum. Direct importeren in FinalSurge, inclusief workout builder.", "Planning", "btn_builder", "builder", "secondary", False),
+        "atleten": ("👤", "Atleet-dossiers", "Alles per atleet op één plek: intake, notities, compliance, trends, races en zones.", "Overzicht", "btn_atleten", "atleten", "secondary", False),
+        "backfill": ("🔧", "Builder bijvullen & zones", "Vul de workout builder voor bestaande trainingen, of zet een heel schema om tussen tempo en hartslag.", "Onderhoud", "btn_backfill", "backfill_builder", "secondary", False),
+        "strippenkaart": ("🎟️", "Strippenkaart", "Losse-trainingen-klanten: tel per training een strip af en zie wie er nog hoeveel over heeft, met een kant-en-klaar appje.", "Per training", "btn_strip", "strippenkaart", "secondary", False),
+    }
+    n_modules = len(_MOD)
     _maanden = ["januari", "februari", "maart", "april", "mei", "juni",
                 "juli", "augustus", "september", "oktober", "november", "december"]
     _dagen = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
@@ -1528,7 +1543,7 @@ if page == "home":
                 <p class="bb-kpi-label">Groepen</p>
             </div>
             <div class="bb-kpi">
-                <p class="bb-kpi-value">10</p>
+                <p class="bb-kpi-value">{n_modules}</p>
                 <p class="bb-kpi-label">Modules</p>
             </div>
         </div>
@@ -1818,20 +1833,6 @@ if page == "home":
                  key="home_atleet_zoek", label_visibility="collapsed",
                  on_change=_ga_naar_dossier)
 
-    # ── Modules gegroepeerd op ritme (Vandaag / Deze week / Per atleet / Gereedschap) ──
-    # Sleutel → (icoon, titel, omschrijving, tag, btn_key, pagina, btn_type, featured)
-    _MOD = {
-        "feedback": ("📋", "Feedback", "Atleten reageren op hun training — de AI schrijft een concept in jouw stijl. Jij keurt goed en post met één klik.", "Dagelijks", "btn_feedback", "feedback_groups", "primary", True),
-        "schema": ("📅", "Schema-verloop", "De bewaking: wiens schema loopt af? Daarna begint de cyclus opnieuw bij schema bouwen.", "Wekelijks", "btn_schema", "schema", "secondary", False),
-        "puls": ("🩺", "Teampuls", "Belasting-signalen (wie loopt uit de pas) en de weekbriefing — het team-overzicht, met onderbouwing per atleet.", "Signalen", "btn_puls", "puls", "secondary", False),
-        "races": ("🏁", "Races", "Het hoogtepunt — aankomende races in één overzicht, met raceplan en persoonlijke succeswens.", "Racedag", "btn_races", "races", "secondary", False),
-        "admin": ("🗃️", "Administratie", "Financiële cockpit: KOR-bewaking, omzet per categorie, facturen en klantadministratie. Afgeschermd met pincode.", "Beheer", "btn_admin", "admin", "secondary", False),
-        "intake": ("📝", "Intake", "Hier begint alles — leg doel, niveau en achtergrond van een nieuwe atleet vast. Wordt automatisch ingeladen bij het bouwen.", "Nieuwe atleet", "btn_intake", "intake", "secondary", False),
-        "builder": ("🔨", "Schema bouwen", "Genereer een trainingsplan op doel, niveau en datum. Direct importeren in FinalSurge, inclusief workout builder.", "Planning", "btn_builder", "builder", "secondary", False),
-        "atleten": ("👤", "Atleet-dossiers", "Alles per atleet op één plek: intake, notities, compliance, trends, races en zones.", "Overzicht", "btn_atleten", "atleten", "secondary", False),
-        "backfill": ("🔧", "Builder bijvullen & zones", "Vul de workout builder voor bestaande trainingen, of zet een heel schema om tussen tempo en hartslag.", "Onderhoud", "btn_backfill", "backfill_builder", "secondary", False),
-        "strippenkaart": ("🎟️", "Strippenkaart", "Losse-trainingen-klanten: tel per training een strip af en zie wie er nog hoeveel over heeft, met een kant-en-klaar appje.", "Per training", "btn_strip", "strippenkaart", "secondary", False),
-    }
     # Gegroepeerd op ritme: coaching-werk vooraan (dagelijks → wekelijks → per
     # atleet), beheer & onderhoud achteraan. Schema-verloop en schema bouwen staan
     # bewust naast elkaar (schema loopt af → bouw het volgende).
@@ -1868,39 +1869,6 @@ if page == "home":
         for _mk in _grp_keys:
             _render_module_rij(_mk, _rij_i)
             _rij_i += 1
-
-    # Debug expander (alleen zichtbaar als je hem openklapt)
-    with st.expander("🔧 Debug: coach_athlete_key controle", expanded=False):
-        st.caption("Gebruik dit om te controleren of de juiste coach_athlete_key wordt gebruikt voor het resetten van notificaties.")
-        if st.button("🔍 Haal ruwe TeamAthleteList op", key="btn_debug_team"):
-            with st.spinner("Ophalen..."):
-                try:
-                    raw = fs_client.get_raw_team_data()
-                    top_groups = raw.get("data") or []
-                    st.write(f"**Aantal top-level items in data:** {len(top_groups)}")
-                    if top_groups:
-                        first_top = top_groups[0]
-                        st.write(f"**Velden op data[0]:** {list(first_top.keys())}")
-                        groups = first_top.get("groups", [])
-                        st.write(f"**Aantal groups in data[0]:** {len(groups)}")
-                        if groups:
-                            athletes_in_first = groups[0].get("athletes", [])
-                            st.write(f"**Groep naam:** {groups[0].get('name')}")
-                            st.write(f"**Aantal atleten in eerste group:** {len(athletes_in_first)}")
-                            if athletes_in_first:
-                                first_a = athletes_in_first[0]
-                                st.write(f"**Velden op atleet-object:** {list(first_a.keys())}")
-                                st.write(f"**user_key:** `{first_a.get('user_key')}`")
-                                st.write(f"**key:** `{first_a.get('key')}`")
-                                st.write(f"**coach_athlete_key:** `{first_a.get('coach_athlete_key')}`")
-                    st.divider()
-                    st.write("**Huidige coach_athlete_key mapping:**")
-                    for uk, cak in COACH_ATHLETE_KEY.items():
-                        same = "⚠️ zelfde als user_key" if uk == cak else "✅ anders"
-                        name_label = next((a["name"] for a in _all_athletes if a["user_key"] == uk), uk[:8])
-                        st.write(f"- **{name_label}**: user_key=`{uk[:8]}...` → coach_athlete_key=`{cak[:8]}...` {same}")
-                except Exception as e:
-                    st.error(f"Fout: {e}")
 
     # Footer
     st.markdown("""
@@ -2104,6 +2072,39 @@ elif page == "admin":
                 st.success("Alle onthoud-tokens ingetrokken.")
             else:
                 st.error(f"Intrekken mislukt: {_err}")
+
+    # Ontwikkelaar-debug: verplaatst vanaf de homepage naar achter de admin-pincode.
+    with st.expander("🔧 Debug: coach_athlete_key controle", expanded=False):
+        st.caption("Controleer of de juiste coach_athlete_key wordt gebruikt voor het resetten van notificaties.")
+        if st.button("🔍 Haal ruwe TeamAthleteList op", key="btn_debug_team"):
+            with st.spinner("Ophalen..."):
+                try:
+                    raw = fs_client.get_raw_team_data()
+                    top_groups = raw.get("data") or []
+                    st.write(f"**Aantal top-level items in data:** {len(top_groups)}")
+                    if top_groups:
+                        first_top = top_groups[0]
+                        st.write(f"**Velden op data[0]:** {list(first_top.keys())}")
+                        groups = first_top.get("groups", [])
+                        st.write(f"**Aantal groups in data[0]:** {len(groups)}")
+                        if groups:
+                            athletes_in_first = groups[0].get("athletes", [])
+                            st.write(f"**Groep naam:** {groups[0].get('name')}")
+                            st.write(f"**Aantal atleten in eerste group:** {len(athletes_in_first)}")
+                            if athletes_in_first:
+                                first_a = athletes_in_first[0]
+                                st.write(f"**Velden op atleet-object:** {list(first_a.keys())}")
+                                st.write(f"**user_key:** `{first_a.get('user_key')}`")
+                                st.write(f"**key:** `{first_a.get('key')}`")
+                                st.write(f"**coach_athlete_key:** `{first_a.get('coach_athlete_key')}`")
+                    st.divider()
+                    st.write("**Huidige coach_athlete_key mapping:**")
+                    for uk, cak in COACH_ATHLETE_KEY.items():
+                        same = "⚠️ zelfde als user_key" if uk == cak else "✅ anders"
+                        name_label = next((a["name"] for a in _all_athletes if a["user_key"] == uk), uk[:8])
+                        st.write(f"- **{name_label}**: user_key=`{uk[:8]}...` → coach_athlete_key=`{cak[:8]}...` {same}")
+                except Exception as e:
+                    st.error(f"Fout: {e}")
 
     admin.render_admin(athletes_by_group)
 
