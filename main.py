@@ -1832,10 +1832,14 @@ if page == "home":
         "backfill": ("🔧", "Builder bijvullen & zones", "Vul de workout builder voor bestaande trainingen, of zet een heel schema om tussen tempo en hartslag.", "Onderhoud", "btn_backfill", "backfill_builder", "secondary", False),
         "strippenkaart": ("🎟️", "Strippenkaart", "Losse-trainingen-klanten: tel per training een strip af en zie wie er nog hoeveel over heeft, met een kant-en-klaar appje.", "Per training", "btn_strip", "strippenkaart", "secondary", False),
     }
+    # Gegroepeerd op ritme: coaching-werk vooraan (dagelijks → wekelijks → per
+    # atleet), beheer & onderhoud achteraan. Schema-verloop en schema bouwen staan
+    # bewust naast elkaar (schema loopt af → bouw het volgende).
     _groepen = [
-        ("Vandaag", ["feedback"]),
-        ("Deze week", ["schema", "puls", "races", "admin"]),
-        ("Per atleet", ["intake", "builder", "atleten", "strippenkaart"]),
+        ("Dagelijks", ["feedback"]),
+        ("Wekelijks", ["schema", "builder", "puls", "races"]),
+        ("Per atleet", ["intake", "atleten"]),
+        ("Beheer & onderhoud", ["admin", "strippenkaart", "backfill"]),
     ]
 
     def _render_module_rij(_key, _i):
@@ -1864,9 +1868,6 @@ if page == "home":
         for _mk in _grp_keys:
             _render_module_rij(_mk, _rij_i)
             _rij_i += 1
-
-    with st.expander("⚙️ Gereedschap — onderhoud (zelden nodig)"):
-        _render_module_rij("backfill", _rij_i)
 
     # Debug expander (alleen zichtbaar als je hem openklapt)
     with st.expander("🔧 Debug: coach_athlete_key controle", expanded=False):
