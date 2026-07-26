@@ -1241,11 +1241,20 @@ def convert_schema_zones(user_key: str, start: date, end: date, naar: str = "hr"
 
 
 def delete_workout(workout_key: str, user_key: str) -> dict:
-    """Verwijder een workout van de atleet."""
-    return _post("WorkoutDelete", {"key": workout_key}, params={
+    """Verwijder een geplande workout van de atleet (FinalSurge WorkoutDelete).
+
+    GET met alle parameters in de query string — exact zoals de web-app het doet:
+    ?scope=USER&scopekey=<user>&workout_key=<workout>. Response bevat 'success'.
+    """
+    resp = _get("WorkoutDelete", {
         "scope": "USER",
-        "scope_key": user_key,
+        "scopekey": user_key,
+        "workout_key": workout_key,
     })
+    if isinstance(resp, dict) and resp.get("success") is False:
+        msg = resp.get("error_description") or resp.get("message") or str(resp)
+        raise RuntimeError(f"WorkoutDelete afgewezen door FinalSurge: {msg}")
+    return resp
 
 
 # ---------------------------------------------------------------------------
