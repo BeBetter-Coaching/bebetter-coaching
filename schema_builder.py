@@ -910,6 +910,18 @@ def build_prompt(intake: dict) -> str:
             "intervallen direct, en hervat variatie/intensiteit pas geleidelijk over "
             "de weken. Dit gaat vóór op een 'normale' opbouw."
         )
+    _mode = intake.get("mode", "")
+    if _mode == "verlengen":
+        harde_regels.append(
+            "VERVOLGBLOK: dit schema is een verlenging die naadloos aansluit op het "
+            "lopende schema. Bouw voort op de laatst gedane trainingen (trainingslog); "
+            "begin NIET opnieuw met een basisfase, maar zet de opbouw richting het doel voort."
+        )
+    elif _mode == "bijsturen" and not bijstuur_instructie:
+        harde_regels.append(
+            "BIJSTURING: dit schema vervangt de resterende weken. Sluit aan op wat de "
+            "atleet recent aantoonbaar deed (trainingslog) en bouw daarvandaan verder."
+        )
     harde_eisen_sectie = (
         "━━━ HARDE EISEN — VERPLICHT, GAAN VOOR OP ALLE METHODOLOGIE ━━━\n"
         + "\n".join(f"{i+1}. {r}" for i, r in enumerate(harde_regels))

@@ -139,7 +139,7 @@ def _prefill_builder_from_prev(prev: dict) -> None:
     st.session_state["builder_naam"]              = g("naam", "")
     st.session_state["builder_doel"]              = g("doel", "")
     st.session_state["builder_volume"]            = g("huidig_volume", "")
-    st.session_state["builder_dagen"]             = g("trainingsdagen", "")
+    st.session_state["builder_dagen_sel"]         = _dagen_labels(g("trainingsdagen", ""))
     st.session_state["builder_referentie"]        = g("referentie_prestatie", "")
     st.session_state["builder_tijd_per_training"] = g("tijd_per_training", "")
     st.session_state["builder_langste_afstand"]   = g("langste_afstand", "")
@@ -156,6 +156,116 @@ def _prefill_builder_from_prev(prev: dict) -> None:
     _psed = g("schema_einddatum", "")
     st.session_state["builder_schema_einddatum"]  = date.fromisoformat(_psed) if _psed else None
     st.session_state["builder_fields_loaded"] = True
+
+
+_DAG_LABELS = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
+
+
+def _dagen_labels(trainingsdagen_str: str) -> list[str]:
+    """Zet een opgeslagen trainingsdagen-string ('ma/wo/vr') om naar multiselect-labels."""
+    return [_DAG_LABELS[i] for i in schema_builder._parse_weekdagen(trainingsdagen_str or "")]
+
+
+def _render_bijsturen_flow(athlete_key_selected: str) -> None:
+    """Bijsturen: resterende geplande trainingen wissen en de weken herbouwen.
+
+    Alleen getoond in de 'bijsturen'-modus. Bij volledig succes worden
+    _pending_prefill/_pending_bijstuur/_pending_start gezet zodat de bovenkant van
+    stap 1 de intake teruglaadt en de startdatum klaarzet. Beschermt het verleden
+    (alleen geplande, niet-race, datum >= vanaf via fs_client.get_planned_workouts_from).
+    """
+    if st.session_state.get("bs_msg"):
+        st.success(st.session_state.pop("bs_msg"))
+    st.caption(
+        "Verwijdert de **geplande** trainingen vanaf een datum, zodat je de "
+        "resterende weken opnieuw kunt bouwen. Het verleden en al uitgevoerde "
+        "trainingen blijven staan."
+    )
+    _bs_vanaf = st.date_input(
+        "Wis geplande trainingen vanaf",
+        value=st.session_state.get("builder_startdatum", date.today()),
+        key="bs_vanaf", format="DD/MM/YYYY",
+    )
+    _has_prev = bool(st.session_state.get("laatste_intakes", {}).get(athlete_key_selected))
+    st.text_area(
+        "Bijstuur-instructie voor de AI",
+        key="bs_instructie",
+        height=80,
+        placeholder="bijv. 3 weken niet getraind i.v.m. klachten — bouw omvang en "
+                    "intensiteit rustig weer op. Doel blijft hetzelfde.",
+        help="Wordt als belangrijke coach-notitie meegegeven bij het herbouwen. "
+             "Beschrijf kort wat er veranderd is en hoe je wilt bijsturen.",
+    )
+    if _has_prev:
+        st.caption("✅ Na wissen worden doel, zones en volume automatisch teruggeladen — je hoeft de intake niet opnieuw in te vullen.")
+    else:
+        st.caption("⚠️ Nog geen opgeslagen schema-intake voor deze atleet — na wissen vul je de intake één keer in (daarna wordt 'ie bewaard).")
+    if st.button("🔍 Toon geplande trainingen", key="bs_show", use_container_width=True):
+        with st.spinner("Ophalen uit FinalSurge…"):
+            st.session_state["bs_lijst"] = fs_client.get_planned_workouts_from(athlete_key_selected, _bs_vanaf)
+        st.session_state["bs_lijst_key"] = athlete_key_selected
+        st.session_state.pop("bs_confirm", None)
+
+    _lijst = (
+        st.session_state.get("bs_lijst")
+        if st.session_state.get("bs_lijst_key") == athlete_key_selected
+        else None
+    )
+    if _lijst is not None:
+        if not _lijst:
+            st.info("Geen geplande trainingen gevonden vanaf die datum.")
+        else:
+            st.markdown(f"**{len(_lijst)} geplande trainingen worden verwijderd:**")
+            for _w in _lijst[:40]:
+                st.markdown(f"- {date.fromisoformat(_w['date']).strftime('%d-%m')} — {_w['name']}")
+            if len(_lijst) > 40:
+                st.caption(f"…en nog {len(_lijst) - 40} meer.")
+            _confirm = st.checkbox(
+                f"Ja, verwijder deze {len(_lijst)} trainingen definitief uit FinalSurge",
+                key="bs_confirm",
+            )
+            if st.button("🗑️ Verwijderen", disabled=not _confirm, key="bs_delete"):
+                _prog = st.progress(0)
+                _fout = []
+                for _i, _w in enumerate(_lijst):
+                    try:
+                        fs_client.delete_workout(_w["key"], athlete_key_selected)
+                    except Exception as _e:
+                        _fout.append(f"{_w['date']} {_w['name']}: {_e}")
+                    _prog.progress((_i + 1) / len(_lijst))
+                _prog.empty()
+                _gelukt = len(_lijst) - len(_fout)
+                if _fout:
+                    # Deels mislukt: blijf staan zodat de coach ziet wat faalde.
+                    st.warning(f"{_gelukt}/{len(_lijst)} verwijderd — {len(_fout)} mislukt.")
+                    with st.expander("Fouten bekijken"):
+                        for _f in _fout:
+                            st.code(_f)
+                    st.session_state["bs_lijst"] = fs_client.get_planned_workouts_from(athlete_key_selected, _bs_vanaf)
+                else:
+                    # Volledig gelukt: intake teruglaadklaarzetten + bijstuur-instructie +
+                    # startdatum (via pending, want de widgets zijn deze run al geïnstantieerd).
+                    _prev = st.session_state.get("laatste_intakes", {}).get(athlete_key_selected)
+                    _instr = (st.session_state.get("bs_instructie") or "").strip()
+                    if _prev:
+                        st.session_state["_pending_prefill"] = _prev
+                        if _instr:
+                            st.session_state["_pending_bijstuur"] = _instr
+                        _staart = " Doel, zones en volume zijn teruggeladen — check de velden en klik op genereren."
+                    else:
+                        _staart = " Vul de intake nog één keer in en genereer."
+                    st.session_state["bs_msg"] = (
+                        f"✅ {_gelukt} trainingen verwijderd. Startdatum staat op "
+                        f"{_bs_vanaf.strftime('%d-%m-%Y')}." + _staart
+                    )
+                    st.session_state["_pending_start"] = _bs_vanaf
+                    st.session_state.pop("bs_lijst", None)
+                    st.session_state.pop("bs_confirm", None)
+                    try:
+                        del st.session_state["bs_instructie"]
+                    except Exception:
+                        pass
+                    st.rerun()
 
 
 def _save_builder_state():
@@ -4070,7 +4180,8 @@ elif page == "builder":
                           "builder_herstelcapaciteit", "builder_werkdruk",
                           "builder_ondergrond", "builder_race_prioriteit",
                           "builder_tussenraces", "builder_coach_notitie",
-                          "builder_wat_werkte", "builder_wat_niet_werkte"]:
+                          "builder_wat_werkte", "builder_wat_niet_werkte",
+                          "builder_mode", "builder_dagen_sel"]:
                     st.session_state.pop(k, None)
                 _clear_builder_state()
                 st.rerun()
@@ -4110,7 +4221,41 @@ elif page == "builder":
     # ===========================================================================
 
     if step == 1:
-        st.markdown("<div class='bb-intake-label'>Stap 1 — Intake</div>", unsafe_allow_html=True)
+        # ── Modus-keuze: tegels als ingang i.p.v. één groot formulier ──────────
+        if not st.session_state.get("builder_mode"):
+            st.markdown("<div class='bb-intake-label'>Waarmee wil je beginnen?</div>", unsafe_allow_html=True)
+            _t1, _t2, _t3 = st.columns(3, gap="medium")
+            with _t1:
+                st.markdown("#### 🆕 Nieuw schema")
+                st.caption("Volledige intake voor een nieuwe atleet of een frisse start.")
+                if st.button("Kies nieuw", key="mode_nieuw", use_container_width=True, type="primary"):
+                    st.session_state["builder_mode"] = "nieuw"
+                    st.rerun()
+            with _t2:
+                st.markdown("#### 🔁 Verlengen")
+                st.caption("Vervolgblok naar hetzelfde doel — sluit aan op het lopende schema. Intake komt uit het vorige schema.")
+                if st.button("Kies verlengen", key="mode_verlengen", use_container_width=True):
+                    st.session_state["builder_mode"] = "verlengen"
+                    st.rerun()
+            with _t3:
+                st.markdown("#### 🩹 Bijsturen")
+                st.caption("Resterende trainingen wissen en de weken opnieuw opbouwen (beter/slechter dan gepland, herstel na afwezigheid).")
+                if st.button("Kies bijsturen", key="mode_bijsturen", use_container_width=True):
+                    st.session_state["builder_mode"] = "bijsturen"
+                    st.rerun()
+            st.stop()
+
+        builder_mode = st.session_state["builder_mode"]
+        _MODE_LABEL = {"nieuw": "🆕 Nieuw schema", "verlengen": "🔁 Verlengen", "bijsturen": "🩹 Bijsturen"}
+        _cmh, _cmb = st.columns([5, 1])
+        _cmh.markdown(
+            f"<div class='bb-intake-label'>Stap 1 — Intake · {_MODE_LABEL.get(builder_mode, '')}</div>",
+            unsafe_allow_html=True,
+        )
+        with _cmb:
+            if st.button("← Andere keuze", key="btn_mode_back"):
+                st.session_state.pop("builder_mode", None)
+                st.rerun()
 
         # Uitgestelde prefill (van bijsturen): moet VÓÓR alle stap-1-widgets worden
         # toegepast — een widget-key mag na instantiatie niet meer via session_state.
@@ -4134,7 +4279,7 @@ elif page == "builder":
             st.session_state["builder_naam"]              = _existing.get("naam", "")
             st.session_state["builder_doel"]              = _existing.get("doel", "")
             st.session_state["builder_volume"]            = _existing.get("huidig_volume", "")
-            st.session_state["builder_dagen"]             = _existing.get("trainingsdagen", "")
+            st.session_state["builder_dagen_sel"]         = _dagen_labels(_existing.get("trainingsdagen", ""))
             st.session_state["builder_referentie"]        = _existing.get("referentie_prestatie", "")
             st.session_state["builder_tijd_per_training"] = _existing.get("tijd_per_training", "")
             st.session_state["builder_langste_afstand"]   = _existing.get("langste_afstand", "")
@@ -4152,13 +4297,21 @@ elif page == "builder":
             st.session_state["builder_schema_einddatum"]  = date.fromisoformat(_sed) if _sed else None
             st.session_state["builder_fields_loaded"]     = True  # niet opnieuw laden
 
-        client_type = st.radio(
-            "Type klant",
-            options=["🆕 Nieuwe klant", "🔄 Bestaande klant"],
-            horizontal=True,
-            key="builder_client_type",
-        )
-        is_new = "Nieuwe" in client_type
+        if builder_mode == "nieuw":
+            client_type = st.radio(
+                "Type klant",
+                options=["🆕 Nieuwe klant", "🔄 Bestaande klant"],
+                horizontal=True,
+                key="builder_client_type",
+            )
+            is_new = "Nieuwe" in client_type
+        else:
+            # Verlengen/bijsturen betreft altijd een bestaande atleet met historie.
+            is_new = False
+            if builder_mode == "verlengen":
+                st.caption("Doorbouwen naar hetzelfde doel. Laad het vorige schema terug en zet de startdatum ná de laatste training.")
+            else:
+                st.caption("Wis eerst de resterende trainingen hieronder; daarna worden doel/zones/volume automatisch teruggeladen.")
         st.markdown("<hr class='bb-divider'>", unsafe_allow_html=True)
 
         # ── KOLOM LINKS: Doel & Planning | RECHTS: Training & Niveau ─────────
@@ -4180,7 +4333,7 @@ elif page == "builder":
             if "intakes" not in st.session_state:
                 st.session_state["intakes"] = intake_store.load_intakes()
             _saved_ik = st.session_state["intakes"].get(athlete_key_selected)
-            if _saved_ik:
+            if _saved_ik and builder_mode == "nieuw":
                 if st.button(
                     f"📥 Intake van {_saved_ik.get('naam') or selected_athlete_name.split()[0]} laden "
                     f"(bijgewerkt {_saved_ik.get('updated_at', '?')})",
@@ -4190,7 +4343,7 @@ elif page == "builder":
                     st.session_state["builder_naam"]              = _saved_ik.get("naam", "")
                     st.session_state["builder_doel"]              = _saved_ik.get("doel", "")
                     st.session_state["builder_volume"]            = _saved_ik.get("huidig_volume", "")
-                    st.session_state["builder_dagen"]             = _saved_ik.get("trainingsdagen", "")
+                    st.session_state["builder_dagen_sel"]         = _dagen_labels(_saved_ik.get("trainingsdagen", ""))
                     st.session_state["builder_referentie"]        = _saved_ik.get("referentie_prestatie", "")
                     st.session_state["builder_tijd_per_training"] = _saved_ik.get("tijd_per_training", "")
                     st.session_state["builder_langste_afstand"]   = _saved_ik.get("langste_afstand", "")
@@ -4236,7 +4389,7 @@ elif page == "builder":
             if "laatste_intakes" not in st.session_state:
                 st.session_state["laatste_intakes"] = intake_store.load_laatste_intakes()
             _prev_ik = st.session_state["laatste_intakes"].get(athlete_key_selected)
-            if _prev_ik:
+            if _prev_ik and builder_mode in ("verlengen", "bijsturen"):
                 _opg = (_prev_ik.get("_opgeslagen", "") or "")[:10]
                 if st.button(
                     f"🔁 Vorig schema terugladen — verlengen/bijsturen"
@@ -4268,7 +4421,7 @@ elif page == "builder":
             )
             # Verlengen: zet de start op de dag ná de laatste geplande training,
             # zodat je een vervolgblok bouwt dat naadloos aansluit op het huidige schema.
-            if st.button(
+            if builder_mode == "verlengen" and st.button(
                 "📆 Verlengen: start ná laatste geplande training",
                 key="btn_verleng_startdatum",
                 use_container_width=True,
@@ -4288,109 +4441,11 @@ elif page == "builder":
             if st.session_state.get("_verleng_msg"):
                 st.caption(st.session_state.pop("_verleng_msg"))
 
-            # ── Bijsturen: resterende geplande trainingen wissen in FinalSurge ──
-            # Voor als iemand beter/slechter loopt dan gepland: wis de resterende
-            # trainingen vanaf een datum en bouw die weken opnieuw. Verleden en al
-            # uitgevoerde trainingen blijven staan (alleen geplande, datum >= vanaf).
-            with st.expander("🩹 Bijsturen — resterende trainingen wissen (FinalSurge)"):
-                if st.session_state.get("bs_msg"):
-                    st.success(st.session_state.pop("bs_msg"))
-                st.caption(
-                    "Verwijdert de **geplande** trainingen vanaf een datum, zodat je de "
-                    "resterende weken opnieuw kunt bouwen. Het verleden en al uitgevoerde "
-                    "trainingen blijven staan. Combineer met '🔁 Vorig schema terugladen'."
-                )
-                _bs_vanaf = st.date_input(
-                    "Wis geplande trainingen vanaf",
-                    value=st.session_state.get("builder_startdatum", date.today()),
-                    key="bs_vanaf", format="DD/MM/YYYY",
-                )
-                _has_prev = bool(st.session_state.get("laatste_intakes", {}).get(athlete_key_selected))
-                st.text_area(
-                    "Bijstuur-instructie voor de AI",
-                    key="bs_instructie",
-                    height=80,
-                    placeholder="bijv. 3 weken niet getraind i.v.m. klachten — bouw omvang en "
-                                "intensiteit rustig weer op. Doel blijft hetzelfde.",
-                    help="Wordt als belangrijke coach-notitie meegegeven bij het herbouwen. "
-                         "Beschrijf kort wat er veranderd is en hoe je wilt bijsturen.",
-                )
-                if _has_prev:
-                    st.caption("✅ Na wissen worden doel, zones en volume automatisch teruggeladen — je hoeft de intake niet opnieuw in te vullen.")
-                else:
-                    st.caption("⚠️ Nog geen opgeslagen schema-intake voor deze atleet — na wissen vul je de intake één keer in (daarna wordt 'ie bewaard).")
-                if st.button("🔍 Toon geplande trainingen", key="bs_show", use_container_width=True):
-                    with st.spinner("Ophalen uit FinalSurge…"):
-                        st.session_state["bs_lijst"] = fs_client.get_planned_workouts_from(athlete_key_selected, _bs_vanaf)
-                    st.session_state["bs_lijst_key"] = athlete_key_selected
-                    st.session_state.pop("bs_confirm", None)
-
-                _lijst = (
-                    st.session_state.get("bs_lijst")
-                    if st.session_state.get("bs_lijst_key") == athlete_key_selected
-                    else None
-                )
-                if _lijst is not None:
-                    if not _lijst:
-                        st.info("Geen geplande trainingen gevonden vanaf die datum.")
-                    else:
-                        st.markdown(f"**{len(_lijst)} geplande trainingen worden verwijderd:**")
-                        for _w in _lijst[:40]:
-                            st.markdown(f"- {date.fromisoformat(_w['date']).strftime('%d-%m')} — {_w['name']}")
-                        if len(_lijst) > 40:
-                            st.caption(f"…en nog {len(_lijst) - 40} meer.")
-                        _confirm = st.checkbox(
-                            f"Ja, verwijder deze {len(_lijst)} trainingen definitief uit FinalSurge",
-                            key="bs_confirm",
-                        )
-                        if st.button("🗑️ Verwijderen", disabled=not _confirm, key="bs_delete"):
-                            _prog = st.progress(0)
-                            _fout = []
-                            for _i, _w in enumerate(_lijst):
-                                try:
-                                    fs_client.delete_workout(_w["key"], athlete_key_selected)
-                                except Exception as _e:
-                                    _fout.append(f"{_w['date']} {_w['name']}: {_e}")
-                                _prog.progress((_i + 1) / len(_lijst))
-                            _prog.empty()
-                            _gelukt = len(_lijst) - len(_fout)
-                            if _fout:
-                                # Deels mislukt: blijf staan zodat de coach ziet wat faalde
-                                # en het opnieuw kan proberen. Startdatum niet aanpassen.
-                                st.warning(f"{_gelukt}/{len(_lijst)} verwijderd — {len(_fout)} mislukt.")
-                                with st.expander("Fouten bekijken"):
-                                    for _f in _fout:
-                                        st.code(_f)
-                                # Ververs de lijst zodat gelukte deletes eruit vallen
-                                st.session_state["bs_lijst"] = fs_client.get_planned_workouts_from(athlete_key_selected, _bs_vanaf)
-                            else:
-                                # Volledig gelukt: intake automatisch terugladen zodat de
-                                # coach niet opnieuw alles hoeft in te vullen, de bijstuur-
-                                # instructie prominent meegeven, en startdatum klaarzetten.
-                                # Prefill uitstellen naar de bovenkant van de volgende run
-                                # (deze widgets zijn deze run al geïnstantieerd).
-                                _prev = st.session_state.get("laatste_intakes", {}).get(athlete_key_selected)
-                                _instr = (st.session_state.get("bs_instructie") or "").strip()
-                                if _prev:
-                                    st.session_state["_pending_prefill"] = _prev
-                                    if _instr:
-                                        st.session_state["_pending_bijstuur"] = _instr
-                                    _staart = " Doel, zones en volume zijn teruggeladen — check de velden en klik op genereren."
-                                else:
-                                    _staart = " Vul de intake nog één keer in en genereer."
-                                st.session_state["bs_msg"] = (
-                                    f"✅ {_gelukt} trainingen verwijderd. Startdatum staat op "
-                                    f"{_bs_vanaf.strftime('%d-%m-%Y')}." + _staart
-                                )
-                                # Startdatum via pending (date_input is deze run al geïnstantieerd).
-                                st.session_state["_pending_start"] = _bs_vanaf
-                                st.session_state.pop("bs_lijst", None)
-                                st.session_state.pop("bs_confirm", None)
-                                try:
-                                    del st.session_state["bs_instructie"]
-                                except Exception:
-                                    pass
-                                st.rerun()
+            # Bijsturen-flow (alleen in bijsturen-modus): wis resterende trainingen
+            # en bouw de weken opnieuw. Body staat in _render_bijsturen_flow.
+            if builder_mode == "bijsturen":
+                st.markdown("<div class='bb-intake-label'>Resterende trainingen wissen</div>", unsafe_allow_html=True)
+                _render_bijsturen_flow(athlete_key_selected)
 
             # Aantal weken OF vaste einddatum — twee ingangen
             c_wk, c_of = st.columns([3, 1])
@@ -4463,18 +4518,15 @@ elif page == "builder":
                 "Huidig wekelijks volume *", key="builder_volume",
                 placeholder="bijv. 25-30 km/week",
             )
-            trainingsdagen = st.text_input(
-                "Trainingsdagen *", key="builder_dagen",
-                placeholder="bijv. ma / wo / vr / zo",
+            # Klikbare weekdag-selectie i.p.v. vrije tekst — deterministisch, dus
+            # geen di/do → wo/vr of "t/m"-verrassingen meer.
+            _dagen_sel = st.multiselect(
+                "Trainingsdagen *", options=_DAG_LABELS, key="builder_dagen_sel",
+                help="Klik de dagen aan waarop getraind wordt.",
             )
-            # Toon direct welke dagen de app herkent — zo zie je meteen of de AI
-            # de juiste dagen krijgt (voorkomt di/do → wo/vr verrassingen).
-            if trainingsdagen:
-                _herkend = schema_builder._parse_weekdagen(trainingsdagen)
-                if _herkend:
-                    st.caption("Herkend: " + ", ".join(schema_builder._WEEKDAG_NL[d] for d in _herkend))
-                else:
-                    st.caption("⚠️ Geen weekdagen herkend — de AI kiest dan zelf de dagen. Gebruik bijv. ma/wo/vr.")
+            trainingsdagen = "/".join(
+                lbl.lower() for lbl in sorted(_dagen_sel, key=_DAG_LABELS.index)
+            )
             tijd_per_training = st.text_input(
                 "Tijd per training *", key="builder_tijd_per_training",
                 placeholder="bijv. ma: 45min, wo: 60min, zo: 90min",
@@ -4762,6 +4814,7 @@ elif page == "builder":
                 "athlete_key": athlete_key_selected,
                 "athlete_name": selected_athlete_name,
                 "client_type": "nieuw" if is_new else "bestaand",
+                "mode": builder_mode,
                 "doel": doel,
                 "schema_einddatum": str(schema_einddatum) if schema_einddatum else "",
                 "wedstrijddatum": str(wedstrijddatum) if wedstrijddatum else "",
@@ -5256,6 +5309,7 @@ elif page == "builder":
                     st.markdown("---")
                     if st.button("📋 Nieuw schema bouwen", type="primary"):
                         for k in ["builder_step", "builder_intake", "builder_plan",
-                                  "builder_csv", "builder_workouts"]:
+                                  "builder_csv", "builder_workouts", "builder_mode",
+                                  "builder_dagen_sel"]:
                             st.session_state.pop(k, None)
                         _set_step(1)
