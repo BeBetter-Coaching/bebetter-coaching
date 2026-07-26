@@ -892,10 +892,11 @@ def build_prompt(intake: dict) -> str:
     if _dagen_nums:
         _dagen_namen = ", ".join(_WEEKDAG_NL[d] for d in _dagen_nums)
         harde_regels.append(
-            f"TRAININGSDAGEN: plan trainingen UITSLUITEND op {_dagen_namen}. "
-            f"Verzin geen andere weekdagen. Het aantal trainingen per week is gelijk "
-            f"aan het aantal genoemde dagen ({len(_dagen_nums)}), tenzij een herstel-/"
-            f"deloadweek expliciet om minder vraagt."
+            f"TRAININGSDAGEN: plan op ELKE genoemde trainingsdag ({_dagen_namen}) een "
+            f"training — sla GEEN enkele genoemde dag over en verzin geen andere dagen. "
+            f"Een genoemde dag zónder training is FOUT. Noemt de intake dubbele sessies "
+            f"op een dag (bijv. '2x per dag' of 'ochtend + avond'), plan die dan ook. "
+            f"In een deload-/herstelweek verlaag je de OMVANG, niet het aantal dagen."
         )
     harde_regels.append(
         "VARIATIE: elke week een mix van trainingsvormen (rustig/drempel/interval/"
