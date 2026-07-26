@@ -4229,17 +4229,17 @@ elif page == "builder":
                  "Volledige intake voor een nieuwe atleet of een frisse start.",
                  "Kies nieuw", "primary"),
                 ("verlengen", "🔁", "Verlengen",
-                 "Vervolgblok naar hetzelfde doel — sluit aan op het lopende schema. Intake uit het vorige schema.",
+                 "Vervolgblok naar hetzelfde doel, sluit aan op het lopende schema.",
                  "Kies verlengen", "secondary"),
                 ("bijsturen", "🩹", "Bijsturen",
-                 "Resterende trainingen wissen en de weken opnieuw opbouwen — beter/slechter dan gepland of herstel na afwezigheid.",
+                 "Resterende trainingen wissen en de weken opnieuw opbouwen.",
                  "Kies bijsturen", "secondary"),
             ]
             _tcols = st.columns(3, gap="large")
             for _col, (_mkey, _icon, _titel, _desc, _btn, _btype) in zip(_tcols, _tiles):
                 with _col:
                     st.markdown(f"""
-                    <div class="bb-card">
+                    <div class="bb-card" style="height:210px; min-height:210px;">
                         <div class="bb-card-icon">{_icon}</div>
                         <p class="bb-card-title">{_esc(_titel)}</p>
                         <p class="bb-card-desc">{_esc(_desc)}</p>
