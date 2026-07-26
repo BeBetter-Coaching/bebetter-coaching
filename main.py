@@ -128,6 +128,36 @@ def _check_password() -> bool:
                 st.error("Onjuist wachtwoord.")
     return False
 
+def _prefill_builder_from_prev(prev: dict) -> None:
+    """Vul de bouwer-velden op stap 1 vanuit een eerder opgeslagen builder-intake.
+
+    Gebruikt door de teruglaad-knop en door 'bijsturen'. Zet
+    builder_fields_loaded zodat de sync-blok het daarna niet overschrijft.
+    De startdatum wordt bewust NIET gezet (die verschilt per scenario).
+    """
+    g = prev.get
+    st.session_state["builder_naam"]              = g("naam", "")
+    st.session_state["builder_doel"]              = g("doel", "")
+    st.session_state["builder_volume"]            = g("huidig_volume", "")
+    st.session_state["builder_dagen"]             = g("trainingsdagen", "")
+    st.session_state["builder_referentie"]        = g("referentie_prestatie", "")
+    st.session_state["builder_tijd_per_training"] = g("tijd_per_training", "")
+    st.session_state["builder_langste_afstand"]   = g("langste_afstand", "")
+    st.session_state["builder_blessure"]          = g("blessurehistorie", "")
+    st.session_state["builder_andere"]            = g("andere_sporten", "")
+    st.session_state["builder_coach_notitie"]     = g("coach_notitie", "")
+    st.session_state["builder_wat_werkte"]        = g("wat_werkte", "")
+    st.session_state["builder_wat_niet_werkte"]   = g("wat_niet_werkte", "")
+    st.session_state["builder_tussenraces"]       = g("tussenraces", "")
+    st.session_state["builder_werkdruk"]          = g("werkdruk", "Normaal")
+    st.session_state["builder_op_tijd"]           = g("op_tijd", False)
+    _pzt = g("zone_type", "tempo")
+    st.session_state["builder_zone_type"]         = "hartslag (bpm)" if _pzt == "hartslag" else "tempo (min/km)"
+    _psed = g("schema_einddatum", "")
+    st.session_state["builder_schema_einddatum"]  = date.fromisoformat(_psed) if _psed else None
+    st.session_state["builder_fields_loaded"] = True
+
+
 def _save_builder_state():
     """Bewaar builder_intake, builder_plan, builder_step (GitHub-backed)."""
     state = {
@@ -4082,6 +4112,21 @@ elif page == "builder":
     if step == 1:
         st.markdown("<div class='bb-intake-label'>Stap 1 — Intake</div>", unsafe_allow_html=True)
 
+        # Uitgestelde prefill (van bijsturen): moet VÓÓR alle stap-1-widgets worden
+        # toegepast — een widget-key mag na instantiatie niet meer via session_state.
+        if "_pending_prefill" in st.session_state:
+            _prefill_builder_from_prev(st.session_state.pop("_pending_prefill"))
+            _pend_instr = st.session_state.pop("_pending_bijstuur", "")
+            if _pend_instr:
+                _b = st.session_state.get("builder_coach_notitie", "") or ""
+                # Strip een eventuele eerdere bijstuur-regel zodat die zich niet opstapelt.
+                _b = "\n".join(
+                    r for r in _b.splitlines() if not r.startswith("⚠️ BIJSTURING SCHEMA")
+                ).strip()
+                st.session_state["builder_coach_notitie"] = (
+                    f"⚠️ BIJSTURING SCHEMA — {_pend_instr}" + ("\n\n" + _b if _b else "")
+                )
+
         # Vul widget-keys vanuit builder_intake — eenmalig bij binnenkomst op stap 1.
         # Daarna niet meer overschrijven zodat gebruikerswijzigingen (zoals checkbox) bewaard blijven.
         _existing = st.session_state.get("builder_intake") or {}
@@ -4199,26 +4244,7 @@ elif page == "builder":
                          "trainingsdagen…). Handig om door te bouwen naar hetzelfde doel of "
                          "de resterende weken bij te sturen. Kies daarna zelf de nieuwe startdatum.",
                 ):
-                    st.session_state["builder_naam"]              = _prev_ik.get("naam", "")
-                    st.session_state["builder_doel"]              = _prev_ik.get("doel", "")
-                    st.session_state["builder_volume"]            = _prev_ik.get("huidig_volume", "")
-                    st.session_state["builder_dagen"]             = _prev_ik.get("trainingsdagen", "")
-                    st.session_state["builder_referentie"]        = _prev_ik.get("referentie_prestatie", "")
-                    st.session_state["builder_tijd_per_training"] = _prev_ik.get("tijd_per_training", "")
-                    st.session_state["builder_langste_afstand"]   = _prev_ik.get("langste_afstand", "")
-                    st.session_state["builder_blessure"]          = _prev_ik.get("blessurehistorie", "")
-                    st.session_state["builder_andere"]            = _prev_ik.get("andere_sporten", "")
-                    st.session_state["builder_coach_notitie"]     = _prev_ik.get("coach_notitie", "")
-                    st.session_state["builder_wat_werkte"]        = _prev_ik.get("wat_werkte", "")
-                    st.session_state["builder_wat_niet_werkte"]   = _prev_ik.get("wat_niet_werkte", "")
-                    st.session_state["builder_tussenraces"]       = _prev_ik.get("tussenraces", "")
-                    st.session_state["builder_werkdruk"]          = _prev_ik.get("werkdruk", "Normaal")
-                    st.session_state["builder_op_tijd"]           = _prev_ik.get("op_tijd", False)
-                    _pzt = _prev_ik.get("zone_type", "tempo")
-                    st.session_state["builder_zone_type"]         = "hartslag (bpm)" if _pzt == "hartslag" else "tempo (min/km)"
-                    _psed = _prev_ik.get("schema_einddatum", "")
-                    st.session_state["builder_schema_einddatum"]  = date.fromisoformat(_psed) if _psed else None
-                    st.session_state["builder_fields_loaded"] = True
+                    _prefill_builder_from_prev(_prev_ik)
                     st.rerun()
             naam = st.text_input("Naam in coaching-tekst *", key="builder_naam", placeholder="bijv. Lisa")
             doel = st.text_area(
@@ -4276,6 +4302,20 @@ elif page == "builder":
                     value=st.session_state.get("builder_startdatum", date.today()),
                     key="bs_vanaf", format="DD/MM/YYYY",
                 )
+                _has_prev = bool(st.session_state.get("laatste_intakes", {}).get(athlete_key_selected))
+                st.text_area(
+                    "Bijstuur-instructie voor de AI",
+                    key="bs_instructie",
+                    height=80,
+                    placeholder="bijv. 3 weken niet getraind i.v.m. klachten — bouw omvang en "
+                                "intensiteit rustig weer op. Doel blijft hetzelfde.",
+                    help="Wordt als belangrijke coach-notitie meegegeven bij het herbouwen. "
+                         "Beschrijf kort wat er veranderd is en hoe je wilt bijsturen.",
+                )
+                if _has_prev:
+                    st.caption("✅ Na wissen worden doel, zones en volume automatisch teruggeladen — je hoeft de intake niet opnieuw in te vullen.")
+                else:
+                    st.caption("⚠️ Nog geen opgeslagen schema-intake voor deze atleet — na wissen vul je de intake één keer in (daarna wordt 'ie bewaard).")
                 if st.button("🔍 Toon geplande trainingen", key="bs_show", use_container_width=True):
                     with st.spinner("Ophalen uit FinalSurge…"):
                         st.session_state["bs_lijst"] = fs_client.get_planned_workouts_from(athlete_key_selected, _bs_vanaf)
@@ -4321,15 +4361,32 @@ elif page == "builder":
                                 # Ververs de lijst zodat gelukte deletes eruit vallen
                                 st.session_state["bs_lijst"] = fs_client.get_planned_workouts_from(athlete_key_selected, _bs_vanaf)
                             else:
-                                # Volledig gelukt: melding bewaren, startdatum klaarzetten
-                                # (via pending — de date_input is deze run al geïnstantieerd).
+                                # Volledig gelukt: intake automatisch terugladen zodat de
+                                # coach niet opnieuw alles hoeft in te vullen, de bijstuur-
+                                # instructie prominent meegeven, en startdatum klaarzetten.
+                                # Prefill uitstellen naar de bovenkant van de volgende run
+                                # (deze widgets zijn deze run al geïnstantieerd).
+                                _prev = st.session_state.get("laatste_intakes", {}).get(athlete_key_selected)
+                                _instr = (st.session_state.get("bs_instructie") or "").strip()
+                                if _prev:
+                                    st.session_state["_pending_prefill"] = _prev
+                                    if _instr:
+                                        st.session_state["_pending_bijstuur"] = _instr
+                                    _staart = " Doel, zones en volume zijn teruggeladen — check de velden en klik op genereren."
+                                else:
+                                    _staart = " Vul de intake nog één keer in en genereer."
                                 st.session_state["bs_msg"] = (
-                                    f"✅ {_gelukt} trainingen verwijderd. Startdatum is klaargezet op "
-                                    f"{_bs_vanaf.strftime('%d-%m-%Y')} — bouw nu de resterende weken opnieuw."
+                                    f"✅ {_gelukt} trainingen verwijderd. Startdatum staat op "
+                                    f"{_bs_vanaf.strftime('%d-%m-%Y')}." + _staart
                                 )
+                                # Startdatum via pending (date_input is deze run al geïnstantieerd).
                                 st.session_state["_pending_start"] = _bs_vanaf
                                 st.session_state.pop("bs_lijst", None)
                                 st.session_state.pop("bs_confirm", None)
+                                try:
+                                    del st.session_state["bs_instructie"]
+                                except Exception:
+                                    pass
                                 st.rerun()
 
             # Aantal weken OF vaste einddatum — twee ingangen
