@@ -915,7 +915,17 @@ def build_prompt(intake: dict) -> str:
         + "\n\n"
     )
 
-    return f"""{harde_eisen_sectie}Hier is de intake voor een nieuw trainingsschema:
+    # Exacte weekkalender (datum + dagnaam) — zodat de AI de weekdagen NIET zelf
+    # uitrekent (voorkwam 'zondag 27 juli' terwijl dat een maandag is).
+    _week_kalender = _week_kalender_tekst(intake, "%d-%m-%Y")
+    week_kalender_sectie = (
+        "━━━ WEEKKALENDER — GEBRUIK EXACT DEZE DATUMS EN DAGNAMEN ━━━\n"
+        "De app heeft de datums en bijbehorende weekdagen al berekend. Gebruik in het\n"
+        "hele plan EXACT deze dagnaam-bij-datum-combinaties; reken zelf NOOIT een\n"
+        "weekdag uit een datum uit.\n" + _week_kalender + "\n\n"
+    ) if _week_kalender else ""
+
+    return f"""{harde_eisen_sectie}{week_kalender_sectie}Hier is de intake voor een nieuw trainingsschema:
 
 {intake_tekst}{upload_sectie}
 
@@ -1098,44 +1108,51 @@ def _parse_weekdagen(tekst: str) -> list[int]:
     return sorted(result)
 
 
+def _week_kalender_tekst(intake: dict, datumformaat: str = "%m/%d/%Y") -> str:
+    """Exacte weekkalender: per week de trainingsdagen met datum + juiste dagnaam.
+
+    De app rekent de datums en weekdagen zelf uit zodat de AI ze NOOIT hoeft te
+    raden (voorkomt 'zondag 27 juli' terwijl dat een maandag is). Gebruikt door
+    zowel de plan-stap (build_prompt) als de CSV-stap (build_csv_prompt).
+    """
+    startdatum_str = intake.get("startdatum", "")
+    try:
+        start_dt = datetime.strptime(startdatum_str, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return ""
+    start_monday = start_dt - timedelta(days=start_dt.weekday())
+    weken_aantal = int(intake.get("weken") or 8)
+    _dagen = _parse_weekdagen(intake.get("trainingsdagen", ""))
+    week_lines = []
+    for w in range(weken_aantal):
+        mon = start_monday + timedelta(weeks=w)
+        sun = mon + timedelta(days=6)
+        if _dagen:
+            # Week 1 kan mid-week starten (bijv. bij bijsturen): sla dagen vóór de
+            # startdatum over, zodat er nooit een datum vóór de start wordt gepland.
+            _dagen_week = [dg for dg in _dagen if (mon + timedelta(days=dg)) >= start_dt]
+            if not _dagen_week:
+                continue
+            _paren = ", ".join(
+                f"{_WEEKDAG_NL[dg]} {(mon + timedelta(days=dg)).strftime(datumformaat)}"
+                for dg in _dagen_week)
+            week_lines.append(f"  Week {w+1} ({mon.strftime('%m/%d')} t/m "
+                              f"{sun.strftime('%m/%d')}): trainingen op → {_paren}")
+        else:
+            week_lines.append(
+                f"  Week {w+1}: maandag {mon.strftime(datumformaat)} t/m zondag {sun.strftime(datumformaat)}")
+    return "\n".join(week_lines)
+
+
 def build_csv_prompt(plan_tekst: str, intake: dict) -> str:
     """Vraag de CSV op basis van het goedgekeurde plan."""
     naam = intake.get("naam", "de atleet")
     op_tijd = intake.get("op_tijd", False)
     vandaag = date.today().strftime("%d-%m-%Y")
 
-    # Bereken de exacte maandagdatum per week op basis van de startdatum
+    # Exacte weekkalender (datum + dagnaam) — MM/DD/YYYY zoals de CSV vereist.
     startdatum_str = intake.get("startdatum", "")
-    week_datums_tekst = ""
-    try:
-        start_dt = datetime.strptime(startdatum_str, "%Y-%m-%d").date()
-        # Zorg dat startdatum altijd een maandag is (naar vorige maandag afronden indien nodig)
-        start_monday = start_dt - timedelta(days=start_dt.weekday())
-        weken_aantal = int(intake.get("weken") or 8)
-        # Gekozen trainingsdagen → exacte datum per training, zodat de AI de
-        # dagen niet zelf verzint (di/zo werd anders ma/wo).
-        _dagen = _parse_weekdagen(intake.get("trainingsdagen", ""))
-        week_lines = []
-        for w in range(weken_aantal):
-            mon = start_monday + timedelta(weeks=w)
-            sun = mon + timedelta(days=6)
-            if _dagen:
-                # Week 1 kan mid-week starten (bijv. bij bijsturen): sla dagen vóór de
-                # startdatum over, zodat er nooit een datum vóór de start wordt gepland.
-                _dagen_week = [dg for dg in _dagen if (mon + timedelta(days=dg)) >= start_dt]
-                if not _dagen_week:
-                    continue
-                _paren = ", ".join(
-                    f"{_WEEKDAG_NL[dg]} {(mon + timedelta(days=dg)).strftime('%m/%d/%Y')}"
-                    for dg in _dagen_week)
-                week_lines.append(f"  Week {w+1} ({mon.strftime('%m/%d')} t/m "
-                                  f"{sun.strftime('%m/%d')}): trainingen op → {_paren}")
-            else:
-                week_lines.append(
-                    f"  Week {w+1}: maandag {mon.strftime('%m/%d/%Y')} t/m zondag {sun.strftime('%m/%d/%Y')}")
-        week_datums_tekst = "\n".join(week_lines)
-    except Exception:
-        pass
+    week_datums_tekst = _week_kalender_tekst(intake, "%m/%d/%Y")
 
     if op_tijd:
         regels = """KRITIEKE REGELS (SCHEMA OP TIJD):
