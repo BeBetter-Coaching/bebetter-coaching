@@ -4321,7 +4321,20 @@ elif page == "builder":
         st.markdown("<hr class='bb-divider'>", unsafe_allow_html=True)
 
         # ── KOLOM LINKS: Doel & Planning | RECHTS: Training & Niveau ─────────
-        col_l, col_r = st.columns(2, gap="large")
+        # Bij Nieuw: twee kolommen naast elkaar. Bij Verlengen/Bijsturen: essentie
+        # breed, en 'Training & niveau' ingeklapt (details komen uit het vorige schema).
+        if builder_mode == "nieuw":
+            col_l, col_r = st.columns(2, gap="large")
+        else:
+            col_l = st.container()
+            # Ingeklapt als de details al zijn teruggeladen; open als de intake nog
+            # leeg is (bijv. bijsturen zonder opgeslagen schema) zodat verplichte
+            # velden zichtbaar zijn i.p.v. een onverklaarbaar uitgeschakelde knop.
+            _details_leeg = not (st.session_state.get("builder_volume") or "").strip()
+            col_r = st.expander(
+                "📋 Details uit vorig schema — aanpassen indien nodig",
+                expanded=_details_leeg,
+            )
 
         with col_l:
             st.markdown("<div class='bb-intake-label'>Doel & planning</div>", unsafe_allow_html=True)
@@ -4681,7 +4694,9 @@ elif page == "builder":
                 zones = zones_override or zones
             else:
                 st.warning("Geen zones gevonden in FinalSurge voor deze atleet. Vul ze handmatig in.")
-                with st.expander("🔍 Debug API-respons"):
+                # Checkbox i.p.v. expander: in Verlengen/Bijsturen is col_r zelf al een
+                # expander, en Streamlit staat geen geneste expanders toe.
+                if st.checkbox("🔍 Debug API-respons", key="dbg_zones_resp"):
                     st.json(fetched)
                 zone_type = st.radio(
                     "Zones op basis van",
