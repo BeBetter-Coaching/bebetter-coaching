@@ -8,7 +8,7 @@ import csv
 import math
 import base64
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import intake_store
@@ -1066,15 +1066,36 @@ _WEEKDAG_MAP = {
 _WEEKDAG_NL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
 
 
+# Bereik-scheiders tussen twee dagen: "ma t/m zo", "ma tot zo", "ma-zo", "ma tm zo".
+_RANGE_SEP = re.compile(r"t\s*/?\s*m|\btot\b|[-–—]")
+
+
 def _parse_weekdagen(tekst: str) -> list[int]:
-    """Vind de trainingsdagen (0=maandag … 6=zondag) in vrije tekst, op volgorde."""
+    """Vind de trainingsdagen (0=maandag … 6=zondag) in vrije tekst.
+
+    Herkent losse dagen ("di/do", "ma wo vr") én bereiken ("ma t/m zo", "ma-vr"):
+    tussen twee dagtokens met een bereik-scheider worden de dagen ertussen ingevuld.
+    """
     t = (tekst or "").lower()
-    hits = []
+    tokens = []  # (start, end, daynum)
     for naam, num in _WEEKDAG_MAP.items():
         for m in re.finditer(rf"\b{naam}\b", t):
-            hits.append((m.start(), num))
-    # Weekdag-volgorde (maandag → zondag), ontdubbeld
-    return sorted({num for _, num in hits})
+            tokens.append((m.start(), m.end(), num))
+    tokens.sort()
+    if not tokens:
+        return []
+    result = set()
+    for i, (s, e, num) in enumerate(tokens):
+        result.add(num)
+        if i + 1 < len(tokens):
+            tussen = t[e:tokens[i + 1][0]]
+            if _RANGE_SEP.search(tussen):
+                a, b = num, tokens[i + 1][2]
+                if a <= b:
+                    result.update(range(a, b + 1))
+                else:  # wrap (bijv. za t/m di) — zeldzaam, maar netjes afhandelen
+                    result.update(list(range(a, 7)) + list(range(0, b + 1)))
+    return sorted(result)
 
 
 def build_csv_prompt(plan_tekst: str, intake: dict) -> str:
@@ -1087,8 +1108,7 @@ def build_csv_prompt(plan_tekst: str, intake: dict) -> str:
     startdatum_str = intake.get("startdatum", "")
     week_datums_tekst = ""
     try:
-        from datetime import datetime as _dt2, timedelta as _td2
-        start_dt = _dt2.strptime(startdatum_str, "%Y-%m-%d").date()
+        start_dt = datetime.strptime(startdatum_str, "%Y-%m-%d").date()
         # Zorg dat startdatum altijd een maandag is (naar vorige maandag afronden indien nodig)
         start_monday = start_dt - timedelta(days=start_dt.weekday())
         weken_aantal = int(intake.get("weken") or 8)
@@ -1100,9 +1120,14 @@ def build_csv_prompt(plan_tekst: str, intake: dict) -> str:
             mon = start_monday + timedelta(weeks=w)
             sun = mon + timedelta(days=6)
             if _dagen:
+                # Week 1 kan mid-week starten (bijv. bij bijsturen): sla dagen vóór de
+                # startdatum over, zodat er nooit een datum vóór de start wordt gepland.
+                _dagen_week = [dg for dg in _dagen if (mon + timedelta(days=dg)) >= start_dt]
+                if not _dagen_week:
+                    continue
                 _paren = ", ".join(
                     f"{_WEEKDAG_NL[dg]} {(mon + timedelta(days=dg)).strftime('%m/%d/%Y')}"
-                    for dg in _dagen)
+                    for dg in _dagen_week)
                 week_lines.append(f"  Week {w+1} ({mon.strftime('%m/%d')} t/m "
                                   f"{sun.strftime('%m/%d')}): trainingen op → {_paren}")
             else:
@@ -1194,8 +1219,8 @@ Date,ActivityType,WorkoutName,PlannedTimeMinutes,PlannedDistance,mi/km/m/y,Worko
 
 {regels}
 
-Het goedgekeurde schema:
-{plan_tekst[:4000]}"""
+Het goedgekeurde schema (VOLLEDIG — verwerk ALLE weken tot en met de laatste):
+{plan_tekst}"""
 
 
 # ---------------------------------------------------------------------------
