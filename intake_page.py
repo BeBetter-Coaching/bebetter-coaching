@@ -96,6 +96,11 @@ def render(athletes_by_group):
                     intake_store.save_intake_inbox(_inbox)
                     st.session_state["_intake_inbox"] = _inbox
                     st.rerun()
+            if st.checkbox("🔗 Aanvul-link (klant vult déze inzending verder aan)",
+                           key=f"inbox_aanvul_{_iid}"):
+                st.caption("Stuur deze link naar de klant. Het formulier opent voorgevuld met de "
+                           "antwoorden hierboven; verzenden werkt déze inzending bij (geen nieuwe).")
+                st.code(intake_form.aanvullink(_iid), language=None)
             st.divider()
 
     with st.expander("🔗 Deelbare intakelink (stuur naar een nieuwe klant)"):

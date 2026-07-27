@@ -1388,7 +1388,7 @@ _intake_q = st.query_params.get("intake", "")
 if _intake_q:
     import intake_form
     if intake_form.token_geldig(_intake_q):
-        intake_form.render_publieke_intake()
+        intake_form.render_publieke_intake(st.query_params.get("resume", ""))
         st.stop()
 
 if not _check_password():
