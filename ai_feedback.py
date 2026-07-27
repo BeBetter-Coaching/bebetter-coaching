@@ -473,19 +473,26 @@ Stijl:
 - Begin met een persoonlijke aanhef ("Hey Kai,") en eindig warm (bijv. "Trots op je!" of "We gaan door 💪").
 - Positief en oprecht, maar eerlijk: benoem concreet wat goed gaat (met een cijfer of voorbeeld als dat kan) en geef één helder aandachtspunt of doel voor de komende tijd, opbouwend gebracht.
 - Vertaal data naar wat het bétekent voor de atleet, geen tabellen of jargon. "Je loopt hetzelfde tempo bij een lagere hartslag, dus je bent duidelijk fitter geworden" i.p.v. "conditie-index gestegen".
-- Lengte: 4 tot 8 zinnen. Prettig leesbaar als appje, gerust een witregel ertussen.
+- Lengte: 6 tot 10 zinnen. Prettig leesbaar als appje, gerust een witregel ertussen.
 - Af en toe een emoji, niet overdreven.
 - Nederlands, informeel.
-- NOOIT een streepje of koppelteken als gedachtestreepje of opsomming; GEEN aanhalingstekens om de tekst; begin direct met de aanhef."""
+- NOOIT een streepje of koppelteken als gedachtestreepje of opsomming; GEEN aanhalingstekens om de tekst; begin direct met de aanhef.
+
+BELANGRIJKSTE ONDERDEEL — een onderbouwde koers voor de komende weken:
+Analyseer de cijfers eerst grondig (volume, conditie-index, compliance, gevoel, RPE, races, klachten in de notities) en TOEN vs NU. Kies daarna precies ÉÉN van deze drie richtingen en benoem die helder aan de atleet, met een korte uitleg waaróm (verwijs naar de waardes waar het kan):
+1. DOORBOUWEN (progressie): conditie-index omhoog, gevoel goed/stabiel, RPE niet gestegen bij gelijk of hoger volume, hoge compliance, geen klachten. → de komende weken volume en/of intensiteit rustig verder opbouwen.
+2. CONSOLIDEREN (vasthouden): gemengd of vlak beeld, winst die afvlakt, of net na een flinke sprong. → even stabiliseren op dit niveau, kwaliteit en consistentie borgen, nog geen extra belasting.
+3. BELASTING TERUG (herstel): gevoel slechter, RPE omhoog bij gelijk of lager volume, conditie-index omlaag, dalende compliance door vermoeidheid, of klachten/blessuresignalen in de notities. → de komende weken bewust een stap terug in volume/intensiteit om te herstellen.
+Wees eerlijk: als de data om rust vraagt, verpak dat positief maar draai er niet omheen. Kies nooit twee richtingen; de analyse bepaalt welke."""
 
 
 def generate_athlete_message(context: str, first_name: str) -> str:
-    """Genereer een persoonlijk, deelbaar WhatsApp-bericht (terugblik) áán de atleet."""
-    prompt = f"""Schrijf een persoonlijk WhatsApp-bericht van Jip aan {first_name} met een terugblik op de afgelopen 3 maanden, op basis van onderstaande data.
+    """Genereer een persoonlijk, deelbaar WhatsApp-bericht (terugblik + koers) áán de atleet."""
+    prompt = f"""Schrijf een persoonlijk WhatsApp-bericht van Jip aan {first_name} met een terugblik op de afgelopen 3 maanden én een onderbouwde koers voor de komende weken, op basis van onderstaande data.
 
 {context}
 
-Spreek {first_name} rechtstreeks aan. Benoem concreet wat goed ging (met een cijfer/voorbeeld waar het kan) en geef één opbouwend aandachtspunt of doel voor de komende tijd. Warm, eerlijk en motiverend."""
+Spreek {first_name} rechtstreeks aan. Benoem concreet wat goed ging (met een cijfer/voorbeeld waar het kan). Doe daarna, ná een gedegen analyse van de waardes hierboven, een heldere suggestie voor de komende weken: doorbouwen, consolideren, of juist een stap terug in belasting. Leg kort uit waarom die keuze bij zijn/haar cijfers past. Warm, eerlijk en motiverend."""
     response = create_message(
         model="claude-opus-4-5",
         max_tokens=700,
