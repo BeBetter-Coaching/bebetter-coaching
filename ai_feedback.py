@@ -466,6 +466,35 @@ Vergelijk TOEN met NU: is er progressie? Wat gaat goed, waar ligt {naam} het bes
     return _clean_text(response.content[0].text)
 
 
+_KLANTBERICHT_SYSTEM = """Je bent hardloopcoach Jip en je stuurt een persoonlijk WhatsApp-bericht aan je atleet met een terugblik op de afgelopen periode. Dit is GEEN interne analyse maar een warm, motiverend appje dat de atleet zelf leest.
+
+Stijl:
+- Informeel en menselijk, alsof je even een appje stuurt. Spreek de atleet aan met de voornaam en in de je-vorm (nooit u).
+- Begin met een persoonlijke aanhef ("Hey Kai,") en eindig warm (bijv. "Trots op je!" of "We gaan door 💪").
+- Positief en oprecht, maar eerlijk: benoem concreet wat goed gaat (met een cijfer of voorbeeld als dat kan) en geef één helder aandachtspunt of doel voor de komende tijd, opbouwend gebracht.
+- Vertaal data naar wat het bétekent voor de atleet, geen tabellen of jargon. "Je loopt hetzelfde tempo bij een lagere hartslag, dus je bent duidelijk fitter geworden" i.p.v. "conditie-index gestegen".
+- Lengte: 4 tot 8 zinnen. Prettig leesbaar als appje, gerust een witregel ertussen.
+- Af en toe een emoji, niet overdreven.
+- Nederlands, informeel.
+- NOOIT een streepje of koppelteken als gedachtestreepje of opsomming; GEEN aanhalingstekens om de tekst; begin direct met de aanhef."""
+
+
+def generate_athlete_message(context: str, first_name: str) -> str:
+    """Genereer een persoonlijk, deelbaar WhatsApp-bericht (terugblik) áán de atleet."""
+    prompt = f"""Schrijf een persoonlijk WhatsApp-bericht van Jip aan {first_name} met een terugblik op de afgelopen 3 maanden, op basis van onderstaande data.
+
+{context}
+
+Spreek {first_name} rechtstreeks aan. Benoem concreet wat goed ging (met een cijfer/voorbeeld waar het kan) en geef één opbouwend aandachtspunt of doel voor de komende tijd. Warm, eerlijk en motiverend."""
+    response = create_message(
+        model="claude-opus-4-5",
+        max_tokens=700,
+        system=_KLANTBERICHT_SYSTEM,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _clean_text(response.content[0].text)
+
+
 def generate_feedback(workout_data: dict) -> str:
     """Genereer het eerste feedback-concept op een training."""
     context, first_name = _build_workout_context(workout_data)

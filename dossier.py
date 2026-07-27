@@ -663,6 +663,27 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
                     st.error(f"Mislukt: {e}")
             st.rerun()
 
+    # ── Klantbericht (WhatsApp): dezelfde data, maar persoonlijk áán de atleet ──
+    _voornaam = (naam or "").split()[0] if naam else naam
+    _msg_key = f"dossier_klantbericht_{user_key}"
+    _msg = st.session_state.get(_msg_key)
+    with ec2:
+        if st.button("📲 Klantbericht (WhatsApp)" if not _msg else "🔄 Opnieuw schrijven",
+                     key=f"gen_msg_{user_key}",
+                     help="Zet dezelfde trainingsdata om in een warm, persoonlijk appje "
+                          "áán de atleet — klaar om te kopiëren naar WhatsApp."):
+            import ai_feedback
+            with st.spinner(f"Bericht voor {_voornaam} schrijven…"):
+                try:
+                    _ctx = evaluatie_context(data["log"], _notes().get(user_key, []), naam)
+                    st.session_state[_msg_key] = ai_feedback.generate_athlete_message(_ctx, _voornaam)
+                except Exception as e:
+                    st.error(f"Mislukt: {e}")
+            st.rerun()
+    if _msg:
+        st.caption(f"📩 Persoonlijk bericht voor {_voornaam} — kopieer voor WhatsApp:")
+        st.code(_msg, language=None)
+
     # ── Grafieken ──
     c_vol, c_trend = st.columns(2)
     with c_vol:
