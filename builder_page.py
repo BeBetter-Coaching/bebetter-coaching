@@ -397,15 +397,25 @@ def render(athletes_by_group):
                 st.session_state["_builder_last_athlete"] = athlete_key_selected
 
             # ── Koppeling met intake-module: gegevens automatisch inladen ──
+            # Leeskant-unificatie: kijk in BEIDE bakjes (intake-module intakes.json
+            # + bouwer-snapshot laatste_intakes.json) en toon het NIEUWSTE record,
+            # zodat een intake nooit meer 'onvindbaar' lijkt omdat hij in het andere
+            # bakje staat. Puur lezen; de opslag blijft ongewijzigd.
             if "intakes" not in st.session_state:
                 st.session_state["intakes"] = intake_store.load_intakes()
-            _saved_ik = st.session_state["intakes"].get(athlete_key_selected)
-            # Dossier-intake in ALLE modi aanbieden: ook bij verlengen/bijsturen wil je
-            # de bestaande intake kunnen inladen als er (nog) geen bouwer-schema bewaard is.
+            if "laatste_intakes" not in st.session_state:
+                st.session_state["laatste_intakes"] = intake_store.load_laatste_intakes()
+            _saved_ik = intake_store.nieuwste_intake(
+                st.session_state["intakes"].get(athlete_key_selected),
+                st.session_state["laatste_intakes"].get(athlete_key_selected),
+            )
+            # In ALLE modi aanbieden: ook bij verlengen/bijsturen wil je de bestaande
+            # intake kunnen inladen als er (nog) geen recenter record is.
             if _saved_ik:
+                _saved_datum = intake_store._intake_ts(_saved_ik) or "?"
                 if st.button(
                     f"📥 Intake van {_saved_ik.get('naam') or selected_athlete_name.split()[0]} laden "
-                    f"(bijgewerkt {_saved_ik.get('updated_at', '?')})",
+                    f"(bijgewerkt {_saved_datum})",
                     key="btn_load_intake",
                     use_container_width=True,
                 ):

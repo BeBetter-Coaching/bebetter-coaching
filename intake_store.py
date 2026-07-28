@@ -260,6 +260,37 @@ def save_intakes(intakes: dict) -> tuple[bool, str]:
     return _save_json("intakes.json", _INTAKES_LOCAL, intakes, "Update intakes via app")
 
 
+def _intake_ts(record: dict | None) -> str:
+    """Normaliseer het tijdstempel van een intake-record naar YYYY-MM-DD.
+
+    Intake-module-records dragen 'updated_at' (YYYY-MM-DD); bouwer-snapshots
+    dragen '_opgeslagen' (ISO datetime). Voor een eerlijke vergelijking knippen
+    we beide op de datum af.
+    """
+    if not record:
+        return ""
+    return (record.get("updated_at") or (record.get("_opgeslagen") or "")[:10] or "")
+
+
+def nieuwste_intake(intake_module: dict | None, bouwer_snapshot: dict | None) -> dict | None:
+    """Geef het MEEST RECENTE van twee intake-records terug (of wat er bestaat).
+
+    LEEST NIETS en verandert niets aan de opslag — puur kiezen tussen twee al
+    ingeladen records. Doel: één intake-waarheid tonen, ongeacht in welk bakje
+    ('intakes.json' vs 'laatste_intakes.json') de laatste versie belandde, zodat
+    'de intake bestaat wél maar verschijnt niet' niet meer voorkomt. Geeft het
+    hele nieuwste record terug (geen veld-voor-veld-menging → voorspelbaar).
+    """
+    if intake_module and not bouwer_snapshot:
+        return intake_module
+    if bouwer_snapshot and not intake_module:
+        return bouwer_snapshot
+    if not intake_module and not bouwer_snapshot:
+        return None
+    return (intake_module if _intake_ts(intake_module) >= _intake_ts(bouwer_snapshot)
+            else bouwer_snapshot)
+
+
 # ---------------------------------------------------------------------------
 # On-hold
 # ---------------------------------------------------------------------------
