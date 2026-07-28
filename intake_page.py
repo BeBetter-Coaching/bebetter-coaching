@@ -26,6 +26,14 @@ def render(athletes_by_group):
     if "intakes" not in st.session_state:
         st.session_state["intakes"] = intake_store.load_intakes()
     intakes = st.session_state["intakes"]
+    # Leeskant-unificatie: ook de bouwer-snapshots erbij, zodat een atleet die
+    # alleen via een gebouwd schema bekend is hier niet 'leeg' lijkt. Puur lezen.
+    if "laatste_intakes" not in st.session_state:
+        st.session_state["laatste_intakes"] = intake_store.load_laatste_intakes()
+    _laatste_intakes = st.session_state["laatste_intakes"]
+
+    def _nieuwste_ik(key: str) -> dict:
+        return intake_store.nieuwste_intake(intakes.get(key), _laatste_intakes.get(key)) or {}
 
     # ── Self-service intake: inbox met inzendingen + deelbare link ──
     import intake_form
@@ -215,15 +223,16 @@ def render(athletes_by_group):
             ik_athlete_name = st.selectbox("Atleet *", options=list(athlete_options.keys()), key="ik_athlete")
             ik_athlete_key = athlete_options[ik_athlete_name]
         with status_col:
-            existing_ik = intakes.get(ik_athlete_key)
+            existing_ik = _nieuwste_ik(ik_athlete_key)
             if existing_ik:
-                st.success(f"✅ Intake aanwezig — laatst bijgewerkt {existing_ik.get('updated_at', '?')}")
+                st.success(f"✅ Intake aanwezig — laatst bijgewerkt "
+                           f"{intake_store._intake_ts(existing_ik) or '?'}")
             else:
                 st.info("Nog geen intake voor deze atleet.")
 
     # Prefill widget-keys éénmalig per atleet-wissel
     if st.session_state.get("ik_loaded_for") != ik_athlete_key:
-        _src = intakes.get(ik_athlete_key, {})
+        _src = _nieuwste_ik(ik_athlete_key)
         st.session_state["ik_naam"]            = _src.get("naam", ik_athlete_name.split()[0])
         st.session_state["ik_leeftijd"]        = _src.get("leeftijd", "")
         st.session_state["ik_horloge"]         = _src.get("horloge", "")

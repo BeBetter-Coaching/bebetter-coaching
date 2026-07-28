@@ -2895,12 +2895,19 @@ elif page == "dossier":
 
         if st.session_state.get("intakes") is None:
             st.session_state["intakes"] = intake_store.load_intakes()
+        # Leeskant-unificatie: toon de nieuwste intake uit beide bakjes, zodat een
+        # atleet die alleen via een gebouwd schema bekend is niet 'Geen intake' toont.
+        if "laatste_intakes" not in st.session_state:
+            st.session_state["laatste_intakes"] = intake_store.load_laatste_intakes()
         if "schema_on_hold" not in st.session_state:
             st.session_state["schema_on_hold"] = intake_store.load_on_hold()
 
         dossier.render_dossier(
             _datleet,
-            st.session_state["intakes"].get(_dkey),
+            intake_store.nieuwste_intake(
+                st.session_state["intakes"].get(_dkey),
+                st.session_state["laatste_intakes"].get(_dkey),
+            ),
             st.session_state["schema_on_hold"].get(_dkey),
         )
 
