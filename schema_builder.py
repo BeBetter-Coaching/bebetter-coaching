@@ -780,6 +780,74 @@ Bij blessurehistorie: introduceer kwaliteitstraining 1 week later dan normaal.""
 # Intake → prompt bouwen
 # ---------------------------------------------------------------------------
 
+def _harde_eisen_secties(intake: dict) -> tuple[str, str]:
+    """Bouw het HARDE-EISEN-blok + de WEEKKALENDER uit de intake.
+
+    Gedeeld door build_prompt (plangeneratie) én chat_about_plan (finetunen),
+    zodat de AI tijdens het sparren EXACT dezelfde constraints kent als bij het
+    genereren — anders 'vergeet' de chat de trainingsdagen/variatie en gaat zelf
+    dagen verschuiven of waardes invullen.
+    """
+    trainingsdagen = intake.get("trainingsdagen", "")
+    coach_notitie = intake.get("coach_notitie", "")
+    bijstuur_instructie = ""
+    if coach_notitie:
+        _cn_regels = coach_notitie.splitlines()
+        if _cn_regels and _cn_regels[0].startswith("⚠️ BIJSTURING SCHEMA"):
+            bijstuur_instructie = _cn_regels[0].split("—", 1)[-1].strip()
+
+    harde_regels = []
+    _dagen_nums = _parse_weekdagen(trainingsdagen)
+    if _dagen_nums:
+        _dagen_namen = ", ".join(_WEEKDAG_NL[d] for d in _dagen_nums)
+        harde_regels.append(
+            f"TRAININGSDAGEN: plan op ELKE genoemde trainingsdag ({_dagen_namen}) een "
+            f"training — sla GEEN enkele genoemde dag over en verzin geen andere dagen. "
+            f"Een genoemde dag zónder training is FOUT. Noemt de intake dubbele sessies "
+            f"op een dag (bijv. '2x per dag' of 'ochtend + avond'), plan die dan ook. "
+            f"In een deload-/herstelweek verlaag je de OMVANG, niet het aantal dagen."
+        )
+    harde_regels.append(
+        "VARIATIE: elke week een mix van trainingsvormen (rustig/drempel/interval/"
+        "snelheid/fartlek) passend bij de fase. NOOIT meerdere eentonige duurlopen in "
+        "dezelfde zone achter elkaar."
+    )
+    if bijstuur_instructie:
+        harde_regels.append(
+            f"BIJSTURING/HERSTEL (leidend): {bijstuur_instructie} "
+            "Bouw week 1 bewust conservatief op, introduceer GEEN zware blokken of "
+            "intervallen direct, en hervat variatie/intensiteit pas geleidelijk over "
+            "de weken. Dit gaat vóór op een 'normale' opbouw."
+        )
+    _mode = intake.get("mode", "")
+    if _mode == "verlengen":
+        harde_regels.append(
+            "VERVOLGBLOK: dit schema is een verlenging die naadloos aansluit op het "
+            "lopende schema. Bouw voort op de laatst gedane trainingen (trainingslog); "
+            "begin NIET opnieuw met een basisfase, maar zet de opbouw richting het doel voort."
+        )
+    elif _mode == "bijsturen" and not bijstuur_instructie:
+        harde_regels.append(
+            "BIJSTURING: dit schema vervangt de resterende weken. Sluit aan op wat de "
+            "atleet recent aantoonbaar deed (trainingslog) en bouw daarvandaan verder."
+        )
+    harde_eisen_sectie = (
+        "━━━ HARDE EISEN — VERPLICHT, GAAN VOOR OP ALLE METHODOLOGIE ━━━\n"
+        + "\n".join(f"{i+1}. {r}" for i, r in enumerate(harde_regels))
+        + "\n\n"
+    )
+
+    _week_kalender = _week_kalender_tekst(intake, "%d-%m-%Y")
+    week_kalender_sectie = (
+        "━━━ WEEKKALENDER — GEBRUIK EXACT DEZE DATUMS EN DAGNAMEN ━━━\n"
+        "De app heeft de datums en bijbehorende weekdagen al berekend. Gebruik in het\n"
+        "hele plan EXACT deze dagnaam-bij-datum-combinaties; reken zelf NOOIT een\n"
+        "weekdag uit een datum uit.\n" + _week_kalender + "\n\n"
+    ) if _week_kalender else ""
+
+    return harde_eisen_sectie, week_kalender_sectie
+
+
 def build_prompt(intake: dict) -> str:
     """Zet intake-formulier om naar een Claude-prompt."""
     naam = intake.get("naam", "de atleet")
@@ -808,13 +876,12 @@ def build_prompt(intake: dict) -> str:
     tussenraces = intake.get("tussenraces", "")
     coach_notitie = intake.get("coach_notitie", "")
     # Bijstuur-/herstelinstructie eruit lichten: main.py zet die als eerste regel
-    # "⚠️ BIJSTURING SCHEMA — ..." in de coach-notitie. Die hoort als HARDE EIS
-    # bovenaan, niet als losse bullet tussen de rest.
-    bijstuur_instructie = ""
+    # "⚠️ BIJSTURING SCHEMA — ..." in de coach-notitie. Die regel wordt hier uit
+    # de notitie gehaald (hij komt als HARDE EIS bovenaan via _harde_eisen_secties),
+    # zodat hij niet dubbel als losse bullet tussen de rest belandt.
     if coach_notitie:
         _cn_regels = coach_notitie.splitlines()
         if _cn_regels and _cn_regels[0].startswith("⚠️ BIJSTURING SCHEMA"):
-            bijstuur_instructie = _cn_regels[0].split("—", 1)[-1].strip()
             coach_notitie = "\n".join(_cn_regels[1:]).strip()
     wat_werkte = intake.get("wat_werkte", "")
     wat_niet_werkte = intake.get("wat_niet_werkte", "")
@@ -886,57 +953,9 @@ def build_prompt(intake: dict) -> str:
 
     tijd_override_sectie = _TIJD_OVERRIDE if op_tijd else ""
 
-    # ── HARDE EISEN — bovenaan, met voorrang op de methodologie ──
-    harde_regels = []
-    _dagen_nums = _parse_weekdagen(trainingsdagen)
-    if _dagen_nums:
-        _dagen_namen = ", ".join(_WEEKDAG_NL[d] for d in _dagen_nums)
-        harde_regels.append(
-            f"TRAININGSDAGEN: plan op ELKE genoemde trainingsdag ({_dagen_namen}) een "
-            f"training — sla GEEN enkele genoemde dag over en verzin geen andere dagen. "
-            f"Een genoemde dag zónder training is FOUT. Noemt de intake dubbele sessies "
-            f"op een dag (bijv. '2x per dag' of 'ochtend + avond'), plan die dan ook. "
-            f"In een deload-/herstelweek verlaag je de OMVANG, niet het aantal dagen."
-        )
-    harde_regels.append(
-        "VARIATIE: elke week een mix van trainingsvormen (rustig/drempel/interval/"
-        "snelheid/fartlek) passend bij de fase. NOOIT meerdere eentonige duurlopen in "
-        "dezelfde zone achter elkaar."
-    )
-    if bijstuur_instructie:
-        harde_regels.append(
-            f"BIJSTURING/HERSTEL (leidend): {bijstuur_instructie} "
-            "Bouw week 1 bewust conservatief op, introduceer GEEN zware blokken of "
-            "intervallen direct, en hervat variatie/intensiteit pas geleidelijk over "
-            "de weken. Dit gaat vóór op een 'normale' opbouw."
-        )
-    _mode = intake.get("mode", "")
-    if _mode == "verlengen":
-        harde_regels.append(
-            "VERVOLGBLOK: dit schema is een verlenging die naadloos aansluit op het "
-            "lopende schema. Bouw voort op de laatst gedane trainingen (trainingslog); "
-            "begin NIET opnieuw met een basisfase, maar zet de opbouw richting het doel voort."
-        )
-    elif _mode == "bijsturen" and not bijstuur_instructie:
-        harde_regels.append(
-            "BIJSTURING: dit schema vervangt de resterende weken. Sluit aan op wat de "
-            "atleet recent aantoonbaar deed (trainingslog) en bouw daarvandaan verder."
-        )
-    harde_eisen_sectie = (
-        "━━━ HARDE EISEN — VERPLICHT, GAAN VOOR OP ALLE METHODOLOGIE ━━━\n"
-        + "\n".join(f"{i+1}. {r}" for i, r in enumerate(harde_regels))
-        + "\n\n"
-    )
-
-    # Exacte weekkalender (datum + dagnaam) — zodat de AI de weekdagen NIET zelf
-    # uitrekent (voorkwam 'zondag 27 juli' terwijl dat een maandag is).
-    _week_kalender = _week_kalender_tekst(intake, "%d-%m-%Y")
-    week_kalender_sectie = (
-        "━━━ WEEKKALENDER — GEBRUIK EXACT DEZE DATUMS EN DAGNAMEN ━━━\n"
-        "De app heeft de datums en bijbehorende weekdagen al berekend. Gebruik in het\n"
-        "hele plan EXACT deze dagnaam-bij-datum-combinaties; reken zelf NOOIT een\n"
-        "weekdag uit een datum uit.\n" + _week_kalender + "\n\n"
-    ) if _week_kalender else ""
+    # ── HARDE EISEN + WEEKKALENDER — bovenaan, voorrang op de methodologie ──
+    # Gedeeld met chat_about_plan zodat het finetunen dezelfde constraints kent.
+    harde_eisen_sectie, week_kalender_sectie = _harde_eisen_secties(intake)
 
     return f"""{harde_eisen_sectie}{week_kalender_sectie}Hier is de intake voor een nieuw trainingsschema:
 
@@ -1024,6 +1043,14 @@ REGELS:
 - Als de coach om aanpassingen vraagt aan het plan: voer ze uit en geef het VOLLEDIGE bijgewerkte plan terug.
 - Schrijf in het Nederlands.
 
+━━━ NIETS VERGETEN, NIETS ZELF INVULLEN ━━━
+
+- Wijzig UITSLUITEND wat de coach in dit bericht expliciet vraagt. Laat al het andere (weken, dagen, afstanden, zones, opbouw) EXACT staan zoals het in het huidige plan staat. Verander nooit iets dat niet gevraagd is.
+- Behoud ALLE eerder in dit gesprek afgesproken aanpassingen. Draai een eerdere wijziging nooit terug tenzij de coach daar nu om vraagt. Het huidige plan hierboven ís de laatste stand — bouw daarop voort.
+- Respecteer bij ELKE aanpassing de HARDE EISEN en de WEEKKALENDER bovenaan: de trainingsdagen liggen vast (verschuif een training nooit naar een andere weekdag tenzij de coach dat expliciet vraagt), variatie blijft verplicht, en gebruik altijd de exacte datums/dagnamen uit de kalender.
+- Verzin NOOIT ontbrekende gegevens (tempo's, afstanden, hartslagen, data). Weet je iets niet zeker of ontbreekt info, vraag het de coach in plaats van iets aan te nemen.
+- Verlies bij een kleine wijziging nooit de rest van het plan: geef altijd het VOLLEDIGE plan met alle weken terug, inclusief de ongewijzigde delen.
+
 ━━━ KRITIEKE REGEL — PLAN UPDATES ━━━
 
 Als je het plan aanpast (ook kleine aanpassingen), doe dan ALTIJD het volgende:
@@ -1059,9 +1086,17 @@ def chat_about_plan(
     zone_type = intake.get("zone_type", "tempo")
     uploaded_summary = intake.get("uploaded_summary", "")
 
-    context = f"""ATLEET: {naam}
+    # Dezelfde HARDE EISEN + WEEKKALENDER als bij de plangeneratie, zodat de AI
+    # tijdens het finetunen niet de trainingsdagen/variatie vergeet of dagen
+    # verschuift. Deze constraints blijven leidend, ook bij losse aanpassingen.
+    harde_eisen_sectie, week_kalender_sectie = _harde_eisen_secties(intake)
+
+    context = f"""{harde_eisen_sectie}{week_kalender_sectie}ATLEET: {naam}
 DOEL: {doel}
-ZONES ({zone_type}): {zones}"""
+ZONES ({zone_type}): {zones}
+TRAININGSDAGEN: {intake.get("trainingsdagen", "")}
+HUIDIG VOLUME: {intake.get("huidig_volume", "")}
+TIJD PER TRAINING: {intake.get("tijd_per_training", "")}"""
     if uploaded_summary:
         context += f"\nEXTRA CONTEXT: {uploaded_summary[:1000]}"
 
