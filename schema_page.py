@@ -133,7 +133,8 @@ def render():
                     st.session_state["builder_naam"] = r["first_name"]
                     st.session_state["builder_step"] = 1
                     for k in ["builder_plan", "builder_csv", "builder_intake",
-                              "builder_workouts", "builder_chat_history"]:
+                              "builder_workouts", "builder_chat_history",
+                              "builder_import_done", "schema_bericht"]:
                         st.session_state.pop(k, None)
                     go_to("builder")
             with c5:

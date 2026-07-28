@@ -3116,7 +3116,8 @@ elif page == "builder":
                           "builder_ondergrond", "builder_race_prioriteit",
                           "builder_tussenraces", "builder_coach_notitie",
                           "builder_wat_werkte", "builder_wat_niet_werkte",
-                          "builder_mode", "builder_dagen_sel"]:
+                          "builder_mode", "builder_dagen_sel",
+                          "builder_import_done", "schema_bericht"]:
                     st.session_state.pop(k, None)
                 _clear_builder_state()
                 st.rerun()
@@ -3889,23 +3890,6 @@ elif page == "builder":
                     st.session_state["builder_csv"] = None
                     _set_step(3)
 
-            # WhatsApp-bericht voor de atleet — kort, persoonlijk, met de
-            # bijzonderheden van dit schema. Kopieer-knop (zelfde werkwijze als de
-            # feedback-handover); de app verstuurt niets zelf.
-            with st.expander("💬 WhatsApp-bericht voor de atleet"):
-                if st.button("Genereer bericht", key="btn_schema_msg"):
-                    with st.spinner("Bericht schrijven…"):
-                        try:
-                            _naam = (st.session_state.get("builder_intake") or {}).get("athlete_name", "")
-                            st.session_state["schema_bericht"] = schema_builder.genereer_schema_bericht(
-                                st.session_state.get("builder_plan", ""), _naam,
-                            )
-                        except Exception as e:
-                            st.error(f"Kon geen bericht maken: {e}")
-                if st.session_state.get("schema_bericht"):
-                    st.caption("Kopieer en plak in WhatsApp:")
-                    st.code(st.session_state["schema_bericht"], language=None)
-
         with col_chat:
             st.markdown("**Sparren met AI**")
             st.caption("Stel vragen of vraag aanpassingen — de AI past het plan direct aan.")
@@ -4262,12 +4246,33 @@ elif page == "builder":
 
                 if not errors:
                     st.balloons()
+                    # Onthoud dat de import klaar is, zodat het WhatsApp-bericht en de
+                    # reset-knop hieronder blijven staan (ook na een rerun, bijv. bij
+                    # het genereren van het bericht).
+                    st.session_state["builder_import_done"] = True
 
-                    # Reset voor nieuw schema
-                    st.markdown("---")
-                    if st.button("📋 Nieuw schema bouwen", type="primary"):
-                        for k in ["builder_step", "builder_intake", "builder_plan",
-                                  "builder_csv", "builder_workouts", "builder_mode",
-                                  "builder_dagen_sel"]:
-                            st.session_state.pop(k, None)
-                        _set_step(1)
+        # ── Ná een geslaagde import: WhatsApp-bericht + nieuw-schema-knop ──
+        # Top-level in stap 4 (niet in de knop-handler) zodat het blijft staan.
+        if st.session_state.get("builder_import_done"):
+            st.markdown("---")
+            # WhatsApp-bericht voor de atleet — kort, persoonlijk, met de
+            # bijzonderheden van dit schema. Kopieer-knop (app verstuurt niets zelf).
+            with st.expander("💬 WhatsApp-bericht voor de atleet", expanded=True):
+                if st.button("Genereer bericht", key="btn_schema_msg"):
+                    with st.spinner("Bericht schrijven…"):
+                        try:
+                            st.session_state["schema_bericht"] = schema_builder.genereer_schema_bericht(
+                                st.session_state.get("builder_plan", ""), athlete_name,
+                            )
+                        except Exception as e:
+                            st.error(f"Kon geen bericht maken: {e}")
+                if st.session_state.get("schema_bericht"):
+                    st.caption("Kopieer en plak in WhatsApp:")
+                    st.code(st.session_state["schema_bericht"], language=None)
+
+            if st.button("📋 Nieuw schema bouwen", type="primary"):
+                for k in ["builder_step", "builder_intake", "builder_plan",
+                          "builder_csv", "builder_workouts", "builder_mode",
+                          "builder_dagen_sel", "builder_import_done", "schema_bericht"]:
+                    st.session_state.pop(k, None)
+                _set_step(1)
