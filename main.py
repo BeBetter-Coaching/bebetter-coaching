@@ -13,6 +13,7 @@ import intake_store
 import dossier
 import admin
 import builder_page
+import documenten_page
 import intake_page
 import puls_page
 import races_page
@@ -1242,6 +1243,7 @@ COACH_ATHLETE_KEY = {a["user_key"]: a.get("coach_athlete_key", a["user_key"])
 _VALID_PAGES = {
     "home", "admin", "puls", "feedback_groups", "feedback", "backfill_builder",
     "intake", "races", "schema", "atleten", "dossier", "builder", "strippenkaart",
+    "documenten",
 }
 
 # Herstel de pagina uit de URL (?page=...). Bij sessieverlies (mobiel dat de
@@ -1319,6 +1321,7 @@ if page == "home":
         "intake": ("📝", "Intake", "Hier begint alles — leg doel, niveau en achtergrond van een nieuwe atleet vast. Wordt automatisch ingeladen bij het bouwen.", "Nieuwe atleet", "btn_intake", "intake", "secondary", False),
         "builder": ("🔨", "Schema bouwen", "Genereer een trainingsplan op doel, niveau en datum. Direct importeren in FinalSurge, inclusief workout builder.", "Planning", "btn_builder", "builder", "secondary", False),
         "atleten": ("👤", "Atleet-dossiers", "Alles per atleet op één plek: intake, notities, compliance, trends, races en zones.", "Overzicht", "btn_atleten", "atleten", "secondary", False),
+        "documenten": ("📄", "Documenten", "Genereer een strak, persoonlijk document (handleiding, wedstrijd, voeding, kracht) voor een atleet. De AI schrijft de persoonlijke stukjes in de huisstijl.", "Per atleet", "btn_documenten", "documenten", "secondary", False),
         "backfill": ("🔧", "Builder bijvullen & zones", "Vul de workout builder voor bestaande trainingen, of zet een heel schema om tussen tempo en hartslag.", "Onderhoud", "btn_backfill", "backfill_builder", "secondary", False),
         "strippenkaart": ("🎟️", "Strippenkaart", "Losse-trainingen-klanten: tel per training een strip af en zie wie er nog hoeveel over heeft, met een kant-en-klaar appje.", "Per training", "btn_strip", "strippenkaart", "secondary", False),
     }
@@ -1656,7 +1659,7 @@ if page == "home":
     _groepen = [
         ("Dagelijks", ["feedback"]),
         ("Wekelijks", ["schema", "builder", "puls", "races"]),
-        ("Per atleet", ["intake", "atleten"]),
+        ("Per atleet", ["intake", "atleten", "documenten"]),
         ("Beheer & onderhoud", ["admin", "strippenkaart", "backfill"]),
     ]
 
@@ -2783,6 +2786,15 @@ elif page == "races":
 elif page == "schema":
     module_header("Schema-verloop", "📅")
     schema_page.render()
+
+
+# ===========================================================================
+# PAGINA: DOCUMENTEN — genereer strakke, persoonlijke atleet-documenten
+# ===========================================================================
+
+elif page == "documenten":
+    module_header("Documenten", "📄")
+    documenten_page.render(_all_athletes)
 
 
 # ===========================================================================

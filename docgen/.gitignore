@@ -1,0 +1,3 @@
+# gegenereerde voorbeeld-PDF's (output, geen bron)
+*.pdf
+__pycache__/
