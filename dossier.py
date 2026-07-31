@@ -545,6 +545,30 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
         else:
             st.caption("Nog geen notities.")
 
+    # ── Documenten-logboek (welke PDF's deze atleet ontving) ──
+    try:
+        _docs_log = intake_store.load_documenten().get(user_key, [])
+    except Exception:
+        _docs_log = []
+    _docs_titel = f"📄 Documenten ({len(_docs_log)})" if _docs_log else "📄 Documenten"
+    with st.expander(_docs_titel):
+        st.caption("Wat deze atleet eerder ontving via de Documenten-module. Gaat mee als "
+                   "context bij een nieuw document, zodat de AI niet hetzelfde nog eens geeft.")
+        if _docs_log:
+            for d in _docs_log:
+                _ond = f" — {html.escape(d.get('onderwerp', ''))}" if d.get("onderwerp") else ""
+                st.markdown(
+                    f"<div style='background:#0E2547; border:1px solid #1E3A66; border-radius:10px; "
+                    f"padding:0.5rem 0.9rem; margin-bottom:0.35rem;'>"
+                    f"<span style='color:#5EE6EB; font-size:0.7rem; font-weight:700;'>"
+                    f"{html.escape(d.get('datum', ''))}</span> "
+                    f"<span style='color:#EAF2FF; font-size:0.88rem;'>"
+                    f"{html.escape(d.get('type', ''))}{_ond}</span></div>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.caption("Nog geen documenten gegenereerd voor deze atleet.")
+
     # ── Coach-geheugen (meegroeiend feedback-profiel) ──
     with st.expander("🧠 Coach-geheugen (wat de AI over deze atleet weet)"):
         st.caption("Wordt automatisch bijgewerkt bij elke feedback die je post en gaat mee "

@@ -16,6 +16,8 @@ import tempfile
 
 import streamlit as st
 
+import intake_store
+
 _DGDIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docgen")
 if _DGDIR not in sys.path:
     sys.path.insert(0, _DGDIR)
@@ -51,11 +53,21 @@ def render(all_athletes: list):
 
     namen = ["— Algemeen (geen naam) —"] + [a["name"] for a in all_athletes]
     keuze = st.selectbox("Voor welke atleet?", namen, key="doc_athlete")
+    atleet = next((a for a in all_athletes if a["name"] == keuze), None)
     voornaam = "" if keuze.startswith("—") else keuze.split()[0]
+    user_key = atleet.get("user_key") if atleet else None
 
     answers: dict = {}
     if voornaam:
         answers["voornaam"] = voornaam
+
+    # Eerder ontvangen documenten tonen + als context meegeven aan de AI
+    eerder = _eerdere_documenten(user_key) if user_key else []
+    if eerder:
+        _regels = ", ".join(f"{d.get('type', '')} ({d.get('datum', '')})" for d in eerder)
+        st.caption(f"📄 {voornaam} ontving eerder: {_regels}. Dit gaat mee als context, "
+                   "zodat de AI voortbouwt in plaats van hetzelfde te herhalen.")
+        answers["eerdere_documenten"] = _regels
 
     extra = [v for v in getattr(mod, "INTAKE", []) if v["veld"] != "voornaam"]
     if extra:
@@ -65,7 +77,7 @@ def render(all_athletes: list):
                 answers[v["veld"]] = _veld_input(v)
 
     if st.button("📄 Genereer document", type="primary", key="doc_gen"):
-        _genereer(label, mod, answers)
+        _genereer(label, mod, answers, user_key)
 
     # download-knop blijft staan ná de rerun die het downloaden veroorzaakt
     if st.session_state.get("doc_pdf"):
@@ -75,7 +87,15 @@ def render(all_athletes: list):
                            mime="application/pdf", key="doc_dl")
 
 
-def _genereer(label: str, mod, answers: dict):
+def _eerdere_documenten(user_key: str) -> list:
+    """Documenten die deze atleet eerder ontving (nieuwste eerst)."""
+    try:
+        return intake_store.load_documenten().get(user_key, [])
+    except Exception:
+        return []
+
+
+def _genereer(label: str, mod, answers: dict, user_key: str | None = None):
     answers = {k: v for k, v in answers.items() if v not in (None, "")}
     if hasattr(mod, "derive"):
         answers = mod.derive(answers)
@@ -93,3 +113,9 @@ def _genereer(label: str, mod, answers: dict):
 
     naam = answers.get("voornaam", "algemeen")
     st.session_state["doc_pdf_naam"] = f"{label} - {naam}.pdf"
+
+    # Registreer in het dossier dat deze atleet dit document ontving
+    if user_key:
+        ok, err = intake_store.log_document(user_key, label)
+        if not ok:
+            st.warning(f"Document gemaakt, maar niet gelogd in dossier: {err}")

@@ -360,6 +360,38 @@ def save_notes(notes: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Documenten-logboek per atleet — welke PDF's een atleet ontving
+# ---------------------------------------------------------------------------
+
+_DOCUMENTEN_LOCAL = os.path.join(_BASE_DIR, ".documenten.json")
+
+
+def load_documenten() -> dict:
+    """Laad het documenten-logboek. Dict: user_key → lijst van
+    {datum, type, onderwerp}, nieuwste eerst."""
+    return _load_json("documenten.json", _DOCUMENTEN_LOCAL)
+
+
+def save_documenten(data: dict) -> tuple[bool, str]:
+    """Sla het documenten-logboek op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("documenten.json", _DOCUMENTEN_LOCAL, data, "Update documenten via app")
+
+
+def log_document(user_key: str, doc_type: str, onderwerp: str = "") -> tuple[bool, str]:
+    """Registreer dat een atleet een document ontving. Voegt vooraan toe."""
+    if not user_key:
+        return False, "geen atleet gekoppeld"
+    from datetime import date
+    log = load_documenten()
+    log.setdefault(user_key, []).insert(0, {
+        "datum": date.today().isoformat(),
+        "type": doc_type,
+        "onderwerp": onderwerp,
+    })
+    return save_documenten(log)
+
+
+# ---------------------------------------------------------------------------
 # Administratie — handmatige klantvelden (status, pakket, coach, cyclus, notitie)
 # ---------------------------------------------------------------------------
 

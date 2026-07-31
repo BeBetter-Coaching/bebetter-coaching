@@ -9,6 +9,7 @@
 .btw_instellingen.json
 .builder_state.json
 .feedback_skipped.json
+.documenten.json
 builder_debug.txt
 generate_pdf.py
 WERKINSTRUCTIE_WINDOWS.pdf
