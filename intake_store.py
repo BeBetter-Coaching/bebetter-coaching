@@ -392,6 +392,48 @@ def log_document(user_key: str, doc_type: str, onderwerp: str = "") -> tuple[boo
 
 
 # ---------------------------------------------------------------------------
+# Documentbibliotheek — bewaarde documenten die je opnieuw kunt gebruiken
+# ---------------------------------------------------------------------------
+
+_DOC_LIBRARY_LOCAL = os.path.join(_BASE_DIR, ".doc_library.json")
+
+
+def load_doc_library() -> dict:
+    """Laad de bibliotheek. Dict: id → {titel, onderwerp, guidance, bron,
+    datum, doc}, waarbij `doc` de kant-en-klare engine-DOC is (herbruikbaar)."""
+    return _load_json("doc_library.json", _DOC_LIBRARY_LOCAL)
+
+
+def save_doc_library(data: dict) -> tuple[bool, str]:
+    """Sla de bibliotheek op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("doc_library.json", _DOC_LIBRARY_LOCAL, data, "Update doc_library via app")
+
+
+def add_doc_library(entry: dict) -> tuple[bool, str, str]:
+    """Voeg een document toe aan de bibliotheek. Geeft (gelukt, fout, id) terug."""
+    from datetime import datetime
+    lib = load_doc_library()
+    base = datetime.now().strftime("%Y%m%d%H%M%S")
+    doc_id, n = base, 1
+    while doc_id in lib:  # meerdere saves in dezelfde seconde niet laten botsen
+        doc_id = f"{base}-{n}"
+        n += 1
+    entry = {**entry, "datum": entry.get("datum") or datetime.now().date().isoformat()}
+    lib[doc_id] = entry
+    ok, err = save_doc_library(lib)
+    return ok, err, doc_id
+
+
+def delete_doc_library(doc_id: str) -> tuple[bool, str]:
+    """Verwijder een document uit de bibliotheek."""
+    lib = load_doc_library()
+    if doc_id in lib:
+        lib.pop(doc_id)
+        return save_doc_library(lib)
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
 # Administratie — handmatige klantvelden (status, pakket, coach, cyclus, notitie)
 # ---------------------------------------------------------------------------
 

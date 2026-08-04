@@ -10,6 +10,7 @@
 .builder_state.json
 .feedback_skipped.json
 .documenten.json
+.doc_library.json
 builder_debug.txt
 generate_pdf.py
 WERKINSTRUCTIE_WINDOWS.pdf
