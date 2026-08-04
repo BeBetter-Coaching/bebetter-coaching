@@ -11,6 +11,7 @@ zetten we op het pad en gebruiken we hier zonder iets te dupliceren.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 
@@ -37,6 +38,32 @@ _DOCS = {
 
 # Speciaal type: geen vast sjabloon, maar de AI bedenkt zelf een heel document.
 _VRIJ = "✍️ Vrij document (AI bedenkt het)"
+
+
+def _walk_text(node, fn):
+    """Loop door een DOC en pas `fn` toe op elke tekst-leaf (tuples/lijsten/dicts intact)."""
+    if isinstance(node, str):
+        return fn(node)
+    if isinstance(node, list):
+        return [_walk_text(x, fn) for x in node]
+    if isinstance(node, tuple):
+        return tuple(_walk_text(x, fn) for x in node)
+    if isinstance(node, dict):
+        return {k: _walk_text(v, fn) for k, v in node.items()}
+    return node
+
+
+def _tokenize_naam(doc: dict, naam: str) -> dict:
+    """Vervang de gebruikte voornaam door {{voornaam}} zodat we later kunnen personaliseren."""
+    if not naam:
+        return doc
+    pat = re.compile(r"\b" + re.escape(naam) + r"\b")
+    return _walk_text(doc, lambda s: pat.sub("{{voornaam}}", s))
+
+
+def _apply_naam(doc: dict, naam: str) -> dict:
+    """Vul {{voornaam}} in de hele DOC met `naam` (leeg = token blijft, wordt elders opgevangen)."""
+    return _walk_text(doc, lambda s: _tpl.substitute(s, {"voornaam": naam}))
 
 
 def _veld_input(veld: dict, index: int = 0):
@@ -185,8 +212,9 @@ def _genereer(label: str, mod, answers: dict, user_key: str | None = None):
     naam = answers.get("voornaam", "algemeen")
     st.session_state["doc_pdf_naam"] = f"{label} - {naam}.pdf"
     _titel = label + (f" ({answers['variant_kort']})" if answers.get("variant_kort") else "")
-    _na_generatie({"titel": _titel, "onderwerp": "", "guidance": "",
-                   "bron": f"sjabloon:{label}", "doc": doc})
+    _used = answers.get("voornaam", "")
+    _na_generatie({"titel": _titel, "onderwerp": "", "guidance": "", "voornaam": _used,
+                   "bron": f"sjabloon:{label}", "doc": _tokenize_naam(doc, _used)})
 
     # Registreer in het dossier dat deze atleet dit document ontving
     if user_key:
@@ -211,8 +239,9 @@ def _genereer_vrij(onderwerp: str, guidance: str, answers: dict, user_key: str |
 
     naam = answers.get("voornaam", "algemeen")
     st.session_state["doc_pdf_naam"] = f"{onderwerp} - {naam}.pdf"
+    _used = answers.get("voornaam", "")
     _na_generatie({"titel": onderwerp, "onderwerp": onderwerp, "guidance": guidance,
-                   "bron": "vrij", "doc": doc})
+                   "voornaam": _used, "bron": "vrij", "doc": _tokenize_naam(doc, _used)})
 
     # Registreer met onderwerp, zodat het dossier laat zien wat de atleet precies kreeg
     if user_key:
@@ -270,10 +299,14 @@ def _render_bibliotheek(all_athletes: list):
 
 def _hergebruik(doc_id: str, entry: dict, voornaam: str, user_key: str | None):
     """Render een bewaard document opnieuw (geen AI nodig), evt. voor een atleet."""
-    doc = dict(entry.get("doc", {}))
+    doc = entry.get("doc")
     if not doc:
         st.error("Dit bibliotheek-item bevat geen document meer.")
         return
+    # Naam overal in de tekst meelaten lopen: gekozen atleet, of de oorspronkelijke
+    # naam als je 'm algemeen uitgeeft (dan blijft het document zoals bewaard).
+    naam = voornaam or entry.get("voornaam", "")
+    doc = _apply_naam(doc, naam) if naam else dict(doc)
     if voornaam:
         doc = {**doc, "voor": f"Voor {voornaam}"}
 
