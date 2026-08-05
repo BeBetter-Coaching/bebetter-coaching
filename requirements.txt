@@ -1,4 +1,9 @@
-streamlit>=1.39.0
+# Streamlit exact pinnen (niet >=): met een losse ondergrens houdt Streamlit Cloud
+# een oudere, gecachte Streamlit vast terwijl Starlette wél naar een nieuwe 1.x
+# springt -> mismatch (_MediaAwareGZipResponder / GZipResponder init). Dit paar is
+# onderling compatibel; Starlette meepinnen binnen het door Streamlit toegestane bereik.
+streamlit==1.61.1
+starlette>=0.46.0,<1.4.0
 anthropic>=0.28.0
 browser-cookie3>=0.19.1
 requests>=2.31.0
