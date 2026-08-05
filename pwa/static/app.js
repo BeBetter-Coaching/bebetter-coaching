@@ -53,15 +53,27 @@ function toonOffline() {
 window.addEventListener("online", () => { toonOffline(); flush(); });
 window.addEventListener("offline", toonOffline);
 
-// ── App installeren (beforeinstallprompt) ──────────────────────────────────
+// ── App installeren ────────────────────────────────────────────────────────
+// Chrome/Edge geven een echte install-prompt (beforeinstallprompt). Safari niet,
+// daar installeer je via het menu; dan tonen we uitleg i.p.v. "er gebeurt niks".
 let deferred = null;
-window.addEventListener("beforeinstallprompt", e => {
-  e.preventDefault(); deferred = e; $("#install").hidden = false;
-});
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferred = e; });
+window.addEventListener("appinstalled", () => { $("#install").hidden = true; melding("Geïnstalleerd 🎉"); });
+
 $("#install").addEventListener("click", async () => {
-  if (!deferred) return;
-  deferred.prompt(); await deferred.userChoice;
-  deferred = null; $("#install").hidden = true;
+  if (deferred) {
+    deferred.prompt();
+    const keuze = await deferred.userChoice;
+    deferred = null;
+    if (keuze.outcome === "accepted") $("#install").hidden = true;
+    return;
+  }
+  const ua = navigator.userAgent;
+  const isSafari = /safari/i.test(ua) && !/chrome|crios|edg|android/i.test(ua);
+  const isIOS = /iphone|ipad|ipod/i.test(ua);
+  if (isIOS) melding("iPhone/iPad: tik op de deelknop (vierkant met pijltje) → ‘Zet op beginscherm’.");
+  else if (isSafari) melding("Safari op Mac: menubalk ‘Archief’ → ‘Voeg toe aan Dock’.");
+  else melding("Klik op het installeer-icoon rechts in de adresbalk, of het menu (⋮) → ‘App installeren’.");
 });
 if (matchMedia("(display-mode: standalone)").matches) $("#install").hidden = true;
 
