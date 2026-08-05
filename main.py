@@ -62,6 +62,47 @@ def _wa_link(telefoon: str, tekst: str) -> str:
         return ""
     return f"https://wa.me/{nr}?text={urllib.parse.quote(tekst)}"
 
+
+def _parse_contacts(text: str) -> list[tuple[str, str]]:
+    """Parse geplakte regels 'Naam, nummer' (komma/puntkomma/tab of nummer achteraan)."""
+    import re
+    out: list[tuple[str, str]] = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in re.split(r"[\t;,]", line) if p.strip()]
+        if len(parts) >= 2 and _wa_number(parts[-1]):
+            naam, tel = " ".join(parts[:-1]), parts[-1]
+        else:
+            m = re.search(r"([+\d][\d\s\-]{6,})\s*$", line)
+            if m and _wa_number(m.group(1)):
+                naam, tel = line[:m.start()].strip(" ,;\t"), m.group(1).strip()
+            else:
+                naam, tel = line, ""
+        if naam:
+            out.append((naam, tel))
+    return out
+
+
+def _parse_vcard(raw: str) -> list[tuple[str, str]]:
+    """Parse een .vcf-contactenbestand naar (naam, telefoon)-paren (eerste TEL per kaart)."""
+    out: list[tuple[str, str]] = []
+    naam, tel = None, None
+    for line in (raw or "").splitlines():
+        u = line.strip()
+        key = u.split(":", 1)[0].upper()
+        if key.startswith("BEGIN") and "VCARD" in u.upper():
+            naam, tel = None, None
+        elif key.startswith("FN") and ":" in u:
+            naam = u.split(":", 1)[1].strip()
+        elif key.startswith("TEL") and ":" in u and not tel:
+            tel = u.split(":", 1)[1].strip()
+        elif key.startswith("END") and "VCARD" in u.upper():
+            if naam:
+                out.append((naam, tel or ""))
+    return out
+
 # ---------------------------------------------------------------------------
 # Persistentie — GitHub-backed via intake_store, werkt op alle apparaten.
 # Session-gecachet zodat er niet bij elke rerun een GitHub-call gebeurt.
@@ -1804,6 +1845,71 @@ elif page == "strippenkaart":
                         st.rerun()
                     else:
                         st.error(f"Opslaan mislukt: {_err}")
+
+    # ── Meerdere tegelijk toevoegen (uit je contacten) ──
+    with st.expander("⬆️ Meerdere tegelijk toevoegen (uit je contacten)"):
+        st.caption("Plak hieronder je klanten als 'Naam, nummer' per regel, of upload een "
+                   ".vcf-contactenbestand uit je telefoon. Je ziet eerst een controle-overzicht "
+                   "voordat er iets wordt toegevoegd, zodat je niet per ongeluk al je contacten importeert.")
+        _bulk_aantal = st.radio("Aantal trainingen voor nieuwe kaarten", [10, 20],
+                                horizontal=True, key="strip_bulk_aantal")
+        _bulk_txt = st.text_area("Plak namen en nummers", key="strip_bulk_txt",
+                                 placeholder="Lisa Jansen, 06 12 34 56 78\nPiet de Vries, 0612345679")
+        _bulk_vcf = st.file_uploader("of upload contacten (.vcf)", type=["vcf"], key="strip_bulk_vcf")
+
+        if st.button("🔍 Controleer", key="strip_bulk_check"):
+            _rows = _parse_contacts(_bulk_txt)
+            if _bulk_vcf is not None:
+                try:
+                    _rows += _parse_vcard(_bulk_vcf.getvalue().decode("utf-8", "ignore"))
+                except Exception as _e:
+                    st.error(f"Kon het .vcf-bestand niet lezen: {_e}")
+            st.session_state["strip_bulk_preview"] = _rows
+
+        _preview = st.session_state.get("strip_bulk_preview")
+        if _preview is not None:
+            _nieuw = [(n, t) for n, t in _preview if n not in _kaarten]
+            _bestaat = [(n, t) for n, t in _preview if n in _kaarten]
+            _zonder_nr = [n for n, t in _nieuw if not _wa_number(t)]
+            if not _preview:
+                st.warning("Niks gevonden om te importeren. Controleer de invoer.")
+            else:
+                st.write(f"**{len(_nieuw)}** nieuwe kaarten, **{len(_bestaat)}** namen bestaan al.")
+                if _zonder_nr:
+                    st.caption(f"⚠️ {len(_zonder_nr)} zonder bruikbaar nummer (kaart wordt wel aangemaakt, "
+                               f"nummer kun je later invullen): {', '.join(_zonder_nr[:8])}"
+                               + ("…" if len(_zonder_nr) > 8 else ""))
+                import pandas as _pd
+                st.dataframe(_pd.DataFrame(_nieuw or _preview, columns=["Naam", "Telefoon"]),
+                             hide_index=True, use_container_width=True)
+                a1, a2 = st.columns(2)
+                with a1:
+                    if st.button(f"✓ {len(_nieuw)} toevoegen", type="primary", key="strip_bulk_do",
+                                 disabled=not _nieuw):
+                        for _n, _t in _nieuw:
+                            _kaarten[_n] = {
+                                "totaal": int(_bulk_aantal), "gebruikt": 0, "historie": [],
+                                "aangemaakt": date.today().isoformat(), "telefoon": (_t or "").strip(),
+                            }
+                        # bestaande kaarten zonder nummer alsnog aanvullen
+                        _aangevuld = 0
+                        for _n, _t in _bestaat:
+                            if _t and not _kaarten[_n].get("telefoon"):
+                                _kaarten[_n]["telefoon"] = _t.strip()
+                                _aangevuld += 1
+                        _ok, _err = intake_store.save_strippenkaarten(_kaarten)
+                        if _ok:
+                            st.session_state["strippenkaarten"] = _kaarten
+                            st.session_state.pop("strip_bulk_preview", None)
+                            st.success(f"{len(_nieuw)} toegevoegd"
+                                       + (f", {_aangevuld} nummer aangevuld" if _aangevuld else "") + ".")
+                            st.rerun()
+                        else:
+                            st.error(f"Opslaan mislukt: {_err}")
+                with a2:
+                    if st.button("Annuleer", key="strip_bulk_cancel"):
+                        st.session_state.pop("strip_bulk_preview", None)
+                        st.rerun()
 
     if not _kaarten:
         st.info("Nog geen strippenkaarten. Voeg hierboven de eerste toe.")
