@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0A1B33">
+  <title>BeBetter · Strippenkaart</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="top">
+    <img src="/static/icon-192.png" alt="BeBetter Coaching" class="logo">
+    <div>
+      <h1>Strippenkaart</h1>
+      <p class="sub" id="bron">laden…</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <button class="acc-toggle" data-target="nieuw">➕ Nieuwe strippenkaart</button>
+      <div id="nieuw" class="collapse">
+        <div class="row">
+          <input id="n-naam" placeholder="Naam (bijv. Lisa Jansen)">
+          <input id="n-tel" placeholder="Telefoon (06 12 34 56 78)">
+        </div>
+        <div class="row between">
+          <div class="seg" id="n-aantal" data-value="10">
+            <button data-v="10" class="on">10</button>
+            <button data-v="20">20</button>
+          </div>
+          <button class="btn primary" id="n-add">Toevoegen</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <button class="acc-toggle" data-target="bulk">⬆️ Meerdere tegelijk (uit je contacten)</button>
+      <div id="bulk" class="collapse">
+        <p class="hint">Plak "Naam, nummer" per regel, of kies een .vcf-contactenbestand.
+          Je ziet eerst een controle-overzicht voordat er iets wordt toegevoegd.</p>
+        <textarea id="b-text" rows="4" placeholder="Lisa Jansen, 06 12 34 56 78&#10;Piet de Vries, 0612345679"></textarea>
+        <div class="row between wrap">
+          <label class="file">📄 Kies .vcf<input type="file" id="b-vcf" accept=".vcf" hidden></label>
+          <div class="seg" id="b-aantal" data-value="10">
+            <button data-v="10" class="on">10</button>
+            <button data-v="20">20</button>
+          </div>
+          <button class="btn" id="b-check">🔍 Controleer</button>
+        </div>
+        <div id="b-preview"></div>
+      </div>
+    </section>
+
+    <div id="msg" class="msg" hidden></div>
+    <section id="lijst" class="lijst"></section>
+  </main>
+
+  <footer class="foot">Proto · zelfde data als Streamlit · BeBetter Coaching</footer>
+
+  <template id="kaart-tpl">
+    <article class="kaart">
+      <div class="kaart-top">
+        <div>
+          <h3 class="k-naam"></h3>
+          <p class="k-tel muted"></p>
+        </div>
+        <span class="k-rest"></span>
+      </div>
+      <div class="bar"><span class="bar-fill"></span></div>
+      <p class="k-laatst muted"></p>
+      <div class="kaart-acts">
+        <button class="btn primary k-af">✓ Strip afboeken</button>
+        <button class="btn ghost k-terug">↩ Terug</button>
+        <button class="btn danger-ghost k-del">🗑</button>
+      </div>
+      <div class="wa hidden">
+        <p class="wa-msg"></p>
+        <a class="btn wa-btn" target="_blank" rel="noopener">📲 Stuur via WhatsApp</a>
+      </div>
+    </article>
+  </template>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
