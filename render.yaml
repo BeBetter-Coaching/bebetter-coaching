@@ -1,0 +1,18 @@
+# Render Blueprint: zet de BeBetter PWA-backend in één keer op.
+# Op render.com: New -> Blueprint -> kies deze repo. Render leest dit bestand,
+# bouwt de Dockerfile en vraagt alleen nog om de twee secrets hieronder.
+services:
+  - type: web
+    name: bebetter
+    runtime: docker
+    region: frankfurt        # dicht bij NL
+    plan: starter            # ~$7/mnd, blijft altijd wakker (meteen open)
+    healthCheckPath: /
+    autoDeploy: true         # elke push naar main deployt automatisch
+    envVars:
+      - key: APP_USER
+        value: bebetter      # inlognaam (mag je aanpassen)
+      - key: APP_PASSWORD
+        sync: false          # gedeeld wachtwoord Jip & Remco (zelf invullen)
+      - key: GH_TOKEN
+        sync: false          # zelfde token als Streamlit -> zelfde data

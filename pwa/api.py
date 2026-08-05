@@ -13,10 +13,12 @@ Open daarna http://localhost:8000
 
 from __future__ import annotations
 
+import base64
 import os
+import secrets
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -26,6 +28,31 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _STATIC = os.path.join(_HERE, "static")
 
 app = FastAPI(title="BeBetter PWA (proto)")
+
+
+# ── Simpel inlogslot (gedeeld wachtwoord voor Jip & Remco) ──────────────────
+# Actief zodra APP_PASSWORD als omgevingsvariabele is gezet (op de hosting).
+# Lokaal (geen APP_PASSWORD) staat het uit, zodat ontwikkelen frictieloos blijft.
+_APP_USER = os.environ.get("APP_USER", "bebetter")
+_APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+
+
+@app.middleware("http")
+async def _login(request, call_next):
+    if _APP_PASSWORD:
+        hdr = request.headers.get("authorization", "")
+        ok = False
+        if hdr.startswith("Basic "):
+            try:
+                user, _, pw = base64.b64decode(hdr[6:]).decode("utf-8").partition(":")
+                ok = (secrets.compare_digest(user, _APP_USER)
+                      and secrets.compare_digest(pw, _APP_PASSWORD))
+            except Exception:
+                ok = False
+        if not ok:
+            return Response("Inloggen vereist.", status_code=401,
+                            headers={"WWW-Authenticate": 'Basic realm="BeBetter Coaching"'})
+    return await call_next(request)
 
 
 # ── Verzoek-modellen ────────────────────────────────────────────────────────
