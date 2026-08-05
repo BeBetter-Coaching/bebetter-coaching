@@ -7,7 +7,7 @@ een wijziging in de app terug in Streamlit en andersom: één bron, twee voordeu
 Lokaal draaien:
     cd pwa
     python3 -m pip install -r requirements.txt
-    uvicorn api:app --reload --port 8000
+    python3 -m uvicorn api:app --reload --port 8000
 Open daarna http://localhost:8000
 """
 

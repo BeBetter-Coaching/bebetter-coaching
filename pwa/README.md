@@ -15,9 +15,13 @@ Er is dus **één bron**: wat je hier afboekt of toevoegt, zie je in Streamlit t
 ```bash
 cd pwa
 python3 -m pip install -r requirements.txt
-uvicorn api:app --reload --port 8000
+python3 -m uvicorn api:app --reload --port 8000
 ```
 Open daarna **http://localhost:8000**.
+
+> Tip: start uvicorn als module (`python3 -m uvicorn ...`). Dan maakt het niet uit
+> of de `uvicorn`-scriptmap wel of niet in je PATH staat (`zsh: command not found:
+> uvicorn` komt daarvandaan).
 
 ## Installeren als app
 - **Mac/Windows** (Chrome/Edge): install-icoon in de adresbalk, of menu → "App installeren".
