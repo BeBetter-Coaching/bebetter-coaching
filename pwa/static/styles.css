@@ -12,8 +12,14 @@ body{max-width:640px;margin:0 auto;padding:0 16px 40px;
 
 .top{display:flex;align-items:center;gap:14px;padding:22px 4px 12px}
 .logo{width:46px;height:46px;border-radius:12px;flex:0 0 auto}
+.top-txt{flex:1;min-width:0}
 .top h1{margin:0;font-size:22px;font-weight:650}
 .sub{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
+.install{padding:8px 12px;font-size:13px;background:var(--acc);border-color:var(--acc);color:#04222b}
+
+.offline{background:#3a2a12;border:1px solid #7a5a1e;color:#ffdca6;border-radius:10px;
+  padding:9px 13px;margin:10px 0 0;font-size:13px}
+.swipe-hint{color:var(--muted);font-size:12px;text-align:center;margin:16px 0 -2px}
 
 .panel{background:var(--card);border:1px solid var(--border);
   border-radius:var(--radius);padding:6px;margin:12px 0}
@@ -59,7 +65,15 @@ textarea{resize:vertical}
 .msg.err{border-color:var(--danger)}
 
 .lijst{display:flex;flex-direction:column;gap:12px;margin-top:14px}
-.kaart{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+.kaart{position:relative;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.swipe-bg{position:absolute;inset:0;background:var(--blue);display:flex;align-items:center;
+  justify-content:flex-end;padding-right:22px;color:#fff;font-weight:700;font-size:14px}
+.swipe-fg{position:relative;background:var(--card);border-radius:var(--radius);padding:14px;
+  transition:transform .18s ease;touch-action:pan-y;cursor:grab}
+.swipe-fg.flash{animation:flash .55s ease}
+@keyframes flash{0%{background:var(--card)}28%{background:#123a5e}100%{background:var(--card)}}
+.k-rest.bump{animation:bump .42s ease}
+@keyframes bump{0%,100%{transform:scale(1)}42%{transform:scale(1.18)}}
 .kaart-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .k-naam{margin:0;font-size:16.5px;font-weight:650}
 .k-tel{margin:2px 0 0;font-size:12.5px}

@@ -1,7 +1,10 @@
-// Minimale service worker: cache de app-shell zodat de PWA installeerbaar is en
-// de interface ook zonder netwerk opent. Data (/api/*) gaat altijd live naar de
-// server, zodat je nooit een verouderde strippenkaart te zien krijgt.
-const CACHE = "bebetter-shell-v1";
+// Service worker: maakt de PWA installeerbaar en werkt offline.
+// - app-shell (html/js/css/icons): uit cache, snel.
+// - GET /api/kaarten: network-first, met cache-fallback -> je ziet offline de
+//   laatste stand van je strippenkaarten.
+// - overige /api (afboeken/toevoegen): altijd netwerk; offline handelt de app dit
+//   zelf af met een wachtrij die verstuurt zodra je weer online bent.
+const CACHE = "bebetter-shell-v2";
 const SHELL = ["/", "/static/styles.css", "/static/app.js",
   "/static/icon-192.png", "/manifest.webmanifest"];
 
@@ -14,6 +17,16 @@ self.addEventListener("activate", e => {
 });
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith("/api/")) return; // data: altijd netwerk
+  if (url.pathname === "/api/kaarten" && e.request.method === "GET") {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy));
+        return res;
+      }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
+  if (url.pathname.startsWith("/api/")) return; // schrijf-acties: altijd netwerk
   e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
 });
