@@ -639,7 +639,7 @@ _STRIPPEN_LOCAL = os.path.join(_BASE_DIR, ".strippenkaarten.json")
 
 
 def load_strippenkaarten() -> dict:
-    """Laad strippenkaarten. Dict: naam -> {totaal, gebruikt, historie:[iso], aangemaakt}."""
+    """Laad strippenkaarten. Dict: naam -> {totaal, gebruikt, historie:[iso], aangemaakt, telefoon}."""
     return _load_json("strippenkaarten.json", _STRIPPEN_LOCAL)
 
 

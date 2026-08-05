@@ -34,6 +34,34 @@ def _esc(s) -> str:
     """HTML-escape voor strings die in unsafe_allow_html-blokken belanden."""
     return _html_mod.escape(str(s or ""))
 
+
+def _wa_number(raw: str) -> str:
+    """Normaliseer een telefoonnummer naar internationaal formaat zonder '+' (voor wa.me).
+
+    Nederlands standaard: 06... -> 316..., 0031... -> 31..., +31 -> 31. Levert
+    alleen cijfers; lege of onbruikbare invoer geeft ''."""
+    if not raw:
+        return ""
+    s = "".join(ch for ch in str(raw) if ch.isdigit() or ch == "+")
+    if s.startswith("+"):
+        digits = s[1:]
+    elif s.startswith("00"):
+        digits = s[2:]
+    elif s.startswith("0"):
+        digits = "31" + s[1:]  # nationaal NL-nummer -> landcode 31
+    else:
+        digits = s
+    return "".join(ch for ch in digits if ch.isdigit())
+
+
+def _wa_link(telefoon: str, tekst: str) -> str:
+    """Bouw een wa.me-link die WhatsApp opent met nummer + voor-ingevuld bericht."""
+    import urllib.parse
+    nr = _wa_number(telefoon)
+    if not nr:
+        return ""
+    return f"https://wa.me/{nr}?text={urllib.parse.quote(tekst)}"
+
 # ---------------------------------------------------------------------------
 # Persistentie — GitHub-backed via intake_store, werkt op alle apparaten.
 # Session-gecachet zodat er niet bij elke rerun een GitHub-call gebeurt.
@@ -1745,12 +1773,16 @@ elif page == "strippenkaart":
 
     # ── Nieuwe strippenkaart toevoegen ──
     with st.expander("➕ Nieuwe strippenkaart", expanded=not _kaarten):
-        c1, c2, c3 = st.columns([3, 2, 1.4])
+        c1, c2 = st.columns([3, 2])
         with c1:
             _nieuw_naam = st.text_input("Naam", key="strip_nieuw_naam", placeholder="bijv. Lisa Jansen")
         with c2:
-            _nieuw_aantal = st.radio("Aantal trainingen", [10, 20], horizontal=True, key="strip_nieuw_aantal")
+            _nieuw_tel = st.text_input("Telefoon (voor WhatsApp)", key="strip_nieuw_tel",
+                                       placeholder="bijv. 06 12 34 56 78")
+        c3, c4 = st.columns([3, 1.4])
         with c3:
+            _nieuw_aantal = st.radio("Aantal trainingen", [10, 20], horizontal=True, key="strip_nieuw_aantal")
+        with c4:
             st.markdown("<div style='margin-top:1.7rem'></div>", unsafe_allow_html=True)
             if st.button("Toevoegen", type="primary", key="btn_strip_add"):
                 _n = (_nieuw_naam or "").strip()
@@ -1764,6 +1796,7 @@ elif page == "strippenkaart":
                         "gebruikt": 0,
                         "historie": [],
                         "aangemaakt": date.today().isoformat(),
+                        "telefoon": (_nieuw_tel or "").strip(),
                     }
                     _ok, _err = intake_store.save_strippenkaarten(_kaarten)
                     if _ok:
@@ -1813,23 +1846,40 @@ elif page == "strippenkaart":
                                 st.session_state["strippenkaarten"] = _kaarten
                                 st.rerun()
 
-                # Bericht na afboeken — kopieer voor WhatsApp (app verstuurt niets zelf)
+                # Bericht na afboeken — één tik: opent WhatsApp met nummer + tekst ingevuld
                 _lb = st.session_state.get("strip_laatste_bericht")
                 if _lb and _lb[0] == _naam:
                     _bn, _br, _bt = _lb
                     _voornaam = _bn.split()[0] if _bn else _bn
                     if _br <= 0:
                         _msg = (f"Hoi {_voornaam}, je hebt zojuist je laatste training van de "
-                                f"strippenkaart afgetekend — de kaart is nu vol. Wil je een "
+                                f"strippenkaart afgetekend, de kaart is nu vol. Wil je een "
                                 f"nieuwe? Laat maar weten!")
                     else:
                         _msg = (f"Hoi {_voornaam}, top getraind! Je hebt zojuist een training "
                                 f"afgeboekt en hebt nog {_br} van je {_bt} trainingen over. "
                                 f"Tot de volgende!")
-                    st.caption("📩 Bericht voor de atleet — kopieer voor WhatsApp:")
-                    st.code(_msg, language=None)
+                    _wa = _wa_link(_k.get("telefoon", ""), _msg)
+                    if _wa:
+                        st.link_button("📲 Stuur via WhatsApp", _wa, type="primary")
+                        st.caption("Opent WhatsApp met het nummer en bericht al ingevuld, jij tikt op verzenden.")
+                    else:
+                        st.caption("📩 Bericht voor de atleet — kopieer voor WhatsApp "
+                                   "(voeg een telefoonnummer toe voor de verzendknop):")
+                        st.code(_msg, language=None)
 
-                with st.expander("Verwijderen"):
+                with st.expander("Telefoon / verwijderen"):
+                    _tel_key = f"strip_tel_{_naam}"
+                    _nieuw_tel = st.text_input("Telefoon (voor WhatsApp)", value=_k.get("telefoon", ""),
+                                               key=_tel_key, placeholder="bijv. 06 12 34 56 78")
+                    if st.button("Telefoon opslaan", key=f"strip_tel_save_{_naam}"):
+                        _k["telefoon"] = (_nieuw_tel or "").strip()
+                        _ok, _err = intake_store.save_strippenkaarten(_kaarten)
+                        if _ok:
+                            st.session_state["strippenkaarten"] = _kaarten
+                            st.rerun()
+                        else:
+                            st.error(f"Opslaan mislukt: {_err}")
                     if st.button(f"🗑️ Strippenkaart van {_naam} verwijderen", key=f"strip_del_{_naam}"):
                         _kaarten.pop(_naam, None)
                         _ok, _err = intake_store.save_strippenkaarten(_kaarten)
