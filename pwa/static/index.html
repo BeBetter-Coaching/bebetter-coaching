@@ -10,57 +10,82 @@
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <!-- Iconen-sprite (lijn-iconen, werken offline) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="ic-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></symbol>
+      <symbol id="ic-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16.5 5.3a3.2 3.2 0 0 1 0 5.4"/><path d="M18.5 20c0-2.6-1-4.2-2.6-4.9"/></symbol>
+      <symbol id="ic-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3.6 7 8.4 6 8.4-6"/></symbol>
+      <symbol id="ic-ticket" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M15 6v12" stroke-dasharray="1.6 2.4"/></symbol>
+      <symbol id="ic-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18.5" cy="12" r="1.4"/></symbol>
+      <symbol id="ic-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+      <symbol id="ic-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></symbol>
+      <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+      <symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="m6 7 1 13h10l1-13"/></symbol>
+      <symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14-4"/><path d="M4 5v3h3"/><path d="M4 13a8 8 0 0 0 14 4"/><path d="M20 19v-3h-3"/></symbol>
+      <symbol id="ic-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-11"/></symbol>
+      <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></symbol>
+      <symbol id="ic-user-plus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5 1 0 2 .2 2.8.5"/><path d="M17 14v6M14 17h6"/></symbol>
+      <symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 17h4"/></symbol>
+      <symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6 18 18"/><path d="M18 6 6 18"/></symbol>
+      <symbol id="ic-settings" viewBox="0 0 24 24"><path d="M4 8h9M17 8h3"/><circle cx="15" cy="8" r="2"/><path d="M4 16h3M11 16h9"/><circle cx="9" cy="16" r="2"/></symbol>
+      <symbol id="ic-alert" viewBox="0 0 24 24"><path d="M12 4 21 20H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></symbol>
+      <symbol id="ic-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></symbol>
+      <symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v10"/><path d="m8 11 4 4 4-4"/><path d="M5 19h14"/></symbol>
+      <symbol id="ic-message" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.5 7.2L4 20l.8-4.5A8 8 0 1 1 20 12z"/></symbol>
+      <symbol id="ic-note" viewBox="0 0 24 24"><path d="M4 5h16v10l-4 4H4z"/><path d="M20 15h-4v4"/></symbol>
+      <symbol id="ic-brain" viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5 3 3 0 0 0 2 5 2.5 2.5 0 0 0 5 .3V4.5A2 2 0 0 0 9 4z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5 3 3 0 0 1-2 5 2.5 2.5 0 0 1-5 .3"/></symbol>
+    </defs>
+  </svg>
+
   <div id="offline" class="offline" hidden></div>
   <div id="msg" class="msg" hidden></div>
 
-  <main>
-    <!-- ════════ HOME ════════ -->
+  <main id="scroller">
+    <!-- ════════ HOME (dashboard) ════════ -->
     <section class="view on" data-view="home">
-      <div class="hero">
-        <img src="/static/icon-192.png" alt="BeBetter Coaching" class="hero-logo">
-        <p class="hero-kicker" id="hero-kicker">Coach Dashboard</p>
-        <h1 class="hero-title">Zij lopen. <span class="outline">Jij stuurt.</span></h1>
-        <p class="hero-sub" id="bron">laden…</p>
-        <button id="install" class="btn install hero-install" hidden>⬇️ Installeer als app</button>
-      </div>
-
-      <p class="sec-label">Per atleet</p>
-      <button class="mrow" data-open-view="intake">
-        <span class="mrow-icon">📨</span>
-        <span class="mrow-body"><span class="mrow-title">Intake</span>
-          <span class="mrow-desc">Deelbare intakelink + binnengekomen inzendingen van klanten.</span></span>
-        <span class="mrow-count" id="cnt-intake" hidden></span>
-        <span class="mrow-tag">Nieuwe atleet</span>
-      </button>
-      <button class="mrow" data-open-view="dossier">
-        <span class="mrow-icon">📋</span>
-        <span class="mrow-body"><span class="mrow-title">Atleet-dossiers</span>
-          <span class="mrow-desc">Intake, coach-notities, documenten en coach-geheugen per atleet.</span></span>
-        <span class="mrow-count" id="cnt-dossier" hidden></span>
-        <span class="mrow-tag">Overzicht</span>
-      </button>
-
-      <p class="sec-label">Beheer</p>
-      <button class="mrow" data-open-view="strippen">
-        <span class="mrow-icon">🎟️</span>
-        <span class="mrow-body"><span class="mrow-title">Strippenkaart</span>
-          <span class="mrow-desc">Strippen aftellen per training, met een kant-en-klaar WhatsApp-appje.</span></span>
-        <span class="mrow-count" id="cnt-strippen" hidden></span>
-        <span class="mrow-tag">Per training</span>
-      </button>
-
-      <p class="sec-label">Binnenkort in de app</p>
-      <div class="soon" id="soon"></div>
-
-      <footer class="foot">Zelfde data als Streamlit · BeBetter Coaching</footer>
+      <header class="appbar home-bar">
+        <div class="ab-id">
+          <div class="ab-avatar">BB</div>
+          <div>
+            <p class="ab-greet" id="greet">Welkom</p>
+            <p class="ab-date" id="greet-date"></p>
+          </div>
+        </div>
+        <button class="iconbtn" data-open-view="meer" aria-label="Meer"><svg class="ic"><use href="#ic-settings"/></svg></button>
+      </header>
+      <div id="home-body"></div>
     </section>
 
-    <!-- ════════ STRIPPENKAART ════════ -->
-    <section class="view" data-view="strippen">
-      <div class="mod-head"><button class="btn ghost back" data-home>‹ Home</button><h2>🎟️ Strippenkaart</h2></div>
+    <!-- ════════ ATLETEN ════════ -->
+    <section class="view" data-view="atleten">
+      <header class="appbar"><h1>Atleten</h1>
+        <button class="iconbtn" id="a-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+      </header>
+      <div class="search"><svg class="ic"><use href="#ic-search"/></svg><input id="d-zoek" placeholder="Zoek atleet"></div>
+      <section id="d-lijst" class="lijst"></section>
+      <div id="d-detail" hidden></div>
+    </section>
 
+    <!-- ════════ INTAKE ════════ -->
+    <section class="view" data-view="intake">
+      <header class="appbar"><h1>Intake</h1>
+        <button class="iconbtn" id="i-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+      </header>
+      <section class="panel open-static">
+        <h3 class="panel-h">Deelbare intakelink</h3>
+        <p class="hint">Stuur deze naar een nieuwe klant. Die vult het formulier in zonder in te loggen; de inzending verschijnt hieronder.</p>
+        <div id="i-link"></div>
+      </section>
+      <p class="sec-label">Binnengekomen</p>
+      <section id="i-inbox" class="lijst"></section>
+    </section>
+
+    <!-- ════════ STRIPPEN ════════ -->
+    <section class="view" data-view="strippen">
+      <header class="appbar"><h1>Strippenkaart</h1></header>
       <section class="panel">
-        <button class="acc-toggle" data-target="nieuw">➕ Nieuwe strippenkaart</button>
+        <button class="acc-toggle" data-target="nieuw"><svg class="ic"><use href="#ic-plus"/></svg> Nieuwe strippenkaart</button>
         <div id="nieuw" class="collapse">
           <div class="row">
             <input id="n-naam" placeholder="Naam (bijv. Lisa Jansen)">
@@ -75,62 +100,52 @@
           </div>
         </div>
       </section>
-
       <section class="panel">
-        <button class="acc-toggle" data-target="bulk">⬆️ Meerdere tegelijk (uit je contacten)</button>
+        <button class="acc-toggle" data-target="bulk"><svg class="ic"><use href="#ic-user-plus"/></svg> Meerdere tegelijk (uit je contacten)</button>
         <div id="bulk" class="collapse">
-          <p class="hint">Plak "Naam, nummer" per regel, of kies een .vcf-contactenbestand.
-            Je ziet eerst een controle-overzicht voordat er iets wordt toegevoegd.</p>
+          <p class="hint">Plak "Naam, nummer" per regel, of kies een .vcf-bestand. Je ziet eerst een controle-overzicht.</p>
           <textarea id="b-text" rows="4" placeholder="Lisa Jansen, 06 12 34 56 78&#10;Piet de Vries, 0612345679"></textarea>
           <div class="row between wrap">
-            <label class="file">📄 Kies .vcf<input type="file" id="b-vcf" accept=".vcf" hidden></label>
+            <label class="file">Kies .vcf<input type="file" id="b-vcf" accept=".vcf" hidden></label>
             <div class="seg" id="b-aantal" data-value="10">
               <button data-v="10" class="on">10</button>
               <button data-v="20">20</button>
             </div>
-            <button class="btn" id="b-check">🔍 Controleer</button>
+            <button class="btn" id="b-check">Controleer</button>
           </div>
           <div id="b-preview"></div>
         </div>
       </section>
-
       <p class="swipe-hint">Tip: sleep een kaart naar links om af te boeken.</p>
       <section id="lijst" class="lijst"></section>
     </section>
 
-    <!-- ════════ DOSSIER ════════ -->
-    <section class="view" data-view="dossier">
-      <div class="mod-head"><button class="btn ghost back" data-home>‹ Home</button><h2>📋 Atleet-dossiers</h2></div>
-      <p class="hint">Alles over een atleet uit de gedeelde opslag: intake &amp; doel,
-        coach-notities, documenten en coach-geheugen. Trainingsdata/grafieken (FinalSurge)
-        blijven voorlopig in Streamlit.</p>
-      <input id="d-zoek" placeholder="🔎 Zoek atleet…">
-      <section id="d-lijst" class="lijst"></section>
-      <div id="d-detail" hidden></div>
-    </section>
-
-    <!-- ════════ INTAKE-INBOX ════════ -->
-    <section class="view" data-view="intake">
-      <div class="mod-head"><button class="btn ghost back" data-home>‹ Home</button><h2>📨 Intake</h2></div>
-
+    <!-- ════════ MEER ════════ -->
+    <section class="view" data-view="meer">
+      <header class="appbar"><h1>Meer</h1></header>
       <section class="panel open-static">
-        <h3 class="panel-h">🔗 Deelbare intakelink</h3>
-        <p class="hint">Stuur deze link naar een nieuwe klant. Die vult het formulier in
-          zonder in te loggen; de inzending verschijnt hieronder.</p>
-        <div id="i-link"></div>
+        <h3 class="panel-h">Deze app</h3>
+        <p class="hint" id="bron">laden…</p>
+        <button id="install" class="btn" hidden><svg class="ic"><use href="#ic-download"/></svg> Installeer als app</button>
       </section>
-
-      <div class="lijst-h">
-        <h3 class="panel-h">📨 Binnengekomen intakes</h3>
-        <button class="btn ghost small" id="i-refresh">🔄 Ververs</button>
-      </div>
-      <section id="i-inbox" class="lijst"></section>
+      <p class="sec-label">Binnenkort in de app</p>
+      <div class="soon" id="soon"></div>
+      <footer class="foot">Zelfde data als Streamlit · BeBetter Coaching</footer>
     </section>
   </main>
 
+  <!-- Onderbalk -->
+  <nav class="bottomnav" id="bottomnav">
+    <button class="nav-item on" data-open-view="home"><svg class="ic"><use href="#ic-home"/></svg><span>Home</span></button>
+    <button class="nav-item" data-open-view="atleten"><svg class="ic"><use href="#ic-users"/></svg><span>Atleten</span></button>
+    <button class="nav-item" data-open-view="intake"><svg class="ic"><use href="#ic-mail"/></svg><span>Intake</span><i class="nav-badge" id="nav-badge" hidden></i></button>
+    <button class="nav-item" data-open-view="strippen"><svg class="ic"><use href="#ic-ticket"/></svg><span>Strippen</span></button>
+    <button class="nav-item" data-open-view="meer"><svg class="ic"><use href="#ic-more"/></svg><span>Meer</span></button>
+  </nav>
+
   <template id="kaart-tpl">
     <article class="kaart">
-      <div class="swipe-bg"><span>✓ afboeken</span></div>
+      <div class="swipe-bg"><svg class="ic"><use href="#ic-check"/></svg><span>afboeken</span></div>
       <div class="swipe-fg">
         <div class="kaart-top">
           <div>
@@ -142,13 +157,13 @@
         <div class="bar"><span class="bar-fill"></span></div>
         <p class="k-laatst muted"></p>
         <div class="kaart-acts">
-          <button class="btn primary k-af">✓ Strip afboeken</button>
-          <button class="btn ghost k-terug">↩ Terug</button>
-          <button class="btn danger-ghost k-del">🗑</button>
+          <button class="btn primary k-af"><svg class="ic"><use href="#ic-check"/></svg> Strip afboeken</button>
+          <button class="btn ghost k-terug">Terug</button>
+          <button class="btn danger-ghost k-del" aria-label="Verwijderen"><svg class="ic"><use href="#ic-trash"/></svg></button>
         </div>
         <div class="wa hidden">
           <p class="wa-msg"></p>
-          <a class="btn wa-btn" target="_blank" rel="noopener">📲 Stuur via WhatsApp</a>
+          <a class="btn wa-btn" target="_blank" rel="noopener"><svg class="ic"><use href="#ic-message"/></svg> Stuur via WhatsApp</a>
         </div>
       </div>
     </article>
