@@ -36,7 +36,7 @@ async function updateHomeCounts() {
   }).catch(() => {});
   api("/api/dossier/athletes").then(r => {
     const n = (r.athletes || []).length;
-    _zetTeller("cnt-dossier", n ? `${n} atleet${n === 1 ? "" : "en"}` : "");
+    _zetTeller("cnt-dossier", n ? `${n} ${n === 1 ? "atleet" : "atleten"}` : "");
   }).catch(() => {});
   api("/api/kaarten").then(r => {
     const k = r.kaarten || [];
