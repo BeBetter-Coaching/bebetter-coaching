@@ -11,15 +11,39 @@ const jpost = (u, body, method = "POST") => api(u, {
 });
 const haptic = ms => navigator.vibrate?.(ms);
 
-// ── Tab-navigatie ────────────────────────────────────────────────────────────
-const laders = {};   // view -> laadfunctie (eenmalig lui laden per tab)
+// ── Navigatie: home met modulekaarten → doorklikken → ‹ Home ────────────────
+const laders = {};   // view -> laadfunctie (eenmalig lui laden per module)
 const geladen = {};
 function toonView(view) {
-  $$(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === view));
   $$(".view").forEach(v => v.classList.toggle("on", v.dataset.view === view));
+  window.scrollTo({ top: 0 });
   if (laders[view] && !geladen[view]) { geladen[view] = true; laders[view](); }
 }
-$$(".tab").forEach(t => t.addEventListener("click", () => toonView(t.dataset.view)));
+$$("[data-open-view]").forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+$$("[data-home]").forEach(b => b.addEventListener("click", () => toonView("home")));
+
+// Begroeting + datum in de hero (zelfde toon als de Streamlit-home)
+(function () {
+  const dagen = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"];
+  const maanden = ["januari", "februari", "maart", "april", "mei", "juni",
+    "juli", "augustus", "september", "oktober", "november", "december"];
+  const nu = new Date(), u = nu.getHours();
+  const groet = u < 12 ? "Goedemorgen" : (u < 18 ? "Goedemiddag" : "Goedenavond");
+  const datum = `${dagen[(nu.getDay() + 6) % 7]} ${nu.getDate()} ${maanden[nu.getMonth()]} ${nu.getFullYear()}`;
+  $("#hero-kicker").textContent = `${groet} · Coach Dashboard · ${datum}`;
+})();
+
+// "Binnenkort"-modules: tonen dat de héle app hier gaat draaien (nog niet actief)
+[["📋", "Feedback"], ["📅", "Schema-verloop"], ["🔨", "Schema bouwen"],
+ ["📄", "Documenten"], ["🩺", "Teampuls"], ["🏁", "Races"], ["🗃️", "Administratie"]]
+  .forEach(([ic, t]) => {
+    const el = document.createElement("div");
+    el.className = "mrow soon-row";
+    el.innerHTML = `<span class="mrow-icon">${ic}</span>
+      <span class="mrow-body"><span class="mrow-title">${t}</span></span>
+      <span class="mrow-tag soon-tag">binnenkort</span>`;
+    $("#soon").appendChild(el);
+  });
 
 // ── Uitklappers + segmenten ────────────────────────────────────────────────
 document.querySelectorAll(".acc-toggle").forEach(btn =>
@@ -484,9 +508,16 @@ $("#i-refresh").addEventListener("click", laadInbox);
 function laadIntake() { laadIntakeLink(); laadInbox(); }
 
 // ── Start ──────────────────────────────────────────────────────────────────
+laders.strippen = laad;
 laders.dossier = laadDossierLijst;
 laders.intake = laadIntake;
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+if (!matchMedia("(display-mode: standalone)").matches) $("#install").hidden = false;
 toonOffline();
 if (navigator.onLine) flush();
-laad();
+// Toon de gedeelde-opslag-status alvast op de home (strippenlijst laadt bij openen)
+api("/api/kaarten").then(d => {
+  $("#bron").textContent = d.cloud
+    ? "verbonden met de gedeelde opslag (GitHub)"
+    : "lokale opslag (zelfde bestand als Streamlit lokaal)";
+}).catch(() => { $("#bron").textContent = "offline — laatste bekende stand"; });
