@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0A1B33">
+  <title>BeBetter · Intakeformulier</title>
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="pub">
+  <div id="msg" class="msg" hidden></div>
+
+  <div id="app" hidden>
+    <header class="pub-head">
+      <img src="/static/icon-192.png" alt="BeBetter Coaching" class="pub-logo">
+      <h1>Intakeformulier</h1>
+      <p class="sub" id="welkom">Leuk dat je met ons gaat trainen! Vul dit even in, dan stellen we
+        jouw schema precies op jou af. Alleen je naam en je doel zijn verplicht; de rest helpt ons,
+        maar mag je overslaan.</p>
+    </header>
+
+    <form id="f" autocomplete="on">
+      <fieldset><legend>Over jou</legend>
+        <label>Je naam *<input name="naam" required></label>
+        <div class="grid2">
+          <label>E-mailadres<input name="email" type="email"></label>
+          <label>Leeftijd<input name="leeftijd" inputmode="numeric"></label>
+        </div>
+        <label>Welk sporthorloge gebruik je?<input name="horloge" placeholder="bijv. Garmin, Coros, geen"></label>
+      </fieldset>
+
+      <fieldset><legend>Je doel</legend>
+        <label>Wat wil je bereiken? *<textarea name="doel" rows="2" required
+          placeholder="bijv. 10 km onder de 55 min, mijn eerste halve marathon, fitter worden"></textarea></label>
+        <label>Heb je al een wedstrijd of datum geprikt?<input name="wedstrijddatum_tekst"
+          placeholder="bijv. Marathon Eindhoven, 12 oktober"></label>
+      </fieldset>
+
+      <fieldset><legend>Je huidige niveau</legend>
+        <div class="grid2">
+          <label>Km per week nu?<input name="huidig_volume" placeholder="bijv. 20 km"></label>
+          <label>Langste recente loop?<input name="langste_afstand" placeholder="bijv. 15 km"></label>
+        </div>
+        <label>Recente prestatie/tijd om op te ijken?<input name="referentie_prestatie"
+          placeholder="bijv. 10 km in 58 min vorige maand"></label>
+        <label>Hoe lang en hoe consistent loop je al?<textarea name="loopervaring" rows="2"></textarea></label>
+        <label>Je beste tijden ooit (PR's), als je die weet<input name="prs"></label>
+      </fieldset>
+
+      <fieldset><legend>Je training</legend>
+        <div class="grid2">
+          <label>Welke dagen kun/wil je trainen?<input name="trainingsdagen" placeholder="bijv. di / do / zo"></label>
+          <label>Hoeveel tijd per training?<input name="tijd_per_training" placeholder="bijv. 45-60 min"></label>
+        </div>
+        <label>Ervaring met interval-/snelheidstraining?
+          <select name="kwaliteitservaring">
+            <option>Weinig/geen</option><option selected>Enige ervaring</option><option>Regelmatig</option>
+          </select></label>
+        <span class="lbl">Waar loop je meestal?</span>
+        <div class="checks" id="ondergrond">
+          <label><input type="checkbox" value="Weg" checked> Weg</label>
+          <label><input type="checkbox" value="Trail"> Trail</label>
+          <label><input type="checkbox" value="Baan"> Baan</label>
+          <label><input type="checkbox" value="Loopband"> Loopband</label>
+        </div>
+        <label>Eerder met een schema of coach getraind? Hoe ging dat?
+          <textarea name="eerdere_schemas" rows="2"></textarea></label>
+      </fieldset>
+
+      <fieldset><legend>Wat werkt voor jou</legend>
+        <label>Wat werkte in het verleden goed?<textarea name="wat_werkte" rows="2"></textarea></label>
+        <label>En wat werkte juist niet?<textarea name="wat_niet_werkte" rows="2"></textarea></label>
+        <label>Waar word je blij van in het lopen?<input name="leuk"></label>
+        <label>Waar zie je tegenop of wat vind je niks?<input name="niet_leuk"></label>
+      </fieldset>
+
+      <fieldset><legend>Je lijf &amp; leven</legend>
+        <div class="grid2">
+          <label>Hoe snel herstel je doorgaans?
+            <select name="herstelcapaciteit"><option>Langzaam</option><option selected>Normaal</option><option>Snel</option></select></label>
+          <label>Hoe druk is je werk/leven?
+            <select name="werkdruk"><option>Laag</option><option selected>Normaal</option><option>Hoog</option></select></label>
+        </div>
+        <label>Hoe is je slaap en leefritme?<input name="slaap" placeholder="bijv. wisseldiensten, 6-7 uur"></label>
+        <label>Blessures gehad (of nu)? Vertel kort.<textarea name="blessurehistorie" rows="2"></textarea></label>
+        <label>Huidige klachten of aandachtspunten?<input name="huidige_klachten"></label>
+        <label>Doe je nog andere sporten?<input name="andere_sporten" placeholder="bijv. krachttraining, voetbal"></label>
+        <label>Wat motiveert je het meest?<textarea name="motivatie" rows="2"></textarea></label>
+        <label>Nog iets dat we moeten weten?<textarea name="notities" rows="2"></textarea></label>
+      </fieldset>
+
+      <label class="bevestig"><input type="checkbox" id="bevestig"> Ja, ik ben klaar en wil mijn intake verzenden</label>
+      <button class="btn primary big" type="submit">Verstuur intake</button>
+    </form>
+  </div>
+
+  <div id="dank" class="pub-dank" hidden>
+    <h2>Bedankt!</h2>
+    <p>Je intake is verstuurd naar je coach. Je hoort snel van ons. Je kunt dit venster sluiten.</p>
+  </div>
+
+  <div id="ongeldig" class="pub-dank" hidden>
+    <h2>Link niet geldig</h2>
+    <p>Deze intakelink is niet (meer) geldig. Vraag je coach om een nieuwe link.</p>
+  </div>
+
+  <script src="/static/intake_public.js"></script>
+</body>
+</html>

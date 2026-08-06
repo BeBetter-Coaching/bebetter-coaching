@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0A1B33">
-  <title>BeBetter · Strippenkaart</title>
+  <title>BeBetter Coaching</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="stylesheet" href="/static/styles.css">
@@ -13,56 +13,91 @@
   <header class="top">
     <img src="/static/icon-192.png" alt="BeBetter Coaching" class="logo">
     <div class="top-txt">
-      <h1>Strippenkaart</h1>
+      <h1>BeBetter Coaching</h1>
       <p class="sub" id="bron">laden…</p>
     </div>
     <button id="install" class="btn install">⬇️ Installeer</button>
   </header>
 
+  <nav class="tabs" id="tabs">
+    <button class="tab on" data-view="strippen">🎫 Strippen</button>
+    <button class="tab" data-view="dossier">📋 Dossier</button>
+    <button class="tab" data-view="intake">📨 Intake</button>
+  </nav>
+
   <div id="offline" class="offline" hidden></div>
+  <div id="msg" class="msg" hidden></div>
 
   <main>
-    <section class="panel">
-      <button class="acc-toggle" data-target="nieuw">➕ Nieuwe strippenkaart</button>
-      <div id="nieuw" class="collapse">
-        <div class="row">
-          <input id="n-naam" placeholder="Naam (bijv. Lisa Jansen)">
-          <input id="n-tel" placeholder="Telefoon (06 12 34 56 78)">
-        </div>
-        <div class="row between">
-          <div class="seg" id="n-aantal" data-value="10">
-            <button data-v="10" class="on">10</button>
-            <button data-v="20">20</button>
+    <!-- ════════ STRIPPENKAART ════════ -->
+    <section class="view on" data-view="strippen">
+      <section class="panel">
+        <button class="acc-toggle" data-target="nieuw">➕ Nieuwe strippenkaart</button>
+        <div id="nieuw" class="collapse">
+          <div class="row">
+            <input id="n-naam" placeholder="Naam (bijv. Lisa Jansen)">
+            <input id="n-tel" placeholder="Telefoon (06 12 34 56 78)">
           </div>
-          <button class="btn primary" id="n-add">Toevoegen</button>
+          <div class="row between">
+            <div class="seg" id="n-aantal" data-value="10">
+              <button data-v="10" class="on">10</button>
+              <button data-v="20">20</button>
+            </div>
+            <button class="btn primary" id="n-add">Toevoegen</button>
+          </div>
         </div>
-      </div>
+      </section>
+
+      <section class="panel">
+        <button class="acc-toggle" data-target="bulk">⬆️ Meerdere tegelijk (uit je contacten)</button>
+        <div id="bulk" class="collapse">
+          <p class="hint">Plak "Naam, nummer" per regel, of kies een .vcf-contactenbestand.
+            Je ziet eerst een controle-overzicht voordat er iets wordt toegevoegd.</p>
+          <textarea id="b-text" rows="4" placeholder="Lisa Jansen, 06 12 34 56 78&#10;Piet de Vries, 0612345679"></textarea>
+          <div class="row between wrap">
+            <label class="file">📄 Kies .vcf<input type="file" id="b-vcf" accept=".vcf" hidden></label>
+            <div class="seg" id="b-aantal" data-value="10">
+              <button data-v="10" class="on">10</button>
+              <button data-v="20">20</button>
+            </div>
+            <button class="btn" id="b-check">🔍 Controleer</button>
+          </div>
+          <div id="b-preview"></div>
+        </div>
+      </section>
+
+      <p class="swipe-hint">Tip: sleep een kaart naar links om af te boeken.</p>
+      <section id="lijst" class="lijst"></section>
     </section>
 
-    <section class="panel">
-      <button class="acc-toggle" data-target="bulk">⬆️ Meerdere tegelijk (uit je contacten)</button>
-      <div id="bulk" class="collapse">
-        <p class="hint">Plak "Naam, nummer" per regel, of kies een .vcf-contactenbestand.
-          Je ziet eerst een controle-overzicht voordat er iets wordt toegevoegd.</p>
-        <textarea id="b-text" rows="4" placeholder="Lisa Jansen, 06 12 34 56 78&#10;Piet de Vries, 0612345679"></textarea>
-        <div class="row between wrap">
-          <label class="file">📄 Kies .vcf<input type="file" id="b-vcf" accept=".vcf" hidden></label>
-          <div class="seg" id="b-aantal" data-value="10">
-            <button data-v="10" class="on">10</button>
-            <button data-v="20">20</button>
-          </div>
-          <button class="btn" id="b-check">🔍 Controleer</button>
-        </div>
-        <div id="b-preview"></div>
-      </div>
+    <!-- ════════ DOSSIER ════════ -->
+    <section class="view" data-view="dossier">
+      <p class="hint">Alles over een atleet uit de gedeelde opslag: intake &amp; doel,
+        coach-notities, documenten en coach-geheugen. Trainingsdata/grafieken (FinalSurge)
+        blijven voorlopig in Streamlit.</p>
+      <input id="d-zoek" placeholder="🔎 Zoek atleet…">
+      <section id="d-lijst" class="lijst"></section>
+      <div id="d-detail" hidden></div>
     </section>
 
-    <p class="swipe-hint">Tip: sleep een kaart naar links om af te boeken.</p>
-    <div id="msg" class="msg" hidden></div>
-    <section id="lijst" class="lijst"></section>
+    <!-- ════════ INTAKE-INBOX ════════ -->
+    <section class="view" data-view="intake">
+      <section class="panel open-static">
+        <h3 class="panel-h">🔗 Deelbare intakelink</h3>
+        <p class="hint">Stuur deze link naar een nieuwe klant. Die vult het formulier in
+          zonder in te loggen; de inzending verschijnt hieronder.</p>
+        <div id="i-link"></div>
+      </section>
+
+      <div class="lijst-h">
+        <h3 class="panel-h">📨 Binnengekomen intakes</h3>
+        <button class="btn ghost small" id="i-refresh">🔄 Ververs</button>
+      </div>
+      <section id="i-inbox" class="lijst"></section>
+    </section>
   </main>
 
-  <footer class="foot">Proto · zelfde data als Streamlit · BeBetter Coaching</footer>
+  <footer class="foot">Zelfde data als Streamlit · BeBetter Coaching</footer>
 
   <template id="kaart-tpl">
     <article class="kaart">

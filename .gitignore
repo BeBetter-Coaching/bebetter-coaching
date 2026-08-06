@@ -1,5 +1,15 @@
 .fs_auth_token
 .auth_tokens.json
+.intakes.json
+.notes.json
+.laatste_intakes.json
+.on_hold.json
+.alerts_handled.json
+.admin_clients.json
+.pakket_prijzen.json
+.kor_correctie.json
+.revenue.json
+.garmin_state.json
 .intake_inbox.json
 .intake_link.json
 .belasting.json

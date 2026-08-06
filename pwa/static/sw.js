@@ -4,7 +4,7 @@
 //   laatste stand van je strippenkaarten.
 // - overige /api (afboeken/toevoegen): altijd netwerk; offline handelt de app dit
 //   zelf af met een wachtrij die verstuurt zodra je weer online bent.
-const CACHE = "bebetter-shell-v2";
+const CACHE = "bebetter-shell-v3";
 const SHELL = ["/", "/static/styles.css", "/static/app.js",
   "/static/icon-192.png", "/manifest.webmanifest"];
 
