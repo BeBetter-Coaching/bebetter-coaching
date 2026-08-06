@@ -129,6 +129,10 @@ textarea{resize:vertical}
 .mrow-tag{flex:0 0 auto;font-size:10.5px;font-weight:700;color:var(--acc);
   background:var(--card2);border:1px solid var(--border);border-radius:20px;
   padding:5px 11px;white-space:nowrap}
+.mrow-count{flex:0 0 auto;font-size:11px;font-weight:700;color:var(--muted);
+  background:var(--card2);border:1px solid var(--border);border-radius:20px;
+  padding:5px 10px;white-space:nowrap}
+.mrow-count.alert{color:#04222b;background:var(--acc);border-color:var(--acc)}
 .soon .soon-row{cursor:default;opacity:.5;padding:11px 16px}
 .soon .soon-row:hover{border-color:var(--border)}
 .soon-row .mrow-icon{font-size:20px}

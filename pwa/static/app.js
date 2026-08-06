@@ -17,7 +17,35 @@ const geladen = {};
 function toonView(view) {
   $$(".view").forEach(v => v.classList.toggle("on", v.dataset.view === view));
   window.scrollTo({ top: 0 });
+  if (view === "home") updateHomeCounts();   // tellers verversen bij terugkeer
   if (laders[view] && !geladen[view]) { geladen[view] = true; laders[view](); }
+}
+
+// Live tellers op de modulekaarten — maakt de home een echt dashboard.
+function _zetTeller(id, tekst, alert = false) {
+  const el = $("#" + id);
+  if (!el) return;
+  if (!tekst) { el.hidden = true; return; }
+  el.textContent = tekst; el.hidden = false;
+  el.classList.toggle("alert", !!alert);
+}
+async function updateHomeCounts() {
+  api("/api/intake/inbox").then(r => {
+    const n = (r.inbox || []).length;
+    _zetTeller("cnt-intake", n ? `${n} nieuw` : "", n > 0);
+  }).catch(() => {});
+  api("/api/dossier/athletes").then(r => {
+    const n = (r.athletes || []).length;
+    _zetTeller("cnt-dossier", n ? `${n} atleet${n === 1 ? "" : "en"}` : "");
+  }).catch(() => {});
+  api("/api/kaarten").then(r => {
+    const k = r.kaarten || [];
+    const vol = k.filter(x => x.rest <= 0).length;
+    _zetTeller("cnt-strippen", k.length ? `${k.length} kaart${k.length === 1 ? "" : "en"}${vol ? ` · ${vol} vol` : ""}` : "", vol > 0);
+    $("#bron").textContent = r.cloud
+      ? "verbonden met de gedeelde opslag (GitHub)"
+      : "lokale opslag (zelfde bestand als Streamlit lokaal)";
+  }).catch(() => { $("#bron").textContent = "offline — laatste bekende stand"; });
 }
 $$("[data-open-view]").forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
 $$("[data-home]").forEach(b => b.addEventListener("click", () => toonView("home")));
@@ -515,9 +543,4 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").cat
 if (!matchMedia("(display-mode: standalone)").matches) $("#install").hidden = false;
 toonOffline();
 if (navigator.onLine) flush();
-// Toon de gedeelde-opslag-status alvast op de home (strippenlijst laadt bij openen)
-api("/api/kaarten").then(d => {
-  $("#bron").textContent = d.cloud
-    ? "verbonden met de gedeelde opslag (GitHub)"
-    : "lokale opslag (zelfde bestand als Streamlit lokaal)";
-}).catch(() => { $("#bron").textContent = "offline — laatste bekende stand"; });
+updateHomeCounts();   // bron + live tellers op de home meteen vullen
