@@ -4,6 +4,10 @@
   --wa:#25D366; --danger:#E5674B; --warn:#EF9F27; --radius:14px;
 }
 *{box-sizing:border-box}
+/* Verborgen elementen ècht verbergen: een `hidden`-attribuut wint altijd, ook
+   van .btn/.login-pw/.login-scrim die zelf een display-waarde zetten. Zonder
+   dit tonen die velden tóch (bv. wachtwoord/Face ID vóór je een coach kiest). */
+[hidden]{display:none !important}
 html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   -webkit-font-smoothing:antialiased}
