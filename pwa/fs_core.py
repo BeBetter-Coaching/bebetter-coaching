@@ -53,7 +53,10 @@ def roster() -> list[dict]:
 
 
 def recente_trainingen(user_key: str, dagen: int = 14) -> list[dict]:
-    """Uitgevoerde trainingen van de afgelopen `dagen` — voor dashboard-signalen."""
+    """Uitgevoerde trainingen van de afgelopen `dagen`, genormaliseerd voor de UI.
+
+    Elke rij: {datum (YYYY-MM-DD), type (bv. 'Duurloop'), duur_min}.
+    """
     if not user_key or not heeft_token():
         return []
     einde = date.today()
@@ -63,7 +66,23 @@ def recente_trainingen(user_key: str, dagen: int = 14) -> list[dict]:
     except Exception:
         return []
     gedaan = [w for w in workouts if FS.is_executed_workout(w)] if hasattr(FS, "is_executed_workout") else workouts
-    return gedaan
+
+    out = []
+    for w in gedaan:
+        acts = w.get("Activities") or []
+        a0 = acts[0] if acts else {}
+        duur = a0.get("duration")
+        try:
+            duur_min = round(float(duur) / 60) if duur else None
+        except (TypeError, ValueError):
+            duur_min = None
+        out.append({
+            "datum": (w.get("workout_date") or "")[:10],
+            "type": a0.get("activity_type_name") or w.get("name") or "Training",
+            "duur_min": duur_min,
+        })
+    out.sort(key=lambda x: x["datum"], reverse=True)
+    return out[:8]
 
 
 def weeksamenvatting(user_key: str) -> dict:

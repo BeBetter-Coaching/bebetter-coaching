@@ -300,6 +300,19 @@ textarea{resize:vertical}
 .listcard.sel{border-color:var(--acc);background:var(--card2)}
 .md-leeg{padding:56px 20px}
 
+/* ── Training-sectie (FinalSurge-data in het atleet-dossier) ──────────────── */
+.train-top{display:flex;gap:16px;align-items:center}
+.train-ring{width:76px;height:76px;border-radius:50%;border:6px solid var(--acc);background:var(--card2);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 0 auto}
+.train-n{font-size:26px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:var(--acc)}
+.train-lbl{font-size:9px;color:var(--muted);margin-top:2px}
+.train-recent{flex:1;min-width:0}
+.tr-row{display:flex;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
+.tr-row:last-child{border-bottom:0}
+.tr-d{color:var(--acc);font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+.tr-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tr-m{color:var(--muted);font-size:12px;white-space:nowrap}
+
 /* ── Meldingen zweven (los van de layout, werkt op smal én breed) ─────────── */
 #msg,#offline{position:fixed;left:50%;transform:translateX(-50%);z-index:30;
   width:calc(100% - 32px);max-width:560px;margin:0}

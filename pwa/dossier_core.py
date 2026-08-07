@@ -97,17 +97,14 @@ def list_athletes() -> list[dict]:
 
 
 def get_dossier(key: str) -> dict | None:
-    """Volledig store-dossier voor één atleet, of None als onbekend."""
+    """Volledig store-dossier voor één atleet, of None als er niks van bekend is.
+
+    Geeft ook een dossier terug als er (nog) geen intake is maar wél notities,
+    documenten of een geheugen — zodat je bij elke atleet (ook FinalSurge-only)
+    notities kunt bijhouden.
+    """
     intakes = intake_store.load_intakes()
     ik = intakes.get(key)
-    if ik is None:
-        return None
-
-    velden = [
-        {"label": lbl, "waarde": ik.get(k)}
-        for lbl, k in _INTAKE_VELDEN
-        if ik.get(k)
-    ]
 
     try:
         notes = intake_store.load_notes().get(key, []) or []
@@ -121,6 +118,16 @@ def get_dossier(key: str) -> dict | None:
         prof = intake_store.load_profielen().get(key, {}) or {}
     except Exception:
         prof = {}
+
+    if ik is None and not notes and not docs and not prof.get("profiel"):
+        return None
+    ik = ik or {}
+
+    velden = [
+        {"label": lbl, "waarde": ik.get(k)}
+        for lbl, k in _INTAKE_VELDEN
+        if ik.get(k)
+    ]
 
     return {
         "key": key,

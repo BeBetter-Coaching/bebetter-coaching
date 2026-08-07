@@ -90,7 +90,8 @@ def detail(ident: str) -> dict | None:
     if ident in fs_rows:                                # FS-atleet
         a = fs_rows[ident]
         naam = a["naam"]
-        store_key = _match_store_key(ident, naam)
+        # bestaande store-data op naam, anders sleutelen we nieuwe notities op user_key
+        store_key = _match_store_key(ident, naam) or ident
         training = {
             "week": fs_core.weeksamenvatting(ident),
             "recent": fs_core.recente_trainingen(ident, dagen=14),

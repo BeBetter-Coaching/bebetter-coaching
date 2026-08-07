@@ -111,11 +111,11 @@ async function renderHome() {
 
   const [inbox, ath, kaarten] = await Promise.all([
     api("/api/intake/inbox").catch(() => ({ inbox: [] })),
-    api("/api/dossier/athletes").catch(() => ({ athletes: [] })),
+    api("/api/atleten").catch(() => ({ atleten: [] })),
     api("/api/kaarten").catch(() => ({ kaarten: [] })),
   ]);
   const nNieuw = (inbox.inbox || []).length;
-  const nAtl = (ath.athletes || []).length;
+  const nAtl = ath.totaal != null ? ath.totaal : (ath.atleten || []).length;
   const kn = kaarten.kaarten || [];
   const vol = kn.filter(k => k.rest <= 0);
   const bijna = kn.filter(k => k.rest > 0 && k.rest <= 1);
@@ -416,7 +416,8 @@ function toonPreview(pv) {
 // ATLETEN — store-only 360° per atleet (intake, notities, documenten, geheugen)
 // ════════════════════════════════════════════════════════════════════════════
 let dossierCache = [];
-let dossierSel = null;   // geselecteerde atleet-key (voor master-detail op laptop)
+let dossierSel = null;   // geselecteerde atleet-id (voor master-detail op laptop)
+let fsActief = false;    // is de FinalSurge-koppeling actief (volledige roster)?
 
 // Placeholder in het rechterpaneel zolang er nog niks gekozen is (alleen laptop)
 function toonDetailLeeg() {
@@ -430,12 +431,13 @@ function markSel(key) {
 
 async function laadDossierLijst() {
   const box = $("#d-lijst");
-  skeleton(box, 4);
+  skeleton(box, 6);
   let data;
-  try { data = await api("/api/dossier/athletes"); }
+  try { data = await api("/api/atleten"); }
   catch { box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
-  dossierCache = data.athletes || [];
-  tekenDossierLijst("");
+  dossierCache = data.atleten || [];
+  fsActief = !!data.fs;
+  tekenDossierLijst($("#d-zoek").value || "");
 }
 
 function tekenDossierLijst(filter) {
@@ -443,27 +445,31 @@ function tekenDossierLijst(filter) {
   box.hidden = false;
   if (isDesktop()) { if (!dossierSel) toonDetailLeeg(); }   // detail blijft staan naast de lijst
   else { $("#d-detail").hidden = true; }                    // telefoon: één scherm tegelijk
-  const f = filter.trim().toLowerCase();
+  const f = (filter || "").trim().toLowerCase();
   const rijen = dossierCache.filter(a => !f || (a.naam || "").toLowerCase().includes(f));
   if (!rijen.length) {
     box.innerHTML = `<div class="leeg">${ic("users")}<p>${dossierCache.length
-      ? "Geen atleet gevonden." : "Nog geen atleten met een intake.<br>Neem er een over via Intake."}</p></div>`;
+      ? "Geen atleet gevonden." : (fsActief ? "Geen atleten." : "Nog geen atleten.<br>Koppel FinalSurge (FS_TOKEN) voor de volledige lijst.")}</p></div>`;
     return;
   }
   box.innerHTML = "";
   rijen.forEach(a => {
     const el = document.createElement("button");
     el.className = "listcard";
-    el.dataset.key = a.key;
-    if (a.key === dossierSel) el.classList.add("sel");
+    el.dataset.key = a.id;
+    if (a.id === dossierSel) el.classList.add("sel");
+    const meta = [
+      a.n_notities ? a.n_notities + " notitie(s)" : "",
+      a.n_documenten ? a.n_documenten + " document(en)" : "",
+    ].filter(Boolean).join(" · ");
     el.innerHTML = `
       <span class="avatar">${initialen(a.naam)}</span>
       <span class="lc-body">
-        <span class="lc-title">${esc(a.naam)}${a.nieuw ? ' <span class="tag">nieuw</span>' : ""}</span>
-        <span class="lc-sub">${a.doel ? esc(a.doel) : "geen doel ingevuld"}</span>
-        <span class="lc-meta">${a.n_notities ? a.n_notities + " notitie(s)" : ""}${a.n_notities && a.n_documenten ? " · " : ""}${a.n_documenten ? a.n_documenten + " document(en)" : ""}</span>
+        <span class="lc-title">${esc(a.naam)}${a.heeft_intake ? ' <span class="tag">intake</span>' : ""}</span>
+        <span class="lc-sub">${a.groep ? esc(a.groep) : "—"}</span>
+        ${meta ? `<span class="lc-meta">${meta}</span>` : ""}
       </span>${ic("chevron")}`;
-    el.addEventListener("click", () => openDossier(a.key));
+    el.addEventListener("click", () => openDossier(a.id));
     box.appendChild(el);
   });
 }
@@ -475,45 +481,62 @@ function initialen(naam) {
 $("#d-zoek").addEventListener("input", e => tekenDossierLijst(e.target.value));
 $("#a-refresh").addEventListener("click", () => { geladen.atleten = true; laadDossierLijst(); });
 
-async function openDossier(key) {
-  dossierSel = key;
+async function openDossier(ident) {
+  dossierSel = ident;
   const wrap = $("#d-detail");
-  if (isDesktop()) markSel(key);            // laptop: lijst blijft, rij licht op
+  if (isDesktop()) markSel(ident);          // laptop: lijst blijft, rij licht op
   else $("#d-lijst").hidden = true;         // telefoon: lijst wijkt voor het dossier
   wrap.hidden = false;
   wrap.innerHTML = '<p class="muted center">Laden…</p>';
-  const r = await api(`/api/dossier/${encodeURIComponent(key)}`).catch(() => null);
-  if (!r || !r.ok) { wrap.innerHTML = '<p class="muted center">Kon dossier niet laden.</p>'; return; }
-  tekenDossier(r.dossier);
+  const d = await api(`/api/atleten/${encodeURIComponent(ident)}`).catch(() => null);
+  if (!d || !d.naam) { wrap.innerHTML = '<p class="muted center">Kon atleet niet laden.</p>'; return; }
+  tekenAtleet(d);
 }
 
-function tekenDossier(d) {
-  const velden = d.velden.map(v =>
-    `<p class="veld"><b>${esc(v.label)}:</b> ${esc(v.waarde)}</p>`).join("")
-    || '<p class="muted klein">Intake aanwezig, nog geen velden ingevuld.</p>';
+function tekenAtleet(d) {
+  const wrap = $("#d-detail");
+  const storeKey = d.store_key;
+  const wk = (d.training && d.training.week) ? d.training.week.deze_week : 0;
+  const recent = (d.training && d.training.recent) || [];
+  const recentHtml = recent.length
+    ? recent.map(t => `<div class="tr-row"><span class="tr-d">${esc((t.datum || "").slice(5))}</span>
+        <span class="tr-t">${esc(t.type || "Training")}</span>
+        ${t.duur_min ? `<span class="tr-m">${t.duur_min} min</span>` : ""}</div>`).join("")
+    : '<p class="muted klein">Geen trainingen in de laatste 2 weken.</p>';
 
-  const notities = d.notities.map((n, i) => `
+  const dos = d.dossier;
+  const velden = dos ? (dos.velden.map(v =>
+    `<p class="veld"><b>${esc(v.label)}:</b> ${esc(v.waarde)}</p>`).join("")) : "";
+  const notities = (dos && dos.notities.length) ? dos.notities.map((n, i) => `
     <div class="note">
       <div class="note-h"><span>${esc(n.coach || "?")} · ${esc(n.datum || "")}</span>
         <button class="btn danger-ghost mini" data-del-note="${i}" aria-label="Verwijderen">${ic("trash")}</button></div>
       <p>${esc(n.tekst || "")}</p>
-    </div>`).join("") || '<p class="muted klein">Nog geen notities.</p>';
-
-  const docs = d.documenten.map(x => `
+    </div>`).join("") : '<p class="muted klein">Nog geen notities.</p>';
+  const docs = (dos && dos.documenten.length) ? dos.documenten.map(x => `
     <div class="doc"><span class="doc-d">${esc(x.datum || "")}</span>
       <span>${esc(x.type || "")}${x.onderwerp ? " — " + esc(x.onderwerp) : ""}</span></div>`).join("")
-    || '<p class="muted klein">Nog geen documenten.</p>';
+    : '<p class="muted klein">Nog geen documenten.</p>';
+  const prof = dos ? dos.profiel : { tekst: "", bijgewerkt: "" };
+  const nDocs = dos ? dos.documenten.length : 0;
 
-  const p = d.profiel;
-  const wrap = $("#d-detail");
   wrap.innerHTML = `
     <button class="btn ghost back" id="d-terug">${ic("back")} Alle atleten</button>
     <div class="d-head"><span class="avatar big">${initialen(d.naam)}</span>
-      <h2 class="d-naam">${esc(d.naam)}${d.nieuw ? ' <span class="tag">nieuw</span>' : ""}</h2></div>
+      <div><h2 class="d-naam">${esc(d.naam)}</h2>
+        ${d.groep ? `<p class="muted klein" style="margin:3px 0 0">${esc(d.groep)}</p>` : ""}</div></div>
 
     <section class="panel open-static">
-      <h3 class="panel-h">${ic("file")} Intake &amp; doel</h3>${velden}
+      <h3 class="panel-h">${ic("activity")} Training <span class="muted klein">(uit FinalSurge)</span></h3>
+      <div class="train-top">
+        <div class="train-ring"><span class="train-n">${wk}</span><span class="train-lbl">deze week</span></div>
+        <div class="train-recent">${recentHtml}</div>
+      </div>
     </section>
+
+    ${velden ? `<section class="panel open-static">
+      <h3 class="panel-h">${ic("file")} Intake &amp; doel</h3>${velden}
+    </section>` : ""}
 
     <section class="panel open-static">
       <h3 class="panel-h">${ic("note")} Coach-notities <span class="muted klein">(gedeeld Jip &amp; Remco)</span></h3>
@@ -528,15 +551,15 @@ function tekenDossier(d) {
     </section>
 
     <section class="panel">
-      <button class="acc-toggle" data-target="d-docs">${ic("file")} Documenten (${d.documenten.length})</button>
+      <button class="acc-toggle" data-target="d-docs">${ic("file")} Documenten (${nDocs})</button>
       <div id="d-docs" class="collapse">${docs}</div>
     </section>
 
     <section class="panel">
       <button class="acc-toggle" data-target="d-prof">${ic("brain")} Coach-geheugen</button>
       <div id="d-prof" class="collapse">
-        <p class="hint">Wat de AI over deze atleet weet. Groeit mee bij feedback in Streamlit; jouw aanpassing is leidend.${p.bijgewerkt ? " Laatst bijgewerkt: " + esc(p.bijgewerkt) + "." : ""}</p>
-        <textarea id="pf-tekst" rows="5" placeholder="Nog leeg.">${esc(p.tekst || "")}</textarea>
+        <p class="hint">Wat de AI over deze atleet weet. Groeit mee bij feedback in Streamlit; jouw aanpassing is leidend.${prof.bijgewerkt ? " Laatst bijgewerkt: " + esc(prof.bijgewerkt) + "." : ""}</p>
+        <textarea id="pf-tekst" rows="5" placeholder="Nog leeg.">${esc(prof.tekst || "")}</textarea>
         <button class="btn primary" id="pf-save">Geheugen opslaan</button>
       </div>
     </section>`;
@@ -548,19 +571,19 @@ function tekenDossier(d) {
   $("#nt-add").addEventListener("click", async () => {
     const tekst = $("#nt-tekst").value.trim();
     if (!tekst) return melding("Typ eerst een notitie.", true);
-    const r = await jpost(`/api/dossier/${encodeURIComponent(d.key)}/note`,
+    const r = await jpost(`/api/dossier/${encodeURIComponent(storeKey)}/note`,
       { coach: $("#nt-coach").dataset.value, tekst }).catch(() => null);
     if (!r || !r.ok) return melding(r?.err || "Opslaan mislukt.", true);
-    openDossier(d.key); vervalDossierLijst();
+    openDossier(d.id); vervalDossierLijst();
   });
   $("#nt-lijst").querySelectorAll("[data-del-note]").forEach(btn =>
     btn.addEventListener("click", async () => {
-      const r = await api(`/api/dossier/${encodeURIComponent(d.key)}/note/${+btn.dataset.delNote}`, { method: "DELETE" }).catch(() => null);
+      const r = await api(`/api/dossier/${encodeURIComponent(storeKey)}/note/${+btn.dataset.delNote}`, { method: "DELETE" }).catch(() => null);
       if (!r || !r.ok) return melding(r?.err || "Verwijderen mislukt.", true);
-      openDossier(d.key); vervalDossierLijst();
+      openDossier(d.id); vervalDossierLijst();
     }));
   $("#pf-save").addEventListener("click", async () => {
-    const r = await jpost(`/api/dossier/${encodeURIComponent(d.key)}/profiel`, { tekst: $("#pf-tekst").value }).catch(() => null);
+    const r = await jpost(`/api/dossier/${encodeURIComponent(storeKey)}/profiel`, { tekst: $("#pf-tekst").value }).catch(() => null);
     if (!r || !r.ok) return melding(r?.err || "Opslaan mislukt.", true);
     melding("Geheugen opgeslagen.");
   });
