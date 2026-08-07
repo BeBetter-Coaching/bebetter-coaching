@@ -87,3 +87,29 @@ def genereer_csv(key: str, plan_tekst: str):
     csv_clean = SB.extract_csv_block(csv_tekst)
     rijen = SB.parse_csv_text(csv_tekst)
     return csv_clean, rijen
+
+
+def push(key: str, csv_tekst: str) -> dict:
+    """Zet de trainingen uit de CSV op de FinalSurge-kalender van de atleet.
+
+    WRITE-actie. Hergebruikt exact `schema_builder.import_to_finalsurge` (beproefd
+    in de Streamlit-bouwer): zelfde zone_type-mapping, fill_builder en op_tijd.
+    Voegt trainingen TOE (wist bestaande niet). Geeft een resultaat-dict terug.
+    """
+    intake = get_intake(key)
+    if not intake:
+        raise ValueError("Geen opgeslagen intake voor deze atleet.")
+    ak = intake.get("athlete_key", "")
+    if not ak:
+        raise ValueError("Geen FinalSurge-koppeling (athlete_key) voor deze atleet.")
+    import schema_builder as SB
+    rijen = SB.parse_csv_text(csv_tekst or "")
+    if not rijen:
+        raise ValueError("Geen trainingen in de CSV om te pushen.")
+    _zt = intake.get("zone_type", "tempo")
+    zone_type = "heart_rate" if _zt in ("hartslag", "heart_rate") else "pace"
+    ok, fouten, builder_fouten = SB.import_to_finalsurge(
+        athlete_key=ak, workouts=rijen, zone_type=zone_type,
+        fill_builder=True, op_tijd=intake.get("op_tijd", False))
+    return {"ok_aantal": ok, "totaal": len(rijen),
+            "fouten": fouten or [], "builder_fouten": builder_fouten or []}

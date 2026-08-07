@@ -909,7 +909,9 @@ function fbItem(it) {
     <button class="btn primary" data-gen>${ic("brain")} Genereer feedback</button>
     <div class="fb-uit" hidden>
       <textarea class="fb-tekst" rows="6"></textarea>
+      <button class="btn primary" data-post>${ic("message")} Plaats in FinalSurge</button>
       <button class="btn" data-copy>${ic("copy")} Kopieer</button>
+      <p class="hint" data-poststatus></p>
     </div>`;
   const genBtn = el.querySelector("[data-gen]");
   genBtn.addEventListener("click", async () => {
@@ -919,6 +921,15 @@ function fbItem(it) {
     if (!r || !r.ok) return melding(r?.err || "Genereren mislukt.", true);
     el.querySelector(".fb-uit").hidden = false;
     el.querySelector(".fb-tekst").value = r.tekst || "";
+  });
+  el.querySelector("[data-post]").addEventListener("click", async () => {
+    if (!confirm(`Deze reactie in FinalSurge plaatsen bij ${it.voornaam}? ${it.voornaam} ziet dit.`)) return;
+    const btn = el.querySelector("[data-post]"); btn.disabled = true; btn.textContent = "Plaatsen…";
+    const r = await jpost("/api/feedback/post", { id: it.id, tekst: el.querySelector(".fb-tekst").value }).catch(() => null);
+    btn.disabled = false; btn.innerHTML = `${ic("message")} Plaats in FinalSurge`;
+    if (!r || !r.ok) return melding(r?.err || "Posten mislukt.", true);
+    el.querySelector("[data-poststatus]").textContent = "Geplaatst in FinalSurge ✓";
+    el.style.opacity = ".6"; haptic(15);
   });
   el.querySelector("[data-copy]").addEventListener("click", () => {
     navigator.clipboard?.writeText(el.querySelector(".fb-tekst").value)
@@ -974,7 +985,11 @@ function schemaWerk(a) {
       <div id="sb-planbox" hidden>
         <label class="lbl">Plan — pas het gerust aan vóór de CSV</label>
         <textarea id="sb-plantekst" rows="12"></textarea>
-        <button class="btn primary" id="sb-csv" style="margin-top:10px">${ic("download")} Genereer CSV</button>
+        <button class="btn primary" id="sb-csv" style="margin-top:10px">${ic("check")} Genereer CSV</button>
+        <div id="sb-na" hidden>
+          <button class="btn" id="sb-download">${ic("download")} Download CSV</button>
+          <button class="btn primary" id="sb-push">${ic("refresh")} Zet in FinalSurge</button>
+        </div>
         <p class="hint" id="sb-csvstatus"></p>
       </div>
     </section>`;
@@ -988,16 +1003,32 @@ function schemaWerk(a) {
     $("#sb-planbox").hidden = false;
     $("#sb-plantekst").value = r.plan || "";
   });
+  let csvTekst = "", rijenN = 0;
   $("#sb-csv").addEventListener("click", async () => {
     const st = $("#sb-csvstatus"); st.textContent = "CSV genereren…";
     const r = await jpost("/api/schema/csv", { key: a.key, plan: $("#sb-plantekst").value }).catch(() => null);
     if (!r || !r.ok) { st.textContent = ""; return melding(r?.err || "CSV mislukt.", true); }
-    const url = URL.createObjectURL(new Blob([r.csv || ""], { type: "text/csv" }));
+    csvTekst = r.csv || ""; rijenN = (r.rijen || []).length;
+    $("#sb-na").hidden = false;
+    st.textContent = `CSV klaar — ${rijenN} trainingen. Download 'm, of zet ze direct op de FinalSurge-kalender.`;
+    haptic(15);
+  });
+  $("#sb-download").addEventListener("click", () => {
+    const url = URL.createObjectURL(new Blob([csvTekst], { type: "text/csv" }));
     const dl = document.createElement("a");
     dl.href = url; dl.download = `Schema - ${a.naam}.csv`;
     document.body.appendChild(dl); dl.click(); dl.remove(); URL.revokeObjectURL(url);
-    st.textContent = `Klaar — ${(r.rijen || []).length} trainingen. CSV gedownload; importeer 'm in FinalSurge.`;
-    haptic(15);
+  });
+  $("#sb-push").addEventListener("click", async () => {
+    if (!confirm(`${rijenN} trainingen op de FinalSurge-kalender van ${a.naam} zetten? Bestaande trainingen blijven staan (worden niet gewist).`)) return;
+    const btn = $("#sb-push"); btn.disabled = true; btn.textContent = "Bezig met pushen…";
+    const st = $("#sb-csvstatus"); st.textContent = "Trainingen in FinalSurge zetten… (kan even duren)";
+    const r = await jpost("/api/schema/push", { key: a.key, csv: csvTekst }).catch(() => null);
+    btn.disabled = false; btn.innerHTML = `${ic("refresh")} Zet in FinalSurge`;
+    if (!r || !r.ok) { st.textContent = ""; return melding(r?.err || "Pushen mislukt.", true); }
+    const fout = (r.fouten || []).length;
+    st.textContent = `${r.ok_aantal} van ${r.totaal} trainingen in FinalSurge gezet${fout ? `, ${fout} met een fout` : ""}. ✓`;
+    haptic(20);
   });
 }
 $("#sb-refresh").addEventListener("click", () => { geladen.schema = true; laadSchema(); });

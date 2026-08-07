@@ -256,7 +256,9 @@ textarea{resize:vertical}
   background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:8px 11px}
 .fb-uit{margin-top:10px}
 .fb-uit .fb-tekst{margin-bottom:8px}
-.fb-uit .btn{width:100%}
+.fb-uit .btn{width:100%;margin-top:8px}
+#sb-na{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+#sb-na .btn{width:100%}
 .linkbox{display:flex;gap:8px;align-items:center;margin-bottom:8px}
 .linkbox code{flex:1;background:var(--card2);border:1px solid var(--border);border-radius:10px;
   padding:10px 12px;font-size:12.5px;overflow:auto;white-space:nowrap;color:var(--acc)}

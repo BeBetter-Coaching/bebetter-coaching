@@ -353,6 +353,7 @@ def atleten_detail(ident: str):
 # ── API: feedback (AI-concept op trainingen; FinalSurge + Anthropic) ─────────
 class FeedbackGen(BaseModel):
     id: str = ""
+    tekst: str = ""
 
 
 @app.get("/api/feedback")
@@ -371,10 +372,22 @@ def feedback_gen(body: FeedbackGen):
     return {"ok": True, "tekst": tekst}
 
 
+@app.post("/api/feedback/post")          # WRITE: post de reactie in FinalSurge
+def feedback_post(body: FeedbackGen):
+    try:
+        feedback.plaats(body.id, body.tekst)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Posten mislukt: {e}"}, status_code=500)
+    return {"ok": True}
+
+
 # ── API: schema bouwen (intake -> AI-plan -> CSV; Anthropic + gedeelde intake) ─
 class SchemaGen(BaseModel):
     key: str = ""
     plan: str = ""
+    csv: str = ""
 
 
 @app.get("/api/schema/atleten")
@@ -402,6 +415,17 @@ def schema_csv(body: SchemaGen):
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"CSV mislukt: {e}"}, status_code=500)
     return {"ok": True, "csv": csv_tekst, "rijen": rijen}
+
+
+@app.post("/api/schema/push")            # WRITE: zet de trainingen op de FS-kalender
+def schema_push(body: SchemaGen):
+    try:
+        res = schema_core.push(body.key, body.csv)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Pushen mislukt: {e}"}, status_code=500)
+    return {"ok": True, **res}
 
 
 # ── API: strippenkaart ───────────────────────────────────────────────────────

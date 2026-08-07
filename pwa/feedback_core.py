@@ -83,3 +83,34 @@ def genereer(wid: str) -> str:
         raise ValueError("Training niet meer in beeld — ververs de lijst en probeer opnieuw.")
     import ai_feedback                                   # lui: pas hier is de key nodig
     return ai_feedback.generate_feedback(w)
+
+
+def _coach_athlete_key(athlete_key: str):
+    """De coach-atleet-relatiesleutel (om de teller in FinalSurge te resetten)."""
+    try:
+        for a in FS.get_athletes():
+            if a.get("user_key") == athlete_key:
+                return a.get("coach_athlete_key")
+    except Exception:
+        pass
+    return None
+
+
+def plaats(wid: str, tekst: str) -> bool:
+    """Post de (bewerkte) feedback als coach-reactie in FinalSurge. WRITE-actie.
+
+    Hergebruikt exact `fs_client.post_comment` (beproefd in Streamlit). Geen AI.
+    """
+    w = _cache.get(wid)
+    if not w:
+        raise ValueError("Training niet meer in beeld — ververs de lijst en probeer opnieuw.")
+    tekst = (tekst or "").strip()
+    if not tekst:
+        raise ValueError("Lege feedback.")
+    ak = w.get("athlete_key", "")
+    wk = w.get("workout_key", "")
+    if not (ak and wk):
+        raise ValueError("Geen FinalSurge-koppeling voor deze training.")
+    FS.post_comment(workout_key=wk, user_key=ak, comment=tekst,
+                    coach_athlete_key=_coach_athlete_key(ak))
+    return True
