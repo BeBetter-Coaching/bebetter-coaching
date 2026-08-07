@@ -152,8 +152,9 @@ function kaartItem(icn, titel, sub, view, alert) {
 }
 
 function setBadge(n) {
-  const b = $("#nav-badge");
-  if (n > 0) { b.textContent = n; b.hidden = false; } else b.hidden = true;
+  $$(".nav-badge").forEach(b => {           // onderbalk + zijbalk allebei
+    if (n > 0) { b.textContent = n; b.hidden = false; } else b.hidden = true;
+  });
 }
 function bronStatus(cloud) {
   const el = $("#bron");

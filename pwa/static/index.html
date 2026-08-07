@@ -41,6 +41,19 @@
   <div id="offline" class="offline" hidden></div>
   <div id="msg" class="msg" hidden></div>
 
+  <!-- Zijbalk (alleen op laptop/desktop; telefoon gebruikt de onderbalk) -->
+  <aside class="sidebar">
+    <div class="sb-brand"><span class="sb-logo">BB</span><span class="sb-name">BeBetter</span></div>
+    <nav class="sb-nav">
+      <button class="nav-item on" data-open-view="home"><svg class="ic"><use href="#ic-home"/></svg><span>Home</span></button>
+      <button class="nav-item" data-open-view="atleten"><svg class="ic"><use href="#ic-users"/></svg><span>Atleten</span></button>
+      <button class="nav-item" data-open-view="intake"><svg class="ic"><use href="#ic-mail"/></svg><span>Intake</span><i class="nav-badge" hidden></i></button>
+      <button class="nav-item" data-open-view="strippen"><svg class="ic"><use href="#ic-ticket"/></svg><span>Strippenkaart</span></button>
+      <button class="nav-item" data-open-view="meer"><svg class="ic"><use href="#ic-more"/></svg><span>Meer</span></button>
+    </nav>
+    <p class="sb-foot">Zelfde data als Streamlit</p>
+  </aside>
+
   <main id="scroller">
     <!-- ════════ HOME (dashboard) ════════ -->
     <section class="view on" data-view="home">

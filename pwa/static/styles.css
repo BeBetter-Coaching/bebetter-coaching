@@ -31,17 +31,34 @@ body{display:flex;flex-direction:column;max-width:640px;margin:0 auto;overflow:h
 .ab-greet{margin:0;font-size:16px;font-weight:600}
 .ab-date{margin:1px 0 0;font-size:12px;color:var(--muted)}
 
-/* ── Onderbalk ────────────────────────────────────────────────────────────── */
+/* ── Onderbalk (telefoon) ─────────────────────────────────────────────────── */
+.nav-item{background:none;border:0;color:var(--muted);cursor:pointer;font-weight:600;position:relative}
+.nav-item.on{color:var(--acc)}
 .bottomnav{flex:0 0 auto;display:flex;background:var(--card2);border-top:1px solid var(--border);
   padding-bottom:env(safe-area-inset-bottom)}
-.nav-item{flex:1;background:none;border:0;color:var(--muted);cursor:pointer;
-  display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 4px 8px;
-  font-size:10.5px;font-weight:600;position:relative}
-.nav-item .ic{width:23px;height:23px;stroke-width:1.9}
-.nav-item.on{color:var(--acc)}
+.bottomnav .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:9px 4px 8px;font-size:10.5px}
+.bottomnav .nav-item .ic{width:23px;height:23px;stroke-width:1.9}
 .nav-badge{position:absolute;top:4px;left:calc(50% + 6px);min-width:16px;height:16px;
   background:var(--acc);color:#04222b;border-radius:9px;font-size:10px;font-weight:700;font-style:normal;
   display:flex;align-items:center;justify-content:center;padding:0 4px}
+
+/* ── Zijbalk (laptop/desktop) — standaard verborgen; media-query zet 'm aan ── */
+.sidebar{display:none;flex-direction:column;gap:3px;padding:20px 14px;
+  background:var(--card2);border-right:1px solid var(--border);overflow-y:auto}
+.sb-brand{display:flex;align-items:center;gap:11px;padding:6px 10px 20px}
+.sb-logo{width:38px;height:38px;border-radius:11px;background:var(--card);border:1px solid var(--border);
+  color:var(--acc);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.sb-name{font-size:18px;font-weight:700}
+.sb-nav{display:flex;flex-direction:column;gap:3px}
+.sidebar .nav-item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+  padding:11px 14px;border-radius:11px;font-size:14.5px}
+.sidebar .nav-item .ic{width:21px;height:21px;stroke-width:1.9;flex:0 0 auto}
+.sidebar .nav-item span{flex:1}
+.sidebar .nav-item:hover{background:var(--card);color:var(--text)}
+.sidebar .nav-item.on{background:var(--card);color:var(--acc)}
+.sidebar .nav-badge{position:static;top:auto;left:auto;flex:0 0 auto}
+.sb-foot{margin-top:auto;padding:14px 12px 4px;font-size:11px;color:var(--muted)}
 
 /* ── Views + overgang ─────────────────────────────────────────────────────── */
 .view{display:none}
@@ -233,3 +250,30 @@ textarea{resize:vertical}
   border:1px solid var(--border);border-radius:20px;padding:5px 11px;white-space:nowrap}
 .soon .soon-row{opacity:.5}
 .foot{text-align:center;color:var(--muted);font-size:11.5px;margin:26px 0 10px}
+
+/* ── Meldingen zweven (los van de layout, werkt op smal én breed) ─────────── */
+#msg,#offline{position:fixed;left:50%;transform:translateX(-50%);z-index:30;
+  width:calc(100% - 32px);max-width:560px;margin:0}
+#msg{bottom:calc(72px + env(safe-area-inset-bottom))}
+#offline{bottom:calc(120px + env(safe-area-inset-bottom))}
+
+/* ════════ LAPTOP / DESKTOP (≥ 900px): zijbalk links, content op breedte ════ */
+@media (min-width:900px){
+  body{max-width:none;display:grid;grid-template-columns:250px 1fr;
+    grid-template-rows:100vh;height:100vh}
+  .sidebar{display:flex}          /* zijbalk aan  */
+  .bottomnav{display:none}        /* onderbalk uit */
+  #scroller{padding:0 40px calc(32px)}
+  .view{max-width:860px;margin:0 auto}
+  .appbar{padding-top:26px}
+  /* Meer ademruimte: dashboard/snelacties benutten de bredere kolom */
+  .quick{grid-template-columns:repeat(3,1fr)}
+  /* Toasts rechtsonder i.p.v. gecentreerd over het hele scherm */
+  #msg,#offline{left:auto;right:32px;transform:none;max-width:400px}
+  #msg{bottom:28px}
+  #offline{bottom:82px}
+}
+@media (min-width:1200px){
+  body{grid-template-columns:280px 1fr}
+  .view{max-width:960px}
+}
