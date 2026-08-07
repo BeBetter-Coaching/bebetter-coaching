@@ -467,7 +467,7 @@ function tekenDossierLijst(filter) {
   const box = $("#d-lijst");
   box.hidden = false;
   if (isDesktop()) { if (!dossierSel) toonDetailLeeg(); }   // detail blijft staan naast de lijst
-  else { $("#d-detail").hidden = true; }                    // telefoon: één scherm tegelijk
+  else { $(".md-list").hidden = false; $("#d-detail").hidden = true; }  // telefoon: terug naar de lijst
   const f = (filter || "").trim().toLowerCase();
   const rijen = dossierCache.filter(a => !f || (a.naam || "").toLowerCase().includes(f));
   if (!rijen.length) {
@@ -507,8 +507,8 @@ $("#a-refresh").addEventListener("click", () => { geladen.atleten = true; laadDo
 async function openDossier(ident) {
   dossierSel = ident;
   const wrap = $("#d-detail");
-  if (isDesktop()) markSel(ident);          // laptop: lijst blijft, rij licht op
-  else $("#d-lijst").hidden = true;         // telefoon: lijst wijkt voor het dossier
+  if (isDesktop()) { markSel(ident); }      // laptop: lijst blijft, rij licht op
+  else { $(".md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }  // telefoon: meteen 'in' de klant
   wrap.hidden = false;
   wrap.innerHTML = '<p class="muted center">Laden…</p>';
   const d = await api(`/api/atleten/${encodeURIComponent(ident)}`).catch(() => null);
