@@ -514,3 +514,79 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 /* ── Meer: account & app-acties ───────────────────────────────────────────── */
 .meer-acts{display:flex;flex-direction:column;gap:8px;margin-top:10px}
 .meer-acts .btn{width:100%}
+
+/* ══ Home-cockpit (iteratie 2): status → wie → waarom → actie ══════════════ */
+
+/* Hero: team-status-chips (afgeleid uit echte signalen) */
+.hero-status{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:14px}
+.hero-status .hs{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#cfe0f5}
+.hero-status .hs i{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.hero-status .hs.actie i{background:var(--danger);box-shadow:0 0 0 3px rgba(229,103,75,.18)}
+.hero-status .hs.aandacht i{background:var(--warn);box-shadow:0 0 0 3px rgba(239,159,39,.18)}
+.hero-status .hs.rustig i{background:var(--acc);box-shadow:0 0 0 3px rgba(94,230,235,.16)}
+
+/* Feedback-balk: de dagelijkse kern als voortgang (klikbaar) */
+.fb-strip{display:block;width:100%;text-align:left;cursor:pointer;color:var(--text);
+  background:linear-gradient(180deg,#0E2547,#0C2144);border:1px solid var(--border);border-radius:16px;
+  padding:14px 16px;margin:12px 0 18px;box-shadow:0 4px 14px rgba(0,4,14,.32);
+  transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
+.fb-strip:hover{border-color:var(--acc);transform:translateY(-2px)}
+.fb-strip:active{transform:translateY(0) scale(.995)}
+.fb-strip.skel-strip{pointer-events:none;min-height:64px}
+.fb-strip-top{display:flex;align-items:center;gap:11px}
+.fb-strip-ic{display:inline-flex;width:32px;height:32px;border-radius:10px;align-items:center;justify-content:center;
+  background:rgba(239,159,39,.14);border:1px solid rgba(239,159,39,.30);color:var(--warn);flex:0 0 auto}
+.fb-strip-ic .ic{width:17px;height:17px}
+.fb-strip.done .fb-strip-ic{background:rgba(94,230,235,.12);border-color:rgba(94,230,235,.30);color:var(--acc)}
+.fb-strip-t{font-size:15px;font-weight:600;flex:1;min-width:0}
+.fb-strip-t b{font-weight:750;font-variant-numeric:tabular-nums}
+.fb-strip-pct{font-size:15px;font-weight:750;color:var(--warn);font-variant-numeric:tabular-nums}
+.fb-strip.done .fb-strip-pct{color:var(--acc)}
+.fb-strip .mt-bar{margin:11px 0 8px;height:6px;border-radius:4px;background:#0B2044;overflow:hidden}
+.fb-strip .mt-bar i{display:block;height:100%;border-radius:4px;background:var(--warn);
+  transition:width .9s cubic-bezier(.2,.7,.3,1)}
+.fb-strip.done .mt-bar i{background:var(--acc)}
+.fb-strip-sub{font-size:11.5px;color:var(--muted)}
+
+/* Prioriteit vandaag: BeBetter-signatuurrij (statusstip · atleet · reden · actie) */
+.prio-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+  background:linear-gradient(180deg,#0E2547,#0C2144);border:1px solid var(--border);border-radius:14px;
+  padding:11px 13px 11px 11px;margin:8px 0;cursor:pointer;color:var(--text);position:relative;overflow:hidden;
+  transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease}
+.prio-row::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;opacity:.9}
+.prio-row.actie::before{background:var(--danger)}
+.prio-row.aandacht::before{background:var(--warn)}
+.prio-row:hover{border-color:var(--acc);transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,4,14,.36)}
+.prio-row:active{transform:translateY(0) scale(.995)}
+.prio-row:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.prio-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;margin-left:3px}
+.prio-row.actie .prio-dot{background:var(--danger);box-shadow:0 0 0 3px rgba(229,103,75,.16)}
+.prio-row.aandacht .prio-dot{background:var(--warn);box-shadow:0 0 0 3px rgba(239,159,39,.16)}
+.prio-row .avatar{width:34px;height:34px;font-size:12px}
+.prio-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.prio-naam{font-size:14.5px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prio-reden{font-size:12.5px;color:var(--muted);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prio-actie{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto;font-size:12.5px;font-weight:600;color:var(--acc)}
+.prio-actie .ic{width:16px;height:16px}
+.prio-meer{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;margin:6px 0 2px;
+  background:none;border:0;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;padding:8px}
+.prio-meer:hover{color:var(--acc)}
+.prio-meer .ic{width:16px;height:16px}
+
+/* Info-strip: voortgang/rustig — géén alarm (cyaan) */
+.info-strip{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}
+.info-chip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--muted);
+  background:var(--card);border:1px solid var(--border);border-radius:20px;padding:7px 13px;cursor:default}
+.info-chip .ic{width:15px;height:15px}
+button.info-chip{cursor:pointer;transition:border-color .14s ease,color .14s ease}
+button.info-chip:hover{border-color:var(--acc);color:var(--text)}
+.info-chip.ok{color:var(--acc);border-color:rgba(94,230,235,.28)}
+
+/* Snel toevoegen: compacte acties (geen grote startmenu-tegels) */
+.quick-actions{display:flex;flex-wrap:wrap;gap:9px}
+.qa{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);
+  border-radius:11px;padding:10px 14px;color:var(--text);font-size:13.5px;font-weight:600;cursor:pointer;
+  transition:transform .14s ease,border-color .14s ease}
+.qa:hover{border-color:var(--acc);transform:translateY(-1px)}
+.qa:active{transform:translateY(0) scale(.98)}
+.qa .ic{width:18px;height:18px;color:var(--acc)}

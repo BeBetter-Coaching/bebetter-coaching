@@ -38,6 +38,7 @@ import races_core as races
 import schema_verloop_core as schema_verloop
 import teampuls_core as teampuls
 import admin_core
+import home_core
 import webauthn_core
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -367,14 +368,9 @@ def feedback_lijst(dagen: int = 7):
 
 @app.get("/api/home/stats")
 def home_stats():
-    """Home-metertjes: wachten op feedback / vandaag gepost / afhakers deze week
-    + belasting-signalen (goedkoop, uit de opgeslagen Teampuls-stand)."""
-    data = feedback.dagoverzicht()
-    try:
-        data["belasting"] = teampuls.stand_kort()
-    except Exception:
-        data["belasting"] = {"totaal": 0, "hoog": 0, "vers": False}
-    return data
+    """Home-cockpit: team-status, feedback-voortgang, info én de Prioriteit-
+    vandaag-lijst (wie vraagt aandacht/actie + waarom + waarheen)."""
+    return home_core.cockpit()
 
 
 @app.post("/api/feedback/generate")

@@ -254,6 +254,7 @@ async function renderHome() {
     "Strippenkaart bijna vol", "strippen", false)));
 
   const g = groetInfo();
+  const ook = items.length ? `<p class="sec-label">Ook nog</p>${items.join("")}` : "";
   box.innerHTML = `
     <div class="hero hero-photo">
       <button class="hero-gear" data-open-view="meer" aria-label="Meer">${ic("settings")}</button>
@@ -265,59 +266,115 @@ async function renderHome() {
           <span><b data-count="${nAtl}">0</b> atleten</span><i>·</i>
           <span><b data-count="${nGroep}">0</b> groepen</span>
         </div>
+        <div class="hero-status" id="hero-status"></div>
       </div>
       <img class="hero-portrait" src="/static/team.jpeg" alt="Jip &amp; Remco" loading="lazy">
     </div>
 
-    <div class="sec-head"><p class="sec-label">Vraagt je aandacht</p><span class="sec-note" id="home-tijd"></span></div>
-    <div class="dagstats" id="home-dag">
-      <div class="skel skel-metric"></div><div class="skel skel-metric"></div>
-      <div class="skel skel-metric"></div><div class="skel skel-metric"></div>
+    <button class="fb-strip skel-strip" id="home-fb" data-open-view="feedback" aria-label="Feedback">
+      <div class="skel skel-line w40" style="margin:2px 0"></div>
+    </button>
+
+    <div class="sec-head"><p class="sec-label">Prioriteit vandaag</p><span class="sec-note" id="prio-note"></span></div>
+    <div id="home-prio">
+      <div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div>
     </div>
 
-    <div id="home-ook">${items.length ? `<p class="sec-label">Ook nog</p>${items.join("")}` : ""}</div>
+    <div id="home-info"></div>
+    ${ook ? `<div id="home-ook">${ook}</div>` : ""}
 
-    <p class="sec-label">Snel naar</p>
-    <div class="quick">
-      <button class="qtile" data-open-view="feedback">${ic("message")}<span>Feedback</span></button>
-      <button class="qtile" data-open-view="teampuls">${ic("pulse")}<span>Teampuls</span></button>
-      <button class="qtile" data-open-view="schema">${ic("brain")}<span>Schema bouwen</span></button>
-      <button class="qtile" data-open-view="races">${ic("flag")}<span>Races</span></button>
-      <button class="qtile" data-open-view="intake">${ic("user-plus")}<span>Nieuwe intake</span></button>
-      <button class="qtile" data-open-view="strippen">${ic("ticket")}<span>Strippenkaart</span></button>
+    <p class="sec-label">Snel toevoegen</p>
+    <div class="quick-actions">
+      <button class="qa" data-open-view="intake">${ic("user-plus")}<span>Nieuwe intake</span></button>
+      <button class="qa" data-open-view="schema">${ic("brain")}<span>Schema bouwen</span></button>
+      <button class="qa" data-open-view="strippen">${ic("ticket")}<span>Strippenkaart</span></button>
     </div>`;
 
   $$("[data-open-view]", box).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
   $$("[data-count]", box).forEach(countUp);
   bronStatus(kaarten.cloud);
 
-  // "Vraagt je aandacht" — zware FinalSurge-sweeps laden apart zodat home snel blijft.
-  api("/api/home/stats").then(s => {
-    const dag = $("#home-dag");
-    if (!dag) return;
-    if (!s.fs) { dag.innerHTML = '<p class="muted klein">FinalSurge niet gekoppeld.</p>'; return; }
-    const bel = s.belasting || {};
-    dag.innerHTML =
-      meterTile("message", s.wachten ? "warn" : "ok", s.wachten, "wachten op feedback", "feedback", s.pct) +
-      meterTile("activity", s.afhakers ? "danger" : "ok", s.afhakers, "afhakers deze week", "teampuls") +
-      meterTile("pulse", bel.hoog ? "danger" : "ok", bel.totaal || 0, "belasting-signalen" + (bel.hoog ? " · " + bel.hoog + " hoog" : ""), "teampuls") +
-      meterTile("clock", s.schema ? "warn" : "ok", s.schema, "schema-actie nodig", "schema-verloop") +
-      meterTile("flag", s.races ? "teal" : "ok", s.races, "races komende 7 dgn", "races") +
-      meterTile("check", "ok", s.gepost, "vandaag gepost", null);
-    $$("[data-open-view]", dag).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
-    $$("[data-count]", dag).forEach(countUp);
-    const t = $("#home-tijd"); if (t) t.textContent = `${s.pct}% van vandaag afgerond`;
-  }).catch(() => {});
+  // Cockpit-intelligentie (zware FinalSurge-sweeps) laadt apart zodat home snel blijft.
+  api("/api/home/stats").then(s => vulCockpit(s)).catch(() => {
+    const p = $("#home-prio"); if (p) p.innerHTML = '<p class="muted klein">Kon de dagstatus niet laden.</p>';
+  });
 }
 
-// Eén metertje in "Vraagt je aandacht": icoon + groot getal + label (+ optionele voortgangsbalk)
-function meterTile(icn, tone, value, label, view, pct) {
-  const bar = pct != null ? `<div class="mt-bar"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>` : "";
-  const attrs = view ? ` data-open-view="${view}"` : "";
-  const tag = view ? "button" : "div";
-  return `<${tag} class="dagstat ${tone}"${attrs}>
-    <span class="mt-ic">${ic(icn)}</span>
-    <b data-count="${value}">0</b><span>${label}</span>${bar}</${tag}>`;
+// Vult hero-status + feedbackbalk + prioriteitlijst + info-strip met echte cockpit-data
+function vulCockpit(s) {
+  if (!s || !s.fs) {
+    const p = $("#home-prio"); if (p) p.innerHTML = '<p class="muted klein">FinalSurge niet gekoppeld.</p>';
+    const fb = $("#home-fb"); if (fb) fb.remove();
+    return;
+  }
+  const team = s.team || {}, fbs = s.feedback || {}, info = s.info || {};
+
+  // ── Hero: team-status (afgeleid uit echte signalen) ──
+  const hs = $("#hero-status");
+  if (hs) {
+    const chips = [];
+    if (team.actie) chips.push(`<span class="hs actie"><i></i>${team.actie} actie</span>`);
+    if (team.aandacht) chips.push(`<span class="hs aandacht"><i></i>${team.aandacht} aandacht</span>`);
+    if (team.rustig) chips.push(`<span class="hs rustig"><i></i>${team.rustig} rustig</span>`);
+    hs.innerHTML = chips.join("");
+  }
+
+  // ── Feedback: dagelijkse kern als voortgangsbalk ──
+  const fb = $("#home-fb");
+  if (fb) {
+    const w = fbs.wachten || 0, pct = fbs.pct != null ? fbs.pct : 100;
+    fb.classList.remove("skel-strip");
+    fb.classList.toggle("done", w === 0);
+    fb.innerHTML = `
+      <div class="fb-strip-top">
+        <span class="fb-strip-ic">${ic(w ? "message" : "check")}</span>
+        <span class="fb-strip-t">${w ? `<b>${w}</b> wachten op feedback` : "Alles beoordeeld"}</span>
+        <span class="fb-strip-pct">${pct}%</span>
+      </div>
+      <div class="mt-bar"><i style="width:${pct}%"></i></div>
+      <span class="fb-strip-sub">${fbs.gepost || 0} vandaag gepost · ${pct}% afgerond</span>`;
+  }
+
+  // ── Prioriteit vandaag: individuele atleten (wie → waarom → actie) ──
+  const prio = s.prioriteit || [];
+  const box = $("#home-prio"), note = $("#prio-note");
+  if (note) note.textContent = prio.length ? `${team.actie || 0} actie · ${team.aandacht || 0} aandacht` : "";
+  if (box) {
+    if (!prio.length) {
+      box.innerHTML = `<div class="leeg small">${ic("check")}<p>Niks urgents nu — mooie dag om te coachen.</p></div>`;
+    } else {
+      box.innerHTML = prio.map(prioRow).join("");
+      const rest = (s.prioriteit_totaal || prio.length) - prio.length;
+      if (rest > 0) box.innerHTML += `<button class="prio-meer" data-open-view="teampuls">Nog ${rest} in Teampuls ${ic("chevron")}</button>`;
+      $$("[data-open-view]", box).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+      $$(".prio-row", box).forEach(r => r.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toonView(r.dataset.openView); }
+      }));
+    }
+  }
+
+  // ── Info-strip (voortgang/rustig, cyaan — geen alarm) ──
+  const inf = $("#home-info");
+  if (inf) {
+    const chips = [];
+    if (info.races) chips.push(`<button class="info-chip" data-open-view="races">${ic("flag")} ${info.races} race${info.races === 1 ? "" : "s"} komende 7 dgn</button>`);
+    chips.push(`<span class="info-chip ok">${ic("check")} ${info.gepost || 0} vandaag gepost</span>`);
+    inf.innerHTML = `<div class="info-strip">${chips.join("")}</div>`;
+    $$("[data-open-view]", inf).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+  }
+}
+
+// BeBetter-signatuurcomponent: één atleet-prioriteitrij (statusstip · naam · reden · actie)
+function prioRow(it) {
+  return `<article class="prio-row ${it.tier}" data-open-view="${it.view}" role="button" tabindex="0">
+    <span class="prio-dot ${it.tier}"></span>
+    <span class="avatar">${initialen(it.naam)}</span>
+    <span class="prio-body">
+      <span class="prio-naam">${esc(it.naam)}</span>
+      <span class="prio-reden">${esc(it.reden)}</span>
+    </span>
+    <span class="prio-actie">${esc(it.actie)} ${ic("chevron")}</span>
+  </article>`;
 }
 
 function kaartItem(icn, titel, sub, view, alert) {
