@@ -179,8 +179,8 @@ function groetInfo() {
 const isDesktop = () => matchMedia("(min-width:900px)").matches;
 
 // "Binnenkort"-modules op de Meer-pagina: laat zien dat de héle app hier komt
-[["file", "Schema-verloop"], ["file", "Schema bouwen"],
- ["alert", "Teampuls"], ["ticket", "Races"], ["settings", "Administratie"]]
+[["file", "Schema-verloop"], ["alert", "Teampuls"],
+ ["ticket", "Races"], ["settings", "Administratie"]]
   .forEach(([icn, t]) => {
     const el = document.createElement("div");
     el.className = "mrow soon-row";
@@ -928,12 +928,87 @@ function fbItem(it) {
 }
 $("#fb-refresh").addEventListener("click", () => { geladen.feedback = true; laadFeedback(); });
 
+// ════════════════════════════════════════════════════════════════════════════
+// SCHEMA BOUWEN — opgeslagen intake → AI-plan → CSV-download voor FinalSurge
+// ════════════════════════════════════════════════════════════════════════════
+let schemaAtleten = [];
+async function laadSchema() {
+  const box = $("#sb-lijst"), info = $("#sb-info");
+  $("#sb-werk").hidden = true; box.hidden = false;
+  skeleton(box, 4);
+  const r = await api("/api/schema/atleten").catch(() => null);
+  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  schemaAtleten = r.atleten || [];
+  info.textContent = r.ai
+    ? "Kies een atleet met een opgeslagen intake. De AI maakt het plan; jij controleert en downloadt de CSV voor FinalSurge."
+    : "AI-sleutel nog niet ingesteld.";
+  if (!schemaAtleten.length) {
+    box.innerHTML = `<div class="leeg">${ic("brain")}<p>Nog geen atleten met een opgeslagen bouwer-intake.<br>Vul de intake in de bouwer (Streamlit), dan verschijnen ze hier.</p></div>`;
+    return;
+  }
+  box.innerHTML = "";
+  schemaAtleten.forEach(a => {
+    const el = document.createElement("button");
+    el.className = "listcard";
+    el.innerHTML = `<span class="avatar">${initialen(a.naam)}</span>
+      <span class="lc-body"><span class="lc-title">${esc(a.naam)}</span>
+        <span class="lc-sub">${a.doel ? esc(a.doel) : "geen doel"}</span>
+        <span class="lc-meta">${a.weken ? a.weken + " weken" : ""}${a.trainingsdagen ? " · " + esc(a.trainingsdagen) : ""}</span>
+      </span>${ic("chevron")}`;
+    el.addEventListener("click", () => schemaWerk(a));
+    box.appendChild(el);
+  });
+}
+
+function schemaWerk(a) {
+  $("#sb-lijst").hidden = true;
+  const wrap = $("#sb-werk"); wrap.hidden = false;
+  wrap.innerHTML = `
+    <button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
+    <div class="d-head"><span class="avatar big">${initialen(a.naam)}</span>
+      <div><h2 class="d-naam">${esc(a.naam)}</h2>
+        <p class="muted klein">${a.doel ? esc(a.doel) : ""}${a.weken ? " · " + a.weken + " weken" : ""}</p></div></div>
+    <section class="panel open-static">
+      <button class="btn primary" id="sb-plan">${ic("brain")} Genereer plan</button>
+      <p class="hint" id="sb-status">Het plan maken duurt ~30-60s (AI).</p>
+      <div id="sb-planbox" hidden>
+        <label class="lbl">Plan — pas het gerust aan vóór de CSV</label>
+        <textarea id="sb-plantekst" rows="12"></textarea>
+        <button class="btn primary" id="sb-csv" style="margin-top:10px">${ic("download")} Genereer CSV</button>
+        <p class="hint" id="sb-csvstatus"></p>
+      </div>
+    </section>`;
+  $("#sb-terug").addEventListener("click", laadSchema);
+  $("#scroller").scrollTo({ top: 0 });
+  $("#sb-plan").addEventListener("click", async () => {
+    const btn = $("#sb-plan"); btn.disabled = true; btn.textContent = "AI bouwt het plan…";
+    const r = await jpost("/api/schema/plan", { key: a.key }).catch(() => null);
+    btn.disabled = false; btn.innerHTML = `${ic("refresh")} Opnieuw`;
+    if (!r || !r.ok) return melding(r?.err || "Plan mislukt.", true);
+    $("#sb-planbox").hidden = false;
+    $("#sb-plantekst").value = r.plan || "";
+  });
+  $("#sb-csv").addEventListener("click", async () => {
+    const st = $("#sb-csvstatus"); st.textContent = "CSV genereren…";
+    const r = await jpost("/api/schema/csv", { key: a.key, plan: $("#sb-plantekst").value }).catch(() => null);
+    if (!r || !r.ok) { st.textContent = ""; return melding(r?.err || "CSV mislukt.", true); }
+    const url = URL.createObjectURL(new Blob([r.csv || ""], { type: "text/csv" }));
+    const dl = document.createElement("a");
+    dl.href = url; dl.download = `Schema - ${a.naam}.csv`;
+    document.body.appendChild(dl); dl.click(); dl.remove(); URL.revokeObjectURL(url);
+    st.textContent = `Klaar — ${(r.rijen || []).length} trainingen. CSV gedownload; importeer 'm in FinalSurge.`;
+    haptic(15);
+  });
+}
+$("#sb-refresh").addEventListener("click", () => { geladen.schema = true; laadSchema(); });
+
 // ── Start ──────────────────────────────────────────────────────────────────
 laders.strippen = laad;
 laders.atleten = laadDossierLijst;
 laders.intake = laadIntake;
 laders.documenten = laadDocs;
 laders.feedback = laadFeedback;
+laders.schema = laadSchema;
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 toonOffline();
 if (navigator.onLine) flush();
