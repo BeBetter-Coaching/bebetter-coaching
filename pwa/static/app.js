@@ -34,8 +34,79 @@ $("#login-form")?.addEventListener("submit", async e => {
   } catch { err.textContent = "Geen verbinding."; err.hidden = false; }
   btn.disabled = false; btn.textContent = "Inloggen";
 });
-// Bij opstarten meteen checken (zo verschijnt het scherm zonder te wachten op een 401)
-(async () => { try { const me = await fetch("/api/me").then(r => r.json()); if (!me.ingelogd) toonLogin(); } catch {} })();
+// ── Face ID / passkeys (WebAuthn) — additief; wachtwoord blijft de fallback ──
+const waSupport = () => !!(window.PublicKeyCredential && navigator.credentials);
+function b64urlToBuf(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/"); s += "=".repeat((4 - s.length % 4) % 4);
+  const bin = atob(s), buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+function bufToB64url(buf) {
+  let bin = ""; for (const b of new Uint8Array(buf)) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function prepCreate(o) {
+  o.challenge = b64urlToBuf(o.challenge); o.user.id = b64urlToBuf(o.user.id);
+  (o.excludeCredentials || []).forEach(c => c.id = b64urlToBuf(c.id));
+  return o;
+}
+function prepGet(o) {
+  o.challenge = b64urlToBuf(o.challenge);
+  (o.allowCredentials || []).forEach(c => c.id = b64urlToBuf(c.id));
+  return o;
+}
+function credToJSON(c) {
+  const r = c.response, out = { id: c.id, rawId: bufToB64url(c.rawId), type: c.type, clientExtensionResults: {} };
+  if (r.attestationObject) {
+    out.response = { clientDataJSON: bufToB64url(r.clientDataJSON), attestationObject: bufToB64url(r.attestationObject) };
+    if (r.getTransports) out.response.transports = r.getTransports();
+  } else {
+    out.response = { clientDataJSON: bufToB64url(r.clientDataJSON), authenticatorData: bufToB64url(r.authenticatorData),
+      signature: bufToB64url(r.signature), userHandle: r.userHandle ? bufToB64url(r.userHandle) : null };
+  }
+  return out;
+}
+async function faceIDregister() {
+  if (!waSupport()) return melding("Dit apparaat ondersteunt geen Face ID/passkeys.", true);
+  try {
+    const opts = await fetch("/api/webauthn/register/options", { method: "POST" }).then(r => r.json());
+    if (opts.err) return melding(opts.err, true);
+    const cred = await navigator.credentials.create({ publicKey: prepCreate(opts) });
+    const r = await fetch("/api/webauthn/register/verify", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(credToJSON(cred)) }).then(r => r.json());
+    melding(r && r.ok ? "Face ID ingeschakeld op dit apparaat." : (r?.err || "Inschakelen mislukt."), !(r && r.ok));
+  } catch { melding("Face ID inschakelen afgebroken.", true); }
+}
+async function faceIDunlock() {
+  if (!waSupport()) return;
+  try {
+    const opts = await fetch("/api/webauthn/auth/options", { method: "POST" }).then(r => r.json());
+    if (opts.err) return melding(opts.err, true);
+    const cred = await navigator.credentials.get({ publicKey: prepGet(opts) });
+    const r = await fetch("/api/webauthn/auth/verify", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(credToJSON(cred)) }).then(r => r.json());
+    if (r && r.ok) location.reload(); else melding(r?.err || "Ontgrendelen mislukt.", true);
+  } catch { /* gebruiker annuleerde de Face ID-prompt */ }
+}
+$("#login-faceid")?.addEventListener("click", faceIDunlock);
+$("#faceid-enable")?.addEventListener("click", faceIDregister);
+if (waSupport()) $("#faceid-enable")?.removeAttribute("hidden");   // 'inschakelen' in Meer
+
+// Bij opstarten: niet ingelogd → toon scherm; heeft dit account een passkey +
+// steunt de browser het, toon dan de Face ID-ontgrendelknop.
+(async () => {
+  try {
+    const me = await fetch("/api/me").then(r => r.json());
+    if (!me.ingelogd) {
+      toonLogin();
+      if (waSupport()) {
+        const a = await fetch("/api/webauthn/available").then(r => r.json()).catch(() => ({}));
+        if (a.aan) $("#login-faceid")?.removeAttribute("hidden");
+      }
+    }
+  } catch {}
+})();
 
 // ── Onderbalk-navigatie ──────────────────────────────────────────────────────
 const laders = {};   // view -> laadfunctie (eenmalig lui laden per module)

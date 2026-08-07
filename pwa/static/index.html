@@ -48,6 +48,7 @@
       <input id="login-user" placeholder="Gebruikersnaam" autocomplete="username" value="bebetter">
       <input id="login-pass" type="password" placeholder="Wachtwoord" autocomplete="current-password">
       <button class="btn primary" id="login-btn" type="submit">Inloggen</button>
+      <button class="btn ghost" id="login-faceid" type="button" hidden><svg class="ic"><use href="#ic-check"/></svg> Ontgrendel met Face ID</button>
       <p class="login-err" id="login-err" hidden></p>
     </form>
   </div>
@@ -156,6 +157,7 @@
         <h3 class="panel-h">Deze app</h3>
         <p class="hint" id="bron">laden…</p>
         <button id="install" class="btn" hidden><svg class="ic"><use href="#ic-download"/></svg> Installeer als app</button>
+        <button id="faceid-enable" class="btn" hidden><svg class="ic"><use href="#ic-check"/></svg> Face ID inschakelen op dit apparaat</button>
       </section>
       <p class="sec-label">Modules</p>
       <button class="listcard" data-open-view="documenten">

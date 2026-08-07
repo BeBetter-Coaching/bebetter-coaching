@@ -8,3 +8,5 @@ reportlab>=4.0.0
 pillow>=10.0.0
 # AI-modules (documenten-intro's; straks feedback/schema) — actief zodra ANTHROPIC_API_KEY staat
 anthropic>=0.28.0
+# Face ID / passkeys (WebAuthn) — server-side verificatie van de biometrie
+webauthn>=2.0.0

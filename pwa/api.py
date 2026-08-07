@@ -32,6 +32,7 @@ import dossier_core as dossier
 import intake_core as intake
 import documenten_core as docs
 import atleten_core as atleten
+import webauthn_core
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _STATIC = os.path.join(_HERE, "static")
@@ -75,7 +76,8 @@ def _is_public(path: str) -> bool:
     """Paden zonder login: de app-schil zelf (het inlogscherm zit erín), het
     publieke intakeformulier + assets, de login-API en health/manifest/sw."""
     if path in ("/", "/manifest.webmanifest", "/sw.js", "/healthz",
-                "/api/login", "/api/me"):
+                "/api/login", "/api/me", "/api/webauthn/available",
+                "/api/webauthn/auth/options", "/api/webauthn/auth/verify"):
         return True
     return (path == "/intake"
             or path.startswith("/api/intake/public")
@@ -166,6 +168,106 @@ def api_login(body: Login):
 def api_logout():
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(_COOKIE, path="/")
+    return resp
+
+
+# ── Face ID / passkeys (WebAuthn) — additief; wachtwoord blijft de fallback ──
+_WA_CHAL = "bb_wa_chal"
+
+
+def _sign_chal(chal_b64: str) -> str:
+    body = base64.urlsafe_b64encode(
+        json.dumps({"c": chal_b64, "exp": time.time() + 300}).encode()).decode()
+    sig = hmac.new(_SESSION_SECRET, body.encode(), hashlib.sha256).hexdigest()
+    return f"{body}.{sig}"
+
+
+def _read_chal(token: str):
+    try:
+        body, sig = token.rsplit(".", 1)
+        if not hmac.compare_digest(sig, hmac.new(_SESSION_SECRET, body.encode(), hashlib.sha256).hexdigest()):
+            return None
+        data = json.loads(base64.urlsafe_b64decode(body))
+        if float(data.get("exp", 0)) < time.time():
+            return None
+        c = data["c"]
+        return base64.urlsafe_b64decode(c + "=" * (-len(c) % 4))
+    except Exception:
+        return None
+
+
+def _wa_ctx(request: Request):
+    host = request.headers.get("host", "")
+    return webauthn_core.rp_id_from_host(host), f"https://{host}"
+
+
+def _chal_cookie(resp, chal: bytes):
+    b64 = base64.urlsafe_b64encode(chal).decode().rstrip("=")
+    resp.set_cookie(_WA_CHAL, _sign_chal(b64), max_age=300,
+                    httponly=True, secure=True, samesite="lax", path="/")
+
+
+@app.get("/api/webauthn/available")
+def wa_available():
+    """Heeft dit account een passkey? (Login-scherm toont dan de Face ID-knop.)"""
+    return {"aan": bool(_APP_PASSWORD) and webauthn_core.has_credentials(_APP_USER)}
+
+
+@app.post("/api/webauthn/register/options")     # vereist login (Face ID inschakelen)
+def wa_reg_opts(request: Request):
+    rp_id, _ = _wa_ctx(request)
+    try:
+        opts_json, chal = webauthn_core.registration_options(_APP_USER, rp_id)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Face ID niet beschikbaar: {e}"}, status_code=500)
+    resp = Response(opts_json, media_type="application/json")
+    _chal_cookie(resp, chal)
+    return resp
+
+
+@app.post("/api/webauthn/register/verify")      # vereist login
+async def wa_reg_verify(request: Request):
+    chal = _read_chal(request.cookies.get(_WA_CHAL, ""))
+    if not chal:
+        return JSONResponse({"ok": False, "err": "Verlopen, probeer opnieuw."}, status_code=400)
+    rp_id, origin = _wa_ctx(request)
+    try:
+        ok = webauthn_core.verify_registration(_APP_USER, await request.json(), chal, rp_id, origin)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    return {"ok": ok}
+
+
+@app.post("/api/webauthn/auth/options")         # PUBLIEK (ontgrendelen vóór login)
+def wa_auth_opts(request: Request):
+    if not webauthn_core.has_credentials(_APP_USER):
+        return JSONResponse({"ok": False, "err": "Geen passkey op dit account."}, status_code=404)
+    rp_id, _ = _wa_ctx(request)
+    try:
+        opts_json, chal = webauthn_core.authentication_options(_APP_USER, rp_id)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Face ID niet beschikbaar: {e}"}, status_code=500)
+    resp = Response(opts_json, media_type="application/json")
+    _chal_cookie(resp, chal)
+    return resp
+
+
+@app.post("/api/webauthn/auth/verify")          # PUBLIEK — bij succes: sessie-cookie
+async def wa_auth_verify(request: Request):
+    chal = _read_chal(request.cookies.get(_WA_CHAL, ""))
+    if not chal:
+        return JSONResponse({"ok": False, "err": "Verlopen, probeer opnieuw."}, status_code=400)
+    rp_id, origin = _wa_ctx(request)
+    try:
+        ok = webauthn_core.verify_authentication(_APP_USER, await request.json(), chal, rp_id, origin)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    if not ok:
+        return JSONResponse({"ok": False, "err": "Ontgrendelen mislukt."}, status_code=401)
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(_COOKIE, _sign_session(_APP_USER), max_age=_SESSION_DAGEN * 86400,
+                    httponly=True, secure=True, samesite="lax", path="/")
+    resp.delete_cookie(_WA_CHAL, path="/")
     return resp
 
 

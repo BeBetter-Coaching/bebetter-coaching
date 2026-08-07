@@ -244,6 +244,24 @@ def save_auth_tokens(tokens: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# WebAuthn / passkeys (Face ID) — alleen PUBLIEKE sleutels, per gebruiker
+# ---------------------------------------------------------------------------
+
+_WEBAUTHN_LOCAL = os.path.join(_BASE_DIR, ".webauthn.json")
+
+
+def load_webauthn() -> dict:
+    """Laad passkeys. Dict: user → [ {id, public_key, sign_count, added} ]."""
+    return _load_json("webauthn.json", _WEBAUTHN_LOCAL)
+
+
+def save_webauthn(data: dict) -> tuple[bool, str]:
+    """Sla passkeys op (nooit privé-sleutels; die blijven op het apparaat)."""
+    return _save_json("webauthn.json", _WEBAUTHN_LOCAL, data,
+                      "Update passkeys via app")
+
+
+# ---------------------------------------------------------------------------
 # Intakes
 # ---------------------------------------------------------------------------
 
