@@ -178,18 +178,6 @@ function groetInfo() {
 // Laptop/desktop? Bepaalt of Atleten master-detail toont (lijst + dossier naast elkaar)
 const isDesktop = () => matchMedia("(min-width:900px)").matches;
 
-// "Binnenkort"-modules op de Meer-pagina: laat zien dat de héle app hier komt
-[["file", "Schema-verloop"], ["alert", "Teampuls"],
- ["ticket", "Races"], ["settings", "Administratie"]]
-  .forEach(([icn, t]) => {
-    const el = document.createElement("div");
-    el.className = "mrow soon-row";
-    el.innerHTML = `<span class="mrow-ic">${ic(icn)}</span>
-      <span class="mrow-body"><span class="mrow-title">${t}</span></span>
-      <span class="mrow-tag soon-tag">binnenkort</span>`;
-    $("#soon").appendChild(el);
-  });
-
 // ── Uitklappers + segmenten ────────────────────────────────────────────────
 function bindAccordions(root = document) {
   root.querySelectorAll(".acc-toggle").forEach(btn => {
@@ -287,6 +275,10 @@ async function renderHome() {
 
     <p class="sec-label">Snel naar</p>
     <div class="quick">
+      <button class="qtile" data-open-view="feedback">${ic("message")}<span>Feedback</span></button>
+      <button class="qtile" data-open-view="teampuls">${ic("pulse")}<span>Teampuls</span></button>
+      <button class="qtile" data-open-view="schema">${ic("brain")}<span>Schema bouwen</span></button>
+      <button class="qtile" data-open-view="races">${ic("flag")}<span>Races</span></button>
       <button class="qtile" data-open-view="intake">${ic("user-plus")}<span>Nieuwe intake</span></button>
       <button class="qtile" data-open-view="strippen">${ic("ticket")}<span>Strippenkaart</span></button>
     </div>`;
@@ -300,10 +292,12 @@ async function renderHome() {
     const dag = $("#home-dag");
     if (!dag) return;
     if (!s.fs) { dag.innerHTML = '<p class="muted klein">FinalSurge niet gekoppeld.</p>'; return; }
+    const bel = s.belasting || {};
     dag.innerHTML = `
       <button class="dagstat warn" data-open-view="feedback"><b>${s.wachten}</b><span>wachten op feedback</span></button>
-      <div class="dagstat ok"><b>${s.gepost}</b><span>vandaag gepost</span></div>
-      <div class="dagstat danger"><b>${s.afhakers}</b><span>afhakers deze week</span></div>`;
+      <button class="dagstat ${bel.hoog ? "danger" : "ok"}" data-open-view="teampuls"><b>${bel.totaal || 0}</b><span>belasting-signalen${bel.hoog ? " · " + bel.hoog + " hoog" : ""}</span></button>
+      <button class="dagstat danger" data-open-view="teampuls"><b>${s.afhakers}</b><span>afhakers deze week</span></button>
+      <div class="dagstat ok"><b>${s.gepost}</b><span>vandaag gepost</span></div>`;
     $$("[data-open-view]", dag).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
   }).catch(() => {});
 }
@@ -1063,6 +1057,275 @@ function schemaWerk(a) {
 }
 $("#sb-refresh").addEventListener("click", () => { geladen.schema = true; laadSchema(); });
 
+// ════════════════════════════════════════════════════════════════════════════
+// RACES — aankomende races + race-wens plaatsen (WRITE via post_comment)
+// ════════════════════════════════════════════════════════════════════════════
+async function laadRaces() {
+  const box = $("#rc-lijst"), info = $("#rc-info");
+  info.textContent = "Races ophalen uit FinalSurge…";
+  skeleton(box, 4);
+  const r = await api("/api/races").catch(() => null);
+  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
+  const items = r.items || [];
+  const open = items.filter(i => !i.wens_gegeven).length;
+  info.textContent = items.length
+    ? `${items.length} aankomende race${items.length === 1 ? "" : "s"}${open ? ` · ${open} zonder wens` : " · alle wensen gegeven"}.`
+    : "";
+  if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen races in de komende weken.</p></div>`; return; }
+  box.innerHTML = "";
+  items.forEach(it => box.appendChild(raceItem(it)));
+}
+
+function raceItem(it) {
+  const el = document.createElement("article");
+  el.className = "rij-kaart";
+  const badge = it.wens_gegeven
+    ? '<span class="mrow-tag" style="background:var(--ok-bg,#123);color:var(--ok,#5db98b)">wens gegeven</span>'
+    : '<span class="mrow-tag soon-tag">nog geen wens</span>';
+  el.innerHTML = `
+    <div class="d-head"><span class="avatar">${initialen(it.naam)}</span>
+      <div><h3>${esc(it.naam)}</h3>
+        <p class="muted klein">${esc(it.datum)} · ${esc(it.race)}${it.type ? " · " + esc(it.type) : ""}</p></div>
+      <span style="margin-left:auto">${badge}</span></div>
+    ${it.wens ? `<div class="fb-thread"><div class="fb-bub coach"><span class="fb-wie">Jij</span>${esc(it.wens)}</div></div>` : ""}
+    <textarea class="fb-tekst" rows="4" placeholder="Race-wens / strategie voor ${esc(it.voornaam)}…">${esc(it.wens || "")}</textarea>
+    <div class="fb-acts">
+      <button class="btn primary" data-post>${ic("message")} Plaats wens</button>
+    </div>
+    <p class="hint" data-poststatus></p>`;
+  const tekstEl = el.querySelector(".fb-tekst");
+  const status = el.querySelector("[data-poststatus]");
+  el.querySelector("[data-post]").addEventListener("click", async () => {
+    const tekst = tekstEl.value.trim();
+    if (!tekst) return melding("Schrijf eerst een race-wens.", true);
+    if (!confirm(`Deze race-wens bij ${it.voornaam} plaatsen? ${it.voornaam} ziet dit in FinalSurge.`)) return;
+    const btn = el.querySelector("[data-post]"); btn.disabled = true; btn.textContent = "Plaatsen…";
+    const r = await jpost("/api/races/wens", { id: it.id, tekst }).catch(() => null);
+    btn.disabled = false; btn.innerHTML = `${ic("message")} Plaats wens`;
+    if (!r || !r.ok) return melding(r?.err || "Posten mislukt.", true);
+    status.textContent = "Wens geplaatst in FinalSurge ✓"; haptic(15);
+  });
+  return el;
+}
+$("#rc-refresh").addEventListener("click", () => { geladen.races = true; laadRaces(); });
+
+// ════════════════════════════════════════════════════════════════════════════
+// SCHEMA-VERLOOP — wie loopt bijna zonder schema (puur lezend)
+// ════════════════════════════════════════════════════════════════════════════
+const SV_LABEL = { verlopen: "verlopen", bijna: "loopt bijna af", loopt: "loopt nog", geen: "geen schema" };
+async function laadSchemaVerloop() {
+  const box = $("#sv-lijst"), info = $("#sv-info");
+  info.textContent = "Schema's ophalen uit FinalSurge…";
+  skeleton(box, 5);
+  const r = await api("/api/schema-verloop").catch(() => null);
+  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
+  const items = r.items || [];
+  const aandacht = items.filter(i => i.status === "verlopen" || i.status === "bijna" || i.status === "geen").length;
+  info.textContent = items.length
+    ? `${items.length} atleten · ${aandacht} met aandacht (verlopen, bijna klaar of geen schema).`
+    : "";
+  if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen schema-data.</p></div>`; return; }
+  box.innerHTML = "";
+  items.forEach(it => box.appendChild(svItem(it)));
+}
+
+function svItem(it) {
+  const el = document.createElement("article");
+  el.className = "rij-kaart sv-rij";
+  const kleur = { verlopen: "#e0645a", bijna: "#e0a23a", loopt: "#5db98b", geen: "#8a8f98" }[it.status] || "#8a8f98";
+  const dagtxt = it.dagen === null ? "—"
+    : it.dagen < 0 ? `${-it.dagen}d verlopen`
+    : it.dagen === 0 ? "vandaag klaar"
+    : `nog ${it.dagen}d`;
+  el.innerHTML = `
+    <div class="d-head"><span class="avatar">${initialen(it.naam)}</span>
+      <div><h3>${esc(it.naam)}</h3>
+        <p class="muted klein">${esc(it.groep || "")}${it.laatste ? " · laatste " + esc(it.laatste) : ""}</p></div>
+      <span style="margin-left:auto;text-align:right">
+        <b style="color:${kleur}">${dagtxt}</b>
+        <span class="muted klein" style="display:block">${SV_LABEL[it.status] || ""}</span></span></div>
+    ${it.verborgen ? `<p class="muted klein">${it.verborgen} training(en) nog verborgen voor de atleet${it.zichtbaar_tot ? " · zichtbaar t/m " + esc(it.zichtbaar_tot) : ""}</p>` : ""}`;
+  return el;
+}
+$("#sv-refresh").addEventListener("click", () => { geladen["schema-verloop"] = true; laadSchemaVerloop(); });
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEAMPULS — belasting-signalen (gezien/dossier) + AI-weekbriefing
+// ════════════════════════════════════════════════════════════════════════════
+async function laadTeampuls(force = false) {
+  const box = $("#tp-signalen"), info = $("#tp-info");
+  info.textContent = force ? "Belasting-signalen herberekenen (alle atleten)…" : "Belasting-signalen laden…";
+  skeleton(box, 3);
+  const brief = $("#tp-briefing"); brief.innerHTML = `<div class="skel-card"><div class="skel skel-line w60"></div></div>`;
+  const r = await api(`/api/teampuls/signalen${force ? "?force=true" : ""}`).catch(() => null);
+  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
+  const items = r.items || [];
+  info.innerHTML = `Signalen uit volume, gevoel, RPE en notities — geen diagnose, wel een seintje. `
+    + (items.length ? `<b>${r.hoog || 0}</b> hoog · <b>${items.length}</b> in beeld · ${esc(r.datum || "")}` : `alles binnen de marge · ${esc(r.datum || "")}`);
+  box.innerHTML = "";
+  if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen belasting-signalen — iedereen binnen de marge.</p></div>`; }
+  else items.forEach(it => box.appendChild(pulsItem(it)));
+  laadBriefing();
+}
+
+function pulsItem(it) {
+  const el = document.createElement("article");
+  el.className = "rij-kaart puls-kaart " + (it.ernst === "hoog" ? "ernst-hoog" : "ernst-let");
+  const m = it.metrics || {};
+  const runs = (m.runs || []).map(r => `<li>${esc(r.datum)}: ${r.km} km${r.naam ? " · " + esc(r.naam) : ""}</li>`).join("");
+  const sig = (it.signalen || []).map(s => `<li>${esc(s)}</li>`).join("");
+  el.innerHTML = `
+    <div class="d-head">
+      <span class="puls-dot ${it.ernst === "hoog" ? "hoog" : "let"}"></span>
+      <div><h3>${esc(it.naam)}</h3><p class="muted klein">${esc(it.groep || "")}</p></div>
+      <span class="puls-tag ${it.ernst === "hoog" ? "hoog" : "let"}">${it.ernst === "hoog" ? "hoog" : "let op"}</span>
+    </div>
+    <ul class="puls-sig">${sig}</ul>
+    ${it.duiding ? `<p class="puls-duiding">${ic("message")} ${esc(it.duiding)}</p>` : ""}
+    <details class="puls-ond"><summary>Onderbouwing (welke trainingen zijn geteld)</summary>
+      <ul class="puls-runs">${runs || "<li class='muted'>Geen losse runs geregistreerd.</li>"}</ul>
+      <p class="muted klein">Recente week ${m.km_recent ?? "?"} km · basis ${m.km_basis ?? "?"} km/wk · gevoel ${m.gevoel_recent ?? "—"} vs ${m.gevoel_basis ?? "—"} · RPE ${m.rpe_recent ?? "—"} vs ${m.rpe_basis ?? "—"}.</p>
+    </details>
+    <div class="fb-acts">
+      <button class="btn ghost small" data-gezien>${ic("check")} Gezien (7 dagen)</button>
+      <button class="btn ghost small" data-dossier>Dossier →</button>
+    </div>`;
+  el.querySelector("[data-gezien]").addEventListener("click", async () => {
+    const r = await jpost("/api/teampuls/gezien", { user_key: it.user_key, ernst: it.ernst }).catch(() => null);
+    if (!r || !r.ok) return melding("Kon niet dempen.", true);
+    el.style.opacity = ".4"; setTimeout(() => el.remove(), 250); haptic(10);
+  });
+  el.querySelector("[data-dossier]").addEventListener("click", () => toonView("atleten"));
+  return el;
+}
+
+async function laadBriefing(force = false) {
+  const brief = $("#tp-briefing");
+  brief.innerHTML = `<div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w80"></div></div>`;
+  const r = await api(`/api/teampuls/briefing${force ? "?force=true" : ""}`).catch(() => null);
+  if (!r || !r.fs) { brief.innerHTML = `<p class="muted klein">Weekbriefing niet beschikbaar.</p>`; return; }
+  if (r.err) { brief.innerHTML = `<p class="muted klein">${esc(r.err)}</p>`; return; }
+  const s = r.stats || {};
+  brief.innerHTML = `
+    <article class="brief-kaart">
+      <p class="muted klein">Gemaakt ${esc(r.gemaakt || "")} · gedeeld met beide coaches · ${s.n_trainingen ?? "?"} trainingen · ±${s.km_totaal ?? "?"} km · ${s.n_actief ?? "?"}/${s.n_atleten ?? "?"} actief</p>
+      <div class="brief-tekst">${briefHtml(r.tekst || "")}</div>
+      <button class="btn ghost small" id="tp-brief-refresh">${ic("refresh")} Vernieuw briefing</button>
+    </article>`;
+  $("#tp-brief-refresh")?.addEventListener("click", () => laadBriefing(true));
+}
+// Lichte markdown → HTML voor de briefing (kop/bullet/vet)
+function briefHtml(t) {
+  const lines = esc(t).split("\n"); let out = "", inUl = false;
+  for (let ln of lines) {
+    ln = ln.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+    if (/^\s*[-•]\s+/.test(ln)) { if (!inUl) { out += "<ul>"; inUl = true; } out += `<li>${ln.replace(/^\s*[-•]\s+/, "")}</li>`; continue; }
+    if (inUl) { out += "</ul>"; inUl = false; }
+    if (/^#{1,4}\s/.test(ln)) out += `<h4>${ln.replace(/^#{1,4}\s/, "")}</h4>`;
+    else if (ln.trim()) out += `<p>${ln}</p>`;
+  }
+  if (inUl) out += "</ul>";
+  return out;
+}
+$("#tp-refresh").addEventListener("click", () => laadTeampuls(true));
+
+// ════════════════════════════════════════════════════════════════════════════
+// ADMINISTRATIE — financiële cockpit (pincode-gate, puur lezend)
+// ════════════════════════════════════════════════════════════════════════════
+const eur = v => "€" + (Math.round(v || 0)).toLocaleString("nl-NL");
+let adminPin = "";
+async function laadAdmin() {
+  const st = await api("/api/admin/status").catch(() => null);
+  const hint = $("#ad-lockhint");
+  if (st && st.vergrendeld) {
+    $("#ad-gate").hidden = false; $("#ad-body").hidden = true;
+    hint.innerHTML = `<span style="color:var(--warn,#e0a23a)">Geen ADMIN_PIN ingesteld op de server — deze module is vergrendeld.</span>`;
+    $("#ad-pin").disabled = true; $("#ad-unlock").disabled = true;
+    return;
+  }
+}
+$("#ad-unlock")?.addEventListener("click", ontgrendelAdmin);
+$("#ad-pin")?.addEventListener("keydown", e => { if (e.key === "Enter") ontgrendelAdmin(); });
+
+async function ontgrendelAdmin() {
+  const pin = $("#ad-pin").value.trim();
+  if (!pin) return;
+  const btn = $("#ad-unlock"); btn.disabled = true; btn.textContent = "Openen…";
+  const r = await jpost("/api/admin/overzicht", { pin }).catch(() => null);
+  btn.disabled = false; btn.innerHTML = `${ic("check")} Openen`;
+  if (!r || !r.ok) { $("#ad-lockhint").innerHTML = `<span style="color:var(--danger,#e0645a)">Onjuiste pincode.</span>`; haptic(20); return; }
+  adminPin = pin;
+  $("#ad-gate").hidden = true; $("#ad-body").hidden = false; $("#ad-refresh").hidden = false;
+  tekenAdmin(r);
+}
+$("#ad-refresh")?.addEventListener("click", async () => {
+  if (!adminPin) return;
+  const r = await jpost("/api/admin/overzicht", { pin: adminPin }).catch(() => null);
+  if (r && r.ok) tekenAdmin(r);
+});
+
+function ring(pct, kleur, label, sub) {
+  const R = 52, C = 2 * Math.PI * R, off = C * (1 - Math.min(pct, 100) / 100);
+  return `<div class="ad-ring">
+    <svg viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="${R}"/>
+      <circle class="ring-arc" cx="60" cy="60" r="${R}" stroke="${kleur}"
+        stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg>
+    <div class="ad-ring-mid"><b>${label}</b><span>${sub}</span></div></div>`;
+}
+
+function tekenAdmin(d) {
+  const body = $("#ad-body");
+  const k = d.kor || {}, b = d.btw || {}, t = d.tellen || {};
+  const modusBtw = d.modus === "btw";
+  const korKleur = k.pct >= 90 ? "#e0645a" : k.pct >= 75 ? "#e0a23a" : "#5db98b";
+  const maxCat = Math.max(1, ...(d.categorie || []).map(c => c.bedrag));
+  const catBars = (d.categorie || []).map(c =>
+    `<div class="ad-bar"><span class="ad-bar-l">${esc(c.naam)}</span>
+      <span class="ad-bar-track"><i style="width:${Math.max(4, c.bedrag / maxCat * 100)}%;background:${c.kleur}"></i></span>
+      <span class="ad-bar-v">${eur(c.bedrag)}</span></div>`).join("")
+    || `<p class="muted klein">${d.rompslomp ? "Nog geen gefactureerde omzet dit jaar." : "Rompslomp niet gekoppeld — facturen ontbreken."}</p>`;
+  const maxPak = Math.max(1, ...(d.pakketten || []).map(p => p.bedrag));
+  const pakBars = (d.pakketten || []).map(p =>
+    `<div class="ad-bar"><span class="ad-bar-l">${esc(p.naam)}</span>
+      <span class="ad-bar-track"><i style="width:${Math.max(4, p.bedrag / maxPak * 100)}%;background:#5EE6EB"></i></span>
+      <span class="ad-bar-v">${eur(p.bedrag)}</span></div>`).join("")
+    || `<p class="muted klein">Geen pakketverdeling.</p>`;
+  const nf = d.niet_gefactureerd || [];
+
+  body.innerHTML = `
+    <div class="ad-hero">
+      ${ring(k.pct || 0, korKleur, eur(k.huidig), "van " + eur(k.grens))}
+      <div class="ad-hero-txt">
+        <p class="ad-badge ${modusBtw ? "btw" : "kor"}">${modusBtw ? "BTW-modus" : "KOR-modus"} · ${d.jaar}</p>
+        <h2>${eur(k.huidig)}<span class="muted"> / ${eur(k.grens)} KOR</span></h2>
+        <p class="muted klein">${k.gepasseerd ? "⚠️ KOR-grens gepasseerd" :
+          (k.datum_grens ? `Bij dit tempo grens rond ${esc(k.datum_grens)}` : "Ruim binnen de grens")}${k.per_week ? ` · ~${eur(k.per_week)}/wk` : ""}</p>
+      </div>
+    </div>
+
+    <div class="ad-grid">
+      <div class="ad-metric"><span>Verwachte jaaromzet</span><b>${eur(d.jaaromzet)}</b><i class="muted klein">actieve klanten × 13 periodes</i></div>
+      <div class="ad-metric"><span>Actieve klanten</span><b>${t.actief || 0}</b><i class="muted klein">${t.on_hold || 0} on hold · ${t.gratis || 0} gratis</i></div>
+      ${modusBtw ? `<div class="ad-metric"><span>Btw dit jaar</span><b>${eur(b.btw_totaal)}</b><i class="muted klein">${esc(b.kwartaal || "")} · ${eur(b.btw_kwartaal)} · ${esc(b.aangifte_label || "")}</i></div>`
+        : `<div class="ad-metric"><span>Nog tot KOR-grens</span><b>${eur(k.resterend)}</b><i class="muted klein">${k.per_week ? "~" + eur(k.per_week) + "/wk" : ""}</i></div>`}
+    </div>
+
+    <p class="sec-label">Gefactureerde omzet per categorie ${d.jaar}</p>
+    <div class="ad-bars">${catBars}</div>
+
+    <p class="sec-label">Verwachte jaaromzet per pakket</p>
+    <div class="ad-bars">${pakBars}</div>
+
+    <p class="sec-label">Nog niet gefactureerd dit jaar${nf.length ? ` · ${nf.length}` : ""}</p>
+    ${nf.length ? `<div class="ad-chips">${nf.map(n => `<span class="ad-chip">${esc(n)}</span>`).join("")}</div>`
+      : `<div class="leeg small">${ic("check")}<p>${d.rompslomp ? "Iedereen gefactureerd (voor zover te matchen)." : "Rompslomp niet gekoppeld — geen factuurcontrole."}</p></div>`}
+    ${d.fx_err ? `<p class="muted klein" style="margin-top:10px">${esc(d.fx_err)}</p>` : ""}`;
+  requestAnimationFrame(() => body.querySelectorAll(".ring-arc").forEach(a => a.style.strokeDashoffset = a.getAttribute("stroke-dashoffset")));
+}
+
 // ── Start ──────────────────────────────────────────────────────────────────
 laders.strippen = laad;
 laders.atleten = laadDossierLijst;
@@ -1070,6 +1333,10 @@ laders.intake = laadIntake;
 laders.documenten = laadDocs;
 laders.feedback = laadFeedback;
 laders.schema = laadSchema;
+laders.races = laadRaces;
+laders["schema-verloop"] = laadSchemaVerloop;
+laders.teampuls = laadTeampuls;
+laders.admin = laadAdmin;
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 toonOffline();
 if (navigator.onLine) flush();

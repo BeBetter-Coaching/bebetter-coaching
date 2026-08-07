@@ -36,6 +36,10 @@
       <symbol id="ic-note" viewBox="0 0 24 24"><path d="M4 5h16v10l-4 4H4z"/><path d="M20 15h-4v4"/></symbol>
       <symbol id="ic-brain" viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5 3 3 0 0 0 2 5 2.5 2.5 0 0 0 5 .3V4.5A2 2 0 0 0 9 4z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5 3 3 0 0 1-2 5 2.5 2.5 0 0 1-5 .3"/></symbol>
       <symbol id="ic-activity" viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></symbol>
+      <symbol id="ic-pulse" viewBox="0 0 24 24"><path d="M20.5 12H16l-2 4-4-9-2.5 5H3"/><path d="M20.8 8.2A5 5 0 0 0 12 6a5 5 0 0 0-8.8 2.2"/></symbol>
+      <symbol id="ic-euro" viewBox="0 0 24 24"><path d="M17 6.5A6 6 0 1 0 17 18"/><path d="M4.5 10.5H13"/><path d="M4.5 14H12"/></symbol>
+      <symbol id="ic-flag" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4h11l-1.5 4L16 12H5"/></symbol>
+      <symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
     </defs>
   </svg>
 
@@ -176,6 +180,52 @@
       <div id="docs-form" hidden></div>
     </section>
 
+    <!-- ════════ RACES ════════ -->
+    <section class="view" data-view="races">
+      <header class="appbar"><h1>Races</h1>
+        <button class="iconbtn" id="rc-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+      </header>
+      <p class="hint" id="rc-info">laden…</p>
+      <section id="rc-lijst" class="lijst"></section>
+    </section>
+
+    <!-- ════════ SCHEMA-VERLOOP ════════ -->
+    <section class="view" data-view="schema-verloop">
+      <header class="appbar"><h1>Schema-verloop</h1>
+        <button class="iconbtn" id="sv-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+      </header>
+      <p class="hint" id="sv-info">laden…</p>
+      <section id="sv-lijst" class="lijst"></section>
+    </section>
+
+    <!-- ════════ TEAMPULS ════════ -->
+    <section class="view" data-view="teampuls">
+      <header class="appbar"><h1>Teampuls</h1>
+        <button class="iconbtn" id="tp-refresh" aria-label="Herbereken"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+      </header>
+      <p class="hint" id="tp-info">laden…</p>
+      <section id="tp-signalen" class="lijst"></section>
+      <p class="sec-label" style="margin-top:22px">Weekbriefing</p>
+      <section id="tp-briefing"></section>
+    </section>
+
+    <!-- ════════ ADMINISTRATIE ════════ -->
+    <section class="view" data-view="admin">
+      <header class="appbar"><h1>Administratie</h1>
+        <button class="iconbtn" id="ad-refresh" aria-label="Verversen" hidden><svg class="ic"><use href="#ic-refresh"/></svg></button>
+      </header>
+      <div id="ad-gate">
+        <div class="ad-lock">
+          <span class="ad-lock-ic"><svg class="ic"><use href="#ic-euro"/></svg></span>
+          <h2>Financiële cockpit</h2>
+          <p class="hint" id="ad-lockhint">Voer je pincode in.</p>
+          <input id="ad-pin" type="password" inputmode="numeric" placeholder="Pincode" autocomplete="off">
+          <button class="btn primary" id="ad-unlock"><svg class="ic"><use href="#ic-check"/></svg> Openen</button>
+        </div>
+      </div>
+      <div id="ad-body" hidden></div>
+    </section>
+
     <!-- ════════ MEER ════════ -->
     <section class="view" data-view="meer">
       <header class="appbar"><h1>Meer</h1></header>
@@ -209,8 +259,30 @@
           <span class="lc-sub">Genereer een BeBetter-PDF voor een atleet</span></span>
         <svg class="ic"><use href="#ic-chevron"/></svg>
       </button>
-      <p class="sec-label">Binnenkort in de app</p>
-      <div class="soon" id="soon"></div>
+      <button class="listcard" data-open-view="races">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-ticket"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Races</span>
+          <span class="lc-sub">Aankomende races + je race-wens plaatsen</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
+      <button class="listcard" data-open-view="schema-verloop">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-clock"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Schema-verloop</span>
+          <span class="lc-sub">Wie loopt bijna zonder schema</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
+      <button class="listcard" data-open-view="teampuls">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-pulse"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Teampuls</span>
+          <span class="lc-sub">Belasting-signalen + AI-weekbriefing</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
+      <button class="listcard" data-open-view="admin">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-euro"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Administratie</span>
+          <span class="lc-sub">Financiële cockpit · pincode</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
       <footer class="foot">Zelfde data als Streamlit · BeBetter Coaching</footer>
     </section>
   </main>

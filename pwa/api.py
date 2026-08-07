@@ -34,6 +34,10 @@ import documenten_core as docs
 import atleten_core as atleten
 import feedback_core as feedback
 import schema_core
+import races_core as races
+import schema_verloop_core as schema_verloop
+import teampuls_core as teampuls
+import admin_core
 import webauthn_core
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -363,8 +367,14 @@ def feedback_lijst(dagen: int = 7):
 
 @app.get("/api/home/stats")
 def home_stats():
-    """Home-metertjes: wachten op feedback / vandaag gepost / afhakers deze week."""
-    return feedback.dagoverzicht()
+    """Home-metertjes: wachten op feedback / vandaag gepost / afhakers deze week
+    + belasting-signalen (goedkoop, uit de opgeslagen Teampuls-stand)."""
+    data = feedback.dagoverzicht()
+    try:
+        data["belasting"] = teampuls.stand_kort()
+    except Exception:
+        data["belasting"] = {"totaal": 0, "hoog": 0, "vers": False}
+    return data
 
 
 @app.post("/api/feedback/generate")
@@ -408,6 +418,80 @@ def feedback_skip(body: FeedbackGen):
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"Overslaan mislukt: {e}"}, status_code=500)
     return {"ok": True}
+
+
+# ── API: races (aankomende races + race-wens posten) ──────────────────────────
+class RaceWens(BaseModel):
+    id: str = ""
+    tekst: str = ""
+
+
+@app.get("/api/races")
+def races_lijst(dagen: int = 42):
+    return races.komende(days_ahead=dagen)
+
+
+@app.post("/api/races/wens")             # WRITE: plaats race-wens als coach-comment
+def races_wens(body: RaceWens):
+    try:
+        races.plaats_wens(body.id, body.tekst)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Posten mislukt: {e}"}, status_code=500)
+    return {"ok": True}
+
+
+# ── API: schema-verloop (wie loopt bijna af — puur lezend) ─────────────────────
+@app.get("/api/schema-verloop")
+def schema_verloop_lijst(horizon: int = 60):
+    return schema_verloop.verloop(horizon_days=horizon)
+
+
+# ── API: teampuls (belasting-signalen + AI-weekbriefing) ───────────────────────
+class PulsGezien(BaseModel):
+    user_key: str = ""
+    ernst: str = ""
+
+
+@app.get("/api/teampuls/signalen")
+def teampuls_signalen(force: bool = False):
+    return teampuls.signalen(force=force)
+
+
+@app.post("/api/teampuls/gezien")        # demp een atleet 7 dagen (gedeeld)
+def teampuls_gezien(body: PulsGezien):
+    try:
+        teampuls.markeer_gezien(body.user_key, body.ernst)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=500)
+    return {"ok": True}
+
+
+@app.get("/api/teampuls/briefing")
+def teampuls_briefing(force: bool = False):
+    return teampuls.briefing(force=force)
+
+
+# ── API: administratie (financiële cockpit — pincode, puur lezend) ─────────────
+class AdminPin(BaseModel):
+    pin: str = ""
+
+
+@app.get("/api/admin/status")
+def admin_status():
+    return admin_core.status()
+
+
+@app.post("/api/admin/overzicht")
+def admin_overzicht(body: AdminPin):
+    try:
+        data = admin_core.overzicht(body.pin)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Cockpit laden mislukt: {e}"}, status_code=500)
+    if not data.get("ok"):
+        return JSONResponse({"ok": False, "err": "pin"}, status_code=403)
+    return data
 
 
 # ── API: schema bouwen (intake -> AI-plan -> CSV; Anthropic + gedeelde intake) ─

@@ -265,7 +265,7 @@ textarea{resize:vertical}
   margin-left:auto;border-bottom-right-radius:3px}
 
 /* ── Home: dagoverzicht-metertjes (wachten/gepost/afhakers) ──────────────── */
-.dagstats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:4px 0}
+.dagstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:4px 0}
 .dagstat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 8px;
   text-align:center;color:var(--text);box-shadow:0 3px 12px rgba(0,4,14,.3)}
 button.dagstat{cursor:pointer}
@@ -399,3 +399,83 @@ button.dagstat:hover{border-color:var(--acc)}
   body{grid-template-columns:280px 1fr}
   .view{max-width:960px}
 }
+
+/* ── Teampuls: belasting-signalen ─────────────────────────────────────────── */
+.puls-kaart{position:relative;overflow:hidden}
+.puls-kaart::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
+.puls-kaart.ernst-hoog::before{background:var(--danger)}
+.puls-kaart.ernst-let::before{background:var(--warn)}
+.puls-kaart .d-head{align-items:center}
+.puls-dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 0 4px rgba(255,255,255,.04)}
+.puls-dot.hoog{background:var(--danger);animation:pulseGlow 1.8s ease-in-out infinite}
+.puls-dot.let{background:var(--warn)}
+@keyframes pulseGlow{0%,100%{box-shadow:0 0 0 0 rgba(229,103,75,.5)}50%{box-shadow:0 0 0 7px rgba(229,103,75,0)}}
+.puls-tag{margin-left:auto;font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px}
+.puls-tag.hoog{color:var(--danger);background:rgba(229,103,75,.14);border:1px solid rgba(229,103,75,.34)}
+.puls-tag.let{color:var(--warn);background:rgba(239,159,39,.14);border:1px solid rgba(239,159,39,.32)}
+.puls-sig{margin:10px 0 4px;padding-left:18px;font-size:13.5px;line-height:1.55}
+.puls-sig li{margin:2px 0}
+.puls-duiding{font-size:13px;color:var(--acc);background:rgba(94,230,235,.08);border:1px solid rgba(94,230,235,.22);
+  border-radius:10px;padding:8px 11px;margin:8px 0 0;line-height:1.5;display:flex;gap:6px;align-items:flex-start}
+.puls-duiding .ic{width:15px;height:15px;flex:0 0 auto;margin-top:2px}
+.puls-ond{margin:10px 0 2px}
+.puls-ond summary{cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:600;list-style:none}
+.puls-ond summary::-webkit-details-marker{display:none}
+.puls-ond summary::before{content:"▸ ";color:var(--acc)}
+.puls-ond[open] summary::before{content:"▾ "}
+.puls-runs{margin:8px 0;padding-left:18px;font-size:12.5px;color:var(--muted);line-height:1.5}
+
+/* ── Teampuls: weekbriefing ───────────────────────────────────────────────── */
+.brief-kaart{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px 17px;box-shadow:0 3px 14px rgba(0,4,14,.3)}
+.brief-tekst{margin:10px 0;font-size:14px;line-height:1.6}
+.brief-tekst h4{margin:14px 0 6px;font-size:14px;color:var(--acc)}
+.brief-tekst p{margin:7px 0}
+.brief-tekst ul{margin:6px 0;padding-left:20px}
+.brief-tekst li{margin:3px 0}
+.brief-tekst b{color:var(--text)}
+
+/* ── Administratie: pincode-gate ──────────────────────────────────────────── */
+.ad-lock{max-width:340px;margin:40px auto;text-align:center;background:var(--card);border:1px solid var(--border);
+  border-radius:20px;padding:32px 26px;box-shadow:0 10px 40px rgba(0,4,14,.4)}
+.ad-lock-ic{display:inline-flex;width:58px;height:58px;align-items:center;justify-content:center;
+  border-radius:16px;background:rgba(94,230,235,.1);border:1px solid rgba(94,230,235,.28);margin-bottom:14px}
+.ad-lock-ic .ic{width:28px;height:28px;color:var(--acc)}
+.ad-lock h2{margin:0 0 4px;font-size:20px}
+.ad-lock input{width:100%;margin:16px 0 12px;padding:13px 15px;border-radius:12px;background:var(--card2);
+  border:1px solid var(--border);color:var(--text);font-size:18px;text-align:center;letter-spacing:6px}
+.ad-lock input:focus{outline:none;border-color:var(--acc)}
+.ad-lock .btn{width:100%}
+
+/* ── Administratie: cockpit ───────────────────────────────────────────────── */
+.ad-hero{display:flex;gap:18px;align-items:center;background:radial-gradient(120% 140% at 0% 0%,rgba(94,230,235,.10),transparent 60%),var(--card);
+  border:1px solid var(--border);border-radius:20px;padding:18px 20px;margin:6px 0 16px;box-shadow:0 6px 22px rgba(0,4,14,.34)}
+.ad-ring{position:relative;width:104px;height:104px;flex:0 0 auto}
+.ad-ring svg{width:104px;height:104px;transform:rotate(-90deg)}
+.ad-ring .ring-bg{fill:none;stroke:#0B2044;stroke-width:9}
+.ad-ring .ring-arc{stroke-width:9;transition:stroke-dashoffset 1s cubic-bezier(.2,.7,.3,1)}
+.ad-ring-mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.ad-ring-mid b{font-size:17px;font-weight:750;letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums}
+.ad-ring-mid span{font-size:9.5px;color:var(--muted);margin-top:3px}
+.ad-hero-txt{min-width:0}
+.ad-hero-txt h2{margin:6px 0 3px;font-size:24px;font-weight:750;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.ad-hero-txt h2 .muted{font-size:15px;font-weight:500}
+.ad-badge{display:inline-block;font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.4px;text-transform:uppercase}
+.ad-badge.btw{color:var(--warn);background:rgba(239,159,39,.14);border:1px solid rgba(239,159,39,.32)}
+.ad-badge.kor{color:var(--acc);background:rgba(94,230,235,.12);border:1px solid rgba(94,230,235,.3)}
+.ad-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 6px}
+.ad-metric{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 15px;box-shadow:0 3px 12px rgba(0,4,14,.3)}
+.ad-metric span{font-size:11px;color:var(--muted);font-weight:600}
+.ad-metric b{display:block;font-size:23px;font-weight:750;margin:4px 0 2px;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.ad-bars{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:13px 15px;margin:2px 0 6px}
+.ad-bar{display:flex;align-items:center;gap:10px;margin:9px 0}
+.ad-bar-l{flex:0 0 108px;font-size:12.5px;color:var(--text)}
+.ad-bar-track{flex:1;height:9px;background:#0B2044;border-radius:6px;overflow:hidden}
+.ad-bar-track i{display:block;height:100%;border-radius:6px;transition:width .8s cubic-bezier(.2,.7,.3,1)}
+.ad-bar-v{flex:0 0 auto;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--muted)}
+.ad-chips{display:flex;flex-wrap:wrap;gap:7px}
+.ad-chip{font-size:12px;background:rgba(239,159,39,.12);border:1px solid rgba(239,159,39,.3);color:var(--warn);
+  padding:4px 11px;border-radius:20px}
+.leeg.small{padding:18px}
+.leeg.small .ic{width:28px;height:28px}
+.iconbtn[hidden]{display:none!important}
