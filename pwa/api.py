@@ -52,10 +52,18 @@ _SESSION_DAGEN = 90
 _COOKIE = "bb_session"
 
 
+def _b64nopad(raw: bytes) -> str:
+    # GEEN '=' opvulling: anders wordt de cookie-waarde gequote en verhaspelen
+    # sommige clients (o.a. geïnstalleerde iOS-PWA's) 'm → sessie niet herkend.
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _unb64nopad(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
 def _sign_session(user: str) -> str:
-    body = base64.urlsafe_b64encode(
-        json.dumps({"u": user, "exp": time.time() + _SESSION_DAGEN * 86400}).encode()
-    ).decode()
+    body = _b64nopad(json.dumps({"u": user, "exp": time.time() + _SESSION_DAGEN * 86400}).encode())
     sig = hmac.new(_SESSION_SECRET, body.encode(), hashlib.sha256).hexdigest()
     return f"{body}.{sig}"
 
@@ -66,7 +74,7 @@ def _valid_session(token: str) -> bool:
         verwacht = hmac.new(_SESSION_SECRET, body.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, verwacht):
             return False
-        data = json.loads(base64.urlsafe_b64decode(body))
+        data = json.loads(_unb64nopad(body))
         return float(data.get("exp", 0)) > time.time()
     except Exception:
         return False
@@ -176,8 +184,7 @@ _WA_CHAL = "bb_wa_chal"
 
 
 def _sign_chal(chal_b64: str) -> str:
-    body = base64.urlsafe_b64encode(
-        json.dumps({"c": chal_b64, "exp": time.time() + 300}).encode()).decode()
+    body = _b64nopad(json.dumps({"c": chal_b64, "exp": time.time() + 300}).encode())
     sig = hmac.new(_SESSION_SECRET, body.encode(), hashlib.sha256).hexdigest()
     return f"{body}.{sig}"
 
@@ -187,11 +194,10 @@ def _read_chal(token: str):
         body, sig = token.rsplit(".", 1)
         if not hmac.compare_digest(sig, hmac.new(_SESSION_SECRET, body.encode(), hashlib.sha256).hexdigest()):
             return None
-        data = json.loads(base64.urlsafe_b64decode(body))
+        data = json.loads(_unb64nopad(body))
         if float(data.get("exp", 0)) < time.time():
             return None
-        c = data["c"]
-        return base64.urlsafe_b64decode(c + "=" * (-len(c) % 4))
+        return _unb64nopad(data["c"])
     except Exception:
         return None
 
