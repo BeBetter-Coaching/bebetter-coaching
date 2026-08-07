@@ -34,16 +34,18 @@ function toonView(view) {
 }
 $$("[data-open-view]").forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
 
-// Begroeting + datum in de app-bar (zelfde toon als de Streamlit-home)
-(function () {
+// Begroeting + datum voor de home-hero (zelfde toon als de Streamlit-home)
+function groetInfo() {
   const dagen = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"];
   const maanden = ["januari", "februari", "maart", "april", "mei", "juni",
     "juli", "augustus", "september", "oktober", "november", "december"];
   const nu = new Date(), u = nu.getHours();
   const groet = u < 12 ? "Goedemorgen" : (u < 18 ? "Goedemiddag" : "Goedenavond");
-  $("#greet").textContent = `${groet}, Coach`;
-  $("#greet-date").textContent = `${dagen[(nu.getDay() + 6) % 7]} ${nu.getDate()} ${maanden[nu.getMonth()]}`;
-})();
+  return { groet: `${groet}, Coach`,
+    datum: `${dagen[(nu.getDay() + 6) % 7]} ${nu.getDate()} ${maanden[nu.getMonth()]}` };
+}
+// Laptop/desktop? Bepaalt of Atleten master-detail toont (lijst + dossier naast elkaar)
+const isDesktop = () => matchMedia("(min-width:900px)").matches;
 
 // "Binnenkort"-modules op de Meer-pagina: laat zien dat de héle app hier komt
 [["file", "Feedback"], ["file", "Schema-verloop"], ["file", "Schema bouwen"],
@@ -92,9 +94,7 @@ function skeleton(box, rijen = 3) {
 async function renderHome() {
   const box = $("#home-body");
   if (!box.dataset.done) box.innerHTML = `
-    <div class="metrics">
-      <div class="skel skel-metric"></div><div class="skel skel-metric"></div>
-    </div>
+    <div class="skel" style="height:150px;border-radius:18px;margin:10px 0 6px"></div>
     <div class="skel-card" style="margin-top:12px"><div class="skel skel-line w60"></div></div>`;
 
   const [inbox, ath, kaarten] = await Promise.all([
@@ -118,16 +118,19 @@ async function renderHome() {
   bijna.forEach(k => items.push(kaartItem("ticket", `${esc(k.naam)} — nog 1 training`,
     "Strippenkaart bijna vol", "strippen", false)));
 
+  const g = groetInfo();
+  const nBijna = vol.length + bijna.length;
   box.innerHTML = `
-    <div class="metrics">
-      <button class="metric ${nNieuw ? "accent" : ""}" data-open-view="intake">
-        <span class="metric-top">${ic("mail")}<b>${nNieuw}</b></span>
-        <span class="metric-lbl">nieuwe intakes</span>
-      </button>
-      <button class="metric" data-open-view="atleten">
-        <span class="metric-top"><b>${nAtl}</b></span>
-        <span class="metric-lbl">${nAtl === 1 ? "atleet" : "atleten"}</span>
-      </button>
+    <div class="hero">
+      <div class="hero-top">
+        <div><p class="hero-greet">${g.groet}</p><p class="hero-date">${g.datum}</p></div>
+        <button class="hero-gear" data-open-view="meer" aria-label="Meer">${ic("settings")}</button>
+      </div>
+      <div class="hero-stats">
+        <button class="hstat" data-open-view="intake"><b>${nNieuw}</b><span>nieuwe intake${nNieuw === 1 ? "" : "s"}</span></button>
+        <button class="hstat" data-open-view="atleten"><b>${nAtl}</b><span>${nAtl === 1 ? "atleet" : "atleten"}</span></button>
+        <button class="hstat" data-open-view="strippen"><b>${nBijna}</b><span>kaart${nBijna === 1 ? "" : "en"} bijna vol</span></button>
+      </div>
     </div>
 
     <p class="sec-label">Vandaag</p>
@@ -383,6 +386,17 @@ function toonPreview(pv) {
 // ATLETEN — store-only 360° per atleet (intake, notities, documenten, geheugen)
 // ════════════════════════════════════════════════════════════════════════════
 let dossierCache = [];
+let dossierSel = null;   // geselecteerde atleet-key (voor master-detail op laptop)
+
+// Placeholder in het rechterpaneel zolang er nog niks gekozen is (alleen laptop)
+function toonDetailLeeg() {
+  const w = $("#d-detail"); w.hidden = false;
+  w.innerHTML = `<div class="leeg md-leeg">${ic("users")}<p>Kies links een atleet om het dossier te openen.</p></div>`;
+}
+// Gekozen rij oplichten zonder de lijst opnieuw te tekenen
+function markSel(key) {
+  $$("#d-lijst .listcard").forEach(el => el.classList.toggle("sel", el.dataset.key === key));
+}
 
 async function laadDossierLijst() {
   const box = $("#d-lijst");
@@ -396,7 +410,9 @@ async function laadDossierLijst() {
 
 function tekenDossierLijst(filter) {
   const box = $("#d-lijst");
-  $("#d-detail").hidden = true; box.hidden = false;
+  box.hidden = false;
+  if (isDesktop()) { if (!dossierSel) toonDetailLeeg(); }   // detail blijft staan naast de lijst
+  else { $("#d-detail").hidden = true; }                    // telefoon: één scherm tegelijk
   const f = filter.trim().toLowerCase();
   const rijen = dossierCache.filter(a => !f || (a.naam || "").toLowerCase().includes(f));
   if (!rijen.length) {
@@ -408,6 +424,8 @@ function tekenDossierLijst(filter) {
   rijen.forEach(a => {
     const el = document.createElement("button");
     el.className = "listcard";
+    el.dataset.key = a.key;
+    if (a.key === dossierSel) el.classList.add("sel");
     el.innerHTML = `
       <span class="avatar">${initialen(a.naam)}</span>
       <span class="lc-body">
@@ -428,8 +446,11 @@ $("#d-zoek").addEventListener("input", e => tekenDossierLijst(e.target.value));
 $("#a-refresh").addEventListener("click", () => { geladen.atleten = true; laadDossierLijst(); });
 
 async function openDossier(key) {
+  dossierSel = key;
   const wrap = $("#d-detail");
-  $("#d-lijst").hidden = true; wrap.hidden = false;
+  if (isDesktop()) markSel(key);            // laptop: lijst blijft, rij licht op
+  else $("#d-lijst").hidden = true;         // telefoon: lijst wijkt voor het dossier
+  wrap.hidden = false;
   wrap.innerHTML = '<p class="muted center">Laden…</p>';
   const r = await api(`/api/dossier/${encodeURIComponent(key)}`).catch(() => null);
   if (!r || !r.ok) { wrap.innerHTML = '<p class="muted center">Kon dossier niet laden.</p>'; return; }

@@ -57,16 +57,6 @@
   <main id="scroller">
     <!-- ════════ HOME (dashboard) ════════ -->
     <section class="view on" data-view="home">
-      <header class="appbar home-bar">
-        <div class="ab-id">
-          <div class="ab-avatar">BB</div>
-          <div>
-            <p class="ab-greet" id="greet">Welkom</p>
-            <p class="ab-date" id="greet-date"></p>
-          </div>
-        </div>
-        <button class="iconbtn" data-open-view="meer" aria-label="Meer"><svg class="ic"><use href="#ic-settings"/></svg></button>
-      </header>
       <div id="home-body"></div>
     </section>
 
@@ -75,9 +65,13 @@
       <header class="appbar"><h1>Atleten</h1>
         <button class="iconbtn" id="a-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
       </header>
-      <div class="search"><svg class="ic"><use href="#ic-search"/></svg><input id="d-zoek" placeholder="Zoek atleet"></div>
-      <section id="d-lijst" class="lijst"></section>
-      <div id="d-detail" hidden></div>
+      <div class="md-split">
+        <div class="md-list">
+          <div class="search"><svg class="ic"><use href="#ic-search"/></svg><input id="d-zoek" placeholder="Zoek atleet"></div>
+          <section id="d-lijst" class="lijst"></section>
+        </div>
+        <div id="d-detail" class="md-detail" hidden></div>
+      </div>
     </section>
 
     <!-- ════════ INTAKE ════════ -->
