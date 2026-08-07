@@ -1,0 +1,29 @@
+name: keep-warm
+
+# Houdt de Render Free-instance wakker zodat er geen ~50s cold-start is.
+# Render slaapt na 15 min zonder verkeer; wij tikken /healthz elke ~10 min aan.
+# Publieke repo → GitHub Actions is hier gratis en onbeperkt.
+# Handmatig starten kan ook via de "Run workflow"-knop (workflow_dispatch).
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /healthz (wekt de app)
+        run: |
+          URL="https://bebetter-coaching.onrender.com/healthz"
+          # Drie pings ~2 min uit elkaar: dekt ook een vertraagde cron-run af.
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+            echo "ping $i -> HTTP $code"
+            if [ "$i" -lt 3 ]; then sleep 120; fi
+          done

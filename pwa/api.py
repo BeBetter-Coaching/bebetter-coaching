@@ -46,7 +46,7 @@ def _is_public(path: str) -> bool:
     statische assets die het nodig heeft. De token in de link beschermt het
     formulier tegen willekeurige bezoekers; er staat geen coach-data achter.
     """
-    if path in ("/manifest.webmanifest", "/sw.js"):
+    if path in ("/manifest.webmanifest", "/sw.js", "/healthz"):
         return True
     return (path == "/intake"
             or path.startswith("/api/intake/public")
@@ -100,6 +100,12 @@ class PubliekeIntake(BaseModel):
     token: str = ""
     resume: str = ""
     velden: dict = {}
+
+
+# ── Health: lichtgewicht, geen login, geen data — houdt Render Free wakker ───
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
 
 
 # ── API: strippenkaart ───────────────────────────────────────────────────────
