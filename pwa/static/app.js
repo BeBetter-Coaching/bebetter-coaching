@@ -6,7 +6,16 @@
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const api = (u, opt) => fetch(u, opt).then(r => {
+// Sessie als token in localStorage (robuust in geïnstalleerde iOS-PWA's, waar
+// cookies onbetrouwbaar zijn) → meegestuurd als Authorization-header.
+const getToken = () => { try { return localStorage.getItem("bb_token") || ""; } catch { return ""; } };
+const setToken = t => { try { t ? localStorage.setItem("bb_token", t) : localStorage.removeItem("bb_token"); } catch {} };
+function authHeaders(base) {
+  const h = Object.assign({}, base || {});
+  const t = getToken(); if (t) h["Authorization"] = "Bearer " + t;
+  return h;
+}
+const api = (u, opt = {}) => fetch(u, { ...opt, headers: authHeaders(opt.headers) }).then(r => {
   if (r.status === 401) { toonLogin(); throw new Error("auth"); }   // sessie verlopen → inlogscherm
   return r.json();
 });
@@ -55,7 +64,7 @@ $("#login-form")?.addEventListener("submit", async e => {
       body: JSON.stringify({ wie: loginWie, password: $("#login-pass").value }),
     });
     const d = await r.json().catch(() => ({}));
-    if (r.ok && d.ok) { location.reload(); return; }   // cookie staat → herlaad ingelogd
+    if (r.ok && d.ok) { setToken(d.token); location.reload(); return; }   // token bewaard → herlaad ingelogd
     err.textContent = d.err || "Inloggen mislukt."; err.hidden = false;
   } catch { err.textContent = "Geen verbinding."; err.hidden = false; }
   btn.disabled = false; btn.textContent = "Inloggen";
@@ -96,11 +105,11 @@ function credToJSON(c) {
 async function faceIDregister() {
   if (!waSupport()) return melding("Dit apparaat ondersteunt geen Face ID/passkeys.", true);
   try {
-    const opts = await fetch("/api/webauthn/register/options", { method: "POST" }).then(r => r.json());
+    const opts = await fetch("/api/webauthn/register/options", { method: "POST", headers: authHeaders() }).then(r => r.json());
     if (opts.err) return melding(opts.err, true);
     const cred = await navigator.credentials.create({ publicKey: prepCreate(opts) });
     const r = await fetch("/api/webauthn/register/verify", { method: "POST",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify(credToJSON(cred)) }).then(r => r.json());
+      headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(credToJSON(cred)) }).then(r => r.json());
     melding(r && r.ok ? "Face ID ingeschakeld op dit apparaat." : (r?.err || "Inschakelen mislukt."), !(r && r.ok));
   } catch { melding("Face ID inschakelen afgebroken.", true); }
 }
@@ -112,7 +121,7 @@ async function faceIDunlock() {
     const cred = await navigator.credentials.get({ publicKey: prepGet(opts) });
     const r = await fetch("/api/webauthn/auth/verify", { method: "POST",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(credToJSON(cred)) }).then(r => r.json());
-    if (r && r.ok) location.reload(); else melding(r?.err || "Ontgrendelen mislukt.", true);
+    if (r && r.ok) { setToken(r.token); location.reload(); } else melding(r?.err || "Ontgrendelen mislukt.", true);
   } catch { /* gebruiker annuleerde de Face ID-prompt */ }
 }
 $("#login-faceid")?.addEventListener("click", faceIDunlock);
@@ -122,12 +131,13 @@ if (waSupport()) $("#faceid-enable")?.removeAttribute("hidden");   // 'inschakel
 // Bij opstarten: niet ingelogd → toon scherm; heeft dit account een passkey +
 // steunt de browser het, toon dan de Face ID-ontgrendelknop.
 $("#uitloggen")?.addEventListener("click", async () => {
-  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  await fetch("/api/logout", { method: "POST", headers: authHeaders() }).catch(() => {});
+  setToken("");
   location.reload();
 });
 (async () => {
   try {
-    const me = await fetch("/api/me").then(r => r.json());
+    const me = await fetch("/api/me", { headers: authHeaders() }).then(r => r.json());
     if (!me.ingelogd) { toonLogin(); return; }
     ingelogdeCoach = me.wie || "";
     const w = $("#wie-ingelogd");
@@ -849,7 +859,7 @@ async function genereerDoc(t) {
   status.textContent = "Genereren…";
   try {
     const res = await fetch("/api/docs/generate", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ slug: t.slug, user_key, answers }),
     });
     if (!res.ok) { status.textContent = "Mislukt: " + (await res.text()); return; }

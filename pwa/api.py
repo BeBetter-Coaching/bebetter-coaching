@@ -84,9 +84,18 @@ def _valid_session(token: str) -> bool:
         return False
 
 
+def _token_of(request: Request) -> str:
+    """Sessie-token uit de Authorization-header (robuust in geïnstalleerde iOS-PWA's,
+    waar cookies onbetrouwbaar bewaard worden) of anders uit de cookie (browser)."""
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return request.cookies.get(_COOKIE, "")
+
+
 def _session_user(request: Request):
     """Welke coach is ingelogd (uit de geldige sessie), of None."""
-    token = request.cookies.get(_COOKIE, "")
+    token = _token_of(request)
     if not _valid_session(token):
         return None
     try:
@@ -110,7 +119,7 @@ def _is_public(path: str) -> bool:
 @app.middleware("http")
 async def _login(request: Request, call_next):
     if _APP_PASSWORD and not _is_public(request.url.path):
-        if not _valid_session(request.cookies.get(_COOKIE, "")):
+        if not _valid_session(_token_of(request)):
             # Geen browser-popup meer: nette 401; de app toont zelf het inlogscherm.
             return JSONResponse({"err": "auth"}, status_code=401)
     return await call_next(request)
@@ -166,8 +175,11 @@ class Login(BaseModel):
 
 
 def _login_resp(wie: str):
-    resp = JSONResponse({"ok": True, "wie": wie})
-    resp.set_cookie(_COOKIE, _sign_session(wie), max_age=_SESSION_DAGEN * 86400,
+    token = _sign_session(wie)
+    # token ook in de body: de app bewaart 'm in localStorage en stuurt 'm als
+    # Authorization-header mee (cookie blijft voor browser-gebruik).
+    resp = JSONResponse({"ok": True, "wie": wie, "token": token})
+    resp.set_cookie(_COOKIE, token, max_age=_SESSION_DAGEN * 86400,
                     httponly=True, secure=True, samesite="lax", path="/")
     return resp
 
