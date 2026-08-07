@@ -320,10 +320,16 @@ textarea{resize:vertical}
 .login-card{width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px;text-align:center;
   background:linear-gradient(180deg,#123457,#0E2547);border:1px solid #24486f;border-radius:20px;
   padding:30px 24px calc(30px + env(safe-area-inset-bottom));box-shadow:0 18px 44px rgba(0,0,0,.55)}
-.login-logo{width:56px;height:56px;border-radius:16px;background:var(--acc);color:#04222b;
-  font-weight:700;font-size:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 4px}
+.login-logo-img{width:74px;height:74px;object-fit:contain;margin:0 auto 2px;display:block}
 .login-h{margin:0;font-size:20px;font-weight:700;letter-spacing:-.3px}
 .login-sub{margin:0 0 8px;font-size:13px;color:var(--muted)}
+.login-who{display:flex;flex-direction:column;gap:10px}
+.who-btn{display:flex;align-items:center;gap:12px;background:var(--card2);border:1px solid var(--border);
+  color:var(--text);border-radius:12px;padding:13px 16px;font-size:16px;font-weight:600;cursor:pointer;text-align:left}
+.who-btn:hover{border-color:var(--acc)}
+.who-av{width:34px;height:34px;border-radius:50%;background:var(--acc);color:#04222b;font-weight:700;
+  display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.login-pw{display:flex;flex-direction:column;gap:12px}
 .login-card input{text-align:left}
 .login-card .btn.primary{width:100%;padding:12px;margin-top:2px}
 .login-err{margin:2px 0 0;font-size:13px;color:var(--danger)}

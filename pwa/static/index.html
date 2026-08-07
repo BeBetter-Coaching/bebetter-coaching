@@ -42,13 +42,20 @@
   <!-- Eigen inlogscherm (vervangt de lelijke browser-popup) -->
   <div id="login" class="login-scrim" hidden>
     <form class="login-card" id="login-form">
-      <div class="login-logo">BB</div>
+      <img class="login-logo-img" src="/static/logo.png" alt="BeBetter Coaching">
       <h1 class="login-h">BeBetter Coaching</h1>
-      <p class="login-sub">Log in om verder te gaan</p>
-      <input id="login-user" placeholder="Gebruikersnaam" autocomplete="username" value="bebetter">
-      <input id="login-pass" type="password" placeholder="Wachtwoord" autocomplete="current-password">
-      <button class="btn primary" id="login-btn" type="submit">Inloggen</button>
-      <button class="btn ghost" id="login-faceid" type="button" hidden><svg class="ic"><use href="#ic-check"/></svg> Ontgrendel met Face ID</button>
+      <div class="login-who" id="login-who">
+        <p class="login-sub">Wie ben je?</p>
+        <button type="button" class="who-btn" data-wie="Jip"><span class="who-av">J</span>Jip</button>
+        <button type="button" class="who-btn" data-wie="Remco"><span class="who-av">R</span>Remco</button>
+      </div>
+      <div class="login-pw" id="login-pw" hidden>
+        <p class="login-sub" id="login-as">Inloggen</p>
+        <input id="login-pass" type="password" placeholder="Wachtwoord" autocomplete="current-password">
+        <button class="btn primary" id="login-btn" type="submit">Inloggen</button>
+        <button class="btn ghost" id="login-faceid" type="button" hidden><svg class="ic"><use href="#ic-check"/></svg> Ontgrendel met Face ID / vingerafdruk</button>
+        <button class="btn ghost small" id="login-back" type="button">‹ Ander account</button>
+      </div>
       <p class="login-err" id="login-err" hidden></p>
     </form>
   </div>
@@ -157,7 +164,12 @@
         <h3 class="panel-h">Deze app</h3>
         <p class="hint" id="bron">laden…</p>
         <button id="install" class="btn" hidden><svg class="ic"><use href="#ic-download"/></svg> Installeer als app</button>
-        <button id="faceid-enable" class="btn" hidden><svg class="ic"><use href="#ic-check"/></svg> Face ID inschakelen op dit apparaat</button>
+        <button id="faceid-enable" class="btn" hidden><svg class="ic"><use href="#ic-check"/></svg> Snel ontgrendelen (Face ID / vingerafdruk)</button>
+      </section>
+      <section class="panel open-static">
+        <h3 class="panel-h"><svg class="ic"><use href="#ic-user-plus"/></svg> Account</h3>
+        <p class="hint" id="wie-ingelogd">laden…</p>
+        <button id="uitloggen" class="btn"><svg class="ic"><use href="#ic-back"/></svg> Uitloggen</button>
       </section>
       <p class="sec-label">Modules</p>
       <button class="listcard" data-open-view="documenten">

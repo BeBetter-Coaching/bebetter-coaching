@@ -17,16 +17,42 @@ const haptic = ms => navigator.vibrate?.(ms);
 const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const ic = n => `<svg class="ic"><use href="#ic-${n}"/></svg>`;
 
-// ── Inlog (eigen scherm i.p.v. de browser-popup; blijvende sessie-cookie) ────
-function toonLogin() { const el = $("#login"); if (el) el.hidden = false; }
+// ── Inlog (kies Jip/Remco → wachtwoord of biometrie; blijvende sessie-cookie) ─
+let loginWie = null;        // gekozen coach op het inlogscherm
+let ingelogdeCoach = "";    // wie is er ingelogd (voor toeschrijven van acties)
+
+function toonLogin() {
+  const el = $("#login"); if (!el) return;
+  el.hidden = false;
+  $("#login-who").hidden = false; $("#login-pw").hidden = true; loginWie = null;   // begin bij de keuze
+}
+$$(".who-btn").forEach(b => b.addEventListener("click", () => kiesCoach(b.dataset.wie)));
+$("#login-back")?.addEventListener("click", () => {
+  $("#login-who").hidden = false; $("#login-pw").hidden = true; loginWie = null; $("#login-err").hidden = true;
+});
+async function kiesCoach(wie) {
+  loginWie = wie;
+  $("#login-who").hidden = true; $("#login-pw").hidden = false;
+  $("#login-as").textContent = `Inloggen als ${wie}`;
+  $("#login-err").hidden = true;
+  const pass = $("#login-pass"); pass.value = ""; setTimeout(() => pass.focus(), 60);
+  const fb = $("#login-faceid"); fb.hidden = true;      // biometrie-knop alleen als deze coach een passkey heeft
+  if (waSupport()) {
+    try {
+      const a = await fetch(`/api/webauthn/available?wie=${encodeURIComponent(wie)}`).then(r => r.json());
+      if (a.aan) fb.hidden = false;
+    } catch {}
+  }
+}
 $("#login-form")?.addEventListener("submit", async e => {
   e.preventDefault();
+  if (!loginWie) return;
   const err = $("#login-err"); err.hidden = true;
   const btn = $("#login-btn"); btn.disabled = true; btn.textContent = "Bezig…";
   try {
     const r = await fetch("/api/login", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: $("#login-user").value.trim(), password: $("#login-pass").value }),
+      body: JSON.stringify({ wie: loginWie, password: $("#login-pass").value }),
     });
     const d = await r.json().catch(() => ({}));
     if (r.ok && d.ok) { location.reload(); return; }   // cookie staat → herlaad ingelogd
@@ -79,9 +105,9 @@ async function faceIDregister() {
   } catch { melding("Face ID inschakelen afgebroken.", true); }
 }
 async function faceIDunlock() {
-  if (!waSupport()) return;
+  if (!waSupport() || !loginWie) return;
   try {
-    const opts = await fetch("/api/webauthn/auth/options", { method: "POST" }).then(r => r.json());
+    const opts = await fetch(`/api/webauthn/auth/options?wie=${encodeURIComponent(loginWie)}`, { method: "POST" }).then(r => r.json());
     if (opts.err) return melding(opts.err, true);
     const cred = await navigator.credentials.get({ publicKey: prepGet(opts) });
     const r = await fetch("/api/webauthn/auth/verify", { method: "POST",
@@ -95,16 +121,17 @@ if (waSupport()) $("#faceid-enable")?.removeAttribute("hidden");   // 'inschakel
 
 // Bij opstarten: niet ingelogd → toon scherm; heeft dit account een passkey +
 // steunt de browser het, toon dan de Face ID-ontgrendelknop.
+$("#uitloggen")?.addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  location.reload();
+});
 (async () => {
   try {
     const me = await fetch("/api/me").then(r => r.json());
-    if (!me.ingelogd) {
-      toonLogin();
-      if (waSupport()) {
-        const a = await fetch("/api/webauthn/available").then(r => r.json()).catch(() => ({}));
-        if (a.aan) $("#login-faceid")?.removeAttribute("hidden");
-      }
-    }
+    if (!me.ingelogd) { toonLogin(); return; }
+    ingelogdeCoach = me.wie || "";
+    const w = $("#wie-ingelogd");
+    if (w) w.textContent = ingelogdeCoach ? `Ingelogd als ${ingelogdeCoach}.` : "Ingelogd.";
   } catch {}
 })();
 
@@ -636,8 +663,8 @@ function tekenAtleet(d) {
       <h3 class="panel-h">${ic("note")} Coach-notities <span class="muted klein">(gedeeld Jip &amp; Remco)</span></h3>
       <div class="row">
         <input id="nt-tekst" placeholder="Nieuwe notitie…">
-        <div class="seg" id="nt-coach" data-value="Jip">
-          <button data-v="Jip" class="on">Jip</button><button data-v="Remco">Remco</button>
+        <div class="seg" id="nt-coach" data-value="${ingelogdeCoach === "Remco" ? "Remco" : "Jip"}">
+          <button data-v="Jip" class="${ingelogdeCoach !== "Remco" ? "on" : ""}">Jip</button><button data-v="Remco" class="${ingelogdeCoach === "Remco" ? "on" : ""}">Remco</button>
         </div>
         <button class="btn primary" id="nt-add" aria-label="Toevoegen">${ic("plus")}</button>
       </div>
