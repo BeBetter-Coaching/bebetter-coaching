@@ -666,6 +666,30 @@ def save_strippenkaarten(data: dict) -> tuple[bool, str]:
     return _save_json("strippenkaarten.json", _STRIPPEN_LOCAL, data, "Update strippenkaarten via app")
 
 
+# ---------------------------------------------------------------------------
+# Home-cockpit snapshot (CACHE, geen bron van waarheid) — gedeeld + duurzaam
+# ---------------------------------------------------------------------------
+# De snapshot is een afgeleide momentopname (team-status, feedback-voortgang,
+# Prioriteit-vandaag). Hij staat hier zodat hij een Render-deploy/restart
+# overleeft en door BEIDE coaches (en later meerdere app-instances) gedeeld
+# wordt — zonder nieuwe infrastructuur: dezelfde GitHub-store als de rest.
+# Home leest 'm direct (stale-while-revalidate) en herbouwt alleen op de
+# achtergrond. Zo is er na een restart nooit meer een koude 20-30s Home-load.
+
+_HOME_SNAPSHOT_LOCAL = os.path.join(_BASE_DIR, ".home_snapshot.json")
+
+
+def load_home_snapshot() -> dict:
+    """Laad de Home-cockpit-snapshot. Leeg dict = nog nooit opgebouwd."""
+    return _load_json("home_snapshot.json", _HOME_SNAPSHOT_LOCAL)
+
+
+def save_home_snapshot(data: dict) -> tuple[bool, str]:
+    """Sla de Home-cockpit-snapshot op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("home_snapshot.json", _HOME_SNAPSHOT_LOCAL, data,
+                      "Update home-snapshot via app")
+
+
 _LAATSTE_INTAKE_LOCAL = os.path.join(_BASE_DIR, ".laatste_intakes.json")
 
 

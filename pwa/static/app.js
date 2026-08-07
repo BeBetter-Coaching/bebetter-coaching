@@ -269,7 +269,11 @@ async function renderHome() {
 
   // 2) Cockpit-snapshot (direct) → hero-telling/status, feedback, prioriteit.
   //    Verouderd? Dan op de achtergrond verversen (stale-while-revalidate).
-  api("/api/home/stats").then(s => { vulCockpit(s); cockpitVersen(s); }).catch(() => {
+  api("/api/home/stats").then(s => {
+    // Eerste-ooit (pending): laat de skeletons staan en bouw op de achtergrond op.
+    if (s && s.pending) { cockpitVersen(s); return; }
+    vulCockpit(s); cockpitVersen(s);
+  }).catch(() => {
     const p = $("#home-prio"); if (p) p.innerHTML = '<p class="muted klein">Kon de dagstatus niet laden.</p>';
     const fb = $("#home-fb"); if (fb) fb.remove();
   });
@@ -323,12 +327,17 @@ function cockpitStale(s) {
 
 // Ververst de cockpit op de achtergrond als de snapshot verouderd is.
 function cockpitVersen(s) {
-  if (!s || !s.fs || !s.cached || !cockpitStale(s)) return;
+  if (!s || !s.fs) return;
+  // Ververs als er nog niets is (pending) óf de gedeelde snapshot verouderd is.
+  if (!s.pending && !(s.cached && cockpitStale(s))) return;
   const note = $("#prio-note"); const was = note ? note.textContent : "";
   if (note) note.dataset.busy = "1";
   markVersen(true);
-  api("/api/home/stats?refresh=1").then(fresh => { markVersen(false); vulCockpit(fresh); })
-    .catch(() => { markVersen(false); if (note) note.textContent = was; });
+  api("/api/home/stats?refresh=1").then(fresh => {
+    markVersen(false);
+    if (fresh && fresh.pending) return;      // nog niet klaar (andere instance) → skeletons blijven
+    vulCockpit(fresh);
+  }).catch(() => { markVersen(false); if (note) note.textContent = was; });
 }
 function markVersen(on) {
   const n = $("#prio-note"); if (!n) return;

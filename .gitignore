@@ -36,3 +36,4 @@ __pycache__/
 *.xlsx
 *.xls
 .webauthn.json
+.home_snapshot.json

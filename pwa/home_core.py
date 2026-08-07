@@ -12,33 +12,11 @@ pure lees-functies aan (laad_stand/zichtbare_resultaten).
 """
 from __future__ import annotations
 
-import json
 import os
 import sys
-import tempfile
+import threading
 import types
 from datetime import date, datetime
-
-# Snapshot = een CACHE (geen bron van waarheid) → lokaal bestand, GEEN git-commit.
-# Gedeeld tussen requests op dezelfde Render-instance; na een restart/deploy wordt
-# hij bij de eerste Home-load opnieuw opgebouwd. Zo blijft de repo-historie schoon.
-_SNAP_PATH = os.path.join(tempfile.gettempdir(), "bb_home_snapshot.json")
-
-
-def _load_snap() -> dict:
-    try:
-        with open(_SNAP_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _save_snap(data: dict) -> None:
-    try:
-        with open(_SNAP_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-    except Exception:
-        pass
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
@@ -103,25 +81,103 @@ def _belasting_vandaag(atleten: list) -> list:
         return []
 
 
-# ── Snapshot (stale-while-revalidate) ────────────────────────────────────────
-# Home leest standaard de opgeslagen snapshot → verschijnt vrijwel direct. De
-# zware herberekening (~sweeps + belasting) draait alleen bij refresh=True, op de
-# achtergrond aangestuurd door de client als de snapshot verouderd is. De snapshot
-# is GitHub-backed (gedeeld tussen coaches, overleeft Render-deploys).
+# ── Snapshot (stale-while-revalidate) — twee lagen, duurzaam en gedeeld ──────
+# Doel: na een Render-deploy/restart NOOIT meer een koude 20-30s Home-load, en
+# beide coaches (later meerdere instances) delen dezelfde snapshot.
+#
+# Laag 1  in-memory (_MEM): warme reads ~0 ms; verdwijnt bij restart.
+# Laag 2  GitHub-store (intake_store.load/save_home_snapshot): overleeft deploys,
+#         gedeeld tussen coaches/instances, SHA-based concurrency in _save_json.
+#
+# Leespad (refresh=False) doet NOOIT de zware berekening — dat houdt het kritieke
+# renderpad snel: geheugen → anders één GitHub-GET (~honderden ms) → anders een
+# 'pending'-payload zodat de client skeletons toont en op de achtergrond ververst.
+# De ~26s sweep gebeurt uitsluitend in refresh=True, met single-flight zodat twee
+# gelijktijdige verouderde loads niet allebei dezelfde zware refresh starten.
+
+_MEM: dict = {}                          # laatst bekende snapshot in dit proces
+_FLAG_LOCK = threading.Lock()
+_REFRESHING = False                      # draait er al een refresh op deze instance?
+
+
+def _valid(snap) -> bool:
+    """Een bruikbare snapshot: FS antwoordde écht (atleten>0) en prioriteit is
+    berekend. Zo herkennen we een mislukte/incomplete sweep (transiënte nullen,
+    FS onbereikbaar) en overschrijven we goede data er niet mee."""
+    return bool(snap and snap.get("fs") and snap.get("prioriteit") is not None
+                and snap.get("atleten", 0) > 0)
+
+
+def _current() -> dict:
+    """Beste bekende snapshot: eerst geheugen, anders de duurzame store (die dan
+    ook het geheugen opwarmt — het post-restart-pad, ~GET i.p.v. 26s rebuild)."""
+    global _MEM
+    if _valid(_MEM):
+        return _MEM
+    if intake_store is not None:
+        try:
+            durable = intake_store.load_home_snapshot()
+        except Exception:
+            durable = {}
+        if _valid(durable):
+            _MEM = durable
+            return durable
+    return {}
+
+
+def _persist(data: dict) -> None:
+    """Bewaar in beide lagen. GitHub-fout mag Home nooit breken (geheugen blijft)."""
+    global _MEM
+    _MEM = data
+    if intake_store is not None:
+        try:
+            intake_store.save_home_snapshot(data)
+        except Exception:
+            pass
+
 
 def cockpit(refresh: bool = False) -> dict:
-    """Snel pad: opgeslagen snapshot (direct). refresh=True: herbereken + opslaan."""
+    """Home-cockpit. Standaard direct uit de cache (geheugen→store); refresh=True
+    herbouwt (single-flight) en behoudt bij mislukking de laatst geldige snapshot."""
     if not _heeft_token():
         return {"fs": False}
+
     if not refresh:
-        snap = _load_snap()
-        if snap and snap.get("prioriteit") is not None:
-            snap["cached"] = True
-            return snap
-    data = _bereken()
-    data["cached"] = False
-    _save_snap(data)
-    return data
+        snap = _current()
+        if snap:
+            return {**snap, "cached": True}
+        # Nog nooit opgebouwd (eerste-ooit): geen zware sweep in het renderpad.
+        # Client toont shell + skeletons en triggert de achtergrond-refresh.
+        return {"fs": True, "prioriteit": None, "pending": True, "cached": False,
+                "datum": date.today().isoformat(), "berekend": None}
+
+    # ── refresh=True: single-flight ──
+    global _REFRESHING
+    with _FLAG_LOCK:
+        bezig = _REFRESHING
+        if not bezig:
+            _REFRESHING = True
+    if bezig:
+        # Er draait al een refresh op deze instance → geen tweede zware sweep.
+        snap = _current()
+        if snap:
+            return {**snap, "cached": True, "verversen_bezig": True}
+        return {"fs": True, "prioriteit": None, "pending": True, "cached": False}
+
+    try:
+        data = _bereken()
+        if _valid(data):
+            data["cached"] = False
+            _persist(data)
+            return data
+        # Mislukte/incomplete refresh → gooi bruikbare oude data niet weg.
+        oud = _current()
+        if oud:
+            return {**oud, "cached": True, "refresh_mislukt": True}
+        return {**data, "cached": False}
+    finally:
+        with _FLAG_LOCK:
+            _REFRESHING = False
 
 
 def _bereken() -> dict:
