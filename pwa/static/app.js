@@ -277,8 +277,9 @@ async function renderHome() {
     </div>
 
     <p class="sec-label">Vandaag</p>
+    <div id="home-fb"></div>
     ${items.length ? items.join("") :
-      `<div class="leeg">${ic("check")}<p>Niks dat nu je aandacht vraagt.<br>Mooie dag om te coachen.</p></div>`}
+      `<div class="leeg" id="home-leeg">${ic("check")}<p>Niks dat nu je aandacht vraagt.<br>Mooie dag om te coachen.</p></div>`}
 
     <p class="sec-label">Snel naar</p>
     <div class="quick">
@@ -289,6 +290,17 @@ async function renderHome() {
   $$("[data-open-view]", box).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
   $$("[data-count]", box).forEach(countUp);
   bronStatus(kaarten.cloud);
+
+  // "Wachten op feedback" laadt apart (zware FinalSurge-call) en verschijnt zodra klaar.
+  api("/api/feedback").then(r => {
+    const n = (r.items || []).length;
+    const fb = $("#home-fb");
+    if (!n || !fb) return;
+    fb.innerHTML = kaartItem("message", `${n} training${n === 1 ? "" : "en"} wachten op feedback`,
+      "Bekijk en reageer", "feedback", true);
+    $("#home-leeg")?.remove();
+    $$("[data-open-view]", fb).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+  }).catch(() => {});
 }
 
 function kaartItem(icn, titel, sub, view, alert) {
@@ -884,7 +896,7 @@ async function laadFeedback() {
   const box = $("#fb-lijst"), info = $("#fb-info");
   info.textContent = "Trainingen ophalen uit FinalSurge…";
   skeleton(box, 4);
-  const r = await api("/api/feedback?dagen=2").catch(() => null);
+  const r = await api("/api/feedback").catch(() => null);
   if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
   if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
   const items = r.items || [];

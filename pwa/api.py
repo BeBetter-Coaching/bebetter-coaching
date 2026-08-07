@@ -357,7 +357,7 @@ class FeedbackGen(BaseModel):
 
 
 @app.get("/api/feedback")
-def feedback_lijst(dagen: int = 2):
+def feedback_lijst(dagen: int = 7):
     return feedback.te_beoordelen(days_back=dagen)
 
 

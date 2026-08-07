@@ -50,12 +50,22 @@ def _reacties(w: dict) -> list[str]:
     return out
 
 
-def te_beoordelen(days_back: int = 2) -> dict:
-    """Trainingen die coaching-aandacht nodig hebben, genormaliseerd voor de lijst."""
+def te_beoordelen(days_back: int = 7) -> dict:
+    """Trainingen die coaching-aandacht nodig hebben, genormaliseerd voor de lijst.
+
+    Zelfde vlaggen als de Streamlit-home-telling: ook UITGEVOERDE geplande
+    trainingen zónder tekstje meenemen (include_planned_no_notes), en de groep
+    'los schema' uitsluiten. Zo zie je iedereen die getraind heeft, niet alleen
+    wie iets typte.
+    """
     if not heeft_token():
         return {"items": [], "fs": False}
     try:
-        workouts = FS.get_workouts_needing_feedback(days_back=days_back)
+        workouts = FS.get_workouts_needing_feedback(
+            days_back=days_back,
+            include_planned_no_notes=True,
+            exclude_groups={"los schema"},
+        )
     except Exception:
         return {"items": [], "fs": True, "err": "Kon FinalSurge niet bereiken."}
 
