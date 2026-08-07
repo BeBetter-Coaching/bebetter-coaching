@@ -276,8 +276,12 @@ async function renderHome() {
       </div>
     </div>
 
+    <p class="sec-label">Dagoverzicht</p>
+    <div class="dagstats" id="home-dag">
+      <div class="skel skel-metric"></div><div class="skel skel-metric"></div><div class="skel skel-metric"></div>
+    </div>
+
     <p class="sec-label">Vandaag</p>
-    <div id="home-fb"></div>
     ${items.length ? items.join("") :
       `<div class="leeg" id="home-leeg">${ic("check")}<p>Niks dat nu je aandacht vraagt.<br>Mooie dag om te coachen.</p></div>`}
 
@@ -291,15 +295,16 @@ async function renderHome() {
   $$("[data-count]", box).forEach(countUp);
   bronStatus(kaarten.cloud);
 
-  // "Wachten op feedback" laadt apart (zware FinalSurge-call) en verschijnt zodra klaar.
-  api("/api/feedback").then(r => {
-    const n = (r.items || []).length;
-    const fb = $("#home-fb");
-    if (!n || !fb) return;
-    fb.innerHTML = kaartItem("message", `${n} training${n === 1 ? "" : "en"} wachten op feedback`,
-      "Bekijk en reageer", "feedback", true);
-    $("#home-leeg")?.remove();
-    $$("[data-open-view]", fb).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+  // Dagoverzicht (zware FinalSurge-calls) laadt apart zodat home snel blijft.
+  api("/api/home/stats").then(s => {
+    const dag = $("#home-dag");
+    if (!dag) return;
+    if (!s.fs) { dag.innerHTML = '<p class="muted klein">FinalSurge niet gekoppeld.</p>'; return; }
+    dag.innerHTML = `
+      <button class="dagstat warn" data-open-view="feedback"><b>${s.wachten}</b><span>wachten op feedback</span></button>
+      <div class="dagstat ok"><b>${s.gepost}</b><span>vandaag gepost</span></div>
+      <div class="dagstat danger"><b>${s.afhakers}</b><span>afhakers deze week</span></div>`;
+    $$("[data-open-view]", dag).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
   }).catch(() => {});
 }
 
@@ -911,15 +916,15 @@ async function laadFeedback() {
 function fbItem(it) {
   const el = document.createElement("article");
   el.className = "rij-kaart";
-  const wat = [it.notitie, ...(it.reacties || [])].filter(Boolean);
+  const gesprek = it.gesprek || [];
+  const bubbels = gesprek.length
+    ? gesprek.map(m => `<div class="fb-bub ${m.coach ? "coach" : "atl"}"><span class="fb-wie">${m.coach ? "Jij" : esc(m.wie || it.voornaam)}</span>${esc(m.tekst)}</div>`).join("")
+    : '<p class="muted klein">Geen bericht van de atleet — reageer op de uitvoering.</p>';
   el.innerHTML = `
     <div class="d-head"><span class="avatar">${initialen(it.naam)}</span>
       <div><h3>${esc(it.naam)}</h3>
         <p class="muted klein">${esc(it.datum)} · ${esc(it.workout)}</p></div></div>
-    ${wat.length ? wat.map(t => `<p class="fb-zei">“${esc(t)}”</p>`).join("")
-      : '<p class="muted klein">Geen notitie van de atleet — reageer op de uitvoering.</p>'}
-    <button class="acc-toggle sub" data-thread>${ic("message")} Toon gesprek</button>
-    <div class="fb-thread" hidden></div>
+    <div class="fb-thread">${bubbels}</div>
     <textarea class="fb-tekst" rows="5" placeholder="Schrijf zelf een reactie, of genereer met AI…"></textarea>
     <div class="fb-acts">
       <button class="btn" data-gen>${ic("brain")} Genereer met AI</button>
@@ -933,22 +938,7 @@ function fbItem(it) {
 
   const tekstEl = el.querySelector(".fb-tekst");
   const status = el.querySelector("[data-poststatus]");
-  const threadBox = el.querySelector(".fb-thread");
-  let threadGeladen = false;
 
-  el.querySelector("[data-thread]").addEventListener("click", async e => {
-    const btn = e.currentTarget;
-    if (!threadBox.hidden) { threadBox.hidden = true; btn.innerHTML = `${ic("message")} Toon gesprek`; return; }
-    threadBox.hidden = false; btn.innerHTML = `${ic("x")} Verberg gesprek`;
-    if (threadGeladen) return;
-    threadBox.innerHTML = '<p class="muted klein">Laden…</p>';
-    const r = await api(`/api/feedback/thread?id=${encodeURIComponent(it.id)}`).catch(() => null);
-    threadGeladen = true;
-    const th = (r && r.thread) || [];
-    threadBox.innerHTML = th.length
-      ? th.map(m => `<div class="fb-bub ${m.coach ? "coach" : "atl"}"><span class="fb-wie">${m.coach ? "Jij" : esc(it.voornaam)}</span>${esc(m.tekst)}</div>`).join("")
-      : '<p class="muted klein">Nog geen berichten op deze training.</p>';
-  });
   el.querySelector("[data-gen]").addEventListener("click", async e => {
     const btn = e.currentTarget; btn.disabled = true; btn.textContent = "AI schrijft…";
     const r = await jpost("/api/feedback/generate", { id: it.id }).catch(() => null);

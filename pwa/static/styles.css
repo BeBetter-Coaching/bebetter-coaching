@@ -263,6 +263,19 @@ textarea{resize:vertical}
 .fb-bub.atl{background:var(--card2);border:1px solid var(--border);border-bottom-left-radius:3px}
 .fb-bub.coach{background:rgba(94,230,235,.12);border:1px solid rgba(94,230,235,.30);color:#d4fbfd;
   margin-left:auto;border-bottom-right-radius:3px}
+
+/* ── Home: dagoverzicht-metertjes (wachten/gepost/afhakers) ──────────────── */
+.dagstats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:4px 0}
+.dagstat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 8px;
+  text-align:center;color:var(--text);box-shadow:0 3px 12px rgba(0,4,14,.3)}
+button.dagstat{cursor:pointer}
+button.dagstat:hover{border-color:var(--acc)}
+.dagstat b{display:block;font-size:26px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.dagstat span{display:block;font-size:10px;color:var(--muted);margin-top:6px;line-height:1.3}
+.dagstat.warn b{color:var(--warn)}
+.dagstat.ok b{color:var(--acc)}
+.dagstat.danger b{color:var(--danger)}
+
 #sb-na{margin-top:10px;display:flex;flex-direction:column;gap:8px}
 #sb-na .btn{width:100%}
 .linkbox{display:flex;gap:8px;align-items:center;margin-bottom:8px}

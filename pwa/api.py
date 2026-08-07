@@ -361,6 +361,12 @@ def feedback_lijst(dagen: int = 7):
     return feedback.te_beoordelen(days_back=dagen)
 
 
+@app.get("/api/home/stats")
+def home_stats():
+    """Home-metertjes: wachten op feedback / vandaag gepost / afhakers deze week."""
+    return feedback.dagoverzicht()
+
+
 @app.post("/api/feedback/generate")
 def feedback_gen(body: FeedbackGen):
     try:

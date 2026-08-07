@@ -84,6 +84,7 @@ def te_beoordelen(days_back: int = 7) -> dict:
             "workout": w.get("workout_name") or "Training",
             "notitie": (w.get("post_notes") or "").strip(),
             "reacties": _reacties(w),
+            "gesprek": _gesprek(w),
         })
     return {"items": items, "fs": True}
 
@@ -155,10 +156,34 @@ def thread(wid: str) -> list[dict]:
     return out
 
 
+def _athlete_latest_ts(w: dict) -> str:
+    """Laatste tijdstempel van een atleet-bericht in de thread (of '')."""
+    return max((m.get("timestamp") or "" for m in (w.get("thread") or [])
+                if m.get("van") == "atleet"), default="")
+
+
+def _gesprek(w: dict) -> list:
+    """De thread genormaliseerd voor de UI: [{coach, wie, tekst}] chronologisch."""
+    out = []
+    for m in (w.get("thread") or []):
+        tekst = (m.get("tekst") or m.get("comment") or "").strip()
+        if not tekst:
+            continue
+        out.append({"coach": m.get("van") == "coach",
+                    "wie": m.get("naam") or "", "tekst": tekst})
+    return out
+
+
 def _snapshot(w: dict) -> dict:
-    return {"date": date.today().isoformat(),
-            "n": len(w.get("athlete_comments") or []),
-            "notes": bool(w.get("post_notes"))}
+    """Momentopname bij overslaan — ZELFDE velden als Streamlit (_skip_snapshot),
+    zodat skips tussen Streamlit en de app 1-op-1 overeenkomen."""
+    return {
+        "date": date.today().isoformat(),
+        "athlete_ts": _athlete_latest_ts(w),
+        "notes": bool(w.get("post_notes")),
+        "felt": bool(w.get("felt")),
+        "effort": bool(w.get("effort")),
+    }
 
 
 def overslaan(wid: str) -> bool:
@@ -177,8 +202,9 @@ def overslaan(wid: str) -> bool:
 
 def _filter_skipped(workouts: list) -> list:
     """Overgeslagen trainingen eruit — tenzij de atleet ná het overslaan NIEUWE
-    input gaf (meer reacties of alsnog een notitie), dan komt de training terug.
-    Zelfde gedrag als de Streamlit-feedbackpagina."""
+    input gaf (nieuwe reactie/notitie/gevoel/RPE). EXACT als Streamlit
+    _filter_skipped en werkt op dezelfde gedeelde skipped.json (skip in Streamlit
+    = weg in de app, en andersom)."""
     try:
         sk = intake_store.load_skipped()
     except Exception:
@@ -192,9 +218,16 @@ def _filter_skipped(workouts: list) -> list:
         if snap is None:
             uit.append(w)
             continue
-        nieuw = isinstance(snap, dict) and (
-            len(w.get("athlete_comments") or []) > snap.get("n", 0)
-            or (bool(w.get("post_notes")) and not snap.get("notes")))
+        cur_ts = _athlete_latest_ts(w)
+        if isinstance(snap, dict):
+            nieuw = (
+                (cur_ts and cur_ts > (snap.get("athlete_ts") or ""))
+                or (bool(w.get("post_notes")) and not snap.get("notes"))
+                or (bool(w.get("felt")) and not snap.get("felt"))
+                or (bool(w.get("effort")) and not snap.get("effort"))
+            )
+        else:
+            nieuw = cur_ts[:10] > str(snap)[:10]
         if nieuw:
             del sk[wk]
             veranderd = True
@@ -205,3 +238,25 @@ def _filter_skipped(workouts: list) -> list:
         except Exception:
             pass
     return uit
+
+
+def dagoverzicht() -> dict:
+    """Home-metertjes zoals Streamlit: wachten op feedback / vandaag gepost /
+    afhakers deze week. Zware FinalSurge-calls → home laadt dit apart."""
+    if not heeft_token():
+        return {"fs": False, "wachten": 0, "gepost": 0, "afhakers": 0}
+    wachten, gepost, afhakers = 0, 0, 0
+    try:
+        workouts, stats = FS.get_workouts_needing_feedback(
+            days_back=7, include_planned_no_notes=True,
+            exclude_groups={"los schema"}, return_stats=True)
+        wachten = len(_filter_skipped(workouts))
+        gepost = stats.get("posted_today", 0)
+    except Exception:
+        pass
+    try:
+        on_hold = set((intake_store.load_on_hold() or {}).keys())
+        afhakers = len(FS.get_compliance_alerts(7, on_hold, {"los schema"}))
+    except Exception:
+        pass
+    return {"fs": True, "wachten": wachten, "gepost": gepost, "afhakers": afhakers}
