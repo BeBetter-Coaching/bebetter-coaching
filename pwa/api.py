@@ -367,10 +367,11 @@ def feedback_lijst(dagen: int = 7):
 
 
 @app.get("/api/home/stats")
-def home_stats():
+def home_stats(refresh: bool = False):
     """Home-cockpit: team-status, feedback-voortgang, info én de Prioriteit-
-    vandaag-lijst (wie vraagt aandacht/actie + waarom + waarheen)."""
-    return home_core.cockpit()
+    vandaag-lijst. Standaard uit de opgeslagen snapshot (direct); refresh=1
+    herberekent op de achtergrond + werkt de snapshot bij (stale-while-revalidate)."""
+    return home_core.cockpit(refresh=refresh)
 
 
 @app.post("/api/feedback/generate")

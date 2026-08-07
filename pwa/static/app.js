@@ -224,37 +224,10 @@ function skeleton(box, rijen = 3) {
 // ════════════════════════════════════════════════════════════════════════════
 async function renderHome() {
   const box = $("#home-body");
-  if (!box.dataset.done) box.innerHTML = `
-    <div class="skel" style="height:150px;border-radius:18px;margin:10px 0 6px"></div>
-    <div class="skel-card" style="margin-top:12px"><div class="skel skel-line w60"></div></div>`;
-
-  const [inbox, ath, kaarten] = await Promise.all([
-    api("/api/intake/inbox").catch(() => ({ inbox: [] })),
-    api("/api/atleten").catch(() => ({ atleten: [] })),
-    api("/api/kaarten").catch(() => ({ kaarten: [] })),
-  ]);
-  const nNieuw = (inbox.inbox || []).length;
-  const rows = ath.atleten || [];
-  const fsRows = rows.filter(a => a.user_key);            // FinalSurge-gekoppeld
-  const nAtl = fsRows.length || (ath.totaal != null ? ath.totaal : rows.length);
-  const nGroep = new Set(fsRows.map(a => a.groep).filter(Boolean)).size;
-  const kn = kaarten.kaarten || [];
-  const vol = kn.filter(k => k.rest <= 0);
-  const bijna = kn.filter(k => k.rest > 0 && k.rest <= 1);
-  box.dataset.done = "1";
-  setBadge(nNieuw);
-
-  // Secundaire "ook nog"-kaarten (praktijk) — alleen tonen als er iets is
-  const items = [];
-  if (nNieuw) items.push(kaartItem("mail", `${nNieuw} nieuwe intake${nNieuw === 1 ? "" : "s"}`,
-    "Bekijk en neem over als atleet", "intake", true));
-  vol.forEach(k => items.push(kaartItem("ticket", `Strippenkaart vol — ${esc(k.naam)}`,
-    "Kaart is op, tijd voor een nieuwe", "strippen", true)));
-  bijna.forEach(k => items.push(kaartItem("ticket", `${esc(k.naam)} — nog 1 training`,
-    "Strippenkaart bijna vol", "strippen", false)));
-
   const g = groetInfo();
-  const ook = items.length ? `<p class="sec-label">Ook nog</p>${items.join("")}` : "";
+  // 1) De shell verschijnt DIRECT — geen await op trage data. Hero + skeletons.
+  //    Atleten/groepen + status/feedback/prioriteit komen uit de cockpit-snapshot
+  //    (near-instant); de secundaire praktijk-kaarten uit de lokale store.
   box.innerHTML = `
     <div class="hero hero-photo">
       <button class="hero-gear" data-open-view="meer" aria-label="Meer">${ic("settings")}</button>
@@ -263,25 +236,26 @@ async function renderHome() {
         <p class="hero-date">${g.datum}</p>
         <h2 class="hero-tag">Zij lopen.<br><span>Jij stuurt.</span></h2>
         <div class="hero-ids">
-          <span><b data-count="${nAtl}">0</b> atleten</span><i>·</i>
-          <span><b data-count="${nGroep}">0</b> groepen</span>
+          <span><b id="hero-atleten" data-count="0">—</b> atleten</span><i>·</i>
+          <span><b id="hero-groepen" data-count="0">—</b> groepen</span>
         </div>
-        <div class="hero-status" id="hero-status"></div>
+        <div class="hero-status" id="hero-status"><span class="hs-skel"></span><span class="hs-skel"></span></div>
       </div>
-      <img class="hero-portrait" src="/static/team.jpeg" alt="Jip &amp; Remco" loading="lazy">
+      <span class="hero-portrait" id="hero-foto"></span>
     </div>
 
-    <button class="fb-strip skel-strip" id="home-fb" data-open-view="feedback" aria-label="Feedback">
+    <button class="fb-strip skel-strip" id="home-fb" data-open-view="feedback" aria-label="Feedback bekijken">
       <div class="skel skel-line w40" style="margin:2px 0"></div>
+      <div class="skel skel-line w60" style="margin:10px 0 2px"></div>
     </button>
 
     <div class="sec-head"><p class="sec-label">Prioriteit vandaag</p><span class="sec-note" id="prio-note"></span></div>
     <div id="home-prio">
-      <div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div>
+      ${[0, 0, 0].map(() => `<div class="prio-skel"><span class="skel prio-skel-av"></span><span class="prio-skel-body"><span class="skel skel-line w40"></span><span class="skel skel-line w60"></span></span></div>`).join("")}
     </div>
 
     <div id="home-info"></div>
-    ${ook ? `<div id="home-ook">${ook}</div>` : ""}
+    <div id="home-ook"></div>
 
     <p class="sec-label">Snel toevoegen</p>
     <div class="quick-actions">
@@ -289,15 +263,76 @@ async function renderHome() {
       <button class="qa" data-open-view="schema">${ic("brain")}<span>Schema bouwen</span></button>
       <button class="qa" data-open-view="strippen">${ic("ticket")}<span>Strippenkaart</span></button>
     </div>`;
-
+  box.dataset.done = "1";
   $$("[data-open-view]", box).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
-  $$("[data-count]", box).forEach(countUp);
-  bronStatus(kaarten.cloud);
+  laadHeroFoto();
 
-  // Cockpit-intelligentie (zware FinalSurge-sweeps) laadt apart zodat home snel blijft.
-  api("/api/home/stats").then(s => vulCockpit(s)).catch(() => {
+  // 2) Cockpit-snapshot (direct) → hero-telling/status, feedback, prioriteit.
+  //    Verouderd? Dan op de achtergrond verversen (stale-while-revalidate).
+  api("/api/home/stats").then(s => { vulCockpit(s); cockpitVersen(s); }).catch(() => {
     const p = $("#home-prio"); if (p) p.innerHTML = '<p class="muted klein">Kon de dagstatus niet laden.</p>';
+    const fb = $("#home-fb"); if (fb) fb.remove();
   });
+
+  // 3) Secundaire praktijk-signalen (lokale store, direct) — badge + "ook nog".
+  Promise.all([
+    api("/api/intake/inbox").catch(() => ({ inbox: [] })),
+    api("/api/kaarten").catch(() => ({ kaarten: [] })),
+  ]).then(([inbox, kaarten]) => {
+    const nNieuw = (inbox.inbox || []).length;
+    setBadge(nNieuw);
+    const kn = kaarten.kaarten || [];
+    const vol = kn.filter(k => k.rest <= 0);
+    const bijna = kn.filter(k => k.rest > 0 && k.rest <= 1);
+    const items = [];
+    if (nNieuw) items.push(kaartItem("mail", `${nNieuw} nieuwe intake${nNieuw === 1 ? "" : "s"}`,
+      "Bekijk en neem over als atleet", "intake", true));
+    vol.forEach(k => items.push(kaartItem("ticket", `Strippenkaart vol — ${esc(k.naam)}`,
+      "Kaart is op, tijd voor een nieuwe", "strippen", true)));
+    bijna.forEach(k => items.push(kaartItem("ticket", `${esc(k.naam)} — nog 1 training`,
+      "Strippenkaart bijna vol", "strippen", false)));
+    const ook = $("#home-ook");
+    if (ook) {
+      ook.innerHTML = items.length ? `<p class="sec-label">Ook nog</p>${items.join("")}` : "";
+      $$("[data-open-view]", ook).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+    }
+    bronStatus(kaarten.cloud);
+  });
+}
+
+// Coach-foto met nette fallback: bij een laadfout NOOIT een broken-image-icoon,
+// maar een subtiel gradientvlak met het BeBetter-logo.
+function laadHeroFoto() {
+  const holder = $("#hero-foto"); if (!holder) return;
+  const img = new Image();
+  img.className = "hero-portrait-img";
+  img.alt = "Jip & Remco";
+  img.onload = () => { holder.replaceWith(img); };
+  img.onerror = () => { holder.classList.add("foto-fallback"); holder.innerHTML = `<img src="/static/logo.png" alt="BeBetter" class="foto-fallback-logo">`; };
+  img.src = "/static/team.jpeg";
+}
+
+// Is de snapshot verouderd? Nieuwe dag → altijd; anders ouder dan 15 min.
+function cockpitStale(s) {
+  if (!s || !s.berekend) return true;
+  const today = new Date().toISOString().slice(0, 10);
+  if (s.datum && s.datum !== today) return true;
+  const t = Date.parse(s.berekend);
+  return isNaN(t) || (Date.now() - t) > 15 * 60 * 1000;
+}
+
+// Ververst de cockpit op de achtergrond als de snapshot verouderd is.
+function cockpitVersen(s) {
+  if (!s || !s.fs || !s.cached || !cockpitStale(s)) return;
+  const note = $("#prio-note"); const was = note ? note.textContent : "";
+  if (note) note.dataset.busy = "1";
+  markVersen(true);
+  api("/api/home/stats?refresh=1").then(fresh => { markVersen(false); vulCockpit(fresh); })
+    .catch(() => { markVersen(false); if (note) note.textContent = was; });
+}
+function markVersen(on) {
+  const n = $("#prio-note"); if (!n) return;
+  if (on) n.innerHTML = `<span class="versen">bijwerken…</span>`;
 }
 
 // Vult hero-status + feedbackbalk + prioriteitlijst + info-strip met echte cockpit-data
@@ -309,14 +344,19 @@ function vulCockpit(s) {
   }
   const team = s.team || {}, fbs = s.feedback || {}, info = s.info || {};
 
-  // ── Hero: team-status (afgeleid uit echte signalen) ──
+  // ── Hero: atleten/groepen-telling (uit de cockpit, geen aparte trage call) ──
+  const hAt = $("#hero-atleten"), hGr = $("#hero-groepen");
+  if (hAt && s.atleten != null && +hAt.dataset.count !== s.atleten) { hAt.dataset.count = s.atleten; countUp(hAt); }
+  if (hGr && s.groepen != null && +hGr.dataset.count !== s.groepen) { hGr.dataset.count = s.groepen; countUp(hGr); }
+
+  // ── Hero: team-status (afgeleid uit echte signalen — DISTINCT atleten per tier) ──
   const hs = $("#hero-status");
   if (hs) {
     const chips = [];
     if (team.actie) chips.push(`<span class="hs actie"><i></i>${team.actie} actie</span>`);
     if (team.aandacht) chips.push(`<span class="hs aandacht"><i></i>${team.aandacht} aandacht</span>`);
     if (team.rustig) chips.push(`<span class="hs rustig"><i></i>${team.rustig} rustig</span>`);
-    hs.innerHTML = chips.join("");
+    hs.innerHTML = chips.join("") || `<span class="hs rustig"><i></i>iedereen bij</span>`;
   }
 
   // ── Feedback: dagelijkse kern als voortgangsbalk ──

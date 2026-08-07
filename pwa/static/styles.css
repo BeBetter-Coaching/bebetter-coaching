@@ -493,8 +493,18 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .hero-photo{display:flex;align-items:center;gap:18px;overflow:hidden;border-color:#2a5074}
 .hero-photo .hero-content{flex:1;min-width:0;position:relative;z-index:1}
 .hero-photo .hero-gear{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:2}
-.hero-portrait{width:128px;height:158px;object-fit:cover;object-position:50% 26%;border-radius:14px;
-  border:1px solid rgba(255,255,255,.16);flex:0 0 auto;box-shadow:0 10px 24px rgba(0,0,0,.45)}
+.hero-portrait,.hero-portrait-img{width:128px;height:158px;border-radius:14px;flex:0 0 auto;
+  border:1px solid rgba(255,255,255,.16);box-shadow:0 10px 24px rgba(0,0,0,.45)}
+.hero-portrait-img{object-fit:cover;object-position:50% 26%;display:block}
+/* Placeholder zolang de foto laadt — subtiele shimmer, nooit een broken-image-icoon */
+.hero-portrait{display:block;overflow:hidden;position:relative;
+  background:linear-gradient(160deg,#17406a,#0e2547)}
+.hero-portrait::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.06) 50%,transparent 70%);
+  background-size:200% 100%;animation:shimmer 1.4s infinite}
+.hero-portrait.foto-fallback{display:flex;align-items:center;justify-content:center}
+.hero-portrait.foto-fallback::after{display:none}
+.foto-fallback-logo{width:66%;height:auto;opacity:.72}
 .hero-greet{margin:0;font-size:15px;font-weight:600;color:#bcd3f0;letter-spacing:.2px}
 .hero-date{margin:2px 0 0;font-size:12px;color:#8ea6c8;font-weight:500}
 .hero-tag{margin:12px 0 14px;font-size:30px;line-height:1.03;font-weight:800;letter-spacing:-1.1px;color:#fff}
@@ -503,8 +513,10 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .hero-ids b{font-size:19px;font-weight:750;color:#fff;font-variant-numeric:tabular-nums}
 .hero-ids i{color:#5b7295;font-style:normal}
 @media(max-width:440px){
-  .hero-portrait{width:92px;height:120px}
-  .hero-tag{font-size:25px}
+  .hero-portrait,.hero-portrait-img{width:88px;height:116px}
+  .hero-tag{font-size:25px;margin:9px 0 11px}
+  .hero-photo{gap:13px}
+  .hero-status{margin-top:11px;gap:6px 12px}
 }
 
 /* ── Sidebar: groepslabels + logo-wordmark ────────────────────────────────── */
@@ -590,3 +602,31 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 .qa:hover{border-color:var(--acc);transform:translateY(-1px)}
 .qa:active{transform:translateY(0) scale(.98)}
 .qa .ic{width:18px;height:18px;color:var(--acc)}
+
+/* ── Home-cockpit: loading states (stabiele layout, geen jumps) ────────────── */
+.hs-skel{display:inline-block;width:64px;height:14px;border-radius:20px;
+  background:linear-gradient(100deg,rgba(255,255,255,.05) 30%,rgba(255,255,255,.12) 50%,rgba(255,255,255,.05) 70%);
+  background-size:200% 100%;animation:shimmer 1.4s infinite}
+.prio-skel{display:flex;align-items:center;gap:12px;padding:11px 13px;margin:8px 0;
+  background:linear-gradient(180deg,#0E2547,#0C2144);border:1px solid var(--border);border-radius:14px}
+.prio-skel-av{width:34px;height:34px;border-radius:50%;flex:0 0 auto}
+.prio-skel-body{flex:1;display:flex;flex-direction:column;gap:7px}
+.prio-skel-body .skel-line{margin:0}
+.versen{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}
+.versen::before{content:"";width:9px;height:9px;border-radius:50%;border:2px solid var(--border);
+  border-top-color:var(--acc);animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){
+  .skel,.hs-skel,.hero-portrait::after,.versen::before{animation:none}
+}
+
+/* ── Mobiel: prioriteitsrij toont reden volledig (max 2 regels, geen vroege ellipsis) */
+@media(max-width:560px){
+  .prio-reden{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;line-height:1.3}
+  .prio-actie span{display:none}         /* alleen chevron op smal scherm — hele rij is klikbaar */
+  .prio-actie{color:var(--muted)}
+  .prio-row{align-items:flex-start;padding-top:12px;padding-bottom:12px}
+  .prio-dot{margin-top:6px}
+  .prio-row .avatar{margin-top:1px}
+}
