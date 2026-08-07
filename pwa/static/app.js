@@ -6,13 +6,36 @@
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const api = (u, opt) => fetch(u, opt).then(r => r.json());
+const api = (u, opt) => fetch(u, opt).then(r => {
+  if (r.status === 401) { toonLogin(); throw new Error("auth"); }   // sessie verlopen → inlogscherm
+  return r.json();
+});
 const jpost = (u, body, method = "POST") => api(u, {
   method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
 });
 const haptic = ms => navigator.vibrate?.(ms);
 const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const ic = n => `<svg class="ic"><use href="#ic-${n}"/></svg>`;
+
+// ── Inlog (eigen scherm i.p.v. de browser-popup; blijvende sessie-cookie) ────
+function toonLogin() { const el = $("#login"); if (el) el.hidden = false; }
+$("#login-form")?.addEventListener("submit", async e => {
+  e.preventDefault();
+  const err = $("#login-err"); err.hidden = true;
+  const btn = $("#login-btn"); btn.disabled = true; btn.textContent = "Bezig…";
+  try {
+    const r = await fetch("/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user: $("#login-user").value.trim(), password: $("#login-pass").value }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) { location.reload(); return; }   // cookie staat → herlaad ingelogd
+    err.textContent = d.err || "Inloggen mislukt."; err.hidden = false;
+  } catch { err.textContent = "Geen verbinding."; err.hidden = false; }
+  btn.disabled = false; btn.textContent = "Inloggen";
+});
+// Bij opstarten meteen checken (zo verschijnt het scherm zonder te wachten op een 401)
+(async () => { try { const me = await fetch("/api/me").then(r => r.json()); if (!me.ingelogd) toonLogin(); } catch {} })();
 
 // ── Onderbalk-navigatie ──────────────────────────────────────────────────────
 const laders = {};   // view -> laadfunctie (eenmalig lui laden per module)

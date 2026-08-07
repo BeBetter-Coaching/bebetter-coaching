@@ -39,6 +39,19 @@
     </defs>
   </svg>
 
+  <!-- Eigen inlogscherm (vervangt de lelijke browser-popup) -->
+  <div id="login" class="login-scrim" hidden>
+    <form class="login-card" id="login-form">
+      <div class="login-logo">BB</div>
+      <h1 class="login-h">BeBetter Coaching</h1>
+      <p class="login-sub">Log in om verder te gaan</p>
+      <input id="login-user" placeholder="Gebruikersnaam" autocomplete="username" value="bebetter">
+      <input id="login-pass" type="password" placeholder="Wachtwoord" autocomplete="current-password">
+      <button class="btn primary" id="login-btn" type="submit">Inloggen</button>
+      <p class="login-err" id="login-err" hidden></p>
+    </form>
+  </div>
+
   <div id="offline" class="offline" hidden></div>
   <div id="msg" class="msg" hidden></div>
 

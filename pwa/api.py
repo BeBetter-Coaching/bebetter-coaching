@@ -14,12 +14,16 @@ Open daarna http://localhost:8000
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
+import json
 import os
 import secrets
+import time
 from typing import Optional
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, Response
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -35,21 +39,43 @@ _STATIC = os.path.join(_HERE, "static")
 app = FastAPI(title="BeBetter PWA (proto)")
 
 
-# ── Simpel inlogslot (gedeeld wachtwoord voor Jip & Remco) ──────────────────
-# Actief zodra APP_PASSWORD als omgevingsvariabele is gezet (op de hosting).
-# Lokaal (geen APP_PASSWORD) staat het uit, zodat ontwikkelen frictieloos blijft.
+# ── Inlog: eigen sessie-cookie i.p.v. de lelijke HTTP Basic-popup ───────────
+# Actief zodra APP_PASSWORD als omgevingsvariabele staat (op de hosting). Na
+# inloggen zetten we een ondertekende cookie (~90 dagen), zodat je NIET na elke
+# update opnieuw hoeft in te loggen. De app toont een eigen (mooi) inlogscherm;
+# geen browser-popup meer. Lokaal (geen APP_PASSWORD) staat het slot uit.
 _APP_USER = os.environ.get("APP_USER", "bebetter")
 _APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+_SESSION_SECRET = (os.environ.get("SESSION_SECRET") or _APP_PASSWORD or "dev-secret").encode()
+_SESSION_DAGEN = 90
+_COOKIE = "bb_session"
+
+
+def _sign_session(user: str) -> str:
+    body = base64.urlsafe_b64encode(
+        json.dumps({"u": user, "exp": time.time() + _SESSION_DAGEN * 86400}).encode()
+    ).decode()
+    sig = hmac.new(_SESSION_SECRET, body.encode(), hashlib.sha256).hexdigest()
+    return f"{body}.{sig}"
+
+
+def _valid_session(token: str) -> bool:
+    try:
+        body, sig = token.rsplit(".", 1)
+        verwacht = hmac.new(_SESSION_SECRET, body.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, verwacht):
+            return False
+        data = json.loads(base64.urlsafe_b64decode(body))
+        return float(data.get("exp", 0)) > time.time()
+    except Exception:
+        return False
 
 
 def _is_public(path: str) -> bool:
-    """Paden die de klant zonder login moet kunnen bereiken.
-
-    Het publieke intakeformulier (klant vult in, installeert niets) plus de
-    statische assets die het nodig heeft. De token in de link beschermt het
-    formulier tegen willekeurige bezoekers; er staat geen coach-data achter.
-    """
-    if path in ("/manifest.webmanifest", "/sw.js", "/healthz"):
+    """Paden zonder login: de app-schil zelf (het inlogscherm zit erín), het
+    publieke intakeformulier + assets, de login-API en health/manifest/sw."""
+    if path in ("/", "/manifest.webmanifest", "/sw.js", "/healthz",
+                "/api/login", "/api/me"):
         return True
     return (path == "/intake"
             or path.startswith("/api/intake/public")
@@ -57,20 +83,11 @@ def _is_public(path: str) -> bool:
 
 
 @app.middleware("http")
-async def _login(request, call_next):
+async def _login(request: Request, call_next):
     if _APP_PASSWORD and not _is_public(request.url.path):
-        hdr = request.headers.get("authorization", "")
-        ok = False
-        if hdr.startswith("Basic "):
-            try:
-                user, _, pw = base64.b64decode(hdr[6:]).decode("utf-8").partition(":")
-                ok = (secrets.compare_digest(user, _APP_USER)
-                      and secrets.compare_digest(pw, _APP_PASSWORD))
-            except Exception:
-                ok = False
-        if not ok:
-            return Response("Inloggen vereist.", status_code=401,
-                            headers={"WWW-Authenticate": 'Basic realm="BeBetter Coaching"'})
+        if not _valid_session(request.cookies.get(_COOKIE, "")):
+            # Geen browser-popup meer: nette 401; de app toont zelf het inlogscherm.
+            return JSONResponse({"err": "auth"}, status_code=401)
     return await call_next(request)
 
 
@@ -115,6 +132,41 @@ class DocGen(BaseModel):
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
+
+
+# ── Inlog-API (eigen scherm; zet/leest de sessie-cookie) ────────────────────
+class Login(BaseModel):
+    user: str = ""
+    password: str = ""
+
+
+@app.get("/api/me")
+def api_me(request: Request):
+    """Is er een geldige sessie? Het inlogscherm checkt dit bij het opstarten."""
+    ingelogd = (not _APP_PASSWORD) or _valid_session(request.cookies.get(_COOKIE, ""))
+    return {"ingelogd": ingelogd}
+
+
+@app.post("/api/login")
+def api_login(body: Login):
+    if not _APP_PASSWORD:                                   # lokaal: geen slot
+        return {"ok": True}
+    ok = (secrets.compare_digest(body.user or "", _APP_USER)
+          and secrets.compare_digest(body.password or "", _APP_PASSWORD))
+    if not ok:
+        return JSONResponse({"ok": False, "err": "Onjuiste gebruikersnaam of wachtwoord."},
+                            status_code=401)
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(_COOKIE, _sign_session(body.user), max_age=_SESSION_DAGEN * 86400,
+                    httponly=True, secure=True, samesite="lax", path="/")
+    return resp
+
+
+@app.post("/api/logout")
+def api_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(_COOKIE, path="/")
+    return resp
 
 
 # ── API: documenten (template-PDF's; AI-intro's zodra de key gezet is) ───────
