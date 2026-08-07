@@ -254,9 +254,15 @@ textarea{resize:vertical}
 .rij-kaart .btn.primary{margin-top:10px;width:100%}
 .fb-zei{font-size:13.5px;line-height:1.5;margin:8px 0 0;color:var(--text);
   background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:8px 11px}
-.fb-uit{margin-top:10px}
-.fb-uit .fb-tekst{margin-bottom:8px}
-.fb-uit .btn{width:100%;margin-top:8px}
+.fb-tekst{margin-top:10px}
+.fb-acts{display:flex;gap:8px;margin-top:8px}
+.fb-acts .btn{flex:1}
+.fb-thread{margin:8px 0}
+.fb-bub{max-width:86%;padding:8px 11px;border-radius:12px;margin:6px 0;font-size:13px;line-height:1.5}
+.fb-bub .fb-wie{display:block;font-size:10px;font-weight:700;opacity:.75;margin-bottom:2px}
+.fb-bub.atl{background:var(--card2);border:1px solid var(--border);border-bottom-left-radius:3px}
+.fb-bub.coach{background:rgba(94,230,235,.12);border:1px solid rgba(94,230,235,.30);color:#d4fbfd;
+  margin-left:auto;border-bottom-right-radius:3px}
 #sb-na{margin-top:10px;display:flex;flex-direction:column;gap:8px}
 #sb-na .btn{width:100%}
 .linkbox{display:flex;gap:8px;align-items:center;margin-bottom:8px}

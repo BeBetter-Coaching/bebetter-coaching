@@ -383,6 +383,27 @@ def feedback_post(body: FeedbackGen):
     return {"ok": True}
 
 
+@app.get("/api/feedback/thread")         # volledige conversatie (atleet + coach)
+def feedback_thread(id: str = ""):
+    try:
+        return {"ok": True, "thread": feedback.thread(id)}
+    except ValueError as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=500)
+
+
+@app.post("/api/feedback/skip")          # overslaan (tot de atleet weer reageert)
+def feedback_skip(body: FeedbackGen):
+    try:
+        feedback.overslaan(body.id)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Overslaan mislukt: {e}"}, status_code=500)
+    return {"ok": True}
+
+
 # ── API: schema bouwen (intake -> AI-plan -> CSV; Anthropic + gedeelde intake) ─
 class SchemaGen(BaseModel):
     key: str = ""

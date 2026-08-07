@@ -918,34 +918,62 @@ function fbItem(it) {
         <p class="muted klein">${esc(it.datum)} · ${esc(it.workout)}</p></div></div>
     ${wat.length ? wat.map(t => `<p class="fb-zei">“${esc(t)}”</p>`).join("")
       : '<p class="muted klein">Geen notitie van de atleet — reageer op de uitvoering.</p>'}
-    <button class="btn primary" data-gen>${ic("brain")} Genereer feedback</button>
-    <div class="fb-uit" hidden>
-      <textarea class="fb-tekst" rows="6"></textarea>
-      <button class="btn primary" data-post>${ic("message")} Plaats in FinalSurge</button>
-      <button class="btn" data-copy>${ic("copy")} Kopieer</button>
-      <p class="hint" data-poststatus></p>
-    </div>`;
-  const genBtn = el.querySelector("[data-gen]");
-  genBtn.addEventListener("click", async () => {
-    genBtn.disabled = true; genBtn.textContent = "AI schrijft…";
+    <button class="acc-toggle sub" data-thread>${ic("message")} Toon gesprek</button>
+    <div class="fb-thread" hidden></div>
+    <textarea class="fb-tekst" rows="5" placeholder="Schrijf zelf een reactie, of genereer met AI…"></textarea>
+    <div class="fb-acts">
+      <button class="btn" data-gen>${ic("brain")} Genereer met AI</button>
+      <button class="btn primary" data-post>${ic("message")} Plaats</button>
+    </div>
+    <div class="fb-acts">
+      <button class="btn ghost small" data-copy>${ic("copy")} Kopieer</button>
+      <button class="btn ghost small" data-skip>Overslaan</button>
+    </div>
+    <p class="hint" data-poststatus></p>`;
+
+  const tekstEl = el.querySelector(".fb-tekst");
+  const status = el.querySelector("[data-poststatus]");
+  const threadBox = el.querySelector(".fb-thread");
+  let threadGeladen = false;
+
+  el.querySelector("[data-thread]").addEventListener("click", async e => {
+    const btn = e.currentTarget;
+    if (!threadBox.hidden) { threadBox.hidden = true; btn.innerHTML = `${ic("message")} Toon gesprek`; return; }
+    threadBox.hidden = false; btn.innerHTML = `${ic("x")} Verberg gesprek`;
+    if (threadGeladen) return;
+    threadBox.innerHTML = '<p class="muted klein">Laden…</p>';
+    const r = await api(`/api/feedback/thread?id=${encodeURIComponent(it.id)}`).catch(() => null);
+    threadGeladen = true;
+    const th = (r && r.thread) || [];
+    threadBox.innerHTML = th.length
+      ? th.map(m => `<div class="fb-bub ${m.coach ? "coach" : "atl"}"><span class="fb-wie">${m.coach ? "Jij" : esc(it.voornaam)}</span>${esc(m.tekst)}</div>`).join("")
+      : '<p class="muted klein">Nog geen berichten op deze training.</p>';
+  });
+  el.querySelector("[data-gen]").addEventListener("click", async e => {
+    const btn = e.currentTarget; btn.disabled = true; btn.textContent = "AI schrijft…";
     const r = await jpost("/api/feedback/generate", { id: it.id }).catch(() => null);
-    genBtn.disabled = false; genBtn.innerHTML = `${ic("refresh")} Opnieuw`;
+    btn.disabled = false; btn.innerHTML = `${ic("brain")} Genereer met AI`;
     if (!r || !r.ok) return melding(r?.err || "Genereren mislukt.", true);
-    el.querySelector(".fb-uit").hidden = false;
-    el.querySelector(".fb-tekst").value = r.tekst || "";
+    tekstEl.value = r.tekst || "";
   });
   el.querySelector("[data-post]").addEventListener("click", async () => {
+    const tekst = tekstEl.value.trim();
+    if (!tekst) return melding("Schrijf of genereer eerst een reactie.", true);
     if (!confirm(`Deze reactie in FinalSurge plaatsen bij ${it.voornaam}? ${it.voornaam} ziet dit.`)) return;
     const btn = el.querySelector("[data-post]"); btn.disabled = true; btn.textContent = "Plaatsen…";
-    const r = await jpost("/api/feedback/post", { id: it.id, tekst: el.querySelector(".fb-tekst").value }).catch(() => null);
-    btn.disabled = false; btn.innerHTML = `${ic("message")} Plaats in FinalSurge`;
+    const r = await jpost("/api/feedback/post", { id: it.id, tekst }).catch(() => null);
+    btn.disabled = false; btn.innerHTML = `${ic("message")} Plaats`;
     if (!r || !r.ok) return melding(r?.err || "Posten mislukt.", true);
-    el.querySelector("[data-poststatus]").textContent = "Geplaatst in FinalSurge ✓";
-    el.style.opacity = ".6"; haptic(15);
+    status.textContent = "Geplaatst in FinalSurge ✓"; el.style.opacity = ".55"; haptic(15);
   });
   el.querySelector("[data-copy]").addEventListener("click", () => {
-    navigator.clipboard?.writeText(el.querySelector(".fb-tekst").value)
-      .then(() => melding("Feedback gekopieerd — plak 'm in FinalSurge."));
+    navigator.clipboard?.writeText(tekstEl.value).then(() => melding("Gekopieerd."));
+  });
+  el.querySelector("[data-skip]").addEventListener("click", async () => {
+    if (!confirm(`Training van ${it.voornaam} overslaan? Komt terug als ${it.voornaam} weer reageert.`)) return;
+    const r = await jpost("/api/feedback/skip", { id: it.id }).catch(() => null);
+    if (!r || !r.ok) return melding(r?.err || "Overslaan mislukt.", true);
+    el.remove(); haptic(10);
   });
   return el;
 }

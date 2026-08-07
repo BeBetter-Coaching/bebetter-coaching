@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import date
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
@@ -69,6 +70,7 @@ def te_beoordelen(days_back: int = 7) -> dict:
     except Exception:
         return {"items": [], "fs": True, "err": "Kon FinalSurge niet bereiken."}
 
+    workouts = _filter_skipped(workouts)                # overgeslagen eruit
     items = []
     for w in workouts:
         wid = w.get("workout_key") or (str(w.get("athlete_key", "")) + ":" + str(w.get("workout_date", "")))
@@ -124,3 +126,82 @@ def plaats(wid: str, tekst: str) -> bool:
     FS.post_comment(workout_key=wk, user_key=ak, comment=tekst,
                     coach_athlete_key=_coach_athlete_key(ak))
     return True
+
+
+def thread(wid: str) -> list[dict]:
+    """De volledige comment-conversatie (atleet + coach) op deze training —
+    zodat je ook je eigen al-gegeven feedback ziet."""
+    w = _cache.get(wid)
+    if not w:
+        raise ValueError("Training niet meer in beeld — ververs de lijst.")
+    wk, ak = w.get("workout_key", ""), w.get("athlete_key", "")
+    if not (wk and ak):
+        return []
+    try:
+        comments = FS.get_comments(wk, ak)
+        coach_key = FS.get_coach_key()
+    except Exception:
+        return []
+    out = []
+    for c in comments:
+        tekst = (c.get("comment") or "").strip()
+        if not tekst:
+            continue
+        out.append({
+            "coach": c.get("user_key") == coach_key,
+            "tekst": tekst,
+            "datum": c.get("timestamp") or c.get("created_at") or c.get("date") or "",
+        })
+    return out
+
+
+def _snapshot(w: dict) -> dict:
+    return {"date": date.today().isoformat(),
+            "n": len(w.get("athlete_comments") or []),
+            "notes": bool(w.get("post_notes"))}
+
+
+def overslaan(wid: str) -> bool:
+    """Sla een training over (uit de lijst tot de atleet weer nieuwe input geeft)."""
+    w = _cache.get(wid)
+    if not w:
+        raise ValueError("Training niet meer in beeld — ververs de lijst.")
+    wk = w.get("workout_key", "")
+    if not wk:
+        raise ValueError("Geen workout-sleutel.")
+    sk = intake_store.load_skipped()
+    sk[wk] = _snapshot(w)
+    intake_store.save_skipped(sk)
+    return True
+
+
+def _filter_skipped(workouts: list) -> list:
+    """Overgeslagen trainingen eruit — tenzij de atleet ná het overslaan NIEUWE
+    input gaf (meer reacties of alsnog een notitie), dan komt de training terug.
+    Zelfde gedrag als de Streamlit-feedbackpagina."""
+    try:
+        sk = intake_store.load_skipped()
+    except Exception:
+        return workouts
+    if not sk:
+        return workouts
+    uit, veranderd = [], False
+    for w in workouts:
+        wk = w.get("workout_key", "")
+        snap = sk.get(wk)
+        if snap is None:
+            uit.append(w)
+            continue
+        nieuw = isinstance(snap, dict) and (
+            len(w.get("athlete_comments") or []) > snap.get("n", 0)
+            or (bool(w.get("post_notes")) and not snap.get("notes")))
+        if nieuw:
+            del sk[wk]
+            veranderd = True
+            uit.append(w)
+    if veranderd:
+        try:
+            intake_store.save_skipped(sk)
+        except Exception:
+            pass
+    return uit
