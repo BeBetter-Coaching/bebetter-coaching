@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import os
 import secrets
+from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
@@ -25,6 +26,7 @@ from pydantic import BaseModel
 import strippen_core as core
 import dossier_core as dossier
 import intake_core as intake
+import documenten_core as docs
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _STATIC = os.path.join(_HERE, "static")
@@ -102,10 +104,35 @@ class PubliekeIntake(BaseModel):
     velden: dict = {}
 
 
+class DocGen(BaseModel):
+    slug: str = ""
+    user_key: Optional[str] = None
+    answers: dict = {}
+
+
 # ── Health: lichtgewicht, geen login, geen data — houdt Render Free wakker ───
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
+
+
+# ── API: documenten (template-PDF's; AI-intro's zodra de key gezet is) ───────
+@app.get("/api/docs/templates")
+def docs_templates():
+    return {"templates": docs.templates(), "ai": docs.heeft_key(), "cloud": docs.cloud_backed()}
+
+
+@app.post("/api/docs/generate")
+def docs_generate(body: DocGen):
+    try:
+        data, fn = docs.genereer(body.slug, body.answers, body.user_key)
+    except ValueError as e:
+        return Response(str(e), status_code=400)
+    except Exception as e:                                  # AI-fout, ontbrekend bestand, enz.
+        return Response(f"Genereren mislukt: {e}", status_code=500)
+    from urllib.parse import quote
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fn)}"})
 
 
 # ── API: strippenkaart ───────────────────────────────────────────────────────

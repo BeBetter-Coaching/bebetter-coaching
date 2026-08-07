@@ -127,6 +127,14 @@
       <section id="lijst" class="lijst"></section>
     </section>
 
+    <!-- ════════ DOCUMENTEN ════════ -->
+    <section class="view" data-view="documenten">
+      <header class="appbar"><h1>Documenten</h1></header>
+      <p class="hint" id="docs-ai">laden…</p>
+      <section id="docs-keuze" class="lijst"></section>
+      <div id="docs-form" hidden></div>
+    </section>
+
     <!-- ════════ MEER ════════ -->
     <section class="view" data-view="meer">
       <header class="appbar"><h1>Meer</h1></header>
@@ -135,6 +143,13 @@
         <p class="hint" id="bron">laden…</p>
         <button id="install" class="btn" hidden><svg class="ic"><use href="#ic-download"/></svg> Installeer als app</button>
       </section>
+      <p class="sec-label">Modules</p>
+      <button class="listcard" data-open-view="documenten">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-file"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Documenten</span>
+          <span class="lc-sub">Genereer een BeBetter-PDF voor een atleet</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
       <p class="sec-label">Binnenkort in de app</p>
       <div class="soon" id="soon"></div>
       <footer class="foot">Zelfde data als Streamlit · BeBetter Coaching</footer>

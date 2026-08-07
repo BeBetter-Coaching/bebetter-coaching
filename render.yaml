@@ -7,7 +7,7 @@ services:
     runtime: docker
     region: frankfurt        # dicht bij NL
     plan: starter            # ~$7/mnd, blijft altijd wakker (meteen open)
-    healthCheckPath: /
+    healthCheckPath: /healthz   # publiek, geen login -> nette 200 voor Render
     autoDeploy: true         # elke push naar main deployt automatisch
     envVars:
       - key: APP_USER
@@ -16,3 +16,5 @@ services:
         sync: false          # gedeeld wachtwoord Jip & Remco (zelf invullen)
       - key: GH_TOKEN
         sync: false          # zelfde token als Streamlit -> zelfde data
+      - key: ANTHROPIC_API_KEY
+        sync: false          # AI-modules (documenten-intro's, straks feedback/schema)

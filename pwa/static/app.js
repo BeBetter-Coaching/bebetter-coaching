@@ -49,7 +49,7 @@ const isDesktop = () => matchMedia("(min-width:900px)").matches;
 
 // "Binnenkort"-modules op de Meer-pagina: laat zien dat de héle app hier komt
 [["file", "Feedback"], ["file", "Schema-verloop"], ["file", "Schema bouwen"],
- ["file", "Documenten"], ["alert", "Teampuls"], ["ticket", "Races"], ["settings", "Administratie"]]
+ ["alert", "Teampuls"], ["ticket", "Races"], ["settings", "Administratie"]]
   .forEach(([icn, t]) => {
     const el = document.createElement("div");
     el.className = "mrow soon-row";
@@ -632,10 +632,102 @@ async function laadInbox() {
 $("#i-refresh").addEventListener("click", laadInbox);
 function laadIntake() { laadIntakeLink(); laadInbox(); }
 
+// ════════════════════════════════════════════════════════════════════════════
+// DOCUMENTEN — template-PDF's (AI-intro's zodra de sleutel gezet is)
+// ════════════════════════════════════════════════════════════════════════════
+let docsTpls = [], docsAthletes = [];
+
+async function laadDocs() {
+  const info = $("#docs-ai"), keuze = $("#docs-keuze");
+  $("#docs-form").hidden = true; keuze.hidden = false;
+  skeleton(keuze, 4);
+  const [r, a] = await Promise.all([
+    api("/api/docs/templates").catch(() => null),
+    api("/api/dossier/athletes").catch(() => ({ athletes: [] })),
+  ]);
+  if (!r) { keuze.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  docsTpls = r.templates || [];
+  docsAthletes = a.athletes || [];
+  info.textContent = r.ai
+    ? "De AI schrijft de persoonlijke intro’s in de huisstijl. Kies een document en een atleet."
+    : "AI-sleutel nog niet ingesteld: je krijgt de vaste inhoud (de persoonlijke intro’s blijven leeg). Zodra de sleutel op Render staat, vullen die zich vanzelf.";
+  keuze.innerHTML = "";
+  docsTpls.forEach(t => {
+    const el = document.createElement("button");
+    el.className = "listcard";
+    el.innerHTML = `<span class="lc-ic">${ic("file")}</span>
+      <span class="lc-body"><span class="lc-title">${esc(t.label)}</span>
+        <span class="lc-sub">${esc(t.omschrijving)}</span></span>${ic("chevron")}`;
+    el.addEventListener("click", () => docForm(t));
+    keuze.appendChild(el);
+  });
+}
+
+function docForm(t) {
+  $("#docs-keuze").hidden = true;
+  const wrap = $("#docs-form"); wrap.hidden = false;
+  const opts = ['<option value="">— Algemeen (geen naam) —</option>']
+    .concat(docsAthletes.map(a => `<option value="${esc(a.key)}">${esc(a.naam)}</option>`)).join("");
+  const velden = (t.velden || []).map(docVeld).join("");
+  wrap.innerHTML = `
+    <button class="btn ghost back" id="docs-terug">${ic("back")} Alle documenten</button>
+    <div class="d-head"><span class="lc-ic">${ic("file")}</span><h2 class="d-naam">${esc(t.label)}</h2></div>
+    <section class="panel open-static">
+      <label class="lbl">Voor welke atleet?</label>
+      <select id="docs-atleet">${opts}</select>
+      ${velden}
+      <button class="btn primary" id="docs-gen" style="margin-top:14px">${ic("download")} Genereer PDF</button>
+      <p class="hint" id="docs-status"></p>
+    </section>`;
+  $("#docs-terug").addEventListener("click", laadDocs);
+  $("#docs-gen").addEventListener("click", () => genereerDoc(t));
+  $("#scroller").scrollTo({ top: 0 });
+}
+
+function docVeld(v) {
+  const id = "df-" + v.veld;
+  if (v.type === "keuze") {
+    const opts = (v.opties || []).map(o => `<option value="${esc(o)}">${o === "" ? "—" : esc(o)}</option>`).join("");
+    return `<label class="lbl">${esc(v.vraag)}</label><select id="${id}" data-veld="${esc(v.veld)}">${opts}</select>`;
+  }
+  const type = v.type === "getal" ? "number" : "text";
+  return `<label class="lbl">${esc(v.vraag)}</label><input id="${id}" data-veld="${esc(v.veld)}" type="${type}">`;
+}
+
+async function genereerDoc(t) {
+  const user_key = $("#docs-atleet").value || null;
+  const naam = user_key ? (docsAthletes.find(a => a.key === user_key)?.naam || "") : "";
+  const voornaam = naam ? naam.trim().split(/\s+/)[0] : "";
+  const answers = {};
+  if (voornaam) answers.voornaam = voornaam;
+  $$("#docs-form [data-veld]").forEach(el => { if (el.value) answers[el.dataset.veld] = el.value; });
+  const status = $("#docs-status");
+  status.textContent = "Genereren…";
+  try {
+    const res = await fetch("/api/docs/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: t.slug, user_key, answers }),
+    });
+    if (!res.ok) { status.textContent = "Mislukt: " + (await res.text()); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${t.label}${voornaam ? " - " + voornaam : ""}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    status.textContent = "Klaar — PDF gedownload." + (voornaam ? " Gelogd in het dossier." : "");
+    haptic(15);
+    if (voornaam) vervalDossierLijst();      // dossier toont het nieuwe document na verversen
+  } catch {
+    status.textContent = "Geen verbinding — probeer opnieuw.";
+  }
+}
+
 // ── Start ──────────────────────────────────────────────────────────────────
 laders.strippen = laad;
 laders.atleten = laadDossierLijst;
 laders.intake = laadIntake;
+laders.documenten = laadDocs;
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 toonOffline();
 if (navigator.onLine) flush();

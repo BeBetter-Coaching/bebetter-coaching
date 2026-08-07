@@ -3,3 +3,8 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
 requests>=2.31.0
+# Documenten-module (docgen): PDF-engine + afbeeldingen
+reportlab>=4.0.0
+pillow>=10.0.0
+# AI-modules (documenten-intro's; straks feedback/schema) — actief zodra ANTHROPIC_API_KEY staat
+anthropic>=0.28.0
