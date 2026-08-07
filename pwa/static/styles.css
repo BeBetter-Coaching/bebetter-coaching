@@ -80,7 +80,7 @@ body{display:flex;flex-direction:column;max-width:640px;margin:0 auto;overflow:h
 
 /* ── Lijst-/actiekaarten (dashboard, atleten, inbox) ──────────────────────── */
 .listcard{display:flex;align-items:center;gap:13px;width:100%;text-align:left;
-  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  background:linear-gradient(180deg,#0E2547,#0C2144);border:1px solid var(--border);border-radius:var(--radius);
   padding:13px 15px;margin:9px 0;cursor:pointer;color:var(--text)}
 .listcard:hover{border-color:var(--acc)}
 .listcard:active{transform:scale(.99)}
@@ -191,23 +191,39 @@ textarea{resize:vertical}
 .kaart.op{border-color:var(--danger)}
 .swipe-bg{position:absolute;inset:0;background:var(--blue);display:flex;align-items:center;
   justify-content:flex-end;gap:6px;padding-right:22px;color:#fff;font-weight:700;font-size:14px}
-.swipe-fg{position:relative;background:var(--card);border-radius:var(--radius);padding:14px;
-  transition:transform .18s ease;touch-action:pan-y;cursor:grab}
+.swipe-fg{position:relative;background:linear-gradient(180deg,#0E2547,#0C2144);border-radius:var(--radius);
+  padding:15px;transition:transform .18s ease;touch-action:pan-y;cursor:grab}
 .swipe-fg.flash{animation:flash .55s ease}
-@keyframes flash{0%{background:var(--card)}28%{background:#123a5e}100%{background:var(--card)}}
-.k-rest.bump{animation:bump .42s ease}
-@keyframes bump{0%,100%{transform:scale(1)}42%{transform:scale(1.18)}}
-.kaart-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.k-naam{margin:0;font-size:16.5px;font-weight:650}
-.k-tel{margin:2px 0 0;font-size:12.5px}
+@keyframes flash{0%{background:#0E2547}28%{background:#153f66}100%{background:#0E2547}}
+.k-rest.bump,.ring-rest.bump{animation:bump .42s ease}
+@keyframes bump{0%,100%{transform:scale(1)}42%{transform:scale(1.2)}}
 .muted{color:var(--muted)}
 .center{text-align:center;margin-top:20px}
 .klein{font-size:12px}
-.k-rest{font-size:12.5px;font-weight:700;color:var(--acc);white-space:nowrap;
-  background:var(--card2);border:1px solid var(--border);border-radius:20px;padding:4px 10px}
-.bar{height:8px;background:var(--card2);border-radius:6px;margin:12px 0 6px;overflow:hidden}
-.bar-fill{display:block;height:100%;background:var(--acc);border-radius:6px;transition:width .3s}
-.k-laatst{font-size:12px;margin:0 0 10px;min-height:14px}
+/* Signatuur-ring (gebruikt/totaal) — Whoop/Garmin-taal op echte data */
+.kaart-main{display:flex;align-items:center;gap:15px}
+.k-info{flex:1;min-width:0}
+.k-naam{margin:0;font-size:16.5px;font-weight:650}
+.k-tel{margin:2px 0 0;font-size:12.5px}
+.k-ring{position:relative;width:74px;height:74px;flex:0 0 auto}
+.ring-svg{width:74px;height:74px;display:block}
+.ring-track{fill:none;stroke:#0B2044;stroke-width:7}
+.ring-arc{fill:none;stroke:var(--acc);stroke-width:7;stroke-linecap:round;
+  transition:stroke-dashoffset .7s cubic-bezier(.2,.7,.3,1)}
+.kaart.bijna .ring-arc{stroke:var(--warn)}
+.kaart.op .ring-arc{stroke:var(--danger)}
+.ring-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring-rest{font-size:22px;font-weight:700;letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums}
+.kaart.bijna .ring-rest{color:var(--warn)}
+.kaart.op .ring-rest{color:var(--danger)}
+.ring-tot{font-size:9px;color:var(--muted);margin-top:1px}
+.k-status{display:inline-flex;align-items:center;gap:5px;margin-top:9px;font-size:11px;font-weight:600;
+  border-radius:20px;padding:3px 9px}
+.k-status .ic{width:13px;height:13px}
+.k-status.ok{color:var(--acc);background:rgba(94,230,235,.12);border:1px solid rgba(94,230,235,.30)}
+.k-status.warn{color:var(--warn);background:rgba(239,159,39,.12);border:1px solid rgba(239,159,39,.32)}
+.k-status.op{color:var(--danger);background:rgba(229,103,75,.12);border:1px solid rgba(229,103,75,.34)}
+.k-laatst{font-size:12px;margin:12px 0 10px;min-height:14px}
 .kaart-acts{display:flex;gap:8px;align-items:center}
 .kaart-acts .k-af{flex:1}
 .wa{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
@@ -259,22 +275,25 @@ textarea{resize:vertical}
 .kaart.bijna .k-rest{color:var(--warn);border-color:#5a4a1e}
 .kaart.op .k-rest{color:var(--danger);border-color:var(--danger)}
 
-/* ── Niveau 3: gradient-hero op de home ──────────────────────────────────── */
-.hero{background:linear-gradient(135deg,#2E86C1 0%,#5EE6EB 100%);border-radius:18px;
+/* ── Premium hero op de home: radiale glow + tabulaire cijfers ────────────── */
+.hero{position:relative;
+  background:radial-gradient(130% 120% at 88% -20%, rgba(94,230,235,.28), transparent 55%), linear-gradient(180deg,#123457,#0E2547);
+  border:1px solid #24486f;border-radius:20px;
   padding:calc(18px + env(safe-area-inset-top)) 18px 16px;margin:10px 0 6px;
-  box-shadow:0 8px 26px rgba(0,0,0,.42)}
+  box-shadow:0 14px 34px rgba(0,0,0,.5)}
 .hero-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.hero-greet{margin:0;font-size:20px;font-weight:650;color:#04263b}
-.hero-date{margin:3px 0 0;font-size:12.5px;color:#0a3a52;font-weight:500}
-.hero-gear{background:rgba(255,255,255,.22);border:0;color:#04263b;width:36px;height:36px;
-  border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
-.hero-gear:hover{background:rgba(255,255,255,.34)}
-.hero-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
-.hstat{background:rgba(255,255,255,.17);border:0;border-radius:12px;padding:11px 11px;
-  text-align:left;cursor:pointer;color:#04263b}
-.hstat:hover{background:rgba(255,255,255,.28)}
-.hstat b{display:block;font-size:24px;font-weight:700;line-height:1}
-.hstat span{display:block;font-size:11px;margin-top:5px;color:#0a3a52;line-height:1.3;font-weight:500}
+.hero-greet{margin:0;font-size:23px;font-weight:700;letter-spacing:-.4px;color:#EAF2FF}
+.hero-date{margin:3px 0 0;font-size:12.5px;color:#9db4d4;font-weight:500}
+.hero-gear{background:rgba(255,255,255,.10);border:0;color:#cfe9ff;width:38px;height:38px;
+  border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
+.hero-gear:hover{background:rgba(255,255,255,.20)}
+.hero-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}
+.hstat{background:none;border:0;padding:2px;text-align:left;cursor:pointer;color:#EAF2FF}
+.hstat b{display:block;font-size:30px;font-weight:700;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
+.hstat span{display:block;font-size:10.5px;margin-top:6px;color:#9db4d4;line-height:1.3;font-weight:500}
+.hstat.teal b{color:var(--acc)}
+.hstat.amber b{color:var(--warn)}
+.hstat:hover b{filter:brightness(1.14)}
 
 /* ── Master-detail (Atleten): lijst + dossier (grid volgt in de media-query) ─ */
 .listcard.sel{border-color:var(--acc);background:var(--card2)}

@@ -82,6 +82,18 @@ function melding(txt, isErr = false) {
   if (txt) setTimeout(() => { m.hidden = true; }, 4000);
 }
 
+// Cijfers laten "optellen" bij het laden — high-end apps voelen levend
+function countUp(el) {
+  const doel = +el.dataset.count || 0;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches || doel <= 0) { el.textContent = doel; return; }
+  const dur = 650, t0 = performance.now();
+  (function step(t) {
+    const p = Math.min(1, (t - t0) / dur);
+    el.textContent = Math.round(doel * (1 - Math.pow(1 - p, 3)));   // ease-out
+    if (p < 1) requestAnimationFrame(step);
+  })(t0);
+}
+
 // Skeleton-blokken tonen terwijl er geladen wordt (i.p.v. kale "Laden…")
 function skeleton(box, rijen = 3) {
   box.innerHTML = Array.from({ length: rijen },
@@ -127,9 +139,9 @@ async function renderHome() {
         <button class="hero-gear" data-open-view="meer" aria-label="Meer">${ic("settings")}</button>
       </div>
       <div class="hero-stats">
-        <button class="hstat" data-open-view="intake"><b>${nNieuw}</b><span>nieuwe intake${nNieuw === 1 ? "" : "s"}</span></button>
-        <button class="hstat" data-open-view="atleten"><b>${nAtl}</b><span>${nAtl === 1 ? "atleet" : "atleten"}</span></button>
-        <button class="hstat" data-open-view="strippen"><b>${nBijna}</b><span>kaart${nBijna === 1 ? "" : "en"} bijna vol</span></button>
+        <button class="hstat teal" data-open-view="intake"><b data-count="${nNieuw}">0</b><span>nieuwe intake${nNieuw === 1 ? "" : "s"}</span></button>
+        <button class="hstat" data-open-view="atleten"><b data-count="${nAtl}">0</b><span>${nAtl === 1 ? "atleet" : "atleten"}</span></button>
+        <button class="hstat amber" data-open-view="strippen"><b data-count="${nBijna}">0</b><span>kaart${nBijna === 1 ? "" : "en"} bijna vol</span></button>
       </div>
     </div>
 
@@ -144,6 +156,7 @@ async function renderHome() {
     </div>`;
 
   $$("[data-open-view]", box).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+  $$("[data-count]", box).forEach(countUp);
   bronStatus(kaarten.cloud);
 }
 
@@ -237,15 +250,31 @@ async function laad() {
   data.kaarten.forEach(k => lijst.appendChild(kaartEl(k)));
 }
 
+// Signatuur-ring: omtrek van r=31 → vullen op basis van gebruikt/totaal (echte data)
+const RING_C = 2 * Math.PI * 31;   // ≈ 194.8
+function setRing(el, gebruikt, totaal) {
+  const rest = Math.max(0, totaal - gebruikt);
+  const frac = totaal ? Math.min(1, gebruikt / totaal) : 0;
+  const arc = $(".ring-arc", el);
+  arc.style.strokeDasharray = RING_C;
+  if (!arc.style.strokeDashoffset) arc.style.strokeDashoffset = RING_C;   // leeg starten → loopt vol
+  requestAnimationFrame(() => { arc.style.strokeDashoffset = RING_C * (1 - frac); });
+  $(".ring-rest", el).textContent = rest;
+  $(".ring-tot", el).textContent = "van " + totaal;
+  const st = $(".k-status", el);
+  if (rest <= 0) { st.className = "k-status op"; st.innerHTML = `${ic("alert")} vol`; }
+  else if (rest <= 1) { st.className = "k-status warn"; st.innerHTML = `${ic("alert")} bijna vol`; }
+  else { st.className = "k-status ok"; st.innerHTML = `${ic("check")} op schema`; }
+}
+
 function kaartEl(k) {
   const el = $("#kaart-tpl").content.firstElementChild.cloneNode(true);
   el.dataset.naam = k.naam; el.dataset.totaal = k.totaal; el.dataset.gebruikt = k.gebruikt;
   $(".k-naam", el).textContent = k.naam;
   $(".k-tel", el).textContent = k.telefoon || "geen nummer";
-  $(".k-rest", el).textContent = `${k.rest} van ${k.totaal} over`;
-  $(".bar-fill", el).style.width = (k.totaal ? (k.gebruikt / k.totaal) * 100 : 0) + "%";
   el.classList.toggle("bijna", k.rest > 0 && k.rest <= 1);
   el.classList.toggle("op", k.rest <= 0);
+  setRing(el, k.gebruikt, k.totaal);
   $(".k-laatst", el).textContent = k.laatst ? "Laatst afgeboekt: " + k.laatst : "";
 
   const afBtn = $(".k-af", el);
@@ -273,10 +302,11 @@ function optimistischAf(el) {
   const tot = +el.dataset.totaal, geb = +el.dataset.gebruikt + 1;
   el.dataset.gebruikt = geb;
   const rest = Math.max(0, tot - geb);
-  const restEl = $(".k-rest", el);
-  restEl.textContent = `${rest} van ${tot} over`;
+  el.classList.toggle("bijna", rest > 0 && rest <= 1);
+  el.classList.toggle("op", rest <= 0);
+  setRing(el, geb, tot);                       // ring loopt vol + status + getal
+  const restEl = $(".ring-rest", el);
   restEl.classList.remove("bump"); void restEl.offsetWidth; restEl.classList.add("bump");
-  $(".bar-fill", el).style.width = (tot ? geb / tot * 100 : 0) + "%";
   const fg = $(".swipe-fg", el);
   fg.classList.remove("flash"); void fg.offsetWidth; fg.classList.add("flash");
   $(".k-af", el).disabled = rest <= 0;
