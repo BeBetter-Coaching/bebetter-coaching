@@ -251,6 +251,12 @@ textarea{resize:vertical}
 /* ── Intake-inbox ─────────────────────────────────────────────────────────── */
 .rij-kaart{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:13px 15px;margin:9px 0}
 .rij-kaart h3{margin:0;font-size:16px;font-weight:650}
+.rij-kaart .btn.primary{margin-top:10px;width:100%}
+.fb-zei{font-size:13.5px;line-height:1.5;margin:8px 0 0;color:var(--text);
+  background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:8px 11px}
+.fb-uit{margin-top:10px}
+.fb-uit .fb-tekst{margin-bottom:8px}
+.fb-uit .btn{width:100%}
 .linkbox{display:flex;gap:8px;align-items:center;margin-bottom:8px}
 .linkbox code{flex:1;background:var(--card2);border:1px solid var(--border);border-radius:10px;
   padding:10px 12px;font-size:12.5px;overflow:auto;white-space:nowrap;color:var(--acc)}

@@ -179,7 +179,7 @@ function groetInfo() {
 const isDesktop = () => matchMedia("(min-width:900px)").matches;
 
 // "Binnenkort"-modules op de Meer-pagina: laat zien dat de héle app hier komt
-[["file", "Feedback"], ["file", "Schema-verloop"], ["file", "Schema bouwen"],
+[["file", "Schema-verloop"], ["file", "Schema bouwen"],
  ["alert", "Teampuls"], ["ticket", "Races"], ["settings", "Administratie"]]
   .forEach(([icn, t]) => {
     const el = document.createElement("div");
@@ -877,11 +877,63 @@ async function genereerDoc(t) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// FEEDBACK — AI-concept op de trainingen van atleten (FinalSurge + Anthropic)
+// ════════════════════════════════════════════════════════════════════════════
+async function laadFeedback() {
+  const box = $("#fb-lijst"), info = $("#fb-info");
+  info.textContent = "Trainingen ophalen uit FinalSurge…";
+  skeleton(box, 4);
+  const r = await api("/api/feedback?dagen=2").catch(() => null);
+  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
+  const items = r.items || [];
+  info.textContent = items.length
+    ? `${items.length} training${items.length === 1 ? "" : "en"} met aandacht. Genereer een concept en pas het naar wens aan.`
+    : "";
+  if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Niks te beoordelen — netjes bijgewerkt.</p></div>`; return; }
+  box.innerHTML = "";
+  items.forEach(it => box.appendChild(fbItem(it)));
+}
+
+function fbItem(it) {
+  const el = document.createElement("article");
+  el.className = "rij-kaart";
+  const wat = [it.notitie, ...(it.reacties || [])].filter(Boolean);
+  el.innerHTML = `
+    <div class="d-head"><span class="avatar">${initialen(it.naam)}</span>
+      <div><h3>${esc(it.naam)}</h3>
+        <p class="muted klein">${esc(it.datum)} · ${esc(it.workout)}</p></div></div>
+    ${wat.length ? wat.map(t => `<p class="fb-zei">“${esc(t)}”</p>`).join("")
+      : '<p class="muted klein">Geen notitie van de atleet — reageer op de uitvoering.</p>'}
+    <button class="btn primary" data-gen>${ic("brain")} Genereer feedback</button>
+    <div class="fb-uit" hidden>
+      <textarea class="fb-tekst" rows="6"></textarea>
+      <button class="btn" data-copy>${ic("copy")} Kopieer</button>
+    </div>`;
+  const genBtn = el.querySelector("[data-gen]");
+  genBtn.addEventListener("click", async () => {
+    genBtn.disabled = true; genBtn.textContent = "AI schrijft…";
+    const r = await jpost("/api/feedback/generate", { id: it.id }).catch(() => null);
+    genBtn.disabled = false; genBtn.innerHTML = `${ic("refresh")} Opnieuw`;
+    if (!r || !r.ok) return melding(r?.err || "Genereren mislukt.", true);
+    el.querySelector(".fb-uit").hidden = false;
+    el.querySelector(".fb-tekst").value = r.tekst || "";
+  });
+  el.querySelector("[data-copy]").addEventListener("click", () => {
+    navigator.clipboard?.writeText(el.querySelector(".fb-tekst").value)
+      .then(() => melding("Feedback gekopieerd — plak 'm in FinalSurge."));
+  });
+  return el;
+}
+$("#fb-refresh").addEventListener("click", () => { geladen.feedback = true; laadFeedback(); });
+
 // ── Start ──────────────────────────────────────────────────────────────────
 laders.strippen = laad;
 laders.atleten = laadDossierLijst;
 laders.intake = laadIntake;
 laders.documenten = laadDocs;
+laders.feedback = laadFeedback;
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 toonOffline();
 if (navigator.onLine) flush();

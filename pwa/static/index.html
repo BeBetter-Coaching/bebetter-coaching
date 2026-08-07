@@ -149,6 +149,15 @@
       <section id="lijst" class="lijst"></section>
     </section>
 
+    <!-- ════════ FEEDBACK ════════ -->
+    <section class="view" data-view="feedback">
+      <header class="appbar"><h1>Feedback</h1>
+        <button class="iconbtn" id="fb-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+      </header>
+      <p class="hint" id="fb-info">laden…</p>
+      <section id="fb-lijst" class="lijst"></section>
+    </section>
+
     <!-- ════════ DOCUMENTEN ════════ -->
     <section class="view" data-view="documenten">
       <header class="appbar"><h1>Documenten</h1></header>
@@ -172,6 +181,12 @@
         <button id="uitloggen" class="btn"><svg class="ic"><use href="#ic-back"/></svg> Uitloggen</button>
       </section>
       <p class="sec-label">Modules</p>
+      <button class="listcard" data-open-view="feedback">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-message"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Feedback</span>
+          <span class="lc-sub">AI-concept op de trainingen van je atleten</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
       <button class="listcard" data-open-view="documenten">
         <span class="lc-ic"><svg class="ic"><use href="#ic-file"/></svg></span>
         <span class="lc-body"><span class="lc-title">Documenten</span>

@@ -32,6 +32,7 @@ import dossier_core as dossier
 import intake_core as intake
 import documenten_core as docs
 import atleten_core as atleten
+import feedback_core as feedback
 import webauthn_core
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -346,6 +347,27 @@ def atleten_detail(ident: str):
     if not d:
         return Response("Onbekende atleet.", status_code=404)
     return d
+
+
+# ── API: feedback (AI-concept op trainingen; FinalSurge + Anthropic) ─────────
+class FeedbackGen(BaseModel):
+    id: str = ""
+
+
+@app.get("/api/feedback")
+def feedback_lijst(dagen: int = 2):
+    return feedback.te_beoordelen(days_back=dagen)
+
+
+@app.post("/api/feedback/generate")
+def feedback_gen(body: FeedbackGen):
+    try:
+        tekst = feedback.genereer(body.id)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Genereren mislukt: {e}"}, status_code=500)
+    return {"ok": True, "tekst": tekst}
 
 
 # ── API: strippenkaart ───────────────────────────────────────────────────────
