@@ -22,6 +22,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 import fs_client as FS                                  # veilig: geen AI
+import intake_store                                     # skip-opslag + on-hold (gedeeld met Streamlit)
 
 _cache: dict[str, dict] = {}                            # workout_key -> volledige workout_data
 
@@ -241,22 +242,49 @@ def _filter_skipped(workouts: list) -> list:
 
 
 def dagoverzicht() -> dict:
-    """Home-metertjes zoals Streamlit: wachten op feedback / vandaag gepost /
-    afhakers deze week. Zware FinalSurge-calls → home laadt dit apart."""
+    """Home-metertjes — EXACT zoals Streamlit `_fetch_day_stats`: wachten op
+    feedback / vandaag gepost / afhakers / aankomende races (zonder wens) /
+    schema-actie nodig / feedback-voortgang%. De vier zware FinalSurge-sweeps
+    draaien parallel (net als Streamlit) zodat de home snel blijft."""
     if not heeft_token():
-        return {"fs": False, "wachten": 0, "gepost": 0, "afhakers": 0}
-    wachten, gepost, afhakers = 0, 0, 0
+        return {"fs": False, "wachten": 0, "gepost": 0, "afhakers": 0,
+                "races": 0, "schema": 0, "pct": 100, "atleten": 0}
     try:
-        workouts, stats = FS.get_workouts_needing_feedback(
-            days_back=7, include_planned_no_notes=True,
-            exclude_groups={"los schema"}, return_stats=True)
-        wachten = len(_filter_skipped(workouts))
+        on_hold = set((intake_store.load_on_hold() or {}).keys())
+    except Exception:
+        on_hold = set()
+
+    wachten = gepost = afhakers = races = schema = 0
+    atleten = 0
+    # SERIEEL, niet parallel: elke sweep parallelt intern al over ~67 atleten;
+    # vier tegelijk = thread-storm + FinalSurge-throttling → sweeps geven soms 0.
+    # Achter elkaar duurt even lang (FS is de bottleneck) maar is betrouwbaar.
+    try:
+        wk, stats = FS.get_workouts_needing_feedback(7, None, False, True,
+                                                     {"los schema"}, True)
+        wachten = len(_filter_skipped(wk))
         gepost = stats.get("posted_today", 0)
     except Exception:
         pass
     try:
-        on_hold = set((intake_store.load_on_hold() or {}).keys())
         afhakers = len(FS.get_compliance_alerts(7, on_hold, {"los schema"}))
     except Exception:
         pass
-    return {"fs": True, "wachten": wachten, "gepost": gepost, "afhakers": afhakers}
+    try:
+        rows = FS.get_schema_end_dates(60, on_hold)
+        schema = sum(1 for r in rows
+                     if r["days_left"] is None or r["days_left"] <= 7)
+    except Exception:
+        pass
+    try:
+        races = sum(1 for r in FS.get_upcoming_races(7) if not r.get("wish_given"))
+    except Exception:
+        pass
+    try:
+        atleten = len(FS.get_athletes())          # = Streamlit-hero-telling (uniek)
+    except Exception:
+        pass
+    totaal = wachten + gepost
+    pct = int(gepost / totaal * 100) if totaal else 100
+    return {"fs": True, "wachten": wachten, "gepost": gepost, "afhakers": afhakers,
+            "races": races, "schema": schema, "pct": pct, "atleten": atleten}

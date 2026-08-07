@@ -234,13 +234,17 @@ async function renderHome() {
     api("/api/kaarten").catch(() => ({ kaarten: [] })),
   ]);
   const nNieuw = (inbox.inbox || []).length;
-  const nAtl = ath.totaal != null ? ath.totaal : (ath.atleten || []).length;
+  const rows = ath.atleten || [];
+  const fsRows = rows.filter(a => a.user_key);            // FinalSurge-gekoppeld
+  const nAtl = fsRows.length || (ath.totaal != null ? ath.totaal : rows.length);
+  const nGroep = new Set(fsRows.map(a => a.groep).filter(Boolean)).size;
   const kn = kaarten.kaarten || [];
   const vol = kn.filter(k => k.rest <= 0);
   const bijna = kn.filter(k => k.rest > 0 && k.rest <= 1);
   box.dataset.done = "1";
   setBadge(nNieuw);
 
+  // Secundaire "ook nog"-kaarten (praktijk) — alleen tonen als er iets is
   const items = [];
   if (nNieuw) items.push(kaartItem("mail", `${nNieuw} nieuwe intake${nNieuw === 1 ? "" : "s"}`,
     "Bekijk en neem over als atleet", "intake", true));
@@ -250,28 +254,28 @@ async function renderHome() {
     "Strippenkaart bijna vol", "strippen", false)));
 
   const g = groetInfo();
-  const nBijna = vol.length + bijna.length;
   box.innerHTML = `
-    <div class="hero">
-      <div class="hero-top">
-        <div><p class="hero-greet">${g.groet}</p><p class="hero-date">${g.datum}</p></div>
-        <button class="hero-gear" data-open-view="meer" aria-label="Meer">${ic("settings")}</button>
+    <div class="hero hero-photo">
+      <button class="hero-gear" data-open-view="meer" aria-label="Meer">${ic("settings")}</button>
+      <div class="hero-content">
+        <p class="hero-greet">${g.groet}</p>
+        <p class="hero-date">${g.datum}</p>
+        <h2 class="hero-tag">Zij lopen.<br><span>Jij stuurt.</span></h2>
+        <div class="hero-ids">
+          <span><b data-count="${nAtl}">0</b> atleten</span><i>·</i>
+          <span><b data-count="${nGroep}">0</b> groepen</span>
+        </div>
       </div>
-      <div class="hero-stats">
-        <button class="hstat teal" data-open-view="intake"><b data-count="${nNieuw}">0</b><span>nieuwe intake${nNieuw === 1 ? "" : "s"}</span></button>
-        <button class="hstat" data-open-view="atleten"><b data-count="${nAtl}">0</b><span>${nAtl === 1 ? "atleet" : "atleten"}</span></button>
-        <button class="hstat amber" data-open-view="strippen"><b data-count="${nBijna}">0</b><span>kaart${nBijna === 1 ? "" : "en"} bijna vol</span></button>
-      </div>
+      <img class="hero-portrait" src="/static/team.jpeg" alt="Jip &amp; Remco" loading="lazy">
     </div>
 
-    <p class="sec-label">Dagoverzicht</p>
+    <div class="sec-head"><p class="sec-label">Vraagt je aandacht</p><span class="sec-note" id="home-tijd"></span></div>
     <div class="dagstats" id="home-dag">
-      <div class="skel skel-metric"></div><div class="skel skel-metric"></div><div class="skel skel-metric"></div>
+      <div class="skel skel-metric"></div><div class="skel skel-metric"></div>
+      <div class="skel skel-metric"></div><div class="skel skel-metric"></div>
     </div>
 
-    <p class="sec-label">Vandaag</p>
-    ${items.length ? items.join("") :
-      `<div class="leeg" id="home-leeg">${ic("check")}<p>Niks dat nu je aandacht vraagt.<br>Mooie dag om te coachen.</p></div>`}
+    <div id="home-ook">${items.length ? `<p class="sec-label">Ook nog</p>${items.join("")}` : ""}</div>
 
     <p class="sec-label">Snel naar</p>
     <div class="quick">
@@ -287,19 +291,33 @@ async function renderHome() {
   $$("[data-count]", box).forEach(countUp);
   bronStatus(kaarten.cloud);
 
-  // Dagoverzicht (zware FinalSurge-calls) laadt apart zodat home snel blijft.
+  // "Vraagt je aandacht" — zware FinalSurge-sweeps laden apart zodat home snel blijft.
   api("/api/home/stats").then(s => {
     const dag = $("#home-dag");
     if (!dag) return;
     if (!s.fs) { dag.innerHTML = '<p class="muted klein">FinalSurge niet gekoppeld.</p>'; return; }
     const bel = s.belasting || {};
-    dag.innerHTML = `
-      <button class="dagstat warn" data-open-view="feedback"><b>${s.wachten}</b><span>wachten op feedback</span></button>
-      <button class="dagstat ${bel.hoog ? "danger" : "ok"}" data-open-view="teampuls"><b>${bel.totaal || 0}</b><span>belasting-signalen${bel.hoog ? " · " + bel.hoog + " hoog" : ""}</span></button>
-      <button class="dagstat danger" data-open-view="teampuls"><b>${s.afhakers}</b><span>afhakers deze week</span></button>
-      <div class="dagstat ok"><b>${s.gepost}</b><span>vandaag gepost</span></div>`;
+    dag.innerHTML =
+      meterTile("message", s.wachten ? "warn" : "ok", s.wachten, "wachten op feedback", "feedback", s.pct) +
+      meterTile("activity", s.afhakers ? "danger" : "ok", s.afhakers, "afhakers deze week", "teampuls") +
+      meterTile("pulse", bel.hoog ? "danger" : "ok", bel.totaal || 0, "belasting-signalen" + (bel.hoog ? " · " + bel.hoog + " hoog" : ""), "teampuls") +
+      meterTile("clock", s.schema ? "warn" : "ok", s.schema, "schema-actie nodig", "schema-verloop") +
+      meterTile("flag", s.races ? "teal" : "ok", s.races, "races komende 7 dgn", "races") +
+      meterTile("check", "ok", s.gepost, "vandaag gepost", null);
     $$("[data-open-view]", dag).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+    $$("[data-count]", dag).forEach(countUp);
+    const t = $("#home-tijd"); if (t) t.textContent = `${s.pct}% van vandaag afgerond`;
   }).catch(() => {});
+}
+
+// Eén metertje in "Vraagt je aandacht": icoon + groot getal + label (+ optionele voortgangsbalk)
+function meterTile(icn, tone, value, label, view, pct) {
+  const bar = pct != null ? `<div class="mt-bar"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>` : "";
+  const attrs = view ? ` data-open-view="${view}"` : "";
+  const tag = view ? "button" : "div";
+  return `<${tag} class="dagstat ${tone}"${attrs}>
+    <span class="mt-ic">${ic(icn)}</span>
+    <b data-count="${value}">0</b><span>${label}</span>${bar}</${tag}>`;
 }
 
 function kaartItem(icn, titel, sub, view, alert) {
