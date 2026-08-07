@@ -18,3 +18,5 @@ services:
         sync: false          # zelfde token als Streamlit -> zelfde data
       - key: ANTHROPIC_API_KEY
         sync: false          # AI-modules (documenten-intro's, straks feedback/schema)
+      - key: FS_TOKEN
+        sync: false          # FinalSurge-token (zelfde als Streamlit) -> roster + trainingsdata

@@ -27,6 +27,7 @@ import strippen_core as core
 import dossier_core as dossier
 import intake_core as intake
 import documenten_core as docs
+import atleten_core as atleten
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _STATIC = os.path.join(_HERE, "static")
@@ -133,6 +134,20 @@ def docs_generate(body: DocGen):
     from urllib.parse import quote
     return Response(content=data, media_type="application/pdf",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fn)}"})
+
+
+# ── API: atleten (FinalSurge-roster verrijkt met store-data) ─────────────────
+@app.get("/api/atleten")
+def atleten_lijst():
+    return atleten.verenigde_roster()
+
+
+@app.get("/api/atleten/{ident:path}")
+def atleten_detail(ident: str):
+    d = atleten.detail(ident)
+    if not d:
+        return Response("Onbekende atleet.", status_code=404)
+    return d
 
 
 # ── API: strippenkaart ───────────────────────────────────────────────────────

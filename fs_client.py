@@ -69,7 +69,13 @@ def get_token() -> str:
     global _token
     if _token:
         return _token
-    # Probeer Streamlit secrets eerst (cloud)
+    # Gehoste PWA (Render): FS_TOKEN als omgevingsvariabele — zelfde token als
+    # in Streamlit-secrets. Additief: raakt de Streamlit-paden hieronder niet.
+    env = os.environ.get("FS_TOKEN", "").strip()
+    if env:
+        _token = env
+        return _token
+    # Probeer Streamlit secrets (Streamlit Cloud)
     secret = _read_streamlit_secret_token()
     if secret:
         _token = secret
