@@ -151,6 +151,10 @@ const geladen = {};
 let huidigeView = "home";
 
 function toonView(view) {
+  // Verlaat Home → bewaar scrollpositie zodat terugkeer die kan herstellen (#14).
+  if (huidigeView === "home" && view !== "home") {
+    const sc = $("#scroller"); if (sc) homeScroll = sc.scrollTop;
+  }
   huidigeView = view;
   $$(".view").forEach(v => {
     const on = v.dataset.view === view;
@@ -224,6 +228,12 @@ function skeleton(box, rijen = 3) {
 // ════════════════════════════════════════════════════════════════════════════
 async function renderHome() {
   const box = $("#home-body");
+  // Al opgebouwd? Behoud de state (open rij, prioriteiten, scrollpositie) i.p.v.
+  // een volledige reset + zware herlaad bij elke terugkeer naar Home (#14).
+  if (box && box.dataset.done === "1") {
+    requestAnimationFrame(() => { const sc = $("#scroller"); if (sc) sc.scrollTo({ top: homeScroll || 0 }); });
+    return;
+  }
   const g = groetInfo();
   // 1) De shell verschijnt DIRECT — geen await op trage data. Hero + skeletons.
   //    Atleten/groepen + status/feedback/prioriteit komen uit de cockpit-snapshot
@@ -255,14 +265,7 @@ async function renderHome() {
     </div>
 
     <div id="home-info"></div>
-    <div id="home-ook"></div>
-
-    <p class="sec-label">Snel toevoegen</p>
-    <div class="quick-actions">
-      <button class="qa" data-open-view="intake">${ic("user-plus")}<span>Nieuwe intake</span></button>
-      <button class="qa" data-open-view="schema">${ic("brain")}<span>Schema bouwen</span></button>
-      <button class="qa" data-open-view="strippen">${ic("ticket")}<span>Strippenkaart</span></button>
-    </div>`;
+    <div id="home-ook"></div>`;
   box.dataset.done = "1";
   $$("[data-open-view]", box).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
   laadHeroFoto();
@@ -392,13 +395,22 @@ function vulCockpit(s) {
     if (!prio.length) {
       box.innerHTML = `<div class="leeg small">${ic("check")}<p>Niks urgents nu — mooie dag om te coachen.</p></div>`;
     } else {
-      box.innerHTML = prio.map(prioRow).join("");
+      box.innerHTML = "";
+      prioOpenUk = null; prioSwipeEl = null;          // verse lijst → geen open rij meer
+      prio.forEach(it => box.appendChild(prioItem(it)));
       const rest = (s.prioriteit_totaal || prio.length) - prio.length;
-      if (rest > 0) box.innerHTML += `<button class="prio-meer" data-open-view="teampuls">Nog ${rest} in Teampuls ${ic("chevron")}</button>`;
-      $$("[data-open-view]", box).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
-      $$(".prio-row", box).forEach(r => r.addEventListener("keydown", e => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toonView(r.dataset.openView); }
-      }));
+      if (rest > 0) {
+        const meer = document.createElement("button");
+        meer.className = "prio-meer"; meer.innerHTML = `Nog ${rest} in Teampuls ${ic("chevron")}`;
+        meer.addEventListener("click", () => toonView("teampuls"));
+        box.appendChild(meer);
+      }
+      // State herstellen na terugkeer (deeplink): heropen de rij die openstond.
+      if (prioHerstelUk) {
+        const her = box.querySelector(`.prio-item[data-uk="${prioHerstelUk}"] .prio-row`);
+        if (her) prioToggle(her.closest(".prio-item"), true);
+        prioHerstelUk = null;
+      }
     }
   }
 
@@ -413,17 +425,282 @@ function vulCockpit(s) {
   }
 }
 
-// BeBetter-signatuurcomponent: één atleet-prioriteitrij (statusstip · naam · reden · actie)
-function prioRow(it) {
-  return `<article class="prio-row ${it.tier}" data-open-view="${it.view}" role="button" tabindex="0">
-    <span class="prio-dot ${it.tier}"></span>
-    <span class="avatar">${initialen(it.naam)}</span>
-    <span class="prio-body">
-      <span class="prio-naam">${esc(it.naam)}</span>
-      <span class="prio-reden">${esc(it.reden)}</span>
-    </span>
-    <span class="prio-actie">${esc(it.actie)} ${ic("chevron")}</span>
-  </article>`;
+// ════════════════════════════════════════════════════════════════════════════
+// PRIORITEIT-COCKPIT — tap = begrijpen (inline detail), swipe = snel handelen.
+// Home blijft de werkplek: geen paginawissel voor de standaardactie. Alle
+// detaildata zit al in de snapshot (nul extra fetch); alleen de gemiste sessies
+// van een afhaker worden lazy per atleet geladen en client-side gecachet.
+// ════════════════════════════════════════════════════════════════════════════
+let prioOpenUk = null;      // welke rij staat inline open (max één)
+let prioSwipeEl = null;     // welke rij toont swipe-acties (max één)
+let prioHerstelUk = null;   // heropen deze rij na een lijst-herbouw (deeplink-terugkeer)
+let homeScroll = 0;         // bewaarde scrollpositie van Home (state bij terugkeer)
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Welke acties horen bij een signaal — alleen ECHTE, bestaande backend-state.
+// primary (swipe→rechts, groen) = dempen; secundair (swipe→links) = verdiepen.
+function prioActies(it) {
+  const dossier = { act: "dossier", label: "Dossier", icon: "user-plus" };
+  if (it.soort === "compliance")
+    return { primary: { act: "afhandelen", label: "Afhandelen", icon: "check" }, secundair: [dossier] };
+  if (it.soort === "belasting")
+    return { primary: { act: "gezien", label: "Gezien", icon: "check" },
+             secundair: [{ act: "teampuls", label: "Teampuls", icon: "pulse" }, dossier] };
+  // schema: géén dempstatus in de backend → geen 'afhandelen', wel verdiepen
+  return { primary: null, secundair: [{ act: "schema", label: "Schema", icon: "clock" }, dossier] };
+}
+
+function swBtn(a, primary) {
+  return `<button class="pa-btn${primary ? " primary" : ""}" data-act="${a.act}" type="button">
+    ${ic(a.icon)}<span>${a.label}</span></button>`;
+}
+
+// Eén prioriteit-item: swipe-lagen + rij + (lazy) inline detail.
+function prioItem(it) {
+  const acts = prioActies(it);
+  const wrap = document.createElement("div");
+  wrap.className = "prio-item";
+  wrap.dataset.uk = it.user_key; wrap.dataset.soort = it.soort || "";
+  wrap._it = it;
+  wrap.innerHTML = `
+    <div class="prio-swipe">
+      ${acts.primary ? `<div class="pa-layer pa-left">${swBtn(acts.primary, true)}</div>` : ""}
+      <div class="pa-layer pa-right">${acts.secundair.map(a => swBtn(a, false)).join("")}</div>
+      <article class="prio-row ${it.tier}" role="button" tabindex="0"
+        aria-expanded="false" aria-label="${esc(it.naam)} — ${esc(it.reden)}">
+        <span class="prio-dot ${it.tier}"></span>
+        <span class="avatar">${initialen(it.naam)}</span>
+        <span class="prio-body">
+          <span class="prio-naam">${esc(it.naam)}</span>
+          <span class="prio-reden">${esc(it.reden)}</span>
+        </span>
+        <span class="prio-actie">${ic("chevron")}</span>
+      </article>
+    </div>
+    <div class="prio-detail" hidden></div>`;
+
+  const row = wrap.querySelector(".prio-row");
+  row.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); prioToggle(wrap); }
+    if (e.key === "Escape") { prioToggle(wrap, false); prioSwipeDicht(wrap); }
+  });
+  // Actieknoppen (swipe-lagen én — later — de detailknoppen) delen één handler.
+  wrap.querySelectorAll(".pa-btn").forEach(b =>
+    b.addEventListener("click", e => { e.stopPropagation(); prioDoe(wrap, b.dataset.act); }));
+  bindSwipe(wrap, row);
+  return wrap;
+}
+
+// Inline detail openen/sluiten. Max één open: sluit eerst de vorige (rust, #8).
+function prioToggle(wrap, force) {
+  const detail = wrap.querySelector(".prio-detail");
+  const row = wrap.querySelector(".prio-row");
+  const open = force != null ? force : detail.hidden;
+  prioSwipeDicht(wrap);                                     // swipe en expand bijten niet (#9)
+  if (open) {
+    if (prioOpenUk && prioOpenUk !== wrap.dataset.uk) {
+      const vorige = document.querySelector(`.prio-item[data-uk="${prioOpenUk}"]`);
+      if (vorige) prioToggle(vorige, false);
+    }
+    detail.innerHTML = prioDetailHtml(wrap._it);
+    detail.hidden = false;
+    wrap.classList.add("open"); row.setAttribute("aria-expanded", "true");
+    prioOpenUk = wrap.dataset.uk;
+    detail.querySelectorAll(".pa-btn").forEach(b =>
+      b.addEventListener("click", e => { e.stopPropagation(); prioDoe(wrap, b.dataset.act); }));
+    if (wrap._it.soort === "compliance") prioVulSessies(wrap);   // lazy, 1 fetch, gecachet
+    haptic(6);
+  } else {
+    detail.hidden = true; wrap.classList.remove("open");
+    row.setAttribute("aria-expanded", "false");
+    if (prioOpenUk === wrap.dataset.uk) prioOpenUk = null;
+  }
+}
+
+// Detail-inhoud uit de snapshot (nul fetch). Compliance-sessies komen lazy erbij.
+function prioDetailHtml(it) {
+  const d = it.detail || {};
+  const acts = prioActies(it);
+  const knoppen = `<div class="pd-acts">
+    ${acts.primary ? swBtn(acts.primary, true) : ""}
+    ${acts.secundair.map(a => swBtn(a, false)).join("")}</div>`;
+  let body = "";
+  if (it.soort === "belasting") {
+    const sig = (d.signalen || []).map(s => `<li>${esc(s)}</li>`).join("");
+    const chips = [];
+    if (d.km_recent != null && d.km_basis != null) {
+      const p = d.pct;
+      chips.push(`<div class="pd-chip"><b>Volume${p != null ? " " + (p > 0 ? "+" : "") + p + "%" : ""}</b>
+        <span>${d.km_recent} km deze week · basis ${d.km_basis} km/wk</span></div>`);
+    }
+    if (d.gevoel_recent != null || d.rpe_recent != null)
+      chips.push(`<div class="pd-chip"><b>Gevoel / RPE</b>
+        <span>gevoel ${d.gevoel_recent ?? "—"} vs ${d.gevoel_basis ?? "—"} · RPE ${d.rpe_recent ?? "—"} vs ${d.rpe_basis ?? "—"}</span></div>`);
+    const runs = (d.runs || []).map(r => `<li>${esc((r.datum || "").slice(5))} · ${r.km ?? "?"} km${r.naam ? " · " + esc(r.naam) : ""}</li>`).join("");
+    body = `${d.groep ? `<p class="pd-groep">${esc(d.groep)}</p>` : ""}
+      ${sig ? `<ul class="pd-sig">${sig}</ul>` : ""}
+      ${chips.length ? `<div class="pd-metrics">${chips.join("")}</div>` : ""}
+      ${runs ? `<p class="pd-sub">Recente trainingen</p><ul class="pd-runs">${runs}</ul>` : ""}`;
+  } else if (it.soort === "compliance") {
+    body = `<p class="pd-line">${d.n_low ?? "?"} van ${d.n_planned ?? "?"} geplande trainingen gemist of half — laatste 7 dagen${d.groep ? " · " + esc(d.groep) : ""}</p>
+      <div class="pd-sessies"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div>`;
+  } else if (it.soort === "schema") {
+    const eind = d.einddatum ? ` · einddatum ${esc(d.einddatum)}` : "";
+    body = `<p class="pd-line">${esc(it.reden)}${eind}${d.groep ? " · " + esc(d.groep) : ""}</p>
+      ${d.verborgen ? `<p class="pd-sub">${d.verborgen} training(en) nog verborgen voor de atleet${d.zichtbaar_tot ? " · zichtbaar t/m " + esc(d.zichtbaar_tot) : ""}</p>` : ""}`;
+  }
+  return body + knoppen;
+}
+
+// Lazy: gemiste sessies van een afhaker (1 request voor déze atleet, gecachet).
+async function prioVulSessies(wrap) {
+  const holder = wrap.querySelector(".pd-sessies");
+  if (!holder) return;
+  if (wrap._sessies) { holder.innerHTML = prioSessiesHtml(wrap._sessies); return; }
+  const r = await api(`/api/home/prio/${encodeURIComponent(wrap.dataset.uk)}/trainingen`).catch(() => null);
+  const rows = (r && r.trainingen) || [];
+  wrap._sessies = rows;                                     // cache → tweede keer 0 requests
+  if (holder.isConnected) holder.innerHTML = prioSessiesHtml(rows);
+}
+function prioSessiesHtml(rows) {
+  if (!rows.length) return `<p class="muted klein">Geen losse sessies gevonden.</p>`;
+  const pill = { gemist: "gemist", half: "half", gedaan: "gedaan" };
+  return `<ul class="pd-sessies-lijst">${rows.map(t => `<li>
+    <span class="pd-s-d">${esc((t.datum || "").slice(5))}</span>
+    <span class="pd-s-t">${esc(t.type || "Training")}</span>
+    ${t.km_planned != null ? `<span class="pd-s-km">${t.km_actual ?? 0}/${t.km_planned} km</span>` : ""}
+    <span class="pd-s-st ${t.status}">${pill[t.status] || t.status}</span></li>`).join("")}</ul>`;
+}
+
+// Actie uitvoeren. Dempacties (afhandelen/gezien) verwijderen de rij mét undo.
+async function prioDoe(wrap, act) {
+  const it = wrap._it;
+  if (act === "dossier") { deepAtleet("atleten", it.user_key, () => openDossier(it.user_key)); return; }
+  if (act === "teampuls") { deepAtleet("teampuls", it.user_key); return; }
+  if (act === "schema") { deepAtleet("schema-verloop", it.user_key); return; }
+  if (act === "afhandelen") {
+    const r = await jpost("/api/home/afhandelen", { user_key: it.user_key, naam: it.naam }).catch(() => null);
+    if (!r || !r.ok) return melding("Kon niet afhandelen.", true);
+    prioVerwijder(wrap, "Afgehandeld · 7 dagen verborgen",
+      () => jpost("/api/home/afhandelen", { user_key: it.user_key, undo: true }));
+    return;
+  }
+  if (act === "gezien") {
+    const r = await jpost("/api/teampuls/gezien", { user_key: it.user_key, ernst: (it.detail || {}).ernst || "" }).catch(() => null);
+    if (!r || !r.ok) return melding("Kon niet dempen.", true);
+    prioVerwijder(wrap, "Gezien · 7 dagen gedempt",
+      () => jpost("/api/teampuls/gezien", { user_key: it.user_key, ernst: (it.detail || {}).ernst || "", undo: true }));
+    return;
+  }
+}
+
+// Rij verwijderen met undo-toast. Undo zet de rij terug én draait de backend terug.
+function prioVerwijder(wrap, txt, undoBackend) {
+  const parent = wrap.parentNode, next = wrap.nextSibling;
+  if (prioOpenUk === wrap.dataset.uk) prioOpenUk = null;
+  wrap.classList.add("weg");
+  haptic(12);
+  setTimeout(() => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }, reduceMotion() ? 0 : 220);
+  prioToast(txt, () => {
+    if (next && next.parentNode === parent) parent.insertBefore(wrap, next);
+    else if (parent) parent.appendChild(wrap);
+    wrap.classList.remove("weg");
+    if (undoBackend) undoBackend();
+  });
+}
+
+function prioToast(txt, undoFn) {
+  let t = $("#prio-toast");
+  if (!t) { t = document.createElement("div"); t.id = "prio-toast"; t.className = "prio-toast"; document.body.appendChild(t); }
+  t.innerHTML = `<span>${esc(txt)}</span>${undoFn ? `<button class="pt-undo" type="button">Ongedaan</button>` : ""}`;
+  requestAnimationFrame(() => t.classList.add("on"));
+  clearTimeout(t._h);
+  const hide = () => t.classList.remove("on");
+  t._h = setTimeout(hide, undoFn ? 5000 : 2600);
+  if (undoFn) t.querySelector(".pt-undo").onclick = () => { clearTimeout(t._h); hide(); undoFn(); };
+}
+
+// ── Swipe: rij beweegt mee, acties erachter. Touch-only; muis = klik→detail. ──
+function bindSwipe(wrap, row) {
+  const swipe = wrap.querySelector(".prio-swipe");
+  const left = wrap.querySelector(".pa-left"), right = wrap.querySelector(".pa-right");
+  let x0 = 0, y0 = 0, dx = 0, richting = 0, actief = false, touch = false;
+  const maxL = () => (left ? left.scrollWidth || 96 : 0), maxR = () => (right ? right.scrollWidth || 168 : 0);
+
+  const zet = v => { row.style.transform = v ? `translateX(${v}px)` : ""; };
+
+  row.addEventListener("pointerdown", e => {
+    touch = e.pointerType === "touch";
+    x0 = e.clientX; y0 = e.clientY; dx = 0; richting = 0; actief = false;
+    row.style.transition = "none";
+  });
+  row.addEventListener("pointermove", e => {
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (!actief) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      if (Math.abs(my) > Math.abs(mx)) { touch = false; return; }   // verticaal → laat scrollen (#9)
+      actief = true; try { row.setPointerCapture(e.pointerId); } catch {}
+    }
+    if (!touch) return;
+    e.preventDefault();                                     // horizontaal vergrendeld
+    dx = Math.max(-maxR(), Math.min(maxL(), mx));
+    richting = dx > 0 ? 1 : dx < 0 ? -1 : 0;
+    swipe.classList.toggle("swipe-l", dx > 0);              // linker laag (primary) zichtbaar
+    swipe.classList.toggle("swipe-r", dx < 0);
+    zet(dx);
+  });
+  const eind = e => {
+    if (!actief) return;
+    row.style.transition = "";
+    const drempel = 0.45;
+    const open = richting > 0 ? dx >= maxL() * drempel : richting < 0 ? -dx >= maxR() * drempel : false;
+    if (open && richting) {
+      // Toon de acties (reveal). Geen automatische uitvoering → nooit schade (#5).
+      if (prioSwipeEl && prioSwipeEl !== wrap) prioSwipeDicht(prioSwipeEl);
+      zet(richting > 0 ? maxL() : -maxR());
+      wrap.classList.add("swipe-open"); prioSwipeEl = wrap;
+      haptic(8);
+    } else { prioSwipeReset(wrap); }
+    actief = false;
+  };
+  row.addEventListener("pointerup", eind);
+  row.addEventListener("pointercancel", () => { prioSwipeReset(wrap); actief = false; });
+
+  // Tap (geen swipe) → detail openen/sluiten.
+  row.addEventListener("click", () => {
+    if (actief) return;
+    if (wrap.classList.contains("swipe-open")) { prioSwipeDicht(wrap); return; }
+    prioToggle(wrap);
+  });
+}
+function prioSwipeReset(wrap) {
+  const row = wrap.querySelector(".prio-row"), swipe = wrap.querySelector(".prio-swipe");
+  row.style.transform = ""; swipe.classList.remove("swipe-l", "swipe-r");
+  wrap.classList.remove("swipe-open");
+  if (prioSwipeEl === wrap) prioSwipeEl = null;
+}
+function prioSwipeDicht(wrap) { if (wrap) prioSwipeReset(wrap); }
+
+// Deeplink naar de EXACTE atleet op een andere pagina. Onthoud de open rij zodat
+// Home die na terugkeer heropent; Home-data zelf wordt niet zwaar herladen (#14).
+function deepAtleet(view, uk, direct) {
+  prioHerstelUk = prioOpenUk;
+  homeScroll = $("#scroller") ? $("#scroller").scrollTop : 0;
+  toonView(view);
+  if (direct) { direct(); return; }                         // dossier: opent atleet zelf
+  prioFocusKaart(view, uk);                                 // teampuls/schema: scroll + flash
+}
+// Poll tot de doelkaart in de (lui geladen) lijst staat, scroll ernaartoe + flash.
+function prioFocusKaart(view, uk) {
+  const sel = view === "teampuls" ? "#tp-signalen" : "#sv-lijst";
+  let n = 0;
+  (function zoek() {
+    const el = document.querySelector(`${sel} [data-uk="${uk}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "center" });
+      el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1600);
+    } else if (n++ < 40) setTimeout(zoek, 80);
+  })();
 }
 
 function kaartItem(icn, titel, sub, view, alert) {
@@ -1258,6 +1535,7 @@ async function laadSchemaVerloop() {
 function svItem(it) {
   const el = document.createElement("article");
   el.className = "rij-kaart sv-rij";
+  el.dataset.uk = it.user_key || "";                 // doel voor Home-deeplink (flash)
   const kleur = { verlopen: "#e0645a", bijna: "#e0a23a", loopt: "#5db98b", geen: "#8a8f98" }[it.status] || "#8a8f98";
   const dagtxt = it.dagen === null ? "—"
     : it.dagen < 0 ? `${-it.dagen}d verlopen`
@@ -1298,6 +1576,7 @@ async function laadTeampuls(force = false) {
 function pulsItem(it) {
   const el = document.createElement("article");
   el.className = "rij-kaart puls-kaart " + (it.ernst === "hoog" ? "ernst-hoog" : "ernst-let");
+  el.dataset.uk = it.user_key || "";                 // doel voor Home-deeplink (flash)
   const m = it.metrics || {};
   const runs = (m.runs || []).map(r => `<li>${esc(r.datum)}: ${r.km} km${r.naam ? " · " + esc(r.naam) : ""}</li>`).join("");
   const sig = (it.signalen || []).map(s => `<li>${esc(s)}</li>`).join("");

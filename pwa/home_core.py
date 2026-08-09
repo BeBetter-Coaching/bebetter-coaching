@@ -16,7 +16,7 @@ import os
 import sys
 import threading
 import types
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
@@ -197,6 +197,19 @@ def _bereken() -> dict:
     except Exception:
         on_hold = set()
 
+    # Afgehandelde afhakers (gedeeld tussen coaches) — 7 dagen gedempt, daarna
+    # komt de atleet vanzelf terug als het patroon aanhoudt. Zelfde mechaniek als
+    # de Streamlit-home, zodat 'Afhandelen' in de PWA ook echt de lijst opschoont.
+    try:
+        _handled = (intake_store.load_alerts_handled() or {}) if intake_store else {}
+    except Exception:
+        _handled = {}
+    _handled_cutoff = (date.today() - timedelta(days=7)).isoformat()
+
+    def _afhaker_zichtbaar(uk: str) -> bool:
+        rec = _handled.get(uk)
+        return not rec or rec.get("datum", "") < _handled_cutoff
+
     # ── Sweeps (serieel, betrouwbaar) ──
     wachten = gepost = 0
     try:
@@ -234,9 +247,12 @@ def _bereken() -> dict:
     bel_hoog = sum(1 for b in bel if b.get("ernst") == "hoog")
 
     # ── Prioriteit vandaag: één rij per atleet, hoogste tier wint ──
+    # Elke rij krijgt een 'detail'-blok mee: alle context die de coach inline op
+    # Home wil zien, berekend TIJDENS deze sweep (dus gratis) zodat het uitklappen
+    # nul extra requests kost. 'soort' bepaalt welk detail/acties de client toont.
     prio: dict[str, dict] = {}
 
-    def _add(uk, naam, first, tier, reden, view, actie):
+    def _add(uk, naam, first, tier, soort, reden, view, actie, detail):
         if not uk:
             return
         rank = 0 if tier == "actie" else 1
@@ -245,33 +261,56 @@ def _bereken() -> dict:
             return                                     # al een even/urgenter signaal
         prio[uk] = {
             "user_key": uk, "naam": naam, "voornaam": _voornaam(naam, first),
-            "tier": tier, "reden": reden, "view": view, "actie": actie,
-            "_rank": rank,
+            "tier": tier, "soort": soort, "reden": reden, "view": view,
+            "actie": actie, "detail": detail, "_rank": rank,
         }
 
-    # Afhakers = actie (rood)
+    # Afhakers = actie (rood). Afgehandelde afhakers 7 dagen niet tonen.
     for a in alerts:
-        _add(a.get("user_key"), a.get("name", ""), a.get("first_name", ""), "actie",
-             f'{a.get("n_low", 0)} van {a.get("n_planned", 0)} trainingen gemist',
-             "teampuls", "Bekijken")
+        uk = a.get("user_key")
+        if not _afhaker_zichtbaar(uk):
+            continue
+        n_low, n_pl = a.get("n_low", 0), a.get("n_planned", 0)
+        _add(uk, a.get("name", ""), a.get("first_name", ""), "actie", "compliance",
+             f"{n_low} van {n_pl} trainingen gemist", "teampuls", "Bekijken",
+             {"n_low": n_low, "n_planned": n_pl, "groep": a.get("group", "")})
 
     # Schema loopt af / verlopen (alleen wie een schema HAD; 'geen schema' = ruis, hoort in Schema-verloop)
     for r in schema_rows:
         d = r.get("days_left")
         if d is None:
             continue
+        det = {"days_left": d, "einddatum": r.get("last_date"), "groep": r.get("group", ""),
+               "verborgen": r.get("hidden_count", 0), "zichtbaar_tot": r.get("visible_until")}
         if d < 0:
-            _add(r.get("user_key"), r.get("name", ""), r.get("first_name", ""), "actie",
-                 f"schema {abs(d)} dag{'en' if abs(d) != 1 else ''} verlopen", "schema-verloop", "Schema openen")
+            _add(r.get("user_key"), r.get("name", ""), r.get("first_name", ""), "actie", "schema",
+                 f"schema {abs(d)} dag{'en' if abs(d) != 1 else ''} verlopen", "schema-verloop", "Schema openen", det)
         elif d <= 7:
-            _add(r.get("user_key"), r.get("name", ""), r.get("first_name", ""), "aandacht",
-                 f"schema loopt af over {d} dag{'en' if d != 1 else ''}", "schema-verloop", "Schema openen")
+            _add(r.get("user_key"), r.get("name", ""), r.get("first_name", ""), "aandacht", "schema",
+                 f"schema loopt af over {d} dag{'en' if d != 1 else ''}", "schema-verloop", "Schema openen", det)
 
     # Belasting-signalen (hoog = actie, let op = aandacht) — reden = de echte signaaltekst
     for b in bel:
         tier = "actie" if b.get("ernst") == "hoog" else "aandacht"
         reden = (b.get("signalen") or ["belasting-signaal"])[0]
-        _add(b.get("user_key"), b.get("naam", ""), "", tier, reden, "teampuls", "Bekijken")
+        m = b.get("metrics") or {}
+        km_r, km_b = m.get("km_recent"), m.get("km_basis_week")
+        pct = None
+        try:
+            if km_r is not None and km_b:
+                pct = round((float(km_r) / float(km_b) - 1) * 100)
+        except (TypeError, ValueError, ZeroDivisionError):
+            pct = None
+        det = {
+            "ernst": b.get("ernst", ""),
+            "signalen": b.get("signalen") or [],
+            "groep": b.get("group", ""),
+            "km_recent": km_r, "km_basis": km_b, "pct": pct,
+            "gevoel_recent": m.get("gevoel_recent"), "gevoel_basis": m.get("gevoel_basis"),
+            "rpe_recent": m.get("rpe_recent"), "rpe_basis": m.get("rpe_basis"),
+            "runs": (m.get("runs_recent") or [])[:5],
+        }
+        _add(b.get("user_key"), b.get("naam", ""), "", tier, "belasting", reden, "teampuls", "Bekijken", det)
 
     items = sorted(prio.values(), key=lambda x: (x["_rank"], x["naam"]))
     for it in items:
@@ -296,3 +335,77 @@ def _bereken() -> dict:
         "berekend": datetime.now().isoformat(timespec="seconds"),
         "datum": date.today().isoformat(),
     }
+
+
+# ── Acties op een prioriteit (echte, bestaande backend-state) ────────────────
+# 'Afhandelen' (afhaker) → alerts_handled, 7 dagen gedempt, gedeeld tussen coaches
+# (exact de Streamlit-mechaniek). 'Gezien' voor belasting loopt via de bestaande
+# /api/teampuls/gezien. Voor schema bestaat GEEN dempstatus — daar is de echte
+# actie 'schema openen'/'on hold', dus die krijgt geen afhandel-knop.
+
+def afhandelen(user_key: str, naam: str = "", undo: bool = False) -> tuple[bool, str]:
+    """Markeer een afhaker als afgehandeld: 7 dagen niet meer tonen (gedeeld).
+    undo=True draait dit terug (voor de Ongedaan-toast). Werkt de in-memory
+    snapshot direct bij zodat de rij niet terugkomt vóór de volgende refresh."""
+    if not user_key or intake_store is None:
+        return False, "geen opslag"
+    try:
+        handled = intake_store.load_alerts_handled() or {}
+    except Exception:
+        handled = {}
+    if undo:
+        handled.pop(user_key, None)
+    else:
+        handled[user_key] = {"datum": date.today().isoformat(), "naam": naam}
+    prune = (date.today() - timedelta(days=30)).isoformat()      # oude vermeldingen opruimen
+    for k in list(handled.keys()):
+        if (handled.get(k) or {}).get("datum", "") < prune:
+            del handled[k]
+    ok, msg = intake_store.save_alerts_handled(handled)
+    # Snapshot in geheugen alvast opschonen (rij weg zonder volle refresh)
+    global _MEM
+    if _valid(_MEM):
+        items = [i for i in _MEM.get("prioriteit", [])
+                 if not (i.get("user_key") == user_key and i.get("soort") == "compliance")]
+        _MEM = {**_MEM, "prioriteit": items, "prioriteit_totaal": len(items)}
+    return ok, msg
+
+
+def prio_trainingen(user_key: str) -> dict:
+    """Lazy detail voor een afhaker: WELKE geplande trainingen (laatste 7 dagen)
+    gemist/half/gedaan zijn. Eén atleet — geen roster-sweep. Client cachet dit."""
+    if not user_key or not _heeft_token():
+        return {"trainingen": []}
+    today = date.today()
+    start, end = today - timedelta(days=7), today - timedelta(days=1)
+    try:
+        workouts = FS.get_workouts_deduped(user_key, start, end)
+    except Exception:
+        return {"trainingen": []}
+    rijen = []
+    for w in workouts:
+        if w.get("is_race"):
+            continue
+        act = (w.get("Activities") or [{}])[0]
+        p_km = float(act.get("planned_amount") or 0)
+        p_sec = float(act.get("planned_duration") or 0)
+        if not (p_km or p_sec or (w.get("description") or "").strip()):
+            continue                                    # geen echte geplande training
+        if not w.get("has_actual_data"):
+            score = 0.0
+        elif p_km:
+            score = min(float(act.get("amount") or 0) / p_km, 1.0)
+        elif p_sec:
+            score = min(float(act.get("duration") or 0) / p_sec, 1.0)
+        else:
+            score = 1.0
+        status = "gemist" if score <= 0 else ("half" if score < 0.5 else "gedaan")
+        rijen.append({
+            "datum": (w.get("workout_date") or "")[:10],
+            "type": act.get("name") or w.get("name") or "Training",
+            "status": status,
+            "km_planned": round(p_km, 1) if p_km else None,
+            "km_actual": round(float(act.get("amount") or 0), 1) if p_km else None,
+        })
+    rijen.sort(key=lambda r: r["datum"])
+    return {"trainingen": rijen}

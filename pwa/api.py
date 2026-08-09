@@ -374,6 +374,25 @@ def home_stats(refresh: bool = False):
     return home_core.cockpit(refresh=refresh)
 
 
+class HomeAfhandelen(BaseModel):
+    user_key: str = ""
+    naam: str = ""
+    undo: bool = False
+
+
+@app.post("/api/home/afhandelen")        # afhaker 7 dagen dempen (gedeeld, herstelt vanzelf)
+def home_afhandelen(body: HomeAfhandelen):
+    ok, msg = home_core.afhandelen(body.user_key, body.naam, undo=body.undo)
+    if not ok:
+        return JSONResponse({"ok": False, "err": msg}, status_code=500)
+    return {"ok": True}
+
+
+@app.get("/api/home/prio/{user_key}/trainingen")   # lazy: gemiste sessies van één afhaker
+def home_prio_trainingen(user_key: str):
+    return home_core.prio_trainingen(user_key)
+
+
 @app.post("/api/feedback/generate")
 def feedback_gen(body: FeedbackGen):
     try:
@@ -449,6 +468,7 @@ def schema_verloop_lijst(horizon: int = 60):
 class PulsGezien(BaseModel):
     user_key: str = ""
     ernst: str = ""
+    undo: bool = False
 
 
 @app.get("/api/teampuls/signalen")
@@ -459,7 +479,7 @@ def teampuls_signalen(force: bool = False):
 @app.post("/api/teampuls/gezien")        # demp een atleet 7 dagen (gedeeld)
 def teampuls_gezien(body: PulsGezien):
     try:
-        teampuls.markeer_gezien(body.user_key, body.ernst)
+        teampuls.markeer_gezien(body.user_key, body.ernst, undo=body.undo)
     except Exception as e:
         return JSONResponse({"ok": False, "err": str(e)}, status_code=500)
     return {"ok": True}

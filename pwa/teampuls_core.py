@@ -114,14 +114,22 @@ def stand_kort() -> dict:
             "datum": data.get("datum"), "vers": data.get("datum") == _d.today().isoformat()}
 
 
-def markeer_gezien(user_key: str, ernst: str) -> bool:
-    """Demp een atleet 7 dagen (gedeeld met Streamlit)."""
+def markeer_gezien(user_key: str, ernst: str, undo: bool = False) -> bool:
+    """Demp een atleet 7 dagen (gedeeld met Streamlit). undo=True heft de demping
+    op (voor de Ongedaan-toast): haalt de atleet uit 'afgehandeld' en bewaart."""
     import belasting
     try:
         data = belasting.laad_stand()
     except Exception:
         data = {}
-    belasting.markeer_gezien(data, user_key, ernst)
+    if undo:
+        (data.get("afgehandeld") or {}).pop(user_key, None)
+        try:
+            intake_store.save_belasting(data)
+        except Exception:
+            pass
+    else:
+        belasting.markeer_gezien(data, user_key, ernst)
     return True
 
 

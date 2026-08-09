@@ -57,6 +57,7 @@ def verloop(horizon_days: int = 60) -> dict:
             status = "loopt"
         items.append({
             "naam": naam,
+            "user_key": r.get("user_key", ""),       # voor Home-deeplink (scroll + flash)
             "voornaam": r.get("first_name") or (naam.split(" ")[0] if naam else ""),
             "groep": r.get("group") or "",
             "laatste": r.get("last_date"),
