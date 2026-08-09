@@ -53,28 +53,64 @@ def _norm_naam(naam: str) -> str:
     return (naam or "").strip().lower()
 
 
-def _handled_active(rec: dict | None, fingerprint: str, vandaag: date) -> bool:
-    """Is dit signaal nu uit de werkvoorraad? (True = onderdrukken.) Eerlijke regels:
-    - 'later'  → hard verborgen tot snooze_until, ongeacht de situatie.
-    - 'gezien' → verborgen zolang de fingerprint ONGEWIJZIGD is én <7 dagen oud;
-                 daarna terug (opnieuw beoordelen). Verergert het signaal
-                 (nieuwe fingerprint), dan komt het meteen terug.
-    Zo geldt een schema dat alleen 'gezien' is NOOIT als opgelost."""
+# Ranking/telling — gedeeld door _bereken en de in-memory hertelling na een actie.
+_TIER_RANK = {"actie": 0, "aandacht": 1}
+_WEIGHT = {"actie": 3, "aandacht": 1}
+
+
+def _rec_tot(rec: dict) -> str | None:
+    """Einddatum van het dempvenster. Nieuw record heeft 'tot'; oud record (vóór deze
+    ronde) niet → afgeleid: 'later' → snooze_until, 'gezien' → handled_at + 7 dagen.
+    Zo blijven bestaande records exact werken (geen mass-terugkeer, geen error)."""
+    tot = rec.get("tot")
+    if tot:
+        return tot
+    if rec.get("status") == "later" and rec.get("snooze_until"):
+        return rec.get("snooze_until")
+    ha = rec.get("handled_at")
+    if ha:
+        try:
+            return (date.fromisoformat(ha[:10]) + timedelta(days=7)).isoformat()
+        except Exception:
+            return None
+    return None
+
+
+def _handled_active(rec: dict | None, severity, vandaag: date) -> bool:
+    """Is dit signaal nu uit de werkvoorraad? (True = onderdrukken.) Eén regel voor
+    Gezien én Later: verborgen zolang (a) het NIET erger is geworden dan wat de coach
+    zag (severity ≤ opgeslagen) én (b) binnen het venster (nu < tot). Stijgt de
+    severity → direct opnieuw zichtbaar; anders pas terug na 7d (Gezien) / snooze_until
+    (Later). Oud record zonder 'severity' → sla de escalatie-check over (venster telt)."""
     if not rec:
         return False
-    status = rec.get("status")
-    if status == "later":
-        su = rec.get("snooze_until")
-        return bool(su) and vandaag.isoformat() < su
-    if status == "gezien":
-        if rec.get("fingerprint") != fingerprint:
-            return False
+    sev_opgeslagen = rec.get("severity")
+    if sev_opgeslagen is not None:
         try:
-            dagen = (vandaag - date.fromisoformat((rec.get("handled_at") or "")[:10])).days
-        except Exception:
-            return False
-        return dagen < 7
-    return False
+            if severity is not None and float(severity) > float(sev_opgeslagen):
+                return False                              # verergerd → tonen
+        except (TypeError, ValueError):
+            pass
+    tot = _rec_tot(rec)
+    return bool(tot) and vandaag.isoformat() < tot
+
+
+def _bouw_item(uk: str, naam: str, voornaam: str, zichtbaar: list) -> dict | None:
+    """Bouw één prioriteit-rij uit de zichtbare signalen (of None als er geen rest).
+    Ook gebruikt om de in-memory snapshot na een deel-actie opnieuw te bepalen."""
+    if not zichtbaar:
+        return None
+    sigs = sorted(zichtbaar, key=lambda s: (_TIER_RANK.get(s["tier"], 9), s["soort"]))
+    tier = "actie" if any(s["tier"] == "actie" for s in sigs) else "aandacht"
+    return {
+        "user_key": uk, "naam": naam, "voornaam": voornaam,
+        "tier": tier, "n_signalen": len(sigs),
+        "reden": sigs[0]["reden"],
+        "chips": [{"tier": s["tier"], "kort": s["kort"]} for s in sigs],
+        "signalen": sigs,
+        "signature": "|".join(sorted(f"{s['soort']}:{s['fingerprint']}" for s in sigs)),
+        "_score": sum(_WEIGHT.get(s["tier"], 1) for s in sigs),
+    }
 
 
 def _atleten_objs() -> list:
@@ -278,7 +314,7 @@ def _bereken() -> dict:
     # Alle detail wordt TIJDENS deze sweep gevuld → uitklappen kost 0 requests.
     atl: dict[str, dict] = {}
 
-    def _sig(uk, naam, first, soort, tier, reden, kort, fingerprint, detail, context):
+    def _sig(uk, naam, first, soort, tier, reden, kort, fingerprint, severity, detail, context):
         if not uk:
             return
         rij = atl.get(uk)
@@ -287,19 +323,19 @@ def _bereken() -> dict:
                              "voornaam": _voornaam(naam, first), "signalen": []}
         rij["signalen"].append({
             "soort": soort, "tier": tier, "reden": reden, "kort": kort,
-            "fingerprint": fingerprint, "detail": detail, "context": context,
+            "fingerprint": fingerprint, "severity": severity, "detail": detail, "context": context,
         })
 
-    # Afhakers (compliance) = actie (rood)
+    # Afhakers (compliance) = actie (rood). severity = aantal gemist (meer = erger).
     for a in alerts:
         n_low, n_pl = a.get("n_low", 0), a.get("n_planned", 0)
         _sig(a.get("user_key"), a.get("name", ""), a.get("first_name", ""),
              "compliance", "actie", f"{n_low} van {n_pl} trainingen gemist",
-             f"{n_low} gemist", f"c{n_low}",
+             f"{n_low} gemist", f"c{n_low}", n_low,
              {"n_low": n_low, "n_planned": n_pl, "groep": a.get("group", "")},
              [])                                         # context = Dossier (universeel)
 
-    # Schema verlopen (actie) / loopt af ≤7d (aandacht)
+    # Schema verlopen (actie, severity 2) / loopt af ≤7d (aandacht, severity 1)
     for r in schema_rows:
         d = r.get("days_left")
         if d is None:
@@ -310,15 +346,16 @@ def _bereken() -> dict:
         if d < 0:
             _sig(r.get("user_key"), r.get("name", ""), r.get("first_name", ""),
                  "schema", "actie", f"schema {abs(d)} dag{'en' if abs(d) != 1 else ''} verlopen",
-                 "schema verlopen", f"s{r.get('last_date')}:v", det, ctx)
+                 "schema verlopen", f"s{r.get('last_date')}:v", 2, det, ctx)
         elif d <= 7:
             _sig(r.get("user_key"), r.get("name", ""), r.get("first_name", ""),
                  "schema", "aandacht", f"schema loopt af over {d} dag{'en' if d != 1 else ''}",
-                 f"schema nog {d}d", f"s{r.get('last_date')}:a", det, ctx)
+                 f"schema nog {d}d", f"s{r.get('last_date')}:a", 1, det, ctx)
 
-    # Belasting (hoog = actie, let op = aandacht) — reden = de echte signaaltekst
+    # Belasting (hoog = actie/severity 2, let op = aandacht/severity 1) — escalatie = erger
     for b in bel:
-        tier = "actie" if b.get("ernst") == "hoog" else "aandacht"
+        hoog = b.get("ernst") == "hoog"
+        tier = "actie" if hoog else "aandacht"
         reden = (b.get("signalen") or ["belasting-signaal"])[0]
         m = b.get("metrics") or {}
         km_r, km_b = m.get("km_recent"), m.get("km_basis_week")
@@ -338,34 +375,18 @@ def _bereken() -> dict:
             "runs": (m.get("runs_recent") or [])[:5],
         }
         _sig(b.get("user_key"), b.get("naam", ""), "", "belasting", tier, reden,
-             reden, f"b{b.get('ernst', '')}", det,
+             reden, f"b{b.get('ernst', '')}", 2 if hoog else 1, det,
              [{"act": "teampuls", "label": "Teampuls", "icon": "pulse"}])
 
-    # ── Suppressie (Gezien/Later) + rij opbouwen ──
-    _TIER_RANK = {"actie": 0, "aandacht": 1}
-    _WEIGHT = {"actie": 3, "aandacht": 1}
-
+    # ── Suppressie (severity-gated) + rij opbouwen ──
     items = []
     for uk, rij in atl.items():
         zichtbaar = [s for s in rij["signalen"]
                      if not _handled_active(_handled.get(f"{uk}|{s['soort']}"),
-                                            s["fingerprint"], _vandaag)]
-        if not zichtbaar:
-            continue                                     # alle signalen gedempt → uit de lijst
-        zichtbaar.sort(key=lambda s: (_TIER_RANK.get(s["tier"], 9), s["soort"]))
-        tier = "actie" if any(s["tier"] == "actie" for s in zichtbaar) else "aandacht"
-        score = sum(_WEIGHT.get(s["tier"], 1) for s in zichtbaar)
-        # signature = combinatie van fingerprints → laat de client goedkoop zien of
-        # er bij een achtergrondrefresh écht iets veranderd is (geen verspringen).
-        sig = "|".join(sorted(f"{s['soort']}:{s['fingerprint']}" for s in zichtbaar))
-        items.append({
-            "user_key": uk, "naam": rij["naam"], "voornaam": rij["voornaam"],
-            "tier": tier, "n_signalen": len(zichtbaar),
-            "reden": zichtbaar[0]["reden"],
-            "chips": [{"tier": s["tier"], "kort": s["kort"]} for s in zichtbaar],
-            "signalen": zichtbaar, "signature": sig,
-            "_score": score,
-        })
+                                            s["severity"], _vandaag)]
+        it = _bouw_item(uk, rij["naam"], rij["voornaam"], zichtbaar)
+        if it:
+            items.append(it)
 
     # Deterministische, uitlegbare ranking binnen tier: meer signalen eerst, dan
     # ernst-score, dan alfabetisch (stabiel = geen springen bij gelijke stand).
@@ -399,76 +420,111 @@ def _bereken() -> dict:
 # in de gedeelde home_handled-store. DUAL-WRITE naar de bestaande per-type stores
 # (alerts_handled / belasting.afgehandeld) houdt Teampuls + Streamlit-home in sync.
 
-def _verwijder_uit_mem(user_key: str) -> None:
+def _mem_demp(user_key: str, soorten: set) -> None:
+    """Werk de in-memory snapshot bij na een actie: verwijder de gedempte soorten uit
+    de rij; blijft er niets over → atleet valt weg. Zo blijft een tweede lezer (andere
+    coach) consistent vóór de volgende refresh. Client blijft leidend voor de UI."""
     global _MEM
-    if _valid(_MEM):
-        items = [i for i in _MEM.get("prioriteit", []) if i.get("user_key") != user_key]
-        _MEM = {**_MEM, "prioriteit": items, "prioriteit_totaal": len(items)}
+    if not _valid(_MEM):
+        return
+    nieuw = []
+    for it in _MEM.get("prioriteit", []):
+        if it.get("user_key") != user_key:
+            nieuw.append(it)
+            continue
+        rest = [s for s in it.get("signalen", []) if s["soort"] not in soorten]
+        herbouwd = _bouw_item(user_key, it.get("naam", ""), it.get("voornaam", ""), rest)
+        if herbouwd:
+            nieuw.append(herbouwd)
+    _MEM = {**_MEM, "prioriteit": nieuw, "prioriteit_totaal": len(nieuw)}
 
 
-def _dual_write(user_key: str, naam: str, soorten: dict, undo: bool) -> None:
-    """Houd de bestaande pagina's in sync. Bij undo weten we de soorten niet meer
-    (rij is al weg) → ruim beide legacy-stores best-effort op."""
-    if "compliance" in soorten or undo:
+def _dual_write(user_key: str, naam: str, soort: str, sig: dict, tot: str, undo: bool) -> None:
+    """Houd de bestaande pagina's in sync — met de ECHTE einddatum (tot) en severity,
+    zodat 3/7/14 dagen én escalatie overal gelijk werken. Per signaaltype:
+    compliance → alerts_handled (Streamlit-home), belasting → belasting.afgehandeld
+    (Teampuls). Schema heeft geen legacy-dempstore."""
+    if soort == "compliance":
         try:
             h = intake_store.load_alerts_handled() or {}
             if undo:
                 h.pop(user_key, None)
             else:
-                h[user_key] = {"datum": date.today().isoformat(), "naam": naam}
+                n_low = (sig.get("detail") or {}).get("n_low", sig.get("severity", 0))
+                h[user_key] = {"tot": tot, "n_low": n_low, "naam": naam,
+                               "datum": date.today().isoformat()}   # datum = backward-compat
             intake_store.save_alerts_handled(h)
         except Exception:
             pass
-    if "belasting" in soorten or undo:
+    elif soort == "belasting":
         try:
             import belasting
             data = belasting.laad_stand()
+            afg = data.setdefault("afgehandeld", {})
             if undo:
-                (data.get("afgehandeld") or {}).pop(user_key, None)
-                intake_store.save_belasting(data)
+                afg.pop(user_key, None)
             else:
-                ernst = (soorten["belasting"].get("detail") or {}).get("ernst") or "let_op"
-                belasting.markeer_gezien(data, user_key, ernst)
+                ernst = (sig.get("detail") or {}).get("ernst") or "let_op"
+                afg[user_key] = {"tot": tot, "ernst": ernst}        # zichtbare_resultaten honoreert tot + escalatie
+            intake_store.save_belasting(data)
         except Exception:
             pass
 
 
 def handled(user_key: str, status: str = "gezien", snooze_dagen: int = 7,
-            undo: bool = False, by: str = "") -> tuple[bool, str]:
-    """Zet de werklijst-status voor ALLE huidige signalen van een atleet."""
+            undo: bool = False, by: str = "", soort: str | None = None) -> tuple[bool, str]:
+    """Zet de werklijst-status (Gezien/Later) voor een atleet. soort=None → BULK over
+    alle huidige signalen (swipe); soort gezet → alleen dat ene signaal (detail).
+    Legt severity + einddatum (tot) vast → severity-gated terugkeer, en dual-write
+    houdt Teampuls/Streamlit consistent."""
     if not user_key or intake_store is None:
         return False, "geen opslag"
-    # Huidige signaaltypes + fingerprints uit de laatste snapshot lezen.
-    soorten, naam = {}, ""
+    # Huidige signalen uit de laatste snapshot (met severity/fingerprint/detail).
+    sig_per_soort, naam = {}, ""
     for it in (_MEM.get("prioriteit") or []):
         if it.get("user_key") == user_key:
             naam = it.get("naam", "")
             for s in it.get("signalen", []):
-                soorten[s["soort"]] = s
+                sig_per_soort[s["soort"]] = s
             break
     try:
         store = intake_store.load_home_handled() or {}
     except Exception:
         store = {}
     vandaag = date.today()
+    # Doel-soorten: één (detail) of alle huidige (bulk). Bij undo zonder snapshot
+    # kennen we de soorten niet meer → dan ruimen we alle uk|* op.
+    doelen = [soort] if soort else list(sig_per_soort.keys())
+
     if undo:
-        for k in [k for k in store if k.startswith(f"{user_key}|")]:
-            del store[k]
+        keys = [f"{user_key}|{soort}"] if soort else [k for k in store if k.startswith(f"{user_key}|")]
+        undo_soorten = {k.split("|", 1)[1] for k in keys} or {"compliance", "belasting"}
+        for k in keys:
+            store.pop(k, None)
+        for s in undo_soorten:
+            _dual_write(user_key, naam, s, {}, "", True)
     else:
-        su = (vandaag + timedelta(days=max(1, int(snooze_dagen or 7)))).isoformat() \
-            if status == "later" else None
-        for soort, s in soorten.items():
-            store[f"{user_key}|{soort}"] = {
-                "status": status, "fingerprint": s["fingerprint"],
-                "handled_at": vandaag.isoformat(), "snooze_until": su, "by": by,
+        for s in doelen:
+            sg = sig_per_soort.get(s)
+            if sg is None:
+                continue
+            if status == "later":
+                tot = (vandaag + timedelta(days=max(1, int(snooze_dagen or 7)))).isoformat()
+            else:
+                tot = (vandaag + timedelta(days=7)).isoformat()
+            store[f"{user_key}|{s}"] = {
+                "status": status, "fingerprint": sg.get("fingerprint"),
+                "severity": sg.get("severity"), "handled_at": vandaag.isoformat(),
+                "snooze_until": tot if status == "later" else None, "tot": tot, "by": by,
             }
+            _dual_write(user_key, naam, s, sg, tot, False)
+
     grens = (vandaag - timedelta(days=45)).isoformat()               # oude records opruimen
     for k in [k for k in store if (store.get(k) or {}).get("handled_at", "") < grens]:
         del store[k]
     ok, msg = intake_store.save_home_handled(store)
-    _dual_write(user_key, naam, soorten, undo)
     if not undo:
-        _verwijder_uit_mem(user_key)                                 # rij weg zonder volle refresh
+        _mem_demp(user_key, set(doelen))                             # snapshot bijwerken (geen volle refresh)
     return ok, msg
 
 

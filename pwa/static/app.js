@@ -542,9 +542,12 @@ function prioItem(it) {
   const secundair = multi
     ? `<span class="prio-chips">${(it.chips || []).map(c => `<span class="pc ${c.tier}">${esc(c.kort)}</span>`).join("")}</span>`
     : `<span class="prio-reden">${esc(it.reden)}</span>`;
+  // Swipe = BULK over alle huidige signalen. Bij >1 signaal expliciet "Alles …" zodat
+  // de coach niet denkt dat maar één aandachtspunt wordt geraakt.
+  const gLabel = multi ? "Alles gezien" : "Gezien", lLabel = multi ? "Alles later" : "Later";
   wrap.innerHTML = `
     <div class="prio-swipe">
-      <div class="pa-layer pa-left">${swBtn({ act: "gezien", label: "Gezien", icon: "check" }, "primary")}${swBtn({ act: "later", label: "Later", icon: "clock", dagen: 7 }, "later")}</div>
+      <div class="pa-layer pa-left">${swBtn({ act: "gezien", label: gLabel, icon: "check" }, "primary")}${swBtn({ act: "later", label: lLabel, icon: "clock", dagen: 7 }, "later")}</div>
       <div class="pa-layer pa-right">${ctx.map(a => swBtn(a)).join("")}</div>
       <article class="prio-row ${it.tier}" role="button" tabindex="0"
         aria-expanded="false" aria-label="${esc(it.naam)} — ${multi ? it.n_signalen + " aandachtspunten" : esc(it.reden)}">
@@ -586,7 +589,7 @@ function prioToggle(wrap, force) {
     wrap.classList.add("open"); row.setAttribute("aria-expanded", "true");
     prioOpenUk = wrap.dataset.uk;
     detail.querySelectorAll("[data-act]").forEach(b =>
-      b.addEventListener("click", e => { e.stopPropagation(); prioDoe(wrap, b.dataset.act, +b.dataset.dagen || 0); }));
+      b.addEventListener("click", e => { e.stopPropagation(); prioDoe(wrap, b.dataset.act, +b.dataset.dagen || 0, b.dataset.soort || null); }));
     if ((wrap._it.signalen || []).some(s => s.soort === "compliance")) prioVulSessies(wrap);
     haptic(6);
   } else {
@@ -596,29 +599,29 @@ function prioToggle(wrap, force) {
   }
 }
 
-// Detail = alle signalen van deze atleet (totaalbeeld), elk met eigen context, +
-// één universele workflowbalk (Gezien / Later 3·7·14). Nul fetch behalve de lazy
-// compliance-sessies. Dossier is atleet-breed (één keer, onderaan).
+// Detail = alle signalen van deze atleet (totaalbeeld). ELK signaal heeft zijn EIGEN
+// Gezien/Later (per-signaal status) + eigen context-actie. Dossier is atleet-breed
+// (één keer, onderaan). Bulk gaat via de swipe, niet via het detail.
 function prioDetailHtml(it) {
   const blokken = (it.signalen || []).map(s => {
     const ctxBtn = (s.context && s.context[0]) ? swBtn(s.context[0]) : "";
-    return `<div class="pd-s-blok">
+    return `<div class="pd-s-blok" data-soort="${s.soort}">
       <div class="pd-s-head"><span class="pd-s-ic ${s.tier}">${ic(SOORT_IC[s.soort] || "activity")}</span>
         <b>${esc(s.reden)}</b></div>
       <div class="pd-s-body">${prioSignaalBody(s)}</div>
+      <div class="pd-s-work">
+        <button class="pd-wbtn gezien" data-act="gezien" data-soort="${s.soort}" type="button">${ic("check")}<span>Gezien</span></button>
+        <div class="pd-later"><span>Later</span>
+          <button data-act="later" data-soort="${s.soort}" data-dagen="3" type="button">3d</button>
+          <button data-act="later" data-soort="${s.soort}" data-dagen="7" type="button">7d</button>
+          <button data-act="later" data-soort="${s.soort}" data-dagen="14" type="button">14d</button>
+        </div>
+      </div>
       ${ctxBtn ? `<div class="pd-s-acts">${ctxBtn}</div>` : ""}
     </div>`;
   }).join("");
-  const werk = `<div class="pd-work">
-    <button class="pd-wbtn gezien" data-act="gezien" type="button">${ic("check")}<span>Gezien</span></button>
-    <div class="pd-later"><span>Later</span>
-      <button data-act="later" data-dagen="3" type="button">3d</button>
-      <button data-act="later" data-dagen="7" type="button">7d</button>
-      <button data-act="later" data-dagen="14" type="button">14d</button>
-    </div>
-  </div>`;
   const dossier = `<div class="pd-acts">${swBtn({ act: "dossier", label: "Dossier", icon: "user-plus" })}</div>`;
-  return `<div class="pd-signalen">${blokken}</div>${dossier}${werk}`;
+  return `<div class="pd-signalen">${blokken}</div>${dossier}`;
 }
 
 // Type-specifiek detail per signaal (uit de snapshot; compliance-sessies lazy).
@@ -672,32 +675,92 @@ function prioSessiesHtml(rows) {
     <span class="pd-s-st ${t.status}">${pill[t.status] || t.status}</span></li>`).join("")}</ul>`;
 }
 
-// Per-atleet SERIËLE write-keten: de laatste intent (do/undo) wint altijd, ook
-// als de gebruiker snel achter elkaar acties + undo doet → backendstate == UI.
-function stuurHandled(it, body) {
-  it._chain = (it._chain || Promise.resolve())
+// SERIËLE write-keten per (atleet, soort): laatste intent (do/undo) wint altijd, ook
+// bij snel do/undo → backendstate == UI. Per-signaal en bulk hebben eigen ketens.
+const handledChains = {};
+function stuurHandled(body) {
+  const k = body.user_key + "|" + (body.soort || "bulk");
+  handledChains[k] = (handledChains[k] || Promise.resolve())
     .then(() => jpost("/api/home/handled", body).catch(() => ({ ok: false })));
-  return it._chain;
+  return handledChains[k];
 }
 
-// Actie uitvoeren. Context = deeplink; workflow (gezien/later) = OPTIMISTIC: de UI
-// reageert direct (rij weg + counts), de backend-write loopt async op de achtergrond
-// (#9/#10/#12). Mislukt de write en heeft de coach niet ge-undo'd → rollback.
-function prioDoe(wrap, act, dagen) {
+// Rij herbouwen zonder één signaal (voor per-signaal actie/undo) — spiegelt de
+// backend-grouping: tier = hoogste resterende, chips/telling/signature opnieuw.
+function herbouwIt(it, wegSoort) {
+  const rank = t => (t === "actie" ? 0 : 1);
+  const sigs = (it.signalen || []).filter(s => s.soort !== wegSoort)
+    .sort((a, b) => rank(a.tier) - rank(b.tier) || a.soort.localeCompare(b.soort));
+  const tier = sigs.some(s => s.tier === "actie") ? "actie" : "aandacht";
+  return {
+    ...it, signalen: sigs, n_signalen: sigs.length, tier,
+    reden: sigs[0] ? sigs[0].reden : it.reden,
+    chips: sigs.map(s => ({ tier: s.tier, kort: s.kort })),
+    signature: sigs.map(s => s.soort + ":" + s.fingerprint).sort().join("|"),
+  };
+}
+// Vervang een rij-element in-place door een nieuwe versie; heropen indien open was.
+function prioVervang(oud, nieuwIt, open) {
+  const parent = oud.parentNode, next = oud.nextSibling;
+  const nw = prioItem(nieuwIt);
+  nw._sessies = oud._sessies;                              // lazy compliance-cache behouden
+  if (parent) parent.insertBefore(nw, next);
+  if (prioSwipeEl === oud) prioSwipeEl = null;
+  if (prioOpenUk === oud.dataset.uk) prioOpenUk = null;
+  oud.remove();
+  if (open) prioToggle(nw, true);
+  return nw;
+}
+// Atleet blijft in de lijst maar wisselt van tier → hero/telling verschuiven (rustig
+// blijft gelijk: de -1/+1 op rustig heffen elkaar op).
+function prioTierWissel(oud, nieuw) {
+  if (oud !== nieuw) { prioTel(oud, -1); prioTel(nieuw, +1); }
+}
+
+// Actie uitvoeren. Context = deeplink; workflow (gezien/later) = OPTIMISTIC: UI direct,
+// backend-write async (#9/#10/#12). soort gezet + >1 signaal → alléén dat signaal;
+// anders (bulk-swipe of laatste signaal) → hele rij. Mislukt de write en niet ge-undo'd
+// → rollback naar exact de vorige rijstate.
+function prioDoe(wrap, act, dagen, soort) {
   const it = wrap._it;
   if (act === "dossier") { deepAtleet("atleten", it.user_key, () => openDossier(it.user_key)); return; }
   if (act === "teampuls") { deepAtleet("teampuls", it.user_key); return; }
   if (act === "schema") { deepAtleet("schema-verloop", it.user_key); return; }
-  if (act === "gezien" || act === "later") {
-    const body = { user_key: it.user_key, status: act };
-    if (act === "later") body.snooze_dagen = dagen || 7;
-    const txt = act === "gezien" ? "Gemarkeerd als gezien" : `Later · ${dagen || 7} dagen`;
-    prioSwipeDicht(wrap);                                   // 1) swipe-layer dicht
-    prioVerwijder(wrap, txt, () => stuurHandled(it, { user_key: it.user_key, undo: true }));  // 2) rij weg + undo
-    stuurHandled(it, body).then(r => {                      // 3) write async; alleen rollen als niet ge-undo'd
-      if (!r || !r.ok) prioRollback(wrap, "Opslaan mislukt — teruggezet.");
-    });
-  }
+  if (act !== "gezien" && act !== "later") return;
+
+  if (soort && it.n_signalen > 1) { prioSignaalDoe(wrap, act, dagen, soort); return; }   // per-signaal
+
+  // Bulk (swipe) of laatste signaal → hele rij optimistic weg.
+  const multi = it.n_signalen > 1;
+  const body = { user_key: it.user_key, status: act };
+  if (soort) body.soort = soort;
+  if (act === "later") body.snooze_dagen = dagen || 7;
+  const txt = act === "gezien" ? (multi ? "Alles gezien" : "Gemarkeerd als gezien")
+    : `Later · ${dagen || 7} dagen${multi ? " (alles)" : ""}`;
+  const undoBody = { user_key: it.user_key, undo: true }; if (soort) undoBody.soort = soort;
+  prioSwipeDicht(wrap);
+  prioVerwijder(wrap, txt, () => stuurHandled(undoBody));
+  stuurHandled(body).then(r => { if (!r || !r.ok) prioRollback(wrap, "Opslaan mislukt — teruggezet."); });
+}
+
+// Per-signaal: alleen dit signaal dempen; rij blijft met de rest. Optimistic:
+// chips/telling/tier direct bijwerken; undo/rollback herstelt exact de vorige rij.
+function prioSignaalDoe(oudWrap, act, dagen, soort) {
+  const it = oudWrap._it;
+  const nieuwIt = herbouwIt(it, soort);
+  const oldTier = it.tier, newTier = nieuwIt.tier;
+  const txt = act === "gezien" ? "Signaal gezien" : `Signaal · later ${dagen || 7} dagen`;
+  let cur = prioVervang(oudWrap, nieuwIt, true);           // rij zonder dit signaal, blijft open
+  prioTierWissel(oldTier, newTier);
+  haptic(10);
+  let undone = false;
+  const herstel = () => { cur = prioVervang(cur, it, prioOpenUk === it.user_key); prioTierWissel(newTier, oldTier); };
+  prioToast(txt, () => { undone = true; herstel(); stuurHandled({ user_key: it.user_key, undo: true, soort }); });
+  const body = { user_key: it.user_key, status: act, soort };
+  if (act === "later") body.snooze_dagen = dagen || 7;
+  stuurHandled(body).then(r => {
+    if ((!r || !r.ok) && !undone) { herstel(); prioToastWeg(); melding("Opslaan mislukt — teruggezet.", true); }
+  });
 }
 
 // Rij optimistisch verwijderen (work-queue: volgende schuift rustig op, geen rebuild).

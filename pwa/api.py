@@ -379,13 +379,15 @@ class HomeHandled(BaseModel):
     status: str = "gezien"        # "gezien" | "later"
     snooze_dagen: int = 7
     undo: bool = False
+    soort: Optional[str] = None   # None = bulk (alle signalen); anders één signaaltype
 
 
-@app.post("/api/home/handled")           # werklijst-status (Gezien/Later) per atleet, gedeeld
+@app.post("/api/home/handled")           # werklijst-status (Gezien/Later), per atleet of per signaal
 def home_handled(body: HomeHandled, request: Request):
     wie = _session_user(request) or ""
     ok, msg = home_core.handled(body.user_key, status=body.status,
-                                snooze_dagen=body.snooze_dagen, undo=body.undo, by=wie)
+                                snooze_dagen=body.snooze_dagen, undo=body.undo,
+                                by=wie, soort=body.soort)
     if not ok:
         return JSONResponse({"ok": False, "err": msg}, status_code=500)
     return {"ok": True}

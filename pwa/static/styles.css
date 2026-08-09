@@ -641,10 +641,11 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .pd-s-blok .pd-line{margin:0}
 .pd-s-blok .pd-metrics{margin:0}
 
-/* Universele workflowbalk in het detail: Gezien + Later (3/7/14) */
-.pd-work{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:12px;
+/* Per-signaal workflowrij in het detail: Gezien + Later (3/7/14) per signaal */
+.pd-work,.pd-s-work{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:12px;
   padding-top:12px;border-top:1px solid var(--border)}
-.pd-wbtn.gezien{display:inline-flex;align-items:center;gap:7px;border:0;cursor:pointer;height:38px;padding:0 16px;
+.pd-s-work{margin-top:10px;padding-top:10px}
+.pd-wbtn.gezien{display:inline-flex;align-items:center;gap:7px;border:0;cursor:pointer;height:36px;padding:0 15px;
   border-radius:10px;background:#1E7A54;color:#EAFFF4;font-size:13px;font-weight:650}
 .pd-wbtn.gezien .ic{width:16px;height:16px}
 .pd-later{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}

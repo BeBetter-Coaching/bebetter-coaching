@@ -1565,13 +1565,23 @@ if page == "home":
                 except Exception:
                     st.session_state["_alerts_handled"] = {}
             _handled = st.session_state["_alerts_handled"]
+            _vandaag_iso = date.today().isoformat()
             _handled_cutoff = (date.today() - timedelta(days=7)).isoformat()
 
-            _alerts = [
-                a for a in day_stats.get("compliance_alerts", [])
-                if (_handled.get(a["user_key"]) or {}).get("datum", "") < _handled_cutoff
-                or a["user_key"] not in _handled
-            ]
+            def _afhaker_gedempt(a):
+                rec = _handled.get(a["user_key"])
+                if not rec:
+                    return False
+                # Severity-aware (gelijk aan Home): erger geworden → weer tonen.
+                # Backward-compat: oud record zonder n_low → geen escalatie-check.
+                if "n_low" in rec and a.get("n_low", 0) > rec.get("n_low", 0):
+                    return False
+                tot = rec.get("tot")
+                if tot:                                  # nieuw record: echt dempvenster (3/7/14)
+                    return _vandaag_iso < tot
+                return rec.get("datum", "") >= _handled_cutoff   # oud record: datum + 7 dagen
+
+            _alerts = [a for a in day_stats.get("compliance_alerts", []) if not _afhaker_gedempt(a)]
             _alert_cls = "done" if not _alerts else "attention"
 
             # Tegels zijn klikbare knoppen — kleur per status via dynamische CSS
