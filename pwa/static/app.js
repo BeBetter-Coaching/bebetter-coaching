@@ -445,13 +445,14 @@ function vulCockpit(s) {
     }
   }
 
-  // ── Info-strip (voortgang/rustig, cyaan — geen alarm) ──
+  // ── Info-strip (secundaire context, cyaan — geen alarm) ──
+  // 'Vandaag gepost' stond hier én in de feedbackbalk (dubbel). We houden 't in de
+  // feedbackbalk (daar hoort de metric inhoudelijk) en tonen hier alleen races.
   const inf = $("#home-info");
   if (inf) {
-    const chips = [];
-    if (info.races) chips.push(`<button class="info-chip" data-open-view="races">${ic("flag")} ${info.races} race${info.races === 1 ? "" : "s"} komende 7 dgn</button>`);
-    chips.push(`<span class="info-chip ok">${ic("check")} ${info.gepost || 0} vandaag gepost</span>`);
-    inf.innerHTML = `<div class="info-strip">${chips.join("")}</div>`;
+    inf.innerHTML = info.races
+      ? `<div class="info-strip"><button class="info-chip" data-open-view="races">${ic("flag")} ${info.races} race${info.races === 1 ? "" : "s"} komende 7 dgn</button></div>`
+      : "";
     $$("[data-open-view]", inf).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
   }
 }
@@ -505,6 +506,12 @@ document.addEventListener("keydown", e => {
                             : (i < 0 ? rows.length - 1 : Math.max(0, i - 1));
   e.preventDefault(); rows[i].focus();
 });
+
+// Verticaal scrollen sluit een openstaande swipe-rij (nooit een verborgen actielaag
+// laten hangen terwijl je wegscrollt, #5). Passief → geen invloed op scrollsnelheid.
+$("#scroller")?.addEventListener("scroll", () => {
+  if (prioSwipeEl && prioSwipeEl._snap) prioSwipeEl._snap("idle");
+}, { passive: true });
 
 // Workflow (swipe→rechts, groen) is UNIVERSEEL en identiek op elke rij: Gezien /
 // Later. Context (swipe→links) is atleet-/type-afhankelijk: Dossier + hoogstens
@@ -665,9 +672,18 @@ function prioSessiesHtml(rows) {
     <span class="pd-s-st ${t.status}">${pill[t.status] || t.status}</span></li>`).join("")}</ul>`;
 }
 
-// Actie uitvoeren. Context = deeplink; workflow (gezien/later) = werklijst-status
-// voor de héle atleet (alle signalen), rij verdwijnt mét undo.
-async function prioDoe(wrap, act, dagen) {
+// Per-atleet SERIËLE write-keten: de laatste intent (do/undo) wint altijd, ook
+// als de gebruiker snel achter elkaar acties + undo doet → backendstate == UI.
+function stuurHandled(it, body) {
+  it._chain = (it._chain || Promise.resolve())
+    .then(() => jpost("/api/home/handled", body).catch(() => ({ ok: false })));
+  return it._chain;
+}
+
+// Actie uitvoeren. Context = deeplink; workflow (gezien/later) = OPTIMISTIC: de UI
+// reageert direct (rij weg + counts), de backend-write loopt async op de achtergrond
+// (#9/#10/#12). Mislukt de write en heeft de coach niet ge-undo'd → rollback.
+function prioDoe(wrap, act, dagen) {
   const it = wrap._it;
   if (act === "dossier") { deepAtleet("atleten", it.user_key, () => openDossier(it.user_key)); return; }
   if (act === "teampuls") { deepAtleet("teampuls", it.user_key); return; }
@@ -675,39 +691,48 @@ async function prioDoe(wrap, act, dagen) {
   if (act === "gezien" || act === "later") {
     const body = { user_key: it.user_key, status: act };
     if (act === "later") body.snooze_dagen = dagen || 7;
-    const r = await jpost("/api/home/handled", body).catch(() => null);
-    if (!r || !r.ok) return melding("Kon niet bijwerken.", true);
-    const txt = act === "gezien" ? "Gezien — beoordeeld" : `Later · ${dagen || 7} dagen verborgen`;
-    prioVerwijder(wrap, txt, () => jpost("/api/home/handled", { user_key: it.user_key, undo: true }));
-    return;
+    const txt = act === "gezien" ? "Gemarkeerd als gezien" : `Later · ${dagen || 7} dagen`;
+    prioSwipeDicht(wrap);                                   // 1) swipe-layer dicht
+    prioVerwijder(wrap, txt, () => stuurHandled(it, { user_key: it.user_key, undo: true }));  // 2) rij weg + undo
+    stuurHandled(it, body).then(r => {                      // 3) write async; alleen rollen als niet ge-undo'd
+      if (!r || !r.ok) prioRollback(wrap, "Opslaan mislukt — teruggezet.");
+    });
   }
 }
 
-// Rij verwijderen met undo-toast (work-queue: volgende schuift rustig op, geen
-// rebuild). Undo zet de rij terug én draait de backend terug; counts lopen mee.
-function prioVerwijder(wrap, txt, undoBackend) {
-  const parent = wrap.parentNode, next = wrap.nextSibling, it = wrap._it;
-  const wasOpen = prioOpenUk === wrap.dataset.uk;
-  if (wasOpen) prioOpenUk = null;
+// Rij optimistisch verwijderen (work-queue: volgende schuift rustig op, geen rebuild).
+function prioVerwijder(wrap, txt, onUndo) {
+  const it = wrap._it;
+  wrap._pos = { parent: wrap.parentNode, next: wrap.nextSibling };
+  it._removed = true;
+  if (prioOpenUk === wrap.dataset.uk) prioOpenUk = null;
   wrap.style.height = wrap.offsetHeight + "px";            // vaste hoogte → nette collapse
   requestAnimationFrame(() => wrap.classList.add("weg"));
   haptic(12);
   prioTel(it.tier, -1);                                    // hero + note direct bijwerken (#10)
-  const volgende = wrap.nextElementSibling;               // voor quick-next (#15)
-  setTimeout(() => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); prioLeegCheck(); }, reduceMotion() ? 0 : 240);
-  prioToast(txt, () => {
-    wrap.classList.remove("weg"); wrap.style.height = "";
-    if (next && next.parentNode === parent) parent.insertBefore(wrap, next);
-    else if (parent) parent.appendChild(wrap);
-    prioTel(it.tier, +1);
-    prioLeegCheck();
-    if (undoBackend) undoBackend();
-  });
-  // Quick-next: alléén als je dit item OPEN had (bewuste dóórwerk-flow) opent rustig
-  // de volgende — individueel verwerken zonder navigatie, geen onrust bij swipe (#15).
-  if (wasOpen && !reduceMotion() && volgende && volgende.classList.contains("prio-item")) {
-    setTimeout(() => { if (volgende.isConnected) prioToggle(volgende, true); }, 260);
+  setTimeout(() => {
+    if (it._removed && wrap.parentNode) { wrap.parentNode.removeChild(wrap); prioLeegCheck(); }
+  }, reduceMotion() ? 0 : 240);
+  prioToast(txt, () => { prioHerstel(wrap); if (onUndo) onUndo(); });
+}
+
+// Rij terugzetten op exact zijn oude plek (undo of rollback). Idempotent.
+function prioHerstel(wrap) {
+  const it = wrap._it;
+  if (!it._removed) return;
+  it._removed = false;
+  wrap.classList.remove("weg"); wrap.style.height = "";
+  const pos = wrap._pos;
+  if (!wrap.parentNode && pos) {
+    if (pos.next && pos.next.parentNode === pos.parent) pos.parent.insertBefore(wrap, pos.next);
+    else if (pos.parent) pos.parent.appendChild(wrap);
   }
+  prioTel(it.tier, +1);
+  prioLeegCheck();
+}
+function prioRollback(wrap, msg) {
+  if (!wrap._it._removed) return;                          // coach heeft al ge-undo'd → niks doen
+  prioHerstel(wrap); prioToastWeg(); melding(msg, true);
 }
 
 // Toont een rustige lege staat als de werkvoorraad leeg raakt (zonder rebuild).
@@ -732,81 +757,107 @@ function prioToast(txt, undoFn) {
   t._h = setTimeout(hide, undoFn ? 5000 : 2600);
   if (undoFn) t.querySelector(".pt-undo").onclick = () => { clearTimeout(t._h); hide(); undoFn(); };
 }
+function prioToastWeg() { const t = $("#prio-toast"); if (t) { clearTimeout(t._h); t.classList.remove("on"); } }
 
-// ── Swipe: rij beweegt mee, acties erachter. Touch-only; muis = klik→detail. ──
-// PERF: tijdens de drag draait er GEEN layout-werk. De laagbreedtes worden één
-// keer bij pointerdown gemeten (geen scrollWidth-reads per move = geen reflow),
-// de transform is een GPU-compositor-transform (translate3d + will-change), de
-// writes worden per frame gecoalesceerd via rAF, en reveal-classes wisselen
-// alleen bij een richtingswissel. Zo voelen links én rechts identiek vloeiend.
+// ── Swipe = expliciete state machine (touch-only; muis = klik→detail) ─────────
+// Eindstates zijn ALTIJD één van: "idle" | "left" | "right" — nooit een losse
+// translateX ertussenin. De intent (horizontaal vs verticaal) wordt vroeg en
+// hard gekozen (deadzone + ratio); daarna commit de gekozen richting volledig:
+// horizontaal → rij volgt de vinger, verticaal heeft geen invloed meer; verticaal
+// → we laten los en de pagina scrollt (geen preventDefault). Elke gesture-afsluiter
+// (pointerup/cancel/lostpointercapture) snapt naar een geldige eindstate; een
+// afgebroken gesture gaat veilig terug naar CLOSED. Zo kan een rij nooit half
+// open blijven hangen (#3/#4) en is er geen diagonale speling (#2).
+const SW_DEAD = 10, SW_RATIO = 1.4, SW_DREMPEL = 0.4, SW_FLICK = 0.5;   // px, verhouding, %, px/ms
+
 function bindSwipe(wrap, row) {
   const swipe = wrap.querySelector(".prio-swipe");
   const left = wrap.querySelector(".pa-left"), right = wrap.querySelector(".pa-right");
-  let x0 = 0, y0 = 0, dx = 0, richting = 0, actief = false, touch = false;
-  let mL = 0, mR = 0, curSide = 0, raf = 0, pending = 0;
+  let mL = 0, mR = 0, x0 = 0, y0 = 0, base = 0, lock = 0, dx = 0;
+  let pid = null, raf = 0, pending = null, didDrag = false, lastX = 0, lastT = 0, vx = 0;
 
-  const schrijf = () => { raf = 0; row.style.transform = pending ? `translate3d(${pending}px,0,0)` : ""; };
-  const plan = v => { pending = v; if (!raf) raf = requestAnimationFrame(schrijf); };
+  const cancelRaf = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; } pending = null; };
+  const setX = px => {                              // per-frame één transform-write (compositor)
+    pending = px;
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (pending == null) return; row.style.transform = pending ? `translate3d(${pending}px,0,0)` : ""; });
+  };
+  const revealClass = px => {
+    const want = px > 0 ? "l" : px < 0 ? "r" : "";
+    if (wrap.dataset.drag === want) return;
+    wrap.dataset.drag = want;
+    swipe.classList.toggle("swipe-l", px > 0);
+    swipe.classList.toggle("swipe-r", px < 0);
+  };
+
+  // DE enige plek die de eindstate zet — extern aanroepbaar via wrap._snap.
+  function snap(state) {
+    cancelRaf();
+    row.style.transition = "";                      // CSS-transitie verzorgt de nette snap
+    row.style.willChange = "";
+    swipe.classList.remove("swipe-l", "swipe-r");
+    if (state === "left") { row.style.transform = `translate3d(${mL}px,0,0)`; swipe.classList.add("swipe-l"); }
+    else if (state === "right") { row.style.transform = `translate3d(${-mR}px,0,0)`; swipe.classList.add("swipe-r"); }
+    else { row.style.transform = ""; }
+    const open = state === "left" || state === "right";
+    wrap.classList.toggle("swipe-open", open);
+    wrap.dataset.sw = state; wrap.dataset.drag = "";
+    if (open) { if (prioSwipeEl && prioSwipeEl !== wrap) prioSwipeEl._snap("idle"); prioSwipeEl = wrap; }
+    else if (prioSwipeEl === wrap) prioSwipeEl = null;
+  }
+  wrap._snap = snap;
+
+  const meet = () => { mL = left ? left.offsetWidth || 96 : 0; mR = right ? right.offsetWidth || 168 : 0; };
 
   row.addEventListener("pointerdown", e => {
-    touch = e.pointerType === "touch";
-    x0 = e.clientX; y0 = e.clientY; dx = 0; richting = 0; actief = false; curSide = 0;
-    if (touch) {                                   // meet de lagen ÉÉN keer (geen reflow in de drag)
-      mL = left ? left.offsetWidth || 96 : 0;
-      mR = right ? right.offsetWidth || 168 : 0;
-    }
+    if (e.pointerType !== "touch") return;          // muis/pen: geen swipe, alleen klik
+    if (prioSwipeEl && prioSwipeEl !== wrap) prioSwipeEl._snap("idle");   // andere rij dicht (#5)
+    meet();
+    x0 = e.clientX; y0 = e.clientY; lastX = x0; lastT = performance.now(); vx = 0;
+    base = wrap.dataset.sw === "left" ? mL : wrap.dataset.sw === "right" ? -mR : 0;  // vanaf huidige stand
+    lock = 0; dx = base; pid = e.pointerId; didDrag = false;
   }, { passive: true });
-  row.addEventListener("pointermove", e => {
-    const mx = e.clientX - x0, my = e.clientY - y0;
-    if (!actief) {
-      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
-      if (Math.abs(my) >= Math.abs(mx)) { touch = false; return; }  // verticale intentie → laat scrollen (#9)
-      actief = true; row.style.transition = "none"; row.style.willChange = "transform";
-      try { row.setPointerCapture(e.pointerId); } catch {}
-    }
-    if (!touch) return;
-    e.preventDefault();                            // horizontaal vergrendeld
-    dx = Math.max(-mR, Math.min(mL, mx));
-    richting = dx > 0 ? 1 : dx < 0 ? -1 : 0;
-    if (richting !== curSide) {                    // class alleen bij richtingswissel togglen
-      curSide = richting;
-      swipe.classList.toggle("swipe-l", richting > 0);
-      swipe.classList.toggle("swipe-r", richting < 0);
-    }
-    plan(dx);
-  });
-  const eind = () => {
-    if (!actief) { return; }
-    if (raf) { cancelAnimationFrame(raf); raf = 0; }
-    row.style.transition = ""; row.style.willChange = "";
-    const drempel = 0.42;
-    const open = richting > 0 ? dx >= mL * drempel : richting < 0 ? -dx >= mR * drempel : false;
-    if (open && richting) {
-      // Toon de acties (reveal). Geen automatische uitvoering → nooit schade (#5).
-      if (prioSwipeEl && prioSwipeEl !== wrap) prioSwipeDicht(prioSwipeEl);
-      row.style.transform = `translate3d(${richting > 0 ? mL : -mR}px,0,0)`;
-      wrap.classList.add("swipe-open"); prioSwipeEl = wrap;
-      haptic(8);
-    } else { prioSwipeReset(wrap); }
-    actief = false;
-  };
-  row.addEventListener("pointerup", eind);
-  row.addEventListener("pointercancel", () => { prioSwipeReset(wrap); actief = false; });
 
-  // Tap (geen swipe) → detail openen/sluiten.
+  row.addEventListener("pointermove", e => {
+    if (pid == null || e.pointerId !== pid) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (lock === 0) {                               // intent nog niet gekozen
+      if (Math.abs(mx) < SW_DEAD && Math.abs(my) < SW_DEAD) return;       // deadzone
+      if (Math.abs(mx) > Math.abs(my) * SW_RATIO) {                       // duidelijk horizontaal
+        lock = 1; didDrag = true; row.style.transition = "none"; row.style.willChange = "transform";
+        try { row.setPointerCapture(pid); } catch {}
+      } else { lock = 2; pid = null; return; }      // verticaal/ambigu → loslaten, pagina scrollt (#2)
+    }
+    if (lock !== 1) return;
+    e.preventDefault();                             // richting is gekozen → commit horizontaal
+    const now = performance.now(), dt = now - lastT;
+    if (dt > 0) vx = (e.clientX - lastX) / dt;      // snelheid voor flick-detectie
+    lastX = e.clientX; lastT = now;
+    dx = Math.max(-mR, Math.min(mL, base + mx));
+    revealClass(dx);
+    setX(dx);
+  }, { passive: false });
+
+  function settle() {
+    if (lock !== 1) { pid = null; lock = 0; return; }
+    pid = null; lock = 0;
+    let state = "idle";
+    if (dx > 0) state = (dx >= mL * SW_DREMPEL || vx > SW_FLICK) ? "left" : "idle";
+    else if (dx < 0) state = (-dx >= mR * SW_DREMPEL || vx < -SW_FLICK) ? "right" : "idle";
+    snap(state);
+    if (state !== "idle") haptic(8);
+  }
+  row.addEventListener("pointerup", e => { if (pid == null || e.pointerId === pid) settle(); });
+  // Elke onderbreking → veilig naar CLOSED (nooit half open blijven hangen).
+  row.addEventListener("pointercancel", () => { if (lock === 1) { lock = 0; pid = null; snap("idle"); } else { pid = null; lock = 0; } });
+  row.addEventListener("lostpointercapture", () => { if (lock === 1) { lock = 0; pid = null; snap("idle"); } });
+
   row.addEventListener("click", () => {
-    if (actief) return;
-    if (wrap.classList.contains("swipe-open")) { prioSwipeDicht(wrap); return; }
+    if (didDrag) { didDrag = false; return; }       // synthetische click ná een drag negeren
+    if (wrap.dataset.sw === "left" || wrap.dataset.sw === "right") { snap("idle"); return; }  // open → dicht
     prioToggle(wrap);
   });
 }
-function prioSwipeReset(wrap) {
-  const row = wrap.querySelector(".prio-row"), swipe = wrap.querySelector(".prio-swipe");
-  row.style.transform = ""; row.style.willChange = ""; swipe.classList.remove("swipe-l", "swipe-r");
-  wrap.classList.remove("swipe-open");
-  if (prioSwipeEl === wrap) prioSwipeEl = null;
-}
-function prioSwipeDicht(wrap) { if (wrap) prioSwipeReset(wrap); }
+function prioSwipeDicht(wrap) { if (wrap && wrap._snap) wrap._snap("idle"); }
 
 // Deeplink naar de EXACTE atleet op een andere pagina. Onthoud de open rij zodat
 // Home die na terugkeer heropent; Home-data zelf wordt niet zwaar herladen (#14).
