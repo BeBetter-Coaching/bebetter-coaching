@@ -761,17 +761,19 @@ function prioToastWeg() { const t = $("#prio-toast"); if (t) { clearTimeout(t._h
 
 // ── Swipe = expliciete state machine (touch-only; muis = klik→detail) ─────────
 // Eindstates zijn ALTIJD één van: "idle" | "left" | "right" — nooit een losse
-// translateX ertussenin. Elke gesture-afsluiter (pointerup/cancel/lostpointer-
-// capture) snapt naar een geldige eindstate; afbreken → veilig CLOSED (#3/#4).
+// translateX ertussenin. Een expliciete FASE (idle/undecided/dragging/vscroll/
+// settled) bewaakt dat late lifecycle-events een reeds afgehandelde rij niet
+// opnieuw wijzigen. GEEN setPointerCapture: touch-pointers hebben al impliciete
+// capture, en expliciete capture triggerde op iOS de lostpointercapture-lifecycle
+// die elke geslaagde swipe meteen weer sloot (v33-bug). lostpointercapture wordt
+// nu NIET als cancel behandeld maar als normaal einde (settelt naar de eindstate).
 //
 // INTENT — 3 fasen (UNDECIDED → HORIZONTAL | VERTICAL). Een echte duim start zelden
 // perfect horizontaal, dus we beslissen NIET bij de eerste paar pixels en doden een
-// swipe niet zodra 't even diagonaal is (dat was de v32-fout). We beslissen op de
-// DOMINANTE as met asymmetrische drempels: horizontaal krijgt een lage drempel
-// (natuurlijke swipe), verticaal wint alleen als 't duidelijk verticaal is; het
-// ambigue tussengebied blijft UNDECIDED (nog geen preventDefault → native scroll
-// kan alvast; wordt 't horizontaal, dan pakken we 't alsnog). Zodra horizontaal
-// gelockt is: setPointerCapture + preventDefault → verticale beweging telt niet meer.
+// swipe niet zodra 't even diagonaal is. We beslissen op de DOMINANTE as met
+// asymmetrische drempels: horizontaal lage drempel (natuurlijke swipe), verticaal
+// wint alleen als 't duidelijk verticaal is; ambigu blijft UNDECIDED (nog geen
+// preventDefault → native scroll kan alvast; wordt 't horizontaal, dan pakken we 't).
 const SW_START = 6;      // px: hieronder = jitter/tap → nog niet beslissen
 const SW_HLOCK = 8;      // px horizontale dominantie → swipe-lock (i.p.v. ratio 1.4)
 const SW_VLOCK = 16;     // px verticale dominantie → native scroll (hoger, zodat swipe kans krijgt)
@@ -804,7 +806,7 @@ const SWDBG = (() => {
       buf.push(e); if (buf.length > 30) buf.shift();
       ensure();
       pre.textContent = buf.slice(-9).map(x =>
-        `${x.intent || "–"} dx${x.dx} dy${x.dy} @${x.lockDist ?? "–"} v${x.vx} → ${x.end}${x.cancel ? " ✖" : ""}  ${x.reason}`).join("\n");
+        `${x.intent || "–"} dx${x.dx} dy${x.dy} @${x.lockDist ?? "–"} v${x.vx} → ${x.end}${x.cancel ? " ✖" : ""}  ${(x.seq || []).join(">")}`).join("\n");
     },
   };
 })();
@@ -834,8 +836,11 @@ const SWDBG = (() => {
 function bindSwipe(wrap, row) {
   const swipe = wrap.querySelector(".prio-swipe");
   const left = wrap.querySelector(".pa-left"), right = wrap.querySelector(".pa-right");
-  let mL = 0, mR = 0, x0 = 0, y0 = 0, base = 0, lock = 0, dx = 0;
-  let pid = null, raf = 0, pending = null, didDrag = false, lastX = 0, lastT = 0, vx = 0, g = null;
+  let mL = 0, mR = 0, x0 = 0, y0 = 0, base = 0, dx = 0;
+  let pid = null, raf = 0, pending = null, didDrag = false, lastX = 0, lastT = 0, vx = 0, g = null, flushT = 0;
+  // Expliciete gesture-fase — late lifecycle-events mogen een SETTLED rij nooit
+  // opnieuw wijzigen (#4/#8): idle | undecided | dragging | vscroll | settled.
+  let phase = "idle";
 
   const cancelRaf = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; } pending = null; };
   const setX = px => {                              // per-frame één transform-write (compositor)
@@ -849,6 +854,11 @@ function bindSwipe(wrap, row) {
     swipe.classList.toggle("swipe-l", px > 0);
     swipe.classList.toggle("swipe-r", px < 0);
   };
+  // Debug: één record per gesture, geflusht ná alle terminal-events (zo zien we de
+  // échte volgorde van up/lost/cancel op de iPhone). gp() logt een lifecycle-token.
+  const gp = tok => { if (g) g.seq.push(tok); };
+  const flushG = () => { flushT = 0; if (g) { SWDBG.push(g); g = null; } };
+  const flushSoon = () => { if (!flushT) flushT = setTimeout(flushG, 200); };
 
   // DE enige plek die de eindstate zet — extern aanroepbaar via wrap._snap.
   function snap(state) {
@@ -869,35 +879,52 @@ function bindSwipe(wrap, row) {
 
   const meet = () => { mL = left ? left.offsetWidth || 96 : 0; mR = right ? right.offsetWidth || 168 : 0; };
 
+  // Bepaal de eindstate uit afstand/velocity en snap ernaartoe. Idempotent: draait
+  // alleen als we nog aan het slepen zijn (eerste terminal-event wint).
+  function settle() {
+    if (phase !== "dragging") return;
+    phase = "settled"; pid = null;
+    let state = "idle";
+    if (dx > 0) state = (dx >= mL * SW_DREMPEL || vx > SW_FLICK) ? "left" : "idle";
+    else if (dx < 0) state = (-dx >= mR * SW_DREMPEL || vx < -SW_FLICK) ? "right" : "idle";
+    snap(state);
+    if (state !== "idle") haptic(8);
+    if (g) { g.end = state; gp("snap:" + state); }
+  }
+
   row.addEventListener("pointerdown", e => {
     if (e.pointerType !== "touch") return;          // muis/pen: geen swipe, alleen klik
+    if (flushT) { clearTimeout(flushT); flushT = 0; }
+    if (g) { SWDBG.push(g); g = null; }             // vorige record afronden
     if (prioSwipeEl && prioSwipeEl !== wrap) prioSwipeEl._snap("idle");   // andere rij dicht (#5)
     meet();
     x0 = e.clientX; y0 = e.clientY; lastX = x0; lastT = performance.now(); vx = 0;
     base = wrap.dataset.sw === "left" ? mL : wrap.dataset.sw === "right" ? -mR : 0;  // vanaf huidige stand
-    lock = 0; dx = base; pid = e.pointerId; didDrag = false;
-    g = SWDBG.on ? { dx: 0, dy: 0, vx: 0, intent: null, reason: "", lockDist: null, cancel: false, end: null } : null;
+    dx = base; pid = e.pointerId; didDrag = false; phase = "undecided";
+    g = SWDBG.on ? { dx: 0, dy: 0, vx: 0, intent: null, reason: "", lockDist: null, cancel: false, end: null, seq: ["down"] } : null;
   }, { passive: true });
 
   row.addEventListener("pointermove", e => {
     if (pid == null || e.pointerId !== pid) return;
+    if (phase !== "undecided" && phase !== "dragging") return;
     const mx = e.clientX - x0, my = e.clientY - y0;
     if (g) { g.dx = Math.round(mx); g.dy = Math.round(my); }
-    if (lock === 0) {                               // ── UNDECIDED (3-fasen intent) ──
+    if (phase === "undecided") {                    // ── 3-fasen intent ──
       const adx = Math.abs(mx), ady = Math.abs(my);
-      if (adx < SW_START && ady < SW_START) return;                    // te klein → wacht (geen beslissing)
+      if (adx < SW_START && ady < SW_START) return;                    // te klein → wacht
       if (adx > ady && adx >= SW_HLOCK) {                              // dominant horizontaal → swipe
-        lock = 1; didDrag = true; row.style.transition = "none"; row.style.willChange = "transform";
-        try { row.setPointerCapture(pid); } catch { }
-        if (g) { g.intent = "H"; g.reason = `adx${adx}>ady${ady}&≥${SW_HLOCK}`; g.lockDist = Math.round(Math.hypot(mx, my)); }
+        phase = "dragging"; didDrag = true; row.style.transition = "none"; row.style.willChange = "transform";
+        // GEEN setPointerCapture: touch heeft impliciete capture; expliciete capture
+        // triggert op iOS de lostpointercapture-lifecycle die de swipe sloot.
+        if (g) { g.intent = "H"; g.reason = `adx${adx}>ady${ady}&≥${SW_HLOCK}`; g.lockDist = Math.round(Math.hypot(mx, my)); gp("hlock"); }
       } else if (ady > adx && ady >= SW_VLOCK) {                        // dominant verticaal → native scroll
-        lock = 2; pid = null;
-        if (g) { g.intent = "V"; g.reason = `ady${ady}>adx${adx}&≥${SW_VLOCK}`; g.lockDist = Math.round(Math.hypot(mx, my)); g.end = "scroll"; SWDBG.push(g); g = null; }
+        phase = "vscroll"; pid = null;
+        if (g) { g.intent = "V"; g.reason = `ady${ady}>adx${adx}&≥${SW_VLOCK}`; g.lockDist = Math.round(Math.hypot(mx, my)); g.end = "scroll"; gp("vlock"); } flushSoon();
         return;
-      } else return;                                                    // ambigu/diagonaal → BLIJF UNDECIDED (#3)
+      } else return;                                                    // ambigu → BLIJF UNDECIDED (#3)
     }
-    if (lock !== 1) return;
-    e.preventDefault();                             // richting is gekozen → commit horizontaal
+    // phase === "dragging"
+    e.preventDefault();                             // richting gekozen → commit horizontaal
     const now = performance.now(), dt = now - lastT;
     if (dt > 0) vx = (e.clientX - lastX) / dt;      // snelheid voor flick-detectie
     lastX = e.clientX; lastT = now;
@@ -907,20 +934,25 @@ function bindSwipe(wrap, row) {
     setX(dx);
   }, { passive: false });
 
-  function settle() {
-    if (lock !== 1) { pid = null; lock = 0; if (g) { g.end = g.intent === "V" ? "scroll" : "none"; SWDBG.push(g); g = null; } return; }
-    pid = null; lock = 0;
-    let state = "idle";
-    if (dx > 0) state = (dx >= mL * SW_DREMPEL || vx > SW_FLICK) ? "left" : "idle";
-    else if (dx < 0) state = (-dx >= mR * SW_DREMPEL || vx < -SW_FLICK) ? "right" : "idle";
-    snap(state);
-    if (state !== "idle") haptic(8);
-    if (g) { g.end = state; SWDBG.push(g); g = null; }
-  }
-  row.addEventListener("pointerup", e => { if (pid == null || e.pointerId === pid) settle(); });
-  // Elke onderbreking → veilig naar CLOSED (nooit half open blijven hangen).
-  row.addEventListener("pointercancel", () => { if (g) { g.cancel = true; g.end = "cancel"; SWDBG.push(g); g = null; } if (lock === 1) { lock = 0; pid = null; snap("idle"); } else { pid = null; lock = 0; } });
-  row.addEventListener("lostpointercapture", () => { if (lock === 1) { if (g) { g.cancel = true; g.end = "lostcapture"; SWDBG.push(g); g = null; } lock = 0; pid = null; snap("idle"); } });
+  // pointerup = normaal einde → settle naar de eindstate.
+  row.addEventListener("pointerup", e => {
+    if (pid != null && e.pointerId !== pid) return;
+    gp("up");
+    if (phase === "dragging") settle();
+    else { if (g && g.end == null) g.end = phase === "vscroll" ? "scroll" : "none"; phase = "idle"; pid = null; }
+    flushSoon();
+  });
+  // lostpointercapture = normaal gevolg van (impliciete) capture-release, NIET een
+  // cancel. Op iOS komt 'ie vaak vóór pointerup: dan settelen we hier al naar de
+  // juiste eindstate; komt 'ie erná, dan is 'phase' al 'settled' en gebeurt niets.
+  row.addEventListener("lostpointercapture", () => { gp("lost"); if (phase === "dragging") settle(); flushSoon(); });
+  // pointercancel = ECHTE onderbreking (systeem neemt over) → veilig CLOSED.
+  row.addEventListener("pointercancel", () => {
+    gp("cancel");
+    if (phase === "dragging") { phase = "settled"; pid = null; snap("idle"); if (g) { g.cancel = true; g.end = "cancel"; gp("snap:idle"); } }
+    else pid = null;
+    flushSoon();
+  });
 
   row.addEventListener("click", () => {
     if (didDrag) { didDrag = false; return; }       // synthetische click ná een drag negeren
