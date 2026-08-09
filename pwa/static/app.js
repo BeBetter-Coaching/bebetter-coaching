@@ -761,20 +761,81 @@ function prioToastWeg() { const t = $("#prio-toast"); if (t) { clearTimeout(t._h
 
 // ── Swipe = expliciete state machine (touch-only; muis = klik→detail) ─────────
 // Eindstates zijn ALTIJD één van: "idle" | "left" | "right" — nooit een losse
-// translateX ertussenin. De intent (horizontaal vs verticaal) wordt vroeg en
-// hard gekozen (deadzone + ratio); daarna commit de gekozen richting volledig:
-// horizontaal → rij volgt de vinger, verticaal heeft geen invloed meer; verticaal
-// → we laten los en de pagina scrollt (geen preventDefault). Elke gesture-afsluiter
-// (pointerup/cancel/lostpointercapture) snapt naar een geldige eindstate; een
-// afgebroken gesture gaat veilig terug naar CLOSED. Zo kan een rij nooit half
-// open blijven hangen (#3/#4) en is er geen diagonale speling (#2).
-const SW_DEAD = 10, SW_RATIO = 1.4, SW_DREMPEL = 0.4, SW_FLICK = 0.5;   // px, verhouding, %, px/ms
+// translateX ertussenin. Elke gesture-afsluiter (pointerup/cancel/lostpointer-
+// capture) snapt naar een geldige eindstate; afbreken → veilig CLOSED (#3/#4).
+//
+// INTENT — 3 fasen (UNDECIDED → HORIZONTAL | VERTICAL). Een echte duim start zelden
+// perfect horizontaal, dus we beslissen NIET bij de eerste paar pixels en doden een
+// swipe niet zodra 't even diagonaal is (dat was de v32-fout). We beslissen op de
+// DOMINANTE as met asymmetrische drempels: horizontaal krijgt een lage drempel
+// (natuurlijke swipe), verticaal wint alleen als 't duidelijk verticaal is; het
+// ambigue tussengebied blijft UNDECIDED (nog geen preventDefault → native scroll
+// kan alvast; wordt 't horizontaal, dan pakken we 't alsnog). Zodra horizontaal
+// gelockt is: setPointerCapture + preventDefault → verticale beweging telt niet meer.
+const SW_START = 6;      // px: hieronder = jitter/tap → nog niet beslissen
+const SW_HLOCK = 8;      // px horizontale dominantie → swipe-lock (i.p.v. ratio 1.4)
+const SW_VLOCK = 16;     // px verticale dominantie → native scroll (hoger, zodat swipe kans krijgt)
+const SW_DREMPEL = 0.4, SW_FLICK = 0.5;   // eind-open bij 40% breedte of flick (px/ms)
+
+// Tijdelijke gesture-diagnostiek — alleen met ?swdebug=1 (of localStorage bb_swdebug).
+// Logt per gesture dx/dy/intent/lock-afstand/velocity/reden/cancel in een overlay met
+// 'Kopieer' → JSON, zodat een echte iPhone-gesture teruggekoppeld kan worden (#6).
+const SWDBG = (() => {
+  let on = false;
+  try {
+    if (/[?&]swdebug=1/.test(location.search)) localStorage.setItem("bb_swdebug", "1");
+    if (/[?&]swdebug=0/.test(location.search)) localStorage.removeItem("bb_swdebug");
+    on = localStorage.getItem("bb_swdebug") === "1";
+  } catch { }
+  const buf = []; let box, pre;
+  function ensure() {
+    if (box) return;
+    box = document.createElement("div"); box.id = "swdbg";
+    box.style.cssText = "position:fixed;left:6px;right:6px;bottom:72px;z-index:9999;background:rgba(4,10,25,.93);color:#8fe6c2;font:11px/1.45 ui-monospace,Menlo,monospace;padding:8px;border:1px solid #2a6;border-radius:9px;max-height:42vh;overflow:auto;white-space:pre-wrap";
+    const btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Kopieer";
+    btn.style.cssText = "position:sticky;top:0;float:right;background:#2a6;color:#022;border:0;border-radius:6px;padding:3px 10px;font:600 11px sans-serif";
+    btn.onclick = () => { try { navigator.clipboard.writeText(JSON.stringify(buf, null, 1)); btn.textContent = "Gekopieerd"; setTimeout(() => (btn.textContent = "Kopieer"), 1200); } catch { } };
+    pre = document.createElement("div"); box.appendChild(btn); box.appendChild(pre); document.body.appendChild(box);
+  }
+  return {
+    get on() { return on; },
+    push(e) {
+      if (!on) return;
+      buf.push(e); if (buf.length > 30) buf.shift();
+      ensure();
+      pre.textContent = buf.slice(-9).map(x =>
+        `${x.intent || "–"} dx${x.dx} dy${x.dy} @${x.lockDist ?? "–"} v${x.vx} → ${x.end}${x.cancel ? " ✖" : ""}  ${x.reason}`).join("\n");
+    },
+  };
+})();
+
+// Discreet aan/uit in de GEÏNSTALLEERDE PWA (geen adresbalk voor ?swdebug=1): ~700ms
+// stil drukken op de begroeting/datum in de hero toggelt de swipe-debug + herlaadt.
+// Puur diagnostisch en tijdelijk; wordt na de swipe-afstemming weer verwijderd.
+(function () {
+  let t = null;
+  const clr = () => { if (t) { clearTimeout(t); t = null; } };
+  document.addEventListener("pointerdown", e => {
+    if (!(e.target.closest && e.target.closest(".hero-greet, .hero-date"))) return;
+    clr();
+    t = setTimeout(() => {
+      try {
+        const on = localStorage.getItem("bb_swdebug") === "1";
+        if (on) localStorage.removeItem("bb_swdebug"); else localStorage.setItem("bb_swdebug", "1");
+      } catch { }
+      location.reload();
+    }, 700);
+  });
+  document.addEventListener("pointerup", clr);
+  document.addEventListener("pointermove", clr);       // beweging = geen long-press
+  document.addEventListener("pointercancel", clr);
+})();
 
 function bindSwipe(wrap, row) {
   const swipe = wrap.querySelector(".prio-swipe");
   const left = wrap.querySelector(".pa-left"), right = wrap.querySelector(".pa-right");
   let mL = 0, mR = 0, x0 = 0, y0 = 0, base = 0, lock = 0, dx = 0;
-  let pid = null, raf = 0, pending = null, didDrag = false, lastX = 0, lastT = 0, vx = 0;
+  let pid = null, raf = 0, pending = null, didDrag = false, lastX = 0, lastT = 0, vx = 0, g = null;
 
   const cancelRaf = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; } pending = null; };
   const setX = px => {                              // per-frame één transform-write (compositor)
@@ -815,17 +876,25 @@ function bindSwipe(wrap, row) {
     x0 = e.clientX; y0 = e.clientY; lastX = x0; lastT = performance.now(); vx = 0;
     base = wrap.dataset.sw === "left" ? mL : wrap.dataset.sw === "right" ? -mR : 0;  // vanaf huidige stand
     lock = 0; dx = base; pid = e.pointerId; didDrag = false;
+    g = SWDBG.on ? { dx: 0, dy: 0, vx: 0, intent: null, reason: "", lockDist: null, cancel: false, end: null } : null;
   }, { passive: true });
 
   row.addEventListener("pointermove", e => {
     if (pid == null || e.pointerId !== pid) return;
     const mx = e.clientX - x0, my = e.clientY - y0;
-    if (lock === 0) {                               // intent nog niet gekozen
-      if (Math.abs(mx) < SW_DEAD && Math.abs(my) < SW_DEAD) return;       // deadzone
-      if (Math.abs(mx) > Math.abs(my) * SW_RATIO) {                       // duidelijk horizontaal
+    if (g) { g.dx = Math.round(mx); g.dy = Math.round(my); }
+    if (lock === 0) {                               // ── UNDECIDED (3-fasen intent) ──
+      const adx = Math.abs(mx), ady = Math.abs(my);
+      if (adx < SW_START && ady < SW_START) return;                    // te klein → wacht (geen beslissing)
+      if (adx > ady && adx >= SW_HLOCK) {                              // dominant horizontaal → swipe
         lock = 1; didDrag = true; row.style.transition = "none"; row.style.willChange = "transform";
-        try { row.setPointerCapture(pid); } catch {}
-      } else { lock = 2; pid = null; return; }      // verticaal/ambigu → loslaten, pagina scrollt (#2)
+        try { row.setPointerCapture(pid); } catch { }
+        if (g) { g.intent = "H"; g.reason = `adx${adx}>ady${ady}&≥${SW_HLOCK}`; g.lockDist = Math.round(Math.hypot(mx, my)); }
+      } else if (ady > adx && ady >= SW_VLOCK) {                        // dominant verticaal → native scroll
+        lock = 2; pid = null;
+        if (g) { g.intent = "V"; g.reason = `ady${ady}>adx${adx}&≥${SW_VLOCK}`; g.lockDist = Math.round(Math.hypot(mx, my)); g.end = "scroll"; SWDBG.push(g); g = null; }
+        return;
+      } else return;                                                    // ambigu/diagonaal → BLIJF UNDECIDED (#3)
     }
     if (lock !== 1) return;
     e.preventDefault();                             // richting is gekozen → commit horizontaal
@@ -833,23 +902,25 @@ function bindSwipe(wrap, row) {
     if (dt > 0) vx = (e.clientX - lastX) / dt;      // snelheid voor flick-detectie
     lastX = e.clientX; lastT = now;
     dx = Math.max(-mR, Math.min(mL, base + mx));
+    if (g) g.vx = +vx.toFixed(2);
     revealClass(dx);
     setX(dx);
   }, { passive: false });
 
   function settle() {
-    if (lock !== 1) { pid = null; lock = 0; return; }
+    if (lock !== 1) { pid = null; lock = 0; if (g) { g.end = g.intent === "V" ? "scroll" : "none"; SWDBG.push(g); g = null; } return; }
     pid = null; lock = 0;
     let state = "idle";
     if (dx > 0) state = (dx >= mL * SW_DREMPEL || vx > SW_FLICK) ? "left" : "idle";
     else if (dx < 0) state = (-dx >= mR * SW_DREMPEL || vx < -SW_FLICK) ? "right" : "idle";
     snap(state);
     if (state !== "idle") haptic(8);
+    if (g) { g.end = state; SWDBG.push(g); g = null; }
   }
   row.addEventListener("pointerup", e => { if (pid == null || e.pointerId === pid) settle(); });
   // Elke onderbreking → veilig naar CLOSED (nooit half open blijven hangen).
-  row.addEventListener("pointercancel", () => { if (lock === 1) { lock = 0; pid = null; snap("idle"); } else { pid = null; lock = 0; } });
-  row.addEventListener("lostpointercapture", () => { if (lock === 1) { lock = 0; pid = null; snap("idle"); } });
+  row.addEventListener("pointercancel", () => { if (g) { g.cancel = true; g.end = "cancel"; SWDBG.push(g); g = null; } if (lock === 1) { lock = 0; pid = null; snap("idle"); } else { pid = null; lock = 0; } });
+  row.addEventListener("lostpointercapture", () => { if (lock === 1) { if (g) { g.cancel = true; g.end = "lostcapture"; SWDBG.push(g); g = null; } lock = 0; pid = null; snap("idle"); } });
 
   row.addEventListener("click", () => {
     if (didDrag) { didDrag = false; return; }       // synthetische click ná een drag negeren
