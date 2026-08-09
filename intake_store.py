@@ -690,6 +690,22 @@ def save_home_snapshot(data: dict) -> tuple[bool, str]:
                       "Update home-snapshot via app")
 
 
+_HOME_HANDLED_LOCAL = os.path.join(_BASE_DIR, ".home_handled.json")
+
+
+def load_home_handled() -> dict:
+    """Generieke Home-werklijststatus (Gezien/Later per atleet|signaaltype), gedeeld
+    tussen beide coaches. Sleutel 'user_key|soort' -> {status, fingerprint,
+    handled_at, snooze_until, by}."""
+    return _load_json("home_handled.json", _HOME_HANDLED_LOCAL)
+
+
+def save_home_handled(data: dict) -> tuple[bool, str]:
+    """Sla de Home-werklijststatus op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("home_handled.json", _HOME_HANDLED_LOCAL, data,
+                      "Update home-handled via app")
+
+
 _LAATSTE_INTAKE_LOCAL = os.path.join(_BASE_DIR, ".laatste_intakes.json")
 
 

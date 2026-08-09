@@ -374,15 +374,18 @@ def home_stats(refresh: bool = False):
     return home_core.cockpit(refresh=refresh)
 
 
-class HomeAfhandelen(BaseModel):
+class HomeHandled(BaseModel):
     user_key: str = ""
-    naam: str = ""
+    status: str = "gezien"        # "gezien" | "later"
+    snooze_dagen: int = 7
     undo: bool = False
 
 
-@app.post("/api/home/afhandelen")        # afhaker 7 dagen dempen (gedeeld, herstelt vanzelf)
-def home_afhandelen(body: HomeAfhandelen):
-    ok, msg = home_core.afhandelen(body.user_key, body.naam, undo=body.undo)
+@app.post("/api/home/handled")           # werklijst-status (Gezien/Later) per atleet, gedeeld
+def home_handled(body: HomeHandled, request: Request):
+    wie = _session_user(request) or ""
+    ok, msg = home_core.handled(body.user_key, status=body.status,
+                                snooze_dagen=body.snooze_dagen, undo=body.undo, by=wie)
     if not ok:
         return JSONResponse({"ok": False, "err": msg}, status_code=500)
     return {"ok": True}

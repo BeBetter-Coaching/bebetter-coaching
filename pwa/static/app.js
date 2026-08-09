@@ -328,19 +328,62 @@ function cockpitStale(s) {
   return isNaN(t) || (Date.now() - t) > 15 * 60 * 1000;
 }
 
+let pendingSnap = null;   // verse snapshot die wacht tot de coach 'm toepast (#12)
+
 // Ververst de cockpit op de achtergrond als de snapshot verouderd is.
 function cockpitVersen(s) {
   if (!s || !s.fs) return;
   // Ververs als er nog niets is (pending) óf de gedeelde snapshot verouderd is.
   if (!s.pending && !(s.cached && cockpitStale(s))) return;
-  const note = $("#prio-note"); const was = note ? note.textContent : "";
+  const note = $("#prio-note");
   if (note) note.dataset.busy = "1";
   markVersen(true);
   api("/api/home/stats?refresh=1").then(fresh => {
     markVersen(false);
-    if (fresh && fresh.pending) return;      // nog niet klaar (andere instance) → skeletons blijven
-    vulCockpit(fresh);
-  }).catch(() => { markVersen(false); if (note) note.textContent = was; });
+    if (note) note.dataset.busy = "";
+    if (!fresh || fresh.pending) return;     // nog niet klaar → skeletons blijven
+    const box = $("#home-prio");
+    const heeftLijst = box && box.querySelector(".prio-item, .prio-leeg");
+    if (!heeftLijst) { vulCockpit(fresh); return; }   // eerste build → direct tonen
+    cockpitDiffToon(fresh);                            // actieve lijst → NIET verspringen
+  }).catch(() => { markVersen(false); if (note) note.dataset.busy = ""; prioTekenStatus(); });
+}
+
+// Tijdens actief coachen mag een achtergrondrefresh de lijst niet omgooien: we
+// diffen tegen de zichtbare lijst en tonen enkel een compacte "N nieuw"-balk. De
+// coach beslist wanneer de nieuwe stand wordt toegepast (scroll/open/swipe intact).
+function cockpitDiffToon(fresh) {
+  const huidig = {};
+  $$("#home-prio .prio-item").forEach(el => huidig[el.dataset.uk] = el.dataset.sig || "");
+  let nieuw = 0;
+  (fresh.prioriteit || []).forEach(it => {
+    if (!(it.user_key in huidig) || huidig[it.user_key] !== (it.signature || "")) nieuw++;
+  });
+  pendingSnap = fresh;
+  if (nieuw > 0) cockpitNieuwBalk(nieuw);
+  else cockpitNieuwBalkWeg();               // niks wezenlijks veranderd → geen melding (#13)
+  prioTekenStatus();                        // note terug van "bijwerken…" naar de telling
+}
+function cockpitNieuwBalk(n) {
+  const box = $("#home-prio"); if (!box || !box.parentNode) return;
+  let bar = $("#prio-nieuw");
+  if (!bar) {
+    bar = document.createElement("button");
+    bar.id = "prio-nieuw"; bar.className = "prio-nieuw"; bar.type = "button";
+    bar.addEventListener("click", cockpitToepassen);
+    box.parentNode.insertBefore(bar, box);
+  }
+  bar.innerHTML = `${ic("refresh")} ${n} nieuw${n === 1 ? " aandachtspunt" : "e aandachtspunten"} — tik om te tonen`;
+}
+function cockpitNieuwBalkWeg() { const b = $("#prio-nieuw"); if (b) b.remove(); }
+function cockpitToepassen() {
+  if (!pendingSnap) { cockpitNieuwBalkWeg(); return; }
+  const sc = $("#scroller"); const y = sc ? sc.scrollTop : 0;
+  prioHerstelUk = prioOpenUk;                // heropen de rij die openstond na de rebuild
+  const snap = pendingSnap; pendingSnap = null;
+  cockpitNieuwBalkWeg();
+  vulCockpit(snap);
+  requestAnimationFrame(() => { if (sc) sc.scrollTo({ top: y }); });   // geen scrollsprong (#12)
 }
 function markVersen(on) {
   const n = $("#prio-note"); if (!n) return;
@@ -362,14 +405,10 @@ function vulCockpit(s) {
   if (hGr && s.groepen != null && +hGr.dataset.count !== s.groepen) { hGr.dataset.count = s.groepen; countUp(hGr); }
 
   // ── Hero: team-status (afgeleid uit echte signalen — DISTINCT atleten per tier) ──
-  const hs = $("#hero-status");
-  if (hs) {
-    const chips = [];
-    if (team.actie) chips.push(`<span class="hs actie"><i></i>${team.actie} actie</span>`);
-    if (team.aandacht) chips.push(`<span class="hs aandacht"><i></i>${team.aandacht} aandacht</span>`);
-    if (team.rustig) chips.push(`<span class="hs rustig"><i></i>${team.rustig} rustig</span>`);
-    hs.innerHTML = chips.join("") || `<span class="hs rustig"><i></i>iedereen bij</span>`;
-  }
+  // In één bron (homeTel) zodat een afgehandelde rij de hero live kan bijwerken
+  // zonder rebuild (work-queue-gevoel, #10).
+  homeTel = { actie: team.actie || 0, aandacht: team.aandacht || 0, rustig: team.rustig || 0 };
+  prioTekenStatus();
 
   // ── Feedback: dagelijkse kern als voortgangsbalk ──
   const fb = $("#home-fb");
@@ -387,10 +426,9 @@ function vulCockpit(s) {
       <span class="fb-strip-sub">${fbs.gepost || 0} vandaag gepost · ${pct}% afgerond</span>`;
   }
 
-  // ── Prioriteit vandaag: individuele atleten (wie → waarom → actie) ──
+  // ── Prioriteit vandaag: gegroepeerd per atleet (wie → waarom → actie) ──
   const prio = s.prioriteit || [];
-  const box = $("#home-prio"), note = $("#prio-note");
-  if (note) note.textContent = prio.length ? `${team.actie || 0} actie · ${team.aandacht || 0} aandacht` : "";
+  const box = $("#home-prio");
   if (box) {
     if (!prio.length) {
       box.innerHTML = `<div class="leeg small">${ic("check")}<p>Niks urgents nu — mooie dag om te coachen.</p></div>`;
@@ -398,13 +436,6 @@ function vulCockpit(s) {
       box.innerHTML = "";
       prioOpenUk = null; prioSwipeEl = null;          // verse lijst → geen open rij meer
       prio.forEach(it => box.appendChild(prioItem(it)));
-      const rest = (s.prioriteit_totaal || prio.length) - prio.length;
-      if (rest > 0) {
-        const meer = document.createElement("button");
-        meer.className = "prio-meer"; meer.innerHTML = `Nog ${rest} in Teampuls ${ic("chevron")}`;
-        meer.addEventListener("click", () => toonView("teampuls"));
-        box.appendChild(meer);
-      }
       // State herstellen na terugkeer (deeplink): heropen de rij die openstond.
       if (prioHerstelUk) {
         const her = box.querySelector(`.prio-item[data-uk="${prioHerstelUk}"] .prio-row`);
@@ -435,44 +466,86 @@ let prioOpenUk = null;      // welke rij staat inline open (max één)
 let prioSwipeEl = null;     // welke rij toont swipe-acties (max één)
 let prioHerstelUk = null;   // heropen deze rij na een lijst-herbouw (deeplink-terugkeer)
 let homeScroll = 0;         // bewaarde scrollpositie van Home (state bij terugkeer)
+let homeTel = { actie: 0, aandacht: 0, rustig: 0 };   // live team-status (één bron)
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-// Welke acties horen bij een signaal — alleen ECHTE, bestaande backend-state.
-// primary (swipe→rechts, groen) = dempen; secundair (swipe→links) = verdiepen.
-function prioActies(it) {
-  const dossier = { act: "dossier", label: "Dossier", icon: "user-plus" };
-  if (it.soort === "compliance")
-    return { primary: { act: "afhandelen", label: "Afhandelen", icon: "check" }, secundair: [dossier] };
-  if (it.soort === "belasting")
-    return { primary: { act: "gezien", label: "Gezien", icon: "check" },
-             secundair: [{ act: "teampuls", label: "Teampuls", icon: "pulse" }, dossier] };
-  // schema: géén dempstatus in de backend → geen 'afhandelen', wel verdiepen
-  return { primary: null, secundair: [{ act: "schema", label: "Schema", icon: "clock" }, dossier] };
+// Hero-status + note uit één bron tekenen → een afgehandelde rij werkt de tellers
+// live bij (geen dubbeltelling, geen rebuild).
+function prioTekenStatus() {
+  const hs = $("#hero-status");
+  if (hs) {
+    const c = [];
+    if (homeTel.actie) c.push(`<span class="hs actie"><i></i>${homeTel.actie} actie</span>`);
+    if (homeTel.aandacht) c.push(`<span class="hs aandacht"><i></i>${homeTel.aandacht} aandacht</span>`);
+    if (homeTel.rustig) c.push(`<span class="hs rustig"><i></i>${homeTel.rustig} rustig</span>`);
+    hs.innerHTML = c.join("") || `<span class="hs rustig"><i></i>iedereen bij</span>`;
+  }
+  const note = $("#prio-note");
+  if (note && note.dataset.busy !== "1")
+    note.textContent = (homeTel.actie || homeTel.aandacht)
+      ? `${homeTel.actie} actie · ${homeTel.aandacht} aandacht` : "";
+}
+function prioTel(tier, delta) {
+  if (tier === "actie") homeTel.actie = Math.max(0, homeTel.actie + delta);
+  else if (tier === "aandacht") homeTel.aandacht = Math.max(0, homeTel.aandacht + delta);
+  homeTel.rustig = Math.max(0, homeTel.rustig - delta);   // uit werklijst → rustig, en terug
+  prioTekenStatus();
 }
 
-function swBtn(a, primary) {
-  return `<button class="pa-btn${primary ? " primary" : ""}" data-act="${a.act}" type="button">
+// Desktop-toetsenbord (§16): ↑/↓ = vorige/volgende prioriteit, Enter = openen,
+// Esc = sluiten. Geen conflicterende shortcuts; alleen actief op Home. Enter/Esc
+// zitten al op de rij; hier alleen de lijst-navigatie tussen rijen.
+document.addEventListener("keydown", e => {
+  if (huidigeView !== "home" || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+  const rows = $$("#home-prio .prio-row"); if (!rows.length) return;
+  const cur = document.activeElement && document.activeElement.closest
+    ? document.activeElement.closest(".prio-row") : null;
+  let i = rows.indexOf(cur);
+  i = e.key === "ArrowDown" ? (i < 0 ? 0 : Math.min(rows.length - 1, i + 1))
+                            : (i < 0 ? rows.length - 1 : Math.max(0, i - 1));
+  e.preventDefault(); rows[i].focus();
+});
+
+// Workflow (swipe→rechts, groen) is UNIVERSEEL en identiek op elke rij: Gezien /
+// Later. Context (swipe→links) is atleet-/type-afhankelijk: Dossier + hoogstens
+// één type-deeplink. Zo heeft dezelfde gesture-richting altijd dezelfde betekenis.
+const SOORT_IC = { belasting: "pulse", schema: "clock", compliance: "activity" };
+
+function prioContext(it) {
+  const dossier = { act: "dossier", label: "Dossier", icon: "user-plus" };
+  // Eén signaal → toon ook de type-context op de swipe; meerdere → alleen Dossier
+  // op de swipe, de per-signaal-contexten staan in het uitgeklapte detail (#9).
+  const s0 = (it.signalen || [])[0];
+  if (it.n_signalen === 1 && s0 && s0.context && s0.context[0]) return [s0.context[0], dossier];
+  return [dossier];
+}
+function swBtn(a, cls) {
+  return `<button class="pa-btn${cls ? " " + cls : ""}" data-act="${a.act}"${a.dagen ? ` data-dagen="${a.dagen}"` : ""} type="button">
     ${ic(a.icon)}<span>${a.label}</span></button>`;
 }
 
-// Eén prioriteit-item: swipe-lagen + rij + (lazy) inline detail.
+// Eén prioriteit-item: swipe-lagen + gegroepeerde rij + (lazy) inline detail.
 function prioItem(it) {
-  const acts = prioActies(it);
+  const ctx = prioContext(it);
+  const multi = it.n_signalen > 1;
   const wrap = document.createElement("div");
   wrap.className = "prio-item";
-  wrap.dataset.uk = it.user_key; wrap.dataset.soort = it.soort || "";
+  wrap.dataset.uk = it.user_key; wrap.dataset.sig = it.signature || "";
   wrap._it = it;
+  const secundair = multi
+    ? `<span class="prio-chips">${(it.chips || []).map(c => `<span class="pc ${c.tier}">${esc(c.kort)}</span>`).join("")}</span>`
+    : `<span class="prio-reden">${esc(it.reden)}</span>`;
   wrap.innerHTML = `
     <div class="prio-swipe">
-      ${acts.primary ? `<div class="pa-layer pa-left">${swBtn(acts.primary, true)}</div>` : ""}
-      <div class="pa-layer pa-right">${acts.secundair.map(a => swBtn(a, false)).join("")}</div>
+      <div class="pa-layer pa-left">${swBtn({ act: "gezien", label: "Gezien", icon: "check" }, "primary")}${swBtn({ act: "later", label: "Later", icon: "clock", dagen: 7 }, "later")}</div>
+      <div class="pa-layer pa-right">${ctx.map(a => swBtn(a)).join("")}</div>
       <article class="prio-row ${it.tier}" role="button" tabindex="0"
-        aria-expanded="false" aria-label="${esc(it.naam)} — ${esc(it.reden)}">
+        aria-expanded="false" aria-label="${esc(it.naam)} — ${multi ? it.n_signalen + " aandachtspunten" : esc(it.reden)}">
         <span class="prio-dot ${it.tier}"></span>
         <span class="avatar">${initialen(it.naam)}</span>
         <span class="prio-body">
-          <span class="prio-naam">${esc(it.naam)}</span>
-          <span class="prio-reden">${esc(it.reden)}</span>
+          <span class="prio-naam">${esc(it.naam)}${multi ? `<span class="prio-count">${it.n_signalen}</span>` : ""}</span>
+          ${secundair}
         </span>
         <span class="prio-actie">${ic("chevron")}</span>
       </article>
@@ -484,9 +557,8 @@ function prioItem(it) {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); prioToggle(wrap); }
     if (e.key === "Escape") { prioToggle(wrap, false); prioSwipeDicht(wrap); }
   });
-  // Actieknoppen (swipe-lagen én — later — de detailknoppen) delen één handler.
   wrap.querySelectorAll(".pa-btn").forEach(b =>
-    b.addEventListener("click", e => { e.stopPropagation(); prioDoe(wrap, b.dataset.act); }));
+    b.addEventListener("click", e => { e.stopPropagation(); prioDoe(wrap, b.dataset.act, +b.dataset.dagen || 0); }));
   bindSwipe(wrap, row);
   return wrap;
 }
@@ -506,9 +578,9 @@ function prioToggle(wrap, force) {
     detail.hidden = false;
     wrap.classList.add("open"); row.setAttribute("aria-expanded", "true");
     prioOpenUk = wrap.dataset.uk;
-    detail.querySelectorAll(".pa-btn").forEach(b =>
-      b.addEventListener("click", e => { e.stopPropagation(); prioDoe(wrap, b.dataset.act); }));
-    if (wrap._it.soort === "compliance") prioVulSessies(wrap);   // lazy, 1 fetch, gecachet
+    detail.querySelectorAll("[data-act]").forEach(b =>
+      b.addEventListener("click", e => { e.stopPropagation(); prioDoe(wrap, b.dataset.act, +b.dataset.dagen || 0); }));
+    if ((wrap._it.signalen || []).some(s => s.soort === "compliance")) prioVulSessies(wrap);
     haptic(6);
   } else {
     detail.hidden = true; wrap.classList.remove("open");
@@ -517,16 +589,35 @@ function prioToggle(wrap, force) {
   }
 }
 
-// Detail-inhoud uit de snapshot (nul fetch). Compliance-sessies komen lazy erbij.
+// Detail = alle signalen van deze atleet (totaalbeeld), elk met eigen context, +
+// één universele workflowbalk (Gezien / Later 3·7·14). Nul fetch behalve de lazy
+// compliance-sessies. Dossier is atleet-breed (één keer, onderaan).
 function prioDetailHtml(it) {
-  const d = it.detail || {};
-  const acts = prioActies(it);
-  const knoppen = `<div class="pd-acts">
-    ${acts.primary ? swBtn(acts.primary, true) : ""}
-    ${acts.secundair.map(a => swBtn(a, false)).join("")}</div>`;
-  let body = "";
-  if (it.soort === "belasting") {
-    const sig = (d.signalen || []).map(s => `<li>${esc(s)}</li>`).join("");
+  const blokken = (it.signalen || []).map(s => {
+    const ctxBtn = (s.context && s.context[0]) ? swBtn(s.context[0]) : "";
+    return `<div class="pd-s-blok">
+      <div class="pd-s-head"><span class="pd-s-ic ${s.tier}">${ic(SOORT_IC[s.soort] || "activity")}</span>
+        <b>${esc(s.reden)}</b></div>
+      <div class="pd-s-body">${prioSignaalBody(s)}</div>
+      ${ctxBtn ? `<div class="pd-s-acts">${ctxBtn}</div>` : ""}
+    </div>`;
+  }).join("");
+  const werk = `<div class="pd-work">
+    <button class="pd-wbtn gezien" data-act="gezien" type="button">${ic("check")}<span>Gezien</span></button>
+    <div class="pd-later"><span>Later</span>
+      <button data-act="later" data-dagen="3" type="button">3d</button>
+      <button data-act="later" data-dagen="7" type="button">7d</button>
+      <button data-act="later" data-dagen="14" type="button">14d</button>
+    </div>
+  </div>`;
+  const dossier = `<div class="pd-acts">${swBtn({ act: "dossier", label: "Dossier", icon: "user-plus" })}</div>`;
+  return `<div class="pd-signalen">${blokken}</div>${dossier}${werk}`;
+}
+
+// Type-specifiek detail per signaal (uit de snapshot; compliance-sessies lazy).
+function prioSignaalBody(s) {
+  const d = s.detail || {};
+  if (s.soort === "belasting") {
     const chips = [];
     if (d.km_recent != null && d.km_basis != null) {
       const p = d.pct;
@@ -536,20 +627,22 @@ function prioDetailHtml(it) {
     if (d.gevoel_recent != null || d.rpe_recent != null)
       chips.push(`<div class="pd-chip"><b>Gevoel / RPE</b>
         <span>gevoel ${d.gevoel_recent ?? "—"} vs ${d.gevoel_basis ?? "—"} · RPE ${d.rpe_recent ?? "—"} vs ${d.rpe_basis ?? "—"}</span></div>`);
+    const meer = (d.signalen || []).slice(1).map(x => `<li>${esc(x)}</li>`).join("");
     const runs = (d.runs || []).map(r => `<li>${esc((r.datum || "").slice(5))} · ${r.km ?? "?"} km${r.naam ? " · " + esc(r.naam) : ""}</li>`).join("");
-    body = `${d.groep ? `<p class="pd-groep">${esc(d.groep)}</p>` : ""}
-      ${sig ? `<ul class="pd-sig">${sig}</ul>` : ""}
-      ${chips.length ? `<div class="pd-metrics">${chips.join("")}</div>` : ""}
+    return `${chips.length ? `<div class="pd-metrics">${chips.join("")}</div>` : ""}
+      ${meer ? `<ul class="pd-sig">${meer}</ul>` : ""}
       ${runs ? `<p class="pd-sub">Recente trainingen</p><ul class="pd-runs">${runs}</ul>` : ""}`;
-  } else if (it.soort === "compliance") {
-    body = `<p class="pd-line">${d.n_low ?? "?"} van ${d.n_planned ?? "?"} geplande trainingen gemist of half — laatste 7 dagen${d.groep ? " · " + esc(d.groep) : ""}</p>
+  }
+  if (s.soort === "compliance") {
+    return `<p class="pd-line">${d.n_low ?? "?"} van ${d.n_planned ?? "?"} geplande trainingen gemist of half — laatste 7 dagen${d.groep ? " · " + esc(d.groep) : ""}</p>
       <div class="pd-sessies"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div>`;
-  } else if (it.soort === "schema") {
+  }
+  if (s.soort === "schema") {
     const eind = d.einddatum ? ` · einddatum ${esc(d.einddatum)}` : "";
-    body = `<p class="pd-line">${esc(it.reden)}${eind}${d.groep ? " · " + esc(d.groep) : ""}</p>
+    return `<p class="pd-line">${esc(s.reden)}${eind}${d.groep ? " · " + esc(d.groep) : ""}</p>
       ${d.verborgen ? `<p class="pd-sub">${d.verborgen} training(en) nog verborgen voor de atleet${d.zichtbaar_tot ? " · zichtbaar t/m " + esc(d.zichtbaar_tot) : ""}</p>` : ""}`;
   }
-  return body + knoppen;
+  return "";
 }
 
 // Lazy: gemiste sessies van een afhaker (1 request voor déze atleet, gecachet).
@@ -572,41 +665,61 @@ function prioSessiesHtml(rows) {
     <span class="pd-s-st ${t.status}">${pill[t.status] || t.status}</span></li>`).join("")}</ul>`;
 }
 
-// Actie uitvoeren. Dempacties (afhandelen/gezien) verwijderen de rij mét undo.
-async function prioDoe(wrap, act) {
+// Actie uitvoeren. Context = deeplink; workflow (gezien/later) = werklijst-status
+// voor de héle atleet (alle signalen), rij verdwijnt mét undo.
+async function prioDoe(wrap, act, dagen) {
   const it = wrap._it;
   if (act === "dossier") { deepAtleet("atleten", it.user_key, () => openDossier(it.user_key)); return; }
   if (act === "teampuls") { deepAtleet("teampuls", it.user_key); return; }
   if (act === "schema") { deepAtleet("schema-verloop", it.user_key); return; }
-  if (act === "afhandelen") {
-    const r = await jpost("/api/home/afhandelen", { user_key: it.user_key, naam: it.naam }).catch(() => null);
-    if (!r || !r.ok) return melding("Kon niet afhandelen.", true);
-    prioVerwijder(wrap, "Afgehandeld · 7 dagen verborgen",
-      () => jpost("/api/home/afhandelen", { user_key: it.user_key, undo: true }));
-    return;
-  }
-  if (act === "gezien") {
-    const r = await jpost("/api/teampuls/gezien", { user_key: it.user_key, ernst: (it.detail || {}).ernst || "" }).catch(() => null);
-    if (!r || !r.ok) return melding("Kon niet dempen.", true);
-    prioVerwijder(wrap, "Gezien · 7 dagen gedempt",
-      () => jpost("/api/teampuls/gezien", { user_key: it.user_key, ernst: (it.detail || {}).ernst || "", undo: true }));
+  if (act === "gezien" || act === "later") {
+    const body = { user_key: it.user_key, status: act };
+    if (act === "later") body.snooze_dagen = dagen || 7;
+    const r = await jpost("/api/home/handled", body).catch(() => null);
+    if (!r || !r.ok) return melding("Kon niet bijwerken.", true);
+    const txt = act === "gezien" ? "Gezien — beoordeeld" : `Later · ${dagen || 7} dagen verborgen`;
+    prioVerwijder(wrap, txt, () => jpost("/api/home/handled", { user_key: it.user_key, undo: true }));
     return;
   }
 }
 
-// Rij verwijderen met undo-toast. Undo zet de rij terug én draait de backend terug.
+// Rij verwijderen met undo-toast (work-queue: volgende schuift rustig op, geen
+// rebuild). Undo zet de rij terug én draait de backend terug; counts lopen mee.
 function prioVerwijder(wrap, txt, undoBackend) {
-  const parent = wrap.parentNode, next = wrap.nextSibling;
-  if (prioOpenUk === wrap.dataset.uk) prioOpenUk = null;
-  wrap.classList.add("weg");
+  const parent = wrap.parentNode, next = wrap.nextSibling, it = wrap._it;
+  const wasOpen = prioOpenUk === wrap.dataset.uk;
+  if (wasOpen) prioOpenUk = null;
+  wrap.style.height = wrap.offsetHeight + "px";            // vaste hoogte → nette collapse
+  requestAnimationFrame(() => wrap.classList.add("weg"));
   haptic(12);
-  setTimeout(() => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }, reduceMotion() ? 0 : 220);
+  prioTel(it.tier, -1);                                    // hero + note direct bijwerken (#10)
+  const volgende = wrap.nextElementSibling;               // voor quick-next (#15)
+  setTimeout(() => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); prioLeegCheck(); }, reduceMotion() ? 0 : 240);
   prioToast(txt, () => {
+    wrap.classList.remove("weg"); wrap.style.height = "";
     if (next && next.parentNode === parent) parent.insertBefore(wrap, next);
     else if (parent) parent.appendChild(wrap);
-    wrap.classList.remove("weg");
+    prioTel(it.tier, +1);
+    prioLeegCheck();
     if (undoBackend) undoBackend();
   });
+  // Quick-next: alléén als je dit item OPEN had (bewuste dóórwerk-flow) opent rustig
+  // de volgende — individueel verwerken zonder navigatie, geen onrust bij swipe (#15).
+  if (wasOpen && !reduceMotion() && volgende && volgende.classList.contains("prio-item")) {
+    setTimeout(() => { if (volgende.isConnected) prioToggle(volgende, true); }, 260);
+  }
+}
+
+// Toont een rustige lege staat als de werkvoorraad leeg raakt (zonder rebuild).
+function prioLeegCheck() {
+  const box = $("#home-prio"); if (!box) return;
+  const leeg = !box.querySelector(".prio-item");
+  let msg = box.querySelector(".prio-leeg");
+  if (leeg && !msg) {
+    msg = document.createElement("div"); msg.className = "leeg small prio-leeg";
+    msg.innerHTML = `${ic("check")}<p>Alles verwerkt — mooie dag om te coachen.</p>`;
+    box.appendChild(msg);
+  } else if (!leeg && msg) msg.remove();
 }
 
 function prioToast(txt, undoFn) {
@@ -621,43 +734,57 @@ function prioToast(txt, undoFn) {
 }
 
 // ── Swipe: rij beweegt mee, acties erachter. Touch-only; muis = klik→detail. ──
+// PERF: tijdens de drag draait er GEEN layout-werk. De laagbreedtes worden één
+// keer bij pointerdown gemeten (geen scrollWidth-reads per move = geen reflow),
+// de transform is een GPU-compositor-transform (translate3d + will-change), de
+// writes worden per frame gecoalesceerd via rAF, en reveal-classes wisselen
+// alleen bij een richtingswissel. Zo voelen links én rechts identiek vloeiend.
 function bindSwipe(wrap, row) {
   const swipe = wrap.querySelector(".prio-swipe");
   const left = wrap.querySelector(".pa-left"), right = wrap.querySelector(".pa-right");
   let x0 = 0, y0 = 0, dx = 0, richting = 0, actief = false, touch = false;
-  const maxL = () => (left ? left.scrollWidth || 96 : 0), maxR = () => (right ? right.scrollWidth || 168 : 0);
+  let mL = 0, mR = 0, curSide = 0, raf = 0, pending = 0;
 
-  const zet = v => { row.style.transform = v ? `translateX(${v}px)` : ""; };
+  const schrijf = () => { raf = 0; row.style.transform = pending ? `translate3d(${pending}px,0,0)` : ""; };
+  const plan = v => { pending = v; if (!raf) raf = requestAnimationFrame(schrijf); };
 
   row.addEventListener("pointerdown", e => {
     touch = e.pointerType === "touch";
-    x0 = e.clientX; y0 = e.clientY; dx = 0; richting = 0; actief = false;
-    row.style.transition = "none";
-  });
+    x0 = e.clientX; y0 = e.clientY; dx = 0; richting = 0; actief = false; curSide = 0;
+    if (touch) {                                   // meet de lagen ÉÉN keer (geen reflow in de drag)
+      mL = left ? left.offsetWidth || 96 : 0;
+      mR = right ? right.offsetWidth || 168 : 0;
+    }
+  }, { passive: true });
   row.addEventListener("pointermove", e => {
     const mx = e.clientX - x0, my = e.clientY - y0;
     if (!actief) {
       if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
-      if (Math.abs(my) > Math.abs(mx)) { touch = false; return; }   // verticaal → laat scrollen (#9)
-      actief = true; try { row.setPointerCapture(e.pointerId); } catch {}
+      if (Math.abs(my) >= Math.abs(mx)) { touch = false; return; }  // verticale intentie → laat scrollen (#9)
+      actief = true; row.style.transition = "none"; row.style.willChange = "transform";
+      try { row.setPointerCapture(e.pointerId); } catch {}
     }
     if (!touch) return;
-    e.preventDefault();                                     // horizontaal vergrendeld
-    dx = Math.max(-maxR(), Math.min(maxL(), mx));
+    e.preventDefault();                            // horizontaal vergrendeld
+    dx = Math.max(-mR, Math.min(mL, mx));
     richting = dx > 0 ? 1 : dx < 0 ? -1 : 0;
-    swipe.classList.toggle("swipe-l", dx > 0);              // linker laag (primary) zichtbaar
-    swipe.classList.toggle("swipe-r", dx < 0);
-    zet(dx);
+    if (richting !== curSide) {                    // class alleen bij richtingswissel togglen
+      curSide = richting;
+      swipe.classList.toggle("swipe-l", richting > 0);
+      swipe.classList.toggle("swipe-r", richting < 0);
+    }
+    plan(dx);
   });
-  const eind = e => {
-    if (!actief) return;
-    row.style.transition = "";
-    const drempel = 0.45;
-    const open = richting > 0 ? dx >= maxL() * drempel : richting < 0 ? -dx >= maxR() * drempel : false;
+  const eind = () => {
+    if (!actief) { return; }
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    row.style.transition = ""; row.style.willChange = "";
+    const drempel = 0.42;
+    const open = richting > 0 ? dx >= mL * drempel : richting < 0 ? -dx >= mR * drempel : false;
     if (open && richting) {
       // Toon de acties (reveal). Geen automatische uitvoering → nooit schade (#5).
       if (prioSwipeEl && prioSwipeEl !== wrap) prioSwipeDicht(prioSwipeEl);
-      zet(richting > 0 ? maxL() : -maxR());
+      row.style.transform = `translate3d(${richting > 0 ? mL : -mR}px,0,0)`;
       wrap.classList.add("swipe-open"); prioSwipeEl = wrap;
       haptic(8);
     } else { prioSwipeReset(wrap); }
@@ -675,7 +802,7 @@ function bindSwipe(wrap, row) {
 }
 function prioSwipeReset(wrap) {
   const row = wrap.querySelector(".prio-row"), swipe = wrap.querySelector(".prio-swipe");
-  row.style.transform = ""; swipe.classList.remove("swipe-l", "swipe-r");
+  row.style.transform = ""; row.style.willChange = ""; swipe.classList.remove("swipe-l", "swipe-r");
   wrap.classList.remove("swipe-open");
   if (prioSwipeEl === wrap) prioSwipeEl = null;
 }

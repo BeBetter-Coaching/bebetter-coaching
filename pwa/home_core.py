@@ -49,6 +49,34 @@ def _voornaam(naam: str, first: str = "") -> str:
     return first or (naam or "").split(" ")[0]
 
 
+def _norm_naam(naam: str) -> str:
+    return (naam or "").strip().lower()
+
+
+def _handled_active(rec: dict | None, fingerprint: str, vandaag: date) -> bool:
+    """Is dit signaal nu uit de werkvoorraad? (True = onderdrukken.) Eerlijke regels:
+    - 'later'  → hard verborgen tot snooze_until, ongeacht de situatie.
+    - 'gezien' → verborgen zolang de fingerprint ONGEWIJZIGD is én <7 dagen oud;
+                 daarna terug (opnieuw beoordelen). Verergert het signaal
+                 (nieuwe fingerprint), dan komt het meteen terug.
+    Zo geldt een schema dat alleen 'gezien' is NOOIT als opgelost."""
+    if not rec:
+        return False
+    status = rec.get("status")
+    if status == "later":
+        su = rec.get("snooze_until")
+        return bool(su) and vandaag.isoformat() < su
+    if status == "gezien":
+        if rec.get("fingerprint") != fingerprint:
+            return False
+        try:
+            dagen = (vandaag - date.fromisoformat((rec.get("handled_at") or "")[:10])).days
+        except Exception:
+            return False
+        return dagen < 7
+    return False
+
+
 def _atleten_objs() -> list:
     """Vlakke atletenlijst (met all_groups) — voor belasting.check_alle."""
     try:
@@ -197,18 +225,14 @@ def _bereken() -> dict:
     except Exception:
         on_hold = set()
 
-    # Afgehandelde afhakers (gedeeld tussen coaches) — 7 dagen gedempt, daarna
-    # komt de atleet vanzelf terug als het patroon aanhoudt. Zelfde mechaniek als
-    # de Streamlit-home, zodat 'Afhandelen' in de PWA ook echt de lijst opschoont.
+    # Generieke werklijst-status (gedeeld tussen coaches, GitHub-backed): per
+    # (atleet, signaaltype) een 'Gezien' of 'Later'. Bepaalt of een signaal nu uit
+    # de werkvoorraad is; zie _handled_active voor de eerlijke terugkeer-regels.
     try:
-        _handled = (intake_store.load_alerts_handled() or {}) if intake_store else {}
+        _handled = (intake_store.load_home_handled() or {}) if intake_store else {}
     except Exception:
         _handled = {}
-    _handled_cutoff = (date.today() - timedelta(days=7)).isoformat()
-
-    def _afhaker_zichtbaar(uk: str) -> bool:
-        rec = _handled.get(uk)
-        return not rec or rec.get("datum", "") < _handled_cutoff
+    _vandaag = date.today()
 
     # ── Sweeps (serieel, betrouwbaar) ──
     wachten = gepost = 0
@@ -246,50 +270,53 @@ def _bereken() -> dict:
     bel = _belasting_vandaag(atleten_objs)
     bel_hoog = sum(1 for b in bel if b.get("ernst") == "hoog")
 
-    # ── Prioriteit vandaag: één rij per atleet, hoogste tier wint ──
-    # Elke rij krijgt een 'detail'-blok mee: alle context die de coach inline op
-    # Home wil zien, berekend TIJDENS deze sweep (dus gratis) zodat het uitklappen
-    # nul extra requests kost. 'soort' bepaalt welk detail/acties de client toont.
-    prio: dict[str, dict] = {}
+    # ── Prioriteit vandaag: ÉÉN atleet = ÉÉN rij ──────────────────────────────
+    # We dedupliceren niet meer wég maar GROEPEREN alle signalen per atleet in één
+    # rij (coach-first: "welke atleten vragen aandacht?"). Elk signaal draagt zijn
+    # eigen tier/reden/detail/fingerprint. Suppressie is PER signaal (Gezien/Later);
+    # blijft er geen signaal over, dan valt de atleet uit de werklijst.
+    # Alle detail wordt TIJDENS deze sweep gevuld → uitklappen kost 0 requests.
+    atl: dict[str, dict] = {}
 
-    def _add(uk, naam, first, tier, soort, reden, view, actie, detail):
+    def _sig(uk, naam, first, soort, tier, reden, kort, fingerprint, detail, context):
         if not uk:
             return
-        rank = 0 if tier == "actie" else 1
-        bestaand = prio.get(uk)
-        if bestaand and bestaand["_rank"] <= rank:
-            return                                     # al een even/urgenter signaal
-        prio[uk] = {
-            "user_key": uk, "naam": naam, "voornaam": _voornaam(naam, first),
-            "tier": tier, "soort": soort, "reden": reden, "view": view,
-            "actie": actie, "detail": detail, "_rank": rank,
-        }
+        rij = atl.get(uk)
+        if rij is None:
+            rij = atl[uk] = {"user_key": uk, "naam": naam,
+                             "voornaam": _voornaam(naam, first), "signalen": []}
+        rij["signalen"].append({
+            "soort": soort, "tier": tier, "reden": reden, "kort": kort,
+            "fingerprint": fingerprint, "detail": detail, "context": context,
+        })
 
-    # Afhakers = actie (rood). Afgehandelde afhakers 7 dagen niet tonen.
+    # Afhakers (compliance) = actie (rood)
     for a in alerts:
-        uk = a.get("user_key")
-        if not _afhaker_zichtbaar(uk):
-            continue
         n_low, n_pl = a.get("n_low", 0), a.get("n_planned", 0)
-        _add(uk, a.get("name", ""), a.get("first_name", ""), "actie", "compliance",
-             f"{n_low} van {n_pl} trainingen gemist", "teampuls", "Bekijken",
-             {"n_low": n_low, "n_planned": n_pl, "groep": a.get("group", "")})
+        _sig(a.get("user_key"), a.get("name", ""), a.get("first_name", ""),
+             "compliance", "actie", f"{n_low} van {n_pl} trainingen gemist",
+             f"{n_low} gemist", f"c{n_low}",
+             {"n_low": n_low, "n_planned": n_pl, "groep": a.get("group", "")},
+             [])                                         # context = Dossier (universeel)
 
-    # Schema loopt af / verlopen (alleen wie een schema HAD; 'geen schema' = ruis, hoort in Schema-verloop)
+    # Schema verlopen (actie) / loopt af ≤7d (aandacht)
     for r in schema_rows:
         d = r.get("days_left")
         if d is None:
             continue
         det = {"days_left": d, "einddatum": r.get("last_date"), "groep": r.get("group", ""),
                "verborgen": r.get("hidden_count", 0), "zichtbaar_tot": r.get("visible_until")}
+        ctx = [{"act": "schema", "label": "Schema", "icon": "clock"}]
         if d < 0:
-            _add(r.get("user_key"), r.get("name", ""), r.get("first_name", ""), "actie", "schema",
-                 f"schema {abs(d)} dag{'en' if abs(d) != 1 else ''} verlopen", "schema-verloop", "Schema openen", det)
+            _sig(r.get("user_key"), r.get("name", ""), r.get("first_name", ""),
+                 "schema", "actie", f"schema {abs(d)} dag{'en' if abs(d) != 1 else ''} verlopen",
+                 "schema verlopen", f"s{r.get('last_date')}:v", det, ctx)
         elif d <= 7:
-            _add(r.get("user_key"), r.get("name", ""), r.get("first_name", ""), "aandacht", "schema",
-                 f"schema loopt af over {d} dag{'en' if d != 1 else ''}", "schema-verloop", "Schema openen", det)
+            _sig(r.get("user_key"), r.get("name", ""), r.get("first_name", ""),
+                 "schema", "aandacht", f"schema loopt af over {d} dag{'en' if d != 1 else ''}",
+                 f"schema nog {d}d", f"s{r.get('last_date')}:a", det, ctx)
 
-    # Belasting-signalen (hoog = actie, let op = aandacht) — reden = de echte signaaltekst
+    # Belasting (hoog = actie, let op = aandacht) — reden = de echte signaaltekst
     for b in bel:
         tier = "actie" if b.get("ernst") == "hoog" else "aandacht"
         reden = (b.get("signalen") or ["belasting-signaal"])[0]
@@ -310,11 +337,40 @@ def _bereken() -> dict:
             "rpe_recent": m.get("rpe_recent"), "rpe_basis": m.get("rpe_basis"),
             "runs": (m.get("runs_recent") or [])[:5],
         }
-        _add(b.get("user_key"), b.get("naam", ""), "", tier, "belasting", reden, "teampuls", "Bekijken", det)
+        _sig(b.get("user_key"), b.get("naam", ""), "", "belasting", tier, reden,
+             reden, f"b{b.get('ernst', '')}", det,
+             [{"act": "teampuls", "label": "Teampuls", "icon": "pulse"}])
 
-    items = sorted(prio.values(), key=lambda x: (x["_rank"], x["naam"]))
-    for it in items:
-        it.pop("_rank", None)
+    # ── Suppressie (Gezien/Later) + rij opbouwen ──
+    _TIER_RANK = {"actie": 0, "aandacht": 1}
+    _WEIGHT = {"actie": 3, "aandacht": 1}
+
+    items = []
+    for uk, rij in atl.items():
+        zichtbaar = [s for s in rij["signalen"]
+                     if not _handled_active(_handled.get(f"{uk}|{s['soort']}"),
+                                            s["fingerprint"], _vandaag)]
+        if not zichtbaar:
+            continue                                     # alle signalen gedempt → uit de lijst
+        zichtbaar.sort(key=lambda s: (_TIER_RANK.get(s["tier"], 9), s["soort"]))
+        tier = "actie" if any(s["tier"] == "actie" for s in zichtbaar) else "aandacht"
+        score = sum(_WEIGHT.get(s["tier"], 1) for s in zichtbaar)
+        # signature = combinatie van fingerprints → laat de client goedkoop zien of
+        # er bij een achtergrondrefresh écht iets veranderd is (geen verspringen).
+        sig = "|".join(sorted(f"{s['soort']}:{s['fingerprint']}" for s in zichtbaar))
+        items.append({
+            "user_key": uk, "naam": rij["naam"], "voornaam": rij["voornaam"],
+            "tier": tier, "n_signalen": len(zichtbaar),
+            "reden": zichtbaar[0]["reden"],
+            "chips": [{"tier": s["tier"], "kort": s["kort"]} for s in zichtbaar],
+            "signalen": zichtbaar, "signature": sig,
+            "_score": score,
+        })
+
+    # Deterministische, uitlegbare ranking binnen tier: meer signalen eerst, dan
+    # ernst-score, dan alfabetisch (stabiel = geen springen bij gelijke stand).
+    items.sort(key=lambda i: (_TIER_RANK.get(i["tier"], 9), -i["n_signalen"],
+                              -i["_score"], _norm_naam(i["naam"])))
 
     n_actie = sum(1 for i in items if i["tier"] == "actie")
     n_aandacht = sum(1 for i in items if i["tier"] == "aandacht")
@@ -330,44 +386,89 @@ def _bereken() -> dict:
         "feedback": {"wachten": wachten, "gepost": gepost, "pct": pct},
         "info": {"races": races, "gepost": gepost},
         "belasting": {"totaal": len(bel), "hoog": bel_hoog},
-        "prioriteit": items[:8],
+        "prioriteit": items,                       # gegroepeerd per atleet = werkbare lijst
         "prioriteit_totaal": len(items),
         "berekend": datetime.now().isoformat(timespec="seconds"),
         "datum": date.today().isoformat(),
     }
 
 
-# ── Acties op een prioriteit (echte, bestaande backend-state) ────────────────
-# 'Afhandelen' (afhaker) → alerts_handled, 7 dagen gedempt, gedeeld tussen coaches
-# (exact de Streamlit-mechaniek). 'Gezien' voor belasting loopt via de bestaande
-# /api/teampuls/gezien. Voor schema bestaat GEEN dempstatus — daar is de echte
-# actie 'schema openen'/'on hold', dus die krijgt geen afhandel-knop.
+# ── Werklijst-actie: één generieke Gezien/Later per atleet ───────────────────
+# 'Gezien' = beoordeeld (komt terug bij verergering of na 7 dagen). 'Later' =
+# snooze tot een datum. Wordt per aanwezig signaaltype vastgelegd (met fingerprint)
+# in de gedeelde home_handled-store. DUAL-WRITE naar de bestaande per-type stores
+# (alerts_handled / belasting.afgehandeld) houdt Teampuls + Streamlit-home in sync.
 
-def afhandelen(user_key: str, naam: str = "", undo: bool = False) -> tuple[bool, str]:
-    """Markeer een afhaker als afgehandeld: 7 dagen niet meer tonen (gedeeld).
-    undo=True draait dit terug (voor de Ongedaan-toast). Werkt de in-memory
-    snapshot direct bij zodat de rij niet terugkomt vóór de volgende refresh."""
-    if not user_key or intake_store is None:
-        return False, "geen opslag"
-    try:
-        handled = intake_store.load_alerts_handled() or {}
-    except Exception:
-        handled = {}
-    if undo:
-        handled.pop(user_key, None)
-    else:
-        handled[user_key] = {"datum": date.today().isoformat(), "naam": naam}
-    prune = (date.today() - timedelta(days=30)).isoformat()      # oude vermeldingen opruimen
-    for k in list(handled.keys()):
-        if (handled.get(k) or {}).get("datum", "") < prune:
-            del handled[k]
-    ok, msg = intake_store.save_alerts_handled(handled)
-    # Snapshot in geheugen alvast opschonen (rij weg zonder volle refresh)
+def _verwijder_uit_mem(user_key: str) -> None:
     global _MEM
     if _valid(_MEM):
-        items = [i for i in _MEM.get("prioriteit", [])
-                 if not (i.get("user_key") == user_key and i.get("soort") == "compliance")]
+        items = [i for i in _MEM.get("prioriteit", []) if i.get("user_key") != user_key]
         _MEM = {**_MEM, "prioriteit": items, "prioriteit_totaal": len(items)}
+
+
+def _dual_write(user_key: str, naam: str, soorten: dict, undo: bool) -> None:
+    """Houd de bestaande pagina's in sync. Bij undo weten we de soorten niet meer
+    (rij is al weg) → ruim beide legacy-stores best-effort op."""
+    if "compliance" in soorten or undo:
+        try:
+            h = intake_store.load_alerts_handled() or {}
+            if undo:
+                h.pop(user_key, None)
+            else:
+                h[user_key] = {"datum": date.today().isoformat(), "naam": naam}
+            intake_store.save_alerts_handled(h)
+        except Exception:
+            pass
+    if "belasting" in soorten or undo:
+        try:
+            import belasting
+            data = belasting.laad_stand()
+            if undo:
+                (data.get("afgehandeld") or {}).pop(user_key, None)
+                intake_store.save_belasting(data)
+            else:
+                ernst = (soorten["belasting"].get("detail") or {}).get("ernst") or "let_op"
+                belasting.markeer_gezien(data, user_key, ernst)
+        except Exception:
+            pass
+
+
+def handled(user_key: str, status: str = "gezien", snooze_dagen: int = 7,
+            undo: bool = False, by: str = "") -> tuple[bool, str]:
+    """Zet de werklijst-status voor ALLE huidige signalen van een atleet."""
+    if not user_key or intake_store is None:
+        return False, "geen opslag"
+    # Huidige signaaltypes + fingerprints uit de laatste snapshot lezen.
+    soorten, naam = {}, ""
+    for it in (_MEM.get("prioriteit") or []):
+        if it.get("user_key") == user_key:
+            naam = it.get("naam", "")
+            for s in it.get("signalen", []):
+                soorten[s["soort"]] = s
+            break
+    try:
+        store = intake_store.load_home_handled() or {}
+    except Exception:
+        store = {}
+    vandaag = date.today()
+    if undo:
+        for k in [k for k in store if k.startswith(f"{user_key}|")]:
+            del store[k]
+    else:
+        su = (vandaag + timedelta(days=max(1, int(snooze_dagen or 7)))).isoformat() \
+            if status == "later" else None
+        for soort, s in soorten.items():
+            store[f"{user_key}|{soort}"] = {
+                "status": status, "fingerprint": s["fingerprint"],
+                "handled_at": vandaag.isoformat(), "snooze_until": su, "by": by,
+            }
+    grens = (vandaag - timedelta(days=45)).isoformat()               # oude records opruimen
+    for k in [k for k in store if (store.get(k) or {}).get("handled_at", "") < grens]:
+        del store[k]
+    ok, msg = intake_store.save_home_handled(store)
+    _dual_write(user_key, naam, soorten, undo)
+    if not undo:
+        _verwijder_uit_mem(user_key)                                 # rij weg zonder volle refresh
     return ok, msg
 
 
