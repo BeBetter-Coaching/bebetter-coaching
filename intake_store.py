@@ -706,6 +706,21 @@ def save_home_handled(data: dict) -> tuple[bool, str]:
                       "Update home-handled via app")
 
 
+_FEEDBACK_QUEUE_LOCAL = os.path.join(_BASE_DIR, ".feedback_queue.json")
+
+
+def load_feedback_queue() -> dict:
+    """Laatst-geldige Feedback-queue-snapshot (lichte lijst, gedeeld/duurzaam) zodat
+    Feedback ná restart/deploy direct bruikbaar is. Leeg dict = nog nooit opgebouwd."""
+    return _load_json("feedback_queue.json", _FEEDBACK_QUEUE_LOCAL)
+
+
+def save_feedback_queue(data: dict) -> tuple[bool, str]:
+    """Sla de Feedback-queue-snapshot op. Geeft (gelukt, foutmelding) terug."""
+    return _save_json("feedback_queue.json", _FEEDBACK_QUEUE_LOCAL, data,
+                      "Update feedback-queue via app")
+
+
 _LAATSTE_INTAKE_LOCAL = os.path.join(_BASE_DIR, ".laatste_intakes.json")
 
 

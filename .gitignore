@@ -38,3 +38,4 @@ __pycache__/
 .webauthn.json
 .home_snapshot.json
 .home_handled.json
+.feedback_queue.json

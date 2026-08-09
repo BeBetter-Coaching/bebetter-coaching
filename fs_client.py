@@ -706,6 +706,7 @@ def get_workouts_needing_feedback(
     include_planned_no_notes: bool = False,
     exclude_groups: set | None = None,
     return_stats: bool = False,
+    include_details: bool = True,
 ) -> list[dict] | tuple[list[dict], dict]:
     """
     Geeft workouts terug die coaching-aandacht nodig hebben.
@@ -880,7 +881,13 @@ def get_workouts_needing_feedback(
             cand["_details"] = {}
         return cand
 
-    final = _parallel_per_athlete(detail_candidates, _fetch_details)
+    # include_details=False (lichte queue voor de PWA-inbox): sla de zware
+    # workout-detail-fetch over → veel sneller. Details worden dan lazy per
+    # workout opgehaald in de focus-view. Default True = ongewijzigd (Streamlit).
+    if include_details:
+        final = _parallel_per_athlete(detail_candidates, _fetch_details)
+    else:
+        final = detail_candidates
 
     # ── Resultaten bouwen ─────────────────────────────────────────────────
     results = []

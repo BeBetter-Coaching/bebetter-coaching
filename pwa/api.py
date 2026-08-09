@@ -366,6 +366,11 @@ def feedback_lijst(dagen: int = 7):
     return feedback.te_beoordelen(days_back=dagen)
 
 
+@app.get("/api/feedback/queue")          # lichte gecachete inbox-queue (stale-while-revalidate)
+def feedback_queue(refresh: bool = False):
+    return feedback.queue(refresh=refresh)
+
+
 @app.get("/api/home/stats")
 def home_stats(refresh: bool = False):
     """Home-cockpit: team-status, feedback-voortgang, info én de Prioriteit-
@@ -439,6 +444,13 @@ def feedback_skip(body: FeedbackGen):
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"Overslaan mislukt: {e}"}, status_code=500)
     return {"ok": True}
+
+
+# NB: deze pad-parameter-route staat BEWUST ná /queue, /generate, /post, /thread,
+# /skip zodat die literals niet als workout_key worden opgevat.
+@app.get("/api/feedback/{workout_key}")  # lazy focus-detail (samenvatting/zones/afwijking)
+def feedback_detail(workout_key: str):
+    return feedback.detail(workout_key)
 
 
 # ── API: races (aankomende races + race-wens posten) ──────────────────────────
