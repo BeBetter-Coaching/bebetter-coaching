@@ -1886,7 +1886,7 @@ function renderQueue() {
     }
   }
   box.innerHTML = html;
-  $$(".fbq-row", box).forEach(r => r.addEventListener("click", () => fbOpen(r.dataset.id)));
+  $$(".fbq-row", box).forEach(r => r.addEventListener("click", () => fbOpen(r.dataset.id, "row_tap")));
 }
 function fbRowHtml(it) {
   const sel = it.id === FB.selId ? " on" : "";
@@ -1920,25 +1920,29 @@ function fbPreloadNext(id) {                          // volgende 1–2 vast oph
   const idx = FB.items.findIndex(i => i.id === id); if (idx < 0) return;
   FB.items.slice(idx + 1, idx + 3).forEach(it => { if (!FB.detailCache[it.id]) fbFetchDetail(it.id, true); });
 }
-async function fbOpen(id) {
+async function fbOpen(id, reason) {
   FB.selId = id; renderQueue();
   const col = $("#fb-focus-col"); col.classList.add("on"); col.setAttribute("aria-hidden", "false");
-  fbVV(); fbLog("focus_open");
+  fbLockQueue(true);                                  // click-through hard blokkeren zolang focus open is
+  fbKbReset();                                        // start zonder keyboard-offset; resize-handler vult later
+  fbLog("focus_open", { reason: reason || "open" });
   if (FB.detailCache[id]) renderFocus(FB.detailCache[id]);
   else { renderFocusSkeleton(id); const d = await fbFetchDetail(id); if (FB.selId === id) renderFocus(d); }
   fbPreloadNext(id);
 }
 function fbClose() {
   const col = $("#fb-focus-col");
-  if (col) { col.classList.remove("on"); col.setAttribute("aria-hidden", "true"); col.style.height = ""; col.style.top = ""; }
-  document.body.classList.remove("kb-open"); _fbVVh = null;
+  if (col) { col.classList.remove("on"); col.setAttribute("aria-hidden", "true"); }
+  fbLockQueue(false);                                 // queue weer interactief
+  document.body.classList.remove("kb-open");
+  fbKbReset();                                        // keyboard-offset terug naar 0
   fbLog("focus_close");
   FB.selId = null; renderQueue();
   if (isDesktop()) renderFocusEmpty();
 }
 function focusNextAfterAction(next) {
   fbLog("auto_next", { next: next ? next.id : null });
-  if (next) fbOpen(next.id);
+  if (next) fbOpen(next.id, "auto_next");
   else if (isDesktop()) { FB.selId = null; renderQueue(); renderFocusEmpty(); }
   else fbClose();
 }
@@ -1973,8 +1977,8 @@ function fbBindDock(id) {
   if (ta) {
     ta.addEventListener("input", () => { fbDraftSave(id, ta.value); fbGrow(ta); });
     // Keyboard-state betrouwbaar via focus/blur (robuuster op iOS dan vv-hoogte alleen).
-    ta.addEventListener("focus", () => { document.body.classList.add("kb-open"); fbLog("keyboard_open", { via: "focus" }); fbVV(); });
-    ta.addEventListener("blur", () => { document.body.classList.remove("kb-open"); fbLog("keyboard_close", { via: "blur" }); setTimeout(fbVV, 60); });
+    ta.addEventListener("focus", () => { document.body.classList.add("kb-open"); fbLog("keyboard_open", { via: "focus" }); fbKbUpdate(); });
+    ta.addEventListener("blur", () => { document.body.classList.remove("kb-open"); fbLog("keyboard_close", { via: "blur" }); fbKbReset(); });
     fbGrow(ta);
   }
   const g = $("#fb-gen"); if (g) g.onclick = () => fbGen(id);
@@ -1983,12 +1987,14 @@ function fbBindDock(id) {
   const sk = $("#fb-skip"); if (sk) sk.onclick = () => fbSkip(id);
   fbObserveDock();
 }
-// Begrensde textarea-groei: groeit met content tot ~1/3 viewport, daarna interne scroll.
+// Begrensde textarea-groei: auto-size op content; de CSS `max-height` (stabiele vh,
+// niet visualViewport) klemt de hoogte af → daarna interne scroll. Bewust GEEN
+// live visualViewport.height meer, zodat de textarea niet mee-jittert tijdens de
+// keyboardanimatie.
 function fbGrow(ta) {
   if (!ta) return;
   ta.style.height = "auto";
-  const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-  ta.style.height = Math.min(ta.scrollHeight + 2, Math.round(vh * 0.34)) + "px";
+  ta.style.height = (ta.scrollHeight + 2) + "px";     // CSS max-height klemt af (zie styles.css)
 }
 // Meet de WERKELIJKE dockhoogte → CSS-var --fb-dock-h (buiten de scroll-hotpath:
 // ResizeObserver vuurt bij layoutwijziging, niet tijdens scrollen).
@@ -2155,34 +2161,56 @@ function fbMove(dir) {
   if (!FB.items.length) return;
   let idx = FB.items.findIndex(i => i.id === FB.selId);
   idx = idx < 0 ? (dir > 0 ? 0 : FB.items.length - 1) : Math.max(0, Math.min(FB.items.length - 1, idx + dir));
-  fbOpen(FB.items[idx].id);
+  fbOpen(FB.items[idx].id, "keyboard_nav");
 }
-// Keyboard-aware editor-dock: houd het dock (Versturen/Genereer) boven het
-// toetsenbord. BELANGRIJK voor scroll-performance: we luisteren ALLEEN op
-// 'resize' (toetsenbord open/dicht, oriëntatie), NIET op 'scroll' — anders zou
-// elke scroll-frame een layout-write op de overlay doen (forced reflow = lag).
-// Writes gebeuren bovendien uitsluitend als de keyboard-toestand echt wijzigt.
-// De keyboard-STATE komt van textarea focus/blur (zie fbBindDock). fbVV doet
-// alleen de GEOMETRIE-correctie: bij open toetsenbord de overlay tot de visual
-// viewport verkleinen zodat de dock boven het toetsenbord blijft. Alleen op
-// 'resize' (niet 'scroll') en alleen schrijven bij een echte hoogtewijziging.
-let _fbVVh = null;
-function fbVV() {
-  const vv = window.visualViewport; if (!vv) return;
-  const kbOpen = document.body.classList.contains("kb-open") || (window.innerHeight - vv.height - vv.offsetTop) > 120;
-  fbLog("visualviewport_resize", { viewport_height: Math.round(vv.height), keyboard_open: kbOpen });
+// ── Keyboard-offset (Optie B: ÉÉN bron van waarheid) ─────────────────────────
+// De focus-overlay (.fb-focus-col) blijft ALTIJD full-screen (height:100dvh) en
+// wordt NOOIT meer aan de visualViewport aangepast — geen col.style.height/top,
+// geen geometry-chasing per animatieframe. We lezen visualViewport uitsluitend
+// READ-ONLY om de keyboardhoogte te bepalen en schrijven die als één CSS-var
+// (--kb-h) op de focus-kolom zelf (scoped → raakt Home niet). De dock schuift
+// daarmee boven het toetsenbord; header/shell/scroll-geometrie bewegen niet.
+// Coalesced/debounced: één stabiele update rond de eindtoestand i.p.v. tientallen
+// writes tijdens de keyboardanimatie. Bij blur/close direct terug naar 0.
+let _fbKbTimer = 0, _fbKbRaf = 0;
+function _fbKbRead() {
+  const vv = window.visualViewport; if (!vv) return 0;
+  return Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+}
+function _fbKbWrite() {
+  const col = $("#fb-focus-col"); if (!col) return;
+  const kb = _fbKbRead();
+  col.style.setProperty("--kb-h", kb + "px");
+  fbLog("kb_offset", { kb_h: kb,
+    overlay_h: Math.round(col.getBoundingClientRect().height),
+    dock_h: Math.round((document.querySelector(".fb-dock") || {}).getBoundingClientRect?.().height || 0),
+    active: (document.activeElement && document.activeElement.id) || null });
+}
+// Debounced update: verzamel de resize-storm en schrijf één keer als het settelt.
+function fbKbUpdate() {
   if (isDesktop()) return;
   const col = $("#fb-focus-col");
   if (!(col && col.classList.contains("on"))) return;
-  if (kbOpen) {
-    const h = Math.round(vv.height);
-    if (_fbVVh !== h) { _fbVVh = h; col.style.height = vv.height + "px"; col.style.top = vv.offsetTop + "px"; }
-  } else if (_fbVVh !== null) {
-    _fbVVh = null; col.style.height = ""; col.style.top = "";
-  }
-  fbObserveDock();                                    // dockhoogte kan wijzigen bij keyboard-collapse
+  clearTimeout(_fbKbTimer);
+  _fbKbTimer = setTimeout(() => {
+    cancelAnimationFrame(_fbKbRaf); _fbKbRaf = requestAnimationFrame(_fbKbWrite);
+  }, 90);
 }
-if (window.visualViewport) window.visualViewport.addEventListener("resize", fbVV);
+// Direct terug naar 0 (blur/close) — niet wachten op de debounce.
+function fbKbReset() {
+  clearTimeout(_fbKbTimer); cancelAnimationFrame(_fbKbRaf);
+  const col = $("#fb-focus-col"); if (col) col.style.setProperty("--kb-h", "0px");
+}
+// Click-through hard blokkeren: zolang de mobiele focus open is, mag de
+// achterliggende queue/kolom NIET interactief zijn (geen tap die op een
+// blootliggende rij landt). Desktop = master-detail → queue blijft interactief.
+function fbLockQueue(on) {
+  if (isDesktop()) return;
+  const q = document.querySelector(".fb-queue-col"); if (!q) return;
+  if (on) { q.setAttribute("inert", ""); document.body.classList.add("fb-focus-open"); }
+  else { q.removeAttribute("inert"); document.body.classList.remove("fb-focus-open"); }
+}
+if (window.visualViewport) window.visualViewport.addEventListener("resize", fbKbUpdate);
 
 // ════════════════════════════════════════════════════════════════════════════
 // SCHEMA BOUWEN — opgeslagen intake → AI-plan → CSV-download voor FinalSurge

@@ -837,8 +837,8 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 /* scroll-gebied tussen header en dock; onderaan altijd genoeg ruimte voor de
    WERKELIJKE dockhoogte + safe-area + kleine marge → content valt nooit achter de dock */
 .fbf-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
-  padding:14px 15px calc(var(--fb-dock-h, 150px) + env(safe-area-inset-bottom) + 10px);
-  scroll-padding-bottom:calc(var(--fb-dock-h, 150px) + 10px)}
+  padding:14px 15px calc(var(--fb-dock-h, 150px) + var(--kb-h, 0px) + env(safe-area-inset-bottom) + 10px);
+  scroll-padding-bottom:calc(var(--fb-dock-h, 150px) + var(--kb-h, 0px) + 10px)}
 
 /* planned vs actual — rustig/tabulair, zone-pills neutraal */
 .fb-pa{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:0 0 12px}
@@ -862,10 +862,13 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 .fb-ctx.amber{background:rgba(239,159,39,.08);border-color:rgba(239,159,39,.28);color:#f0c98a}
 .fb-ctx b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;opacity:.85}
 
-/* editor-dock: absoluut onderaan de focus (overlayt de scroll); Versturen altijd zichtbaar */
-.fb-dock{position:absolute;left:0;right:0;bottom:0;z-index:2;
+/* editor-dock: absoluut onderaan de focus (overlayt de scroll); Versturen altijd zichtbaar.
+   bottom = keyboard-offset (--kb-h, scoped op .fb-focus-col; 0 als geen keyboard) → de dock
+   schuift boven het toetsenbord terwijl de overlay-shell zelf full-screen/stabiel blijft. */
+.fb-dock{position:absolute;left:0;right:0;bottom:var(--kb-h,0px);z-index:2;
   border-top:1px solid var(--border);background:var(--card2);
-  padding:10px 15px calc(10px + env(safe-area-inset-bottom))}
+  padding:10px 15px calc(10px + env(safe-area-inset-bottom));
+  transition:bottom .18s ease}
 .fb-dock textarea{margin:0 0 8px;min-height:78px;max-height:34vh;overflow-y:auto;resize:none}
 .fb-dock-row{display:flex;gap:8px}
 .fb-dock-row .btn{flex:1}
@@ -875,9 +878,15 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 .fb-focus-empty .ic{width:34px;height:34px;opacity:.7}
 .fb-focus-empty p{margin:12px 0 0;font-size:14px}
 
-/* Keyboard open (mobiel): secundaire acties inklappen, dock compacter */
+/* Keyboard open (mobiel): secundaire acties inklappen, dock compacter.
+   max-height op stabiele vh (layout-viewport, verandert niet tijdens keyboardanimatie
+   → geen jitter); daarboven scrollt de textarea intern. */
 body.kb-open .fb-dock-sec{display:none}
-body.kb-open .fb-dock textarea{min-height:50px}
+body.kb-open .fb-dock textarea{min-height:50px;max-height:22vh}
+
+/* Click-through defense-in-depth: zolang de mobiele focus open is, is de
+   achterliggende queue-kolom niet interactief (naast het `inert`-attribuut). */
+body.fb-focus-open .fb-queue-col{pointer-events:none}
 
 @media(prefers-reduced-motion:reduce){.fb-focus-col{transition:none}}
 
