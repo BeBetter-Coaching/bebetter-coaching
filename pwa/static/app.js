@@ -1710,9 +1710,11 @@ function fbLog(ev, extra) {
 function fbLogStatus() {
   const s = $("#fb-log-status"); if (!s) return;
   s.textContent = `Logging staat ${FB.logOn ? "AAN" : "uit"} · ${FB.log.length} events`;
-  const t = $("#fb-log-toggle"); if (t) t.textContent = FB.logOn ? "Logging uitzetten" : "Logging aanzetten";
+  const t = $("#fb-log-toggle"); if (t) t.textContent = FB.logOn ? "Logging uit" : "Logging aan";
+  const dbg = $("#fb-dbg"); if (dbg) dbg.classList.toggle("on", FB.logOn);
 }
 function fbLogBind() {
+  const dbg = $("#fb-dbg"); if (dbg) dbg.onclick = () => { const p = $("#fb-dbg-panel"); if (p) p.hidden = !p.hidden; };
   const t = $("#fb-log-toggle"); if (t) t.onclick = () => {
     FB.logOn = !FB.logOn; try { localStorage.setItem("fb_log_on", FB.logOn ? "1" : "0"); } catch {}
     fbLogStatus();
@@ -1757,15 +1759,31 @@ function fbRenderLoading() {                          // rustige "aan het bijwer
   $("#fb-info").innerHTML = `<span class="versen">Feedback bijwerken…</span>`;
   skeleton($("#fb-queue"), 4);
 }
+// Diagnostische queue-fetch (fase 2.2 punt 1): meet requestduur + Server-Timing en
+// geeft het backend-diag-blok terug voor de koude-start-analyse.
+async function fbQueueGet(refresh) {
+  const t0 = performance.now();
+  let status = 0, st = null, data = null;
+  try {
+    const res = await fetch("/api/feedback/queue" + (refresh ? "?refresh=1" : ""), { headers: authHeaders() });
+    status = res.status; st = res.headers.get("Server-Timing");
+    if (status === 401) { toonLogin(); throw new Error("auth"); }
+    data = await res.json();
+  } catch { data = null; }
+  return { data, ms: Math.round(performance.now() - t0), server_timing: st, status };
+}
 async function fbEnter() {                            // eerste keer openen van de pagina
   fbDraftCleanup(); fbLog("queue_enter");
   if (!FB.loaded) fbRenderLoading();
-  const r = await api("/api/feedback/queue").catch(() => null);
+  const q = await fbQueueGet(false);
+  const r = q.data;
+  fbLog("queue_cache_result", { non_refresh_ms: q.ms, server_timing: q.server_timing, status: q.status,
+    pending: !!(r && r.pending), items: (r && r.items ? r.items.length : 0), diag: (r && r.diag) || null });
   if (!r) { $("#fb-info").textContent = ""; if (!FB.items.length) $("#fb-queue").innerHTML = '<p class="muted center">Geen verbinding.</p>'; }
   else if (!r.fs) { $("#fb-info").textContent = "FinalSurge nog niet gekoppeld."; $("#fb-queue").innerHTML = ""; FB.loaded = true; }
   else if (r.pending && !(r.items && r.items.length)) {
     // Koude/onbevestigde cache: NIET als definitief "niets te beoordelen" tonen.
-    FB.pendingInitial = true; fbRenderLoading(); fbLog("queue_empty_pending");
+    FB.pendingInitial = true; fbRenderLoading(); fbLog("queue_empty_pending", { diag: r.diag || null });
   } else {
     FB.gepost = r.gepost || 0; FB.groups = r.groepen || [];
     fbApplyQueue(r.items || []); FB.loaded = true;
@@ -1775,18 +1793,17 @@ async function fbEnter() {                            // eerste keer openen van 
 }
 async function fbRefresh() {                          // achtergrond-SWR: NOOIT stil hersorteren/muteren
   fbLog("queue_refresh_start");
-  const t0 = performance.now();
-  const r = await api("/api/feedback/queue?refresh=1").catch(() => null);
-  const dur = Math.round(performance.now() - t0);
+  const q = await fbQueueGet(true);
+  const r = q.data, dur = q.ms;
   if (!r || !r.fs || !Array.isArray(r.items)) {
-    fbLog("queue_refresh_error", { queue_refresh_duration_ms: dur });
+    fbLog("queue_refresh_error", { queue_refresh_duration_ms: dur, server_timing: q.server_timing, status: q.status, diag: (r && r.diag) || null });
     if (FB.pendingInitial && !FB.items.length) { $("#fb-info").textContent = "Kon Feedback niet laden — trek omlaag of ververs."; }
     return;
   }
   FB.gepost = r.gepost != null ? r.gepost : FB.gepost;
   FB.groups = r.groepen || FB.groups;
   const fresh = fbFilterWeg(r.items);
-  fbLog("queue_refresh_success", { queue_refresh_duration_ms: dur, queue_length: fresh.length });
+  fbLog("queue_refresh_success", { queue_refresh_duration_ms: dur, server_timing: q.server_timing, queue_length: fresh.length, diag: r.diag || null });
   if (FB.pendingInitial) {                            // eerste bevestigde sweep = de initiële lading
     FB.pendingInitial = false; FB.loaded = true;
     fbApplyQueue(fresh); fbLog("queue_apply", { reason: "initial", queue_length: fresh.length });
@@ -1914,6 +1931,7 @@ async function fbOpen(id) {
 function fbClose() {
   const col = $("#fb-focus-col");
   if (col) { col.classList.remove("on"); col.setAttribute("aria-hidden", "true"); col.style.height = ""; col.style.top = ""; }
+  document.body.classList.remove("kb-open"); _fbVVh = null;
   fbLog("focus_close");
   FB.selId = null; renderQueue();
   if (isDesktop()) renderFocusEmpty();
@@ -1951,11 +1969,42 @@ function fbDockHtml(id) {
 }
 function fbBindDock(id) {
   const back = $("#fb-back"); if (back) back.onclick = fbClose;
-  const ta = $("#fb-ta"); if (ta) ta.addEventListener("input", () => fbDraftSave(id, ta.value));
+  const ta = $("#fb-ta");
+  if (ta) {
+    ta.addEventListener("input", () => { fbDraftSave(id, ta.value); fbGrow(ta); });
+    // Keyboard-state betrouwbaar via focus/blur (robuuster op iOS dan vv-hoogte alleen).
+    ta.addEventListener("focus", () => { document.body.classList.add("kb-open"); fbLog("keyboard_open", { via: "focus" }); fbVV(); });
+    ta.addEventListener("blur", () => { document.body.classList.remove("kb-open"); fbLog("keyboard_close", { via: "blur" }); setTimeout(fbVV, 60); });
+    fbGrow(ta);
+  }
   const g = $("#fb-gen"); if (g) g.onclick = () => fbGen(id);
   const s = $("#fb-send"); if (s) s.onclick = () => fbSend(id);
   const c = $("#fb-copy"); if (c) c.onclick = () => { navigator.clipboard?.writeText($("#fb-ta")?.value || "").then(() => melding("Gekopieerd.")); };
   const sk = $("#fb-skip"); if (sk) sk.onclick = () => fbSkip(id);
+  fbObserveDock();
+}
+// Begrensde textarea-groei: groeit met content tot ~1/3 viewport, daarna interne scroll.
+function fbGrow(ta) {
+  if (!ta) return;
+  ta.style.height = "auto";
+  const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+  ta.style.height = Math.min(ta.scrollHeight + 2, Math.round(vh * 0.34)) + "px";
+}
+// Meet de WERKELIJKE dockhoogte → CSS-var --fb-dock-h (buiten de scroll-hotpath:
+// ResizeObserver vuurt bij layoutwijziging, niet tijdens scrollen).
+let _fbDockRO = null;
+function _fbSetDockH(h) { document.documentElement.style.setProperty("--fb-dock-h", Math.round(h) + "px"); }
+function fbObserveDock() {
+  const dock = document.querySelector(".fb-dock"); if (!dock) return;
+  _fbSetDockH(dock.getBoundingClientRect().height);   // directe meting op de HUIDIGE dock
+  if ("ResizeObserver" in window) {
+    // Callback leest e.target (de actueel geobserveerde dock), niet een gecapturede
+    // referentie → na een re-render meet hij nooit meer een losgekoppelde oude dock.
+    if (!_fbDockRO) _fbDockRO = new ResizeObserver(entries => {
+      for (const e of entries) if (e.target.isConnected) _fbSetDockH(e.target.getBoundingClientRect().height);
+    });
+    _fbDockRO.disconnect(); _fbDockRO.observe(dock);
+  }
 }
 function renderFocusSkeleton(id) {
   const it = FB.items.find(i => i.id === id) || {};
@@ -1998,8 +2047,11 @@ function fbPaHtml(d) {                                // gepland (intentie) vs u
   if (g.zone || g.structuur || u.zone) rows.push(["Zone", gzone, zp(u.zone)]);
   const foot = (d.gevoel || d.rpe)
     ? `<p class="fb-pa-foot">${d.gevoel ? `Gevoel: ${esc(d.gevoel.label)}` : ""}${d.gevoel && d.rpe ? " · " : ""}${d.rpe ? `RPE ${esc(d.rpe)}` : ""}</p>` : "";
+  // Kernintentie (ACTIVE-stappen) vs. volledige feitelijke structuur (fallback);
+  // warming-up/cooling-down subtiel als context, niet concurrerend met de kern.
+  const kernLbl = d.plan_is_kern ? "Kern" : "Structuur";
   const intentie = (d.workout || g.structuur)
-    ? `<p class="fb-pa-intentie">${esc(d.workout || "Training")}${g.structuur ? ` · <b>${esc(g.structuur)}</b>` : (d.is_structured ? " · gestructureerd" : "")}</p>` : "";
+    ? `<p class="fb-pa-intentie">${esc(d.workout || "Training")}${g.structuur ? ` · <b>${esc(kernLbl)}: ${esc(g.structuur)}</b>` : (d.is_structured ? " · gestructureerd" : "")}${d.plan_context ? `<span class="fb-pa-ctx">incl. ${esc(d.plan_context)}</span>` : ""}</p>` : "";
   if (!rows.length) return (intentie || foot) ? `<div class="fb-pa">${intentie}${foot}</div>` : "";
   return `<div class="fb-pa">${intentie}<table>
     <tr><th></th><th>Gepland</th><th>Uitgevoerd</th></tr>
@@ -2023,7 +2075,7 @@ async function fbGen(id) {
   if (btn) { btn.disabled = false; btn.innerHTML = `${ic("brain")} Genereer`; }
   if (!r || !r.ok) { fbLog("generate_error", { generate_duration_ms: dur }); return melding(r && r.err || "Genereren mislukt.", true); }
   fbLog("generate_success", { generate_duration_ms: dur });
-  const ta = $("#fb-ta"); if (ta) { ta.value = r.tekst || ""; fbDraftSave(id, ta.value); ta.focus(); }
+  const ta = $("#fb-ta"); if (ta) { ta.value = r.tekst || ""; fbDraftSave(id, ta.value); fbGrow(ta); ta.focus(); }
 }
 async function fbSend(id) {
   if (FB.sending || FB.sentSet.has(id)) { fbLog("send_blocked_duplicate", { target: id }); return; }  // dubbel-post-guard
@@ -2110,23 +2162,25 @@ function fbMove(dir) {
 // 'resize' (toetsenbord open/dicht, oriëntatie), NIET op 'scroll' — anders zou
 // elke scroll-frame een layout-write op de overlay doen (forced reflow = lag).
 // Writes gebeuren bovendien uitsluitend als de keyboard-toestand echt wijzigt.
-let _fbKb = false;
+// De keyboard-STATE komt van textarea focus/blur (zie fbBindDock). fbVV doet
+// alleen de GEOMETRIE-correctie: bij open toetsenbord de overlay tot de visual
+// viewport verkleinen zodat de dock boven het toetsenbord blijft. Alleen op
+// 'resize' (niet 'scroll') en alleen schrijven bij een echte hoogtewijziging.
+let _fbVVh = null;
 function fbVV() {
   const vv = window.visualViewport; if (!vv) return;
-  const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-  const open = kb > 120;
-  fbLog("visualviewport_resize", { viewport_height: Math.round(vv.height), keyboard_open: open });
-  if (open === _fbKb) return;                         // geen verandering → geen writes
-  _fbKb = open;
-  document.body.classList.toggle("kb-open", open);
-  if (!isDesktop()) {
-    const col = $("#fb-focus-col");
-    if (col && col.classList.contains("on")) {
-      if (open) { col.style.height = vv.height + "px"; col.style.top = vv.offsetTop + "px"; }
-      else { col.style.height = ""; col.style.top = ""; }
-    }
+  const kbOpen = document.body.classList.contains("kb-open") || (window.innerHeight - vv.height - vv.offsetTop) > 120;
+  fbLog("visualviewport_resize", { viewport_height: Math.round(vv.height), keyboard_open: kbOpen });
+  if (isDesktop()) return;
+  const col = $("#fb-focus-col");
+  if (!(col && col.classList.contains("on"))) return;
+  if (kbOpen) {
+    const h = Math.round(vv.height);
+    if (_fbVVh !== h) { _fbVVh = h; col.style.height = vv.height + "px"; col.style.top = vv.offsetTop + "px"; }
+  } else if (_fbVVh !== null) {
+    _fbVVh = null; col.style.height = ""; col.style.top = "";
   }
-  fbLog(open ? "keyboard_open" : "keyboard_close", { viewport_height: Math.round(vv.height) });
+  fbObserveDock();                                    // dockhoogte kan wijzigen bij keyboard-collapse
 }
 if (window.visualViewport) window.visualViewport.addEventListener("resize", fbVV);
 

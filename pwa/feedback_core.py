@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 from datetime import date, datetime
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -327,30 +328,71 @@ def _herstel_cache(snap: dict) -> None:
         _cache.setdefault(wid, w)
 
 
-def _queue_current() -> dict:
-    """Beste bekende queue-snapshot: geheugen → anders durabele store (die dan ook
-    het geheugen + _cache opwarmt)."""
-    global _QUEUE_MEM
-    if _queue_valid(_QUEUE_MEM):
-        return _QUEUE_MEM
+# ── Diagnostiek (fase 2.2 punt 1: alleen meten, geen structurele wijziging) ───
+# Laatste persist-uitkomst, zodat een verse queue-refresh kan rapporteren of het
+# wegschrijven van de durable snapshot lukte (save-fouten mogen niet onzichtbaar
+# blijven). Bevat nooit gevoelige inhoud — alleen ok/fouttype.
+_LAST_PERSIST: dict = {"ok": None, "error": None, "at": None}
+
+
+def _snapshot_leeftijd_sec(snap: dict):
+    ber = snap.get("berekend") if isinstance(snap, dict) else None
+    if not ber:
+        return None
+    try:
+        return int((datetime.now() - datetime.fromisoformat(ber)).total_seconds())
+    except Exception:
+        return None
+
+
+def _durable_load_diag() -> tuple[dict, int, str]:
+    """(snapshot, duur_ms, uitkomst). uitkomst ∈ success|empty|missing|invalid|error:<type>."""
+    t0 = time.perf_counter()
     try:
         durable = intake_store.load_feedback_queue()
-    except Exception:
-        durable = {}
+    except Exception as e:
+        return {}, int((time.perf_counter() - t0) * 1000), "error:" + type(e).__name__
+    ms = int((time.perf_counter() - t0) * 1000)
+    if not durable:
+        return {}, ms, "missing"
+    if not _queue_valid(durable):
+        return durable, ms, "invalid"
+    return durable, ms, ("empty" if not durable.get("items") else "success")
+
+
+def _queue_current_diag() -> tuple[dict, dict]:
+    """Beste bekende snapshot + diagnostiek over de bron.
+    Bron: mem (in-memory) | durable (GitHub) | none. Warmt bij durable het
+    geheugen + _cache op (ongewijzigd gedrag)."""
+    global _QUEUE_MEM
+    if _queue_valid(_QUEUE_MEM):
+        return _QUEUE_MEM, {"bron": "mem", "durable_load_ms": 0, "durable_uitkomst": "mem"}
+    durable, ms, uitkomst = _durable_load_diag()
     if _queue_valid(durable):
         _QUEUE_MEM = durable
         _herstel_cache(durable)
-        return durable
-    return {}
+        return durable, {"bron": "durable", "durable_load_ms": ms, "durable_uitkomst": uitkomst}
+    return {}, {"bron": "none", "durable_load_ms": ms, "durable_uitkomst": uitkomst}
 
 
-def _queue_persist(snap: dict) -> None:
-    global _QUEUE_MEM
+def _queue_current() -> dict:
+    """Beste bekende queue-snapshot (zonder diagnostiek) — voor detail()/herstel."""
+    snap, _ = _queue_current_diag()
+    return snap
+
+
+def _queue_persist(snap: dict) -> tuple[bool, str]:
+    """Persisteer de snapshot; geeft (ok, fout) terug zodat de aanroeper save-
+    fouten zichtbaar kan maken in de diagnostiek. Retry/SHA-gedrag ONGEWIJZIGD."""
+    global _QUEUE_MEM, _LAST_PERSIST
     _QUEUE_MEM = snap
     try:
-        intake_store.save_feedback_queue(snap)
-    except Exception:
-        pass
+        ok, err = intake_store.save_feedback_queue(snap)
+    except Exception as e:
+        ok, err = False, type(e).__name__ + ": " + str(e)[:120]
+    _LAST_PERSIST = {"ok": bool(ok), "error": (err or None) if not ok else None,
+                     "at": datetime.now().isoformat(timespec="seconds")}
+    return bool(ok), err or ""
 
 
 def _categorie(w: dict) -> tuple[str, str]:
@@ -467,16 +509,29 @@ def _queue_public(snap: dict, cached: bool, **extra) -> dict:
     return out
 
 
+def _diag(snap: dict, extra: dict) -> dict:
+    """Diagnostiekblok voor de queue-respons (fase 2.2 punt 1 — alleen meten)."""
+    d = {"snapshot_aanwezig": bool(snap),
+         "item_count": len(snap.get("items", [])) if snap else 0,
+         "generated_at": snap.get("berekend") if snap else None,
+         "leeftijd_sec": _snapshot_leeftijd_sec(snap) if snap else None}
+    d.update(extra)
+    return d
+
+
 def queue(refresh: bool = False) -> dict:
     """Feedback-queue. Standaard direct uit de cache (geheugen→store); refresh=True
-    herbouwt (single-flight) en behoudt bij FinalSurge-fout de laatst geldige lijst."""
+    herbouwt (single-flight) en behoudt bij FinalSurge-fout de laatst geldige lijst.
+    Elke respons draagt een `diag`-blok (bron/snapshot/persist) voor de koude-start-
+    diagnose — geen gevoelige inhoud."""
     if not heeft_token():
         return {"fs": False, "items": []}
     if not refresh:
-        snap = _queue_current()
+        snap, bron = _queue_current_diag()
         if snap:
-            return _queue_public(snap, cached=True)
-        return {"fs": True, "items": [], "pending": True, "cached": False}
+            return _queue_public(snap, cached=True, diag=_diag(snap, bron))
+        return {"fs": True, "items": [], "pending": True, "cached": False,
+                "diag": _diag({}, bron)}
 
     global _QREFRESHING
     with _QLOCK:
@@ -484,21 +539,24 @@ def queue(refresh: bool = False) -> dict:
         if not bezig:
             _QREFRESHING = True
     if bezig:
-        snap = _queue_current()
+        snap, bron = _queue_current_diag()
         if snap:
-            return _queue_public(snap, cached=True, verversen_bezig=True)
-        return {"fs": True, "items": [], "pending": True, "cached": False}
+            return _queue_public(snap, cached=True, verversen_bezig=True, diag=_diag(snap, {**bron, "verversen_bezig": True}))
+        return {"fs": True, "items": [], "pending": True, "cached": False,
+                "diag": _diag({}, {**bron, "verversen_bezig": True})}
     try:
         snap = _bouw_queue()
         if _queue_valid(snap) and "_volle" in snap:
             _herstel_cache(snap)
-            _queue_persist(snap)
-            return _queue_public(snap, cached=False)
-        oud = _queue_current()                            # sweep faalde/leeg → oude houden
+            ok, err = _queue_persist(snap)
+            return _queue_public(snap, cached=False, diag=_diag(snap, {
+                "bron": "sweep", "persist_ok": ok,
+                "persist_error": (err[:120] if (err and not ok) else None)}))
+        oud, bron = _queue_current_diag()                 # sweep faalde/leeg → oude houden
         if oud:
-            return _queue_public(oud, cached=True, refresh_mislukt=True)
+            return _queue_public(oud, cached=True, refresh_mislukt=True, diag=_diag(oud, {**bron, "refresh_mislukt": True}))
         return {"fs": True, "items": snap.get("items", []), "cached": False,
-                "err": snap.get("err")}
+                "err": snap.get("err"), "diag": _diag({}, {"bron": "sweep", "sweep_leeg": True})}
     finally:
         with _QLOCK:
             _QREFRESHING = False
@@ -560,31 +618,33 @@ def _actual_zone(act: dict, zone_type: str, zones: list) -> dict | None:
     return None
 
 
-def _plan_zone_sequence(steps) -> list:
-    """Zone-nummers in geplande volgorde uit de builder-steps, inclusief de
-    inner steps van repeat-blokken (step['data']). Deterministisch, geen AI."""
-    seq: list[int] = []
+def _plan_steps_flat(steps) -> list:
+    """(zone, intensity) per zone-doel-stap in geplande volgorde; recurset repeat-
+    blokken (step['data']). Deterministisch, geen AI. intensity is één van
+    WARMUP/ACTIVE/REST/COOLDOWN (zoals wij ze in de builder wegschrijven) of ''."""
+    out: list = []
 
     def _walk(sts):
         for s in sts:
             if not isinstance(s, dict):
                 continue
+            inten = (s.get("intensity") or "").upper()
             inner = s.get("data") or []
-            if inner:                                   # repeat-/groepsblok
+            if inner:                                   # repeat-/groepsblok → binnenstappen
                 _walk(inner)
                 continue
-            if (s.get("intensity") or "").upper() == "REST":
+            if inten == "REST":
                 continue
             for t in (s.get("target") or []):
                 if isinstance(t, dict) and "zone" in (t.get("targetType") or "") and t.get("zone"):
                     try:
-                        seq.append(int(t["zone"]))
+                        out.append((int(t["zone"]), inten))
                     except (TypeError, ValueError):
                         pass
                     break
 
     _walk(steps or [])
-    return seq
+    return out
 
 
 def _collapse(seq: list) -> list:
@@ -596,18 +656,39 @@ def _collapse(seq: list) -> list:
     return out
 
 
+def _label_zones(seq: list) -> str:
+    """Zone-reeks → leesbaar label: progressief 'Z2 → Z3', interval 'Z2 / Z4',
+    breed 'Z2–Z5'. (Aanroeper bepaalt of dit de kern of de volledige structuur is.)"""
+    distinct = sorted(set(seq))
+    if not distinct:
+        return ""
+    if len(distinct) == 1:
+        return f"Z{distinct[0]}"
+    vorm = _collapse(seq)
+    progressief = vorm == sorted(vorm) and len(vorm) == len(distinct)
+    if progressief:
+        return " → ".join(f"Z{z}" for z in vorm)
+    if len(distinct) <= 3:
+        return " / ".join(f"Z{z}" for z in distinct)
+    return f"Z{distinct[0]}–Z{distinct[-1]}"
+
+
 def _plan_analyse(w: dict, d: dict, zones: list) -> dict:
-    """Geplande trainingsINTENTIE uit de WorkoutBuilder — deterministisch.
+    """Geplande trainings-KERNINTENTIE uit de WorkoutBuilder — deterministisch.
 
-    Kernregel (semantisch): een gemiddelde is NOOIT de classificatie. Bij een
-    gestructureerde/multi-zone training (progressief/interval/tempo/repeats)
-    leiden we de intentie af uit de geplande zoneblokken (bv. 'Z2 → Z3') en
-    tonen we GEEN enkelvoudige zone. Alleen bij één duidelijke geplande zone
-    (rustige duurloop) geven we die als single_zone terug.
+    Regels (semantisch, geen AI):
+    • Kern = de zones van de ACTIVE-stappen. Warming-up/cooling-down (WARMUP/
+      COOLDOWN) tellen NIET mee voor de kern — anders krijgt een progressieve
+      Z2→Z3-loop met warmup Z1 ten onrechte 'Z1 → Z2 → Z3'.
+    • Een gemiddelde is nooit de classificatie: bij een multi-zone KERN tonen we
+      geen enkelvoudige (actual-)zone.
+    • Fallback: ontbreken de intensity-labels (oudere/handmatige workouts), dan
+      kunnen we de kern niet betrouwbaar isoleren → we tonen de VOLLEDIGE feitelijke
+      structuur en claimen géén kernintentie (kern=False).
 
-    Geeft: {single_zone|None, structuur:str, structured_multi:bool}.
+    Geeft: {single_zone|None, structuur, structured_multi, kern:bool, context}.
     """
-    leeg = {"single_zone": None, "structuur": "", "structured_multi": False}
+    leeg = {"single_zone": None, "structuur": "", "structured_multi": False, "kern": False, "context": ""}
     if not d.get("has_structured_workout"):
         return leeg
     wk, ak = w.get("workout_key"), w.get("athlete_key")
@@ -618,25 +699,38 @@ def _plan_analyse(w: dict, d: dict, zones: list) -> dict:
     except Exception:
         return leeg
 
-    seq = _plan_zone_sequence(steps)
+    flat = _plan_steps_flat(steps)                       # [(zone, intensity)]
+    if not flat:
+        return leeg
+
+    heeft_labels = any(inten in ("WARMUP", "ACTIVE", "COOLDOWN") for _z, inten in flat)
+    if heeft_labels:
+        kern_seq = [z for z, inten in flat if inten == "ACTIVE"]
+        wu = sorted({z for z, inten in flat if inten == "WARMUP"})
+        cd = sorted({z for z, inten in flat if inten == "COOLDOWN"})
+        if kern_seq:                                     # betrouwbare kern
+            seq, kern = kern_seq, True
+            ctx = []
+            if wu:
+                ctx.append("warming-up " + "/".join(f"Z{z}" for z in wu))
+            if cd:
+                ctx.append("cooling-down " + "/".join(f"Z{z}" for z in cd))
+            context = " · ".join(ctx)
+        else:                                            # labels aanwezig maar geen ACTIVE → volledige structuur
+            seq, kern, context = [z for z, _ in flat], False, ""
+    else:                                                # geen betrouwbare labels → volledige structuur
+        seq, kern, context = [z for z, _ in flat], False, ""
+
     distinct = sorted(set(seq))
     if not distinct:
         return leeg
-    if len(distinct) == 1:                              # één duidelijke zone
+    if len(distinct) == 1:                               # één duidelijke (kern)zone
         num = distinct[0]
         naam = next((z["naam"] for z in zones if z.get("num") == num), "")
-        return {"single_zone": {"num": num, "naam": naam}, "structuur": "", "structured_multi": False}
-
-    vorm = _collapse(seq)
-    # Progressief = de vorm loopt monotoon op en bevat elke zone één keer.
-    progressief = vorm == sorted(vorm) and len(vorm) == len(distinct)
-    if progressief:
-        structuur = " → ".join(f"Z{z}" for z in vorm)
-    elif len(distinct) <= 3:
-        structuur = " / ".join(f"Z{z}" for z in distinct)   # bv. interval Z2/Z4
-    else:
-        structuur = f"Z{distinct[0]}–Z{distinct[-1]}"
-    return {"single_zone": None, "structuur": structuur, "structured_multi": True}
+        return {"single_zone": {"num": num, "naam": naam}, "structuur": "",
+                "structured_multi": False, "kern": kern, "context": context}
+    return {"single_zone": None, "structuur": _label_zones(seq),
+            "structured_multi": True, "kern": kern, "context": context}
 
 
 def detail(wid: str) -> dict:
@@ -716,6 +810,8 @@ def detail(wid: str) -> dict:
         "gevoel": _felt_obj(w.get("felt")),
         "rpe": w.get("effort"),
         "is_structured": plan["structured_multi"],
+        "plan_is_kern": plan["kern"],
+        "plan_context": plan["context"] or None,
         "plan_beschrijving": (d.get("description") or "").strip()[:600] or None,
         "plan_structuur": plan["structuur"] or None,
         "laps": laps,

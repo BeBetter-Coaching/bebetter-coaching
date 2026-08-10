@@ -178,8 +178,19 @@
       <div class="fb-split">
         <div class="fb-queue-col">
           <header class="appbar"><h1>Feedback</h1>
+            <button class="fb-dbg-btn" id="fb-dbg" type="button" aria-label="Feedback-debug">Debug</button>
             <button class="iconbtn" id="fb-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
           </header>
+          <!-- Tijdelijke testfunctie (fase 2.x). Standaard verborgen; los te verwijderen. -->
+          <div class="fb-dbg-panel" id="fb-dbg-panel" hidden>
+            <div class="fb-dbg-acts">
+              <button id="fb-log-toggle" class="btn small" type="button">Logging aan</button>
+              <button id="fb-log-copy" class="btn small" type="button"><svg class="ic"><use href="#ic-copy"/></svg> Kopieer</button>
+              <button id="fb-log-clear" class="btn small" type="button">Wis</button>
+            </div>
+            <p class="hint" id="fb-log-status">Logging staat uit · 0 events</p>
+            <textarea id="fb-log-out" rows="6" readonly hidden></textarea>
+          </div>
           <div class="fb-groups" id="fb-groups" hidden></div>
           <button class="fb-nieuw" id="fb-nieuw" type="button" hidden></button>
           <p class="hint" id="fb-info">laden…</p>
@@ -306,17 +317,6 @@
           <button id="install" class="btn" hidden><svg class="ic"><use href="#ic-download"/></svg> Installeer als app</button>
           <button id="uitloggen" class="btn"><svg class="ic"><use href="#ic-back"/></svg> Uitloggen</button>
         </div>
-      </section>
-
-      <p class="sec-label">Feedback-debug (device-test)</p>
-      <section class="panel open-static">
-        <p class="hint" id="fb-log-status">Logging staat uit · 0 events</p>
-        <div class="meer-acts">
-          <button id="fb-log-toggle" class="btn">Logging aanzetten</button>
-          <button id="fb-log-copy" class="btn"><svg class="ic"><use href="#ic-copy"/></svg> Kopieer log</button>
-          <button id="fb-log-clear" class="btn"><svg class="ic"><use href="#ic-trash"/></svg> Wis log</button>
-        </div>
-        <textarea id="fb-log-out" rows="6" readonly hidden placeholder="Log verschijnt hier na 'Kopieer log' — selecteer alles en kopieer."></textarea>
       </section>
       <footer class="foot">Zelfde data als Streamlit · BeBetter Coaching</footer>
     </section>
