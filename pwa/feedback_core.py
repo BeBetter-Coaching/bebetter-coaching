@@ -603,6 +603,22 @@ def _ensure_details(wid: str) -> None:
         w["details"] = FS.get_workout_details(wk, ak)
     except Exception:
         w["details"] = {}
+    _upgrade_workout_type(w)
+
+
+def _upgrade_workout_type(w: dict) -> None:
+    """Verrijk workout_type met de bewezen rijke bron (WorkoutPlannedCompleted,
+    hetzelfde `Activities[0].activity_type_*` dat Streamlit gebruikt) zodra die is
+    geladen. De lichte queue heeft dit veld vaak niet → daar blijft het (voorlopig)
+    `unknown`. Hergebruikt `fs_client.classify_workout_type` op het detailobject —
+    geen nieuwe classifier, geen extra FinalSurge-call. Een eerder bewezen type
+    wordt NOOIT gedegradeerd: we upgraden alleen als het huidige `unknown` is en het
+    detail een bewezen type oplevert. Nooit `unknown → run` zonder bewijs."""
+    if (w.get("workout_type") or "unknown") != "unknown":
+        return
+    t = FS.classify_workout_type(w.get("details") or {})
+    if t != "unknown":
+        w["workout_type"] = t
 
 
 def afwijking(planned_km, actual_km) -> dict:
