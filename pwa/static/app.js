@@ -155,6 +155,11 @@ function toonView(view) {
   if (huidigeView === "home" && view !== "home") {
     const sc = $("#scroller"); if (sc) homeScroll = sc.scrollTop;
   }
+  // Verlaat Feedback → sluit de mobiele focus-overlay (mag niet over andere views blijven).
+  if (huidigeView === "feedback" && view !== "feedback") {
+    const c = $("#fb-focus-col"); if (c) { c.classList.remove("on"); c.setAttribute("aria-hidden", "true"); c.style.height = ""; c.style.top = ""; }
+    document.body.classList.remove("kb-open");
+  }
   huidigeView = view;
   $$(".view").forEach(v => {
     const on = v.dataset.view === view;
@@ -1646,79 +1651,314 @@ async function genereerDoc(t) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FEEDBACK — AI-concept op de trainingen van atleten (FinalSurge + Anthropic)
+// FEEDBACK — workbench: inbox (queue) → focus (planned↔actual + gesprek + editor)
 // ════════════════════════════════════════════════════════════════════════════
-async function laadFeedback() {
-  const box = $("#fb-lijst"), info = $("#fb-info");
-  info.textContent = "Trainingen ophalen uit FinalSurge…";
-  skeleton(box, 4);
-  const r = await api("/api/feedback").catch(() => null);
-  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
-  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
-  const items = r.items || [];
-  info.textContent = items.length
-    ? `${items.length} training${items.length === 1 ? "" : "en"} met aandacht. Genereer een concept en pas het naar wens aan.`
-    : "";
-  if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Niks te beoordelen — netjes bijgewerkt.</p></div>`; return; }
-  box.innerHTML = "";
-  items.forEach(it => box.appendChild(fbItem(it)));
+// Los van Home (eigen state/DOM, geen swipe). Queue komt uit de fase-1 cache
+// (/api/feedback/queue, stale-while-revalidate). Detail lazy per focus
+// (/api/feedback/{id}), client-gecachet + volgende 1–2 vooraf geladen. Versturen =
+// directe POST met idle→sending→sent|error; Overslaan = optimistic + Undo (de POST
+// volgt pas ná het undo-venster → geen un-skip-endpoint nodig). Drafts per
+// workout_key in localStorage. UI is voorbereid op recent_context (fase 4).
+const FB = {
+  items: [],            // zichtbare, gesorteerde queue
+  pending: null,        // achtergrond-snapshot dat wacht op "N nieuwe — tik om te tonen"
+  selId: null,          // gefocuste workout
+  gepost: 0,            // vandaag verstuurd (lokaal bijgewerkt)
+  detailCache: {},      // id -> detailpayload
+  sentSet: new Set(),   // deze sessie verstuurd (SWR mag ze niet terugbrengen)
+  skipSet: new Set(),   // optimistisch overgeslagen (idem, tot commit/rollback)
+  sending: false,
+  loaded: false,
+};
+const FB_CAT = { reactie: "Reactie", gevoel: "Gevoel", uitgevoerd: "Uitgevoerd" };
+
+// ── Drafts (localStorage per workout_key) ────────────────────────────────────
+const FB_DRAFT_KEY = "fb_drafts_v1";
+function fbDrafts() { try { return JSON.parse(localStorage.getItem(FB_DRAFT_KEY) || "{}"); } catch { return {}; } }
+function fbDraftsSet(o) { try { localStorage.setItem(FB_DRAFT_KEY, JSON.stringify(o)); } catch {} }
+function fbDraftGet(id) { const d = fbDrafts()[id]; return (d && d.t) || ""; }
+function fbDraftSave(id, t) { const o = fbDrafts(); if (t && t.trim()) o[id] = { t, ts: Date.now() }; else delete o[id]; fbDraftsSet(o); }
+function fbDraftClear(id) { const o = fbDrafts(); if (o[id]) { delete o[id]; fbDraftsSet(o); } }
+function fbDraftCleanup() {                          // >14 dagen oud → opruimen
+  const o = fbDrafts(), cut = Date.now() - 14 * 864e5; let ch = false;
+  for (const k in o) if (!o[k] || (o[k].ts || 0) < cut) { delete o[k]; ch = true; }
+  if (ch) fbDraftsSet(o);
 }
 
-function fbItem(it) {
-  const el = document.createElement("article");
-  el.className = "rij-kaart";
-  const gesprek = it.gesprek || [];
-  const bubbels = gesprek.length
-    ? gesprek.map(m => `<div class="fb-bub ${m.coach ? "coach" : "atl"}"><span class="fb-wie">${m.coach ? "Jij" : esc(m.wie || it.voornaam)}</span>${esc(m.tekst)}</div>`).join("")
-    : '<p class="muted klein">Geen bericht van de atleet — reageer op de uitvoering.</p>';
-  el.innerHTML = `
-    <div class="d-head"><span class="avatar">${initialen(it.naam)}</span>
-      <div><h3>${esc(it.naam)}</h3>
-        <p class="muted klein">${esc(it.datum)} · ${esc(it.workout)}</p></div></div>
-    <div class="fb-thread">${bubbels}</div>
-    <textarea class="fb-tekst" rows="5" placeholder="Schrijf zelf een reactie, of genereer met AI…"></textarea>
-    <div class="fb-acts">
-      <button class="btn" data-gen>${ic("brain")} Genereer met AI</button>
-      <button class="btn primary" data-post>${ic("message")} Plaats</button>
-    </div>
-    <div class="fb-acts">
-      <button class="btn ghost small" data-copy>${ic("copy")} Kopieer</button>
-      <button class="btn ghost small" data-skip>Overslaan</button>
-    </div>
-    <p class="hint" data-poststatus></p>`;
-
-  const tekstEl = el.querySelector(".fb-tekst");
-  const status = el.querySelector("[data-poststatus]");
-
-  el.querySelector("[data-gen]").addEventListener("click", async e => {
-    const btn = e.currentTarget; btn.disabled = true; btn.textContent = "AI schrijft…";
-    const r = await jpost("/api/feedback/generate", { id: it.id }).catch(() => null);
-    btn.disabled = false; btn.innerHTML = `${ic("brain")} Genereer met AI`;
-    if (!r || !r.ok) return melding(r?.err || "Genereren mislukt.", true);
-    tekstEl.value = r.tekst || "";
-  });
-  el.querySelector("[data-post]").addEventListener("click", async () => {
-    const tekst = tekstEl.value.trim();
-    if (!tekst) return melding("Schrijf of genereer eerst een reactie.", true);
-    if (!confirm(`Deze reactie in FinalSurge plaatsen bij ${it.voornaam}? ${it.voornaam} ziet dit.`)) return;
-    const btn = el.querySelector("[data-post]"); btn.disabled = true; btn.textContent = "Plaatsen…";
-    const r = await jpost("/api/feedback/post", { id: it.id, tekst }).catch(() => null);
-    btn.disabled = false; btn.innerHTML = `${ic("message")} Plaats`;
-    if (!r || !r.ok) return melding(r?.err || "Posten mislukt.", true);
-    status.textContent = "Geplaatst in FinalSurge ✓"; el.style.opacity = ".55"; haptic(15);
-  });
-  el.querySelector("[data-copy]").addEventListener("click", () => {
-    navigator.clipboard?.writeText(tekstEl.value).then(() => melding("Gekopieerd."));
-  });
-  el.querySelector("[data-skip]").addEventListener("click", async () => {
-    if (!confirm(`Training van ${it.voornaam} overslaan? Komt terug als ${it.voornaam} weer reageert.`)) return;
-    const r = await jpost("/api/feedback/skip", { id: it.id }).catch(() => null);
-    if (!r || !r.ok) return melding(r?.err || "Overslaan mislukt.", true);
-    el.remove(); haptic(10);
-  });
-  return el;
+// ── Queue laden + stale-while-revalidate ─────────────────────────────────────
+function fbFilterWeg(items) {                        // sessie: verstuurd/overgeslagen nooit tonen
+  return (items || []).filter(i => !FB.sentSet.has(i.id) && !FB.skipSet.has(i.id));
 }
-$("#fb-refresh").addEventListener("click", () => { geladen.feedback = true; laadFeedback(); });
+function fbApplyQueue(items) {
+  FB.items = fbFilterWeg(items);
+  renderQueue(); fbUpdateInfo();
+  if (isDesktop() && !FB.selId) renderFocusEmpty();
+}
+async function fbEnter() {                            // eerste keer openen van de pagina
+  fbDraftCleanup();
+  const info = $("#fb-info");
+  if (!FB.loaded) { info.textContent = "Inbox laden…"; skeleton($("#fb-queue"), 4); }
+  const r = await api("/api/feedback/queue").catch(() => null);
+  if (!r) { info.textContent = ""; if (!FB.items.length) $("#fb-queue").innerHTML = '<p class="muted center">Geen verbinding.</p>'; }
+  else if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; $("#fb-queue").innerHTML = ""; }
+  else { FB.gepost = r.gepost || 0; fbApplyQueue(r.items || []); FB.loaded = true; }
+  fbRefresh();                                        // achtergrond: verse sweep
+}
+async function fbRefresh() {                          // achtergrond-SWR: NOOIT stil hersorteren/muteren
+  const r = await api("/api/feedback/queue?refresh=1").catch(() => null);
+  if (!r || !r.fs || !Array.isArray(r.items)) return;
+  FB.gepost = r.gepost != null ? r.gepost : FB.gepost;
+  const fresh = fbFilterWeg(r.items);
+  const same = FB.items.map(i => i.id).join("|") === fresh.map(i => i.id).join("|");
+  if (same) { FB.items = fresh; FB.pending = null; fbNieuwBalk(0); fbUpdateInfo(); return; }
+  FB.pending = fresh;                                 // verschil → wacht op coach
+  const nieuw = fresh.filter(i => !FB.items.some(c => c.id === i.id)).length;
+  fbNieuwBalk(nieuw); fbUpdateInfo();
+}
+function fbNieuwBalk(n) {
+  const b = $("#fb-nieuw"); if (!b) return;
+  if (!FB.pending) { b.hidden = true; return; }
+  b.hidden = false;
+  b.innerHTML = `${ic("refresh")} ${n > 0 ? `${n} nieuwe — tik om te tonen` : "Lijst bijwerken"}`;
+}
+function fbUpdateInfo() {
+  const info = $("#fb-info"); if (!info) return;
+  const n = FB.items.length;
+  info.textContent = n
+    ? `${n} in de wachtrij · ${FB.gepost || 0} vandaag verstuurd`
+    : `${FB.gepost || 0} vandaag verstuurd — inbox leeg`;
+}
+
+// ── Queue renderen (compacte inbox, per categorie) ───────────────────────────
+function renderQueue() {
+  const box = $("#fb-queue"); if (!box) return;
+  if (!FB.items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Niks te beoordelen — netjes bijgewerkt.</p></div>`; return; }
+  let html = "";
+  for (const key of ["reactie", "gevoel", "uitgevoerd"]) {
+    const rows = FB.items.filter(i => i.categorie === key);
+    if (!rows.length) continue;
+    html += `<p class="fbq-cat">${FB_CAT[key]} · ${rows.length}</p>`;
+    html += rows.map(fbRowHtml).join("");
+  }
+  box.innerHTML = html;
+  $$(".fbq-row", box).forEach(r => r.addEventListener("click", () => fbOpen(r.dataset.id)));
+}
+function fbRowHtml(it) {
+  const sel = it.id === FB.selId ? " on" : "";
+  const badge = `<span class="fb-badge ${it.categorie}">${FB_CAT[it.categorie] || ""}</span>`;
+  const prev = it.preview ? `<span class="fbq-prev">${esc(it.preview)}</span>` : "";
+  return `<button class="fbq-row${sel}" data-id="${esc(it.id)}">
+    <span class="avatar">${initialen(it.naam)}</span>
+    <span class="fbq-body">
+      <span class="fbq-top"><span class="fbq-naam">${esc(it.voornaam || it.naam)}</span>${badge}</span>
+      <span class="fbq-meta">${esc(it.datum)} · ${esc(it.workout)}</span>
+      ${prev}
+    </span>${ic("chevron")}</button>`;
+}
+
+// ── Focus (detail) ───────────────────────────────────────────────────────────
+async function fbFetchDetail(id) {
+  if (FB.detailCache[id]) return FB.detailCache[id];
+  const d = await api("/api/feedback/" + encodeURIComponent(id)).catch(() => null);
+  if (d && d.ok) FB.detailCache[id] = d;
+  return d || { ok: false, err: "Kon detail niet laden." };
+}
+function fbPreloadNext(id) {                          // volgende 1–2 vast ophalen (geen spinner later)
+  const idx = FB.items.findIndex(i => i.id === id); if (idx < 0) return;
+  FB.items.slice(idx + 1, idx + 3).forEach(it => { if (!FB.detailCache[it.id]) fbFetchDetail(it.id); });
+}
+async function fbOpen(id) {
+  FB.selId = id; renderQueue();
+  const col = $("#fb-focus-col"); col.classList.add("on"); col.setAttribute("aria-hidden", "false");
+  fbVV();
+  if (FB.detailCache[id]) renderFocus(FB.detailCache[id]);
+  else { renderFocusSkeleton(id); const d = await fbFetchDetail(id); if (FB.selId === id) renderFocus(d); }
+  fbPreloadNext(id);
+}
+function fbClose() {
+  const col = $("#fb-focus-col");
+  if (col) { col.classList.remove("on"); col.setAttribute("aria-hidden", "true"); col.style.height = ""; col.style.top = ""; }
+  FB.selId = null; renderQueue();
+  if (isDesktop()) renderFocusEmpty();
+}
+function focusNextAfterAction(next) {
+  if (next) fbOpen(next.id);
+  else if (isDesktop()) { FB.selId = null; renderQueue(); renderFocusEmpty(); }
+  else fbClose();
+}
+function renderFocusEmpty() {
+  $("#fb-focus").innerHTML = `<div class="fb-focus-empty">${ic("message")}<p>Kies links een training om te beoordelen.</p></div>`;
+}
+function fbHeadHtml(naam, voornaam, datum, workout, cat) {
+  return `<div class="fbf-head">
+    <button class="fbf-back" id="fb-back" type="button" aria-label="Terug">${ic("back")}</button>
+    <span class="avatar">${initialen(naam)}</span>
+    <span class="fbf-htext"><h2>${esc(voornaam || naam || "")}</h2>
+      <p>${esc(datum || "")} · ${esc(workout || "Training")}</p></span>
+    ${cat ? `<span class="fb-badge ${cat}">${FB_CAT[cat] || ""}</span>` : ""}
+  </div>`;
+}
+function fbDockHtml(id) {
+  return `<div class="fb-dock">
+    <textarea id="fb-ta" rows="3" placeholder="Schrijf een reactie, of genereer met AI…">${esc(fbDraftGet(id))}</textarea>
+    <div class="fb-dock-row">
+      <button class="btn" id="fb-gen" type="button">${ic("brain")} Genereer</button>
+      <button class="btn primary" id="fb-send" type="button">${ic("message")} Versturen</button>
+    </div>
+    <div class="fb-dock-sec">
+      <button class="btn ghost small" id="fb-copy" type="button">${ic("copy")} Kopieer</button>
+      <button class="btn ghost small" id="fb-skip" type="button">Overslaan</button>
+    </div>
+  </div>`;
+}
+function fbBindDock(id) {
+  const back = $("#fb-back"); if (back) back.onclick = fbClose;
+  const ta = $("#fb-ta"); if (ta) ta.addEventListener("input", () => fbDraftSave(id, ta.value));
+  const g = $("#fb-gen"); if (g) g.onclick = () => fbGen(id);
+  const s = $("#fb-send"); if (s) s.onclick = () => fbSend(id);
+  const c = $("#fb-copy"); if (c) c.onclick = () => { navigator.clipboard?.writeText($("#fb-ta")?.value || "").then(() => melding("Gekopieerd.")); };
+  const sk = $("#fb-skip"); if (sk) sk.onclick = () => fbSkip(id);
+}
+function renderFocusSkeleton(id) {
+  const it = FB.items.find(i => i.id === id) || {};
+  $("#fb-focus").innerHTML = fbHeadHtml(it.naam, it.voornaam, it.datum, it.workout, it.categorie)
+    + `<div class="fbf-scroll"><div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div></div>`
+    + fbDockHtml(id);
+  fbBindDock(id);
+}
+function renderFocus(d) {
+  if (!d || !d.ok) {
+    $("#fb-focus").innerHTML = fbHeadHtml("", "", "", "", "")
+      + `<div class="fbf-scroll"><p class="muted center">${esc(d && d.err || "Kon detail niet laden.")}</p></div>`;
+    const b = $("#fb-back"); if (b) b.onclick = fbClose; return;
+  }
+  $("#fb-focus").innerHTML = fbHeadHtml(d.naam, d.voornaam, d.datum, d.workout, d.categorie)
+    + `<div class="fbf-scroll">${fbCtxHtml(d)}${fbPaHtml(d)}${fbThreadHtml(d)}</div>`
+    + fbDockHtml(d.id);
+  fbBindDock(d.id);
+}
+// Recente context — pas in fase 4 gevuld; informatief (cyaan), amber zéér terughoudend.
+function fbCtxHtml(d) {
+  const rc = d.recent_context; if (!rc || !rc.length) return "";
+  return rc.map(c => `<div class="fb-ctx ${c.tone === "amber" ? "amber" : ""}">
+    <b>${esc(c.label || "Context")}</b>${esc(c.text || "")}</div>`).join("");
+}
+function fbPaHtml(d) {                                // planned vs actual — rustig, tabulair
+  const g = d.gepland || {}, u = d.uitgevoerd || {}, afw = d.afwijking || {};
+  const chip = (afw.relevance && afw.relevance !== "ignore" && afw.relevance !== "n/a" && afw.pct != null)
+    ? ` <span class="fb-afw">${afw.pct > 0 ? "+" : ""}${afw.pct}%</span>` : "";
+  const zp = z => z ? `<span class="fb-zone">Z${z.num}${z.naam ? " " + esc(z.naam) : ""}</span>` : "—";
+  const rows = [];
+  if (g.km != null || u.km != null) rows.push(["Afstand", g.km != null ? `${g.km} km` : "—", (u.km != null ? `${u.km} km` : "—") + chip]);
+  if (g.min != null || u.min != null) rows.push(["Duur", g.min != null ? `${g.min} min` : "—", u.min != null ? `${u.min} min` : "—"]);
+  if (u.pace) rows.push(["Tempo", "—", `${esc(u.pace)}/km`]);
+  if (u.hr_avg) rows.push(["Hartslag", "—", `${esc(u.hr_avg)}${u.hr_max ? ` · max ${esc(u.hr_max)}` : ""}`]);
+  if (g.zone || u.zone) rows.push(["Zone", zp(g.zone), zp(u.zone)]);
+  const foot = (d.gevoel || d.rpe)
+    ? `<p class="fb-pa-foot">${d.gevoel ? `Gevoel: ${esc(d.gevoel.label)}` : ""}${d.gevoel && d.rpe ? " · " : ""}${d.rpe ? `RPE ${esc(d.rpe)}` : ""}</p>` : "";
+  if (!rows.length) return foot ? `<div class="fb-pa">${foot}</div>` : "";
+  return `<div class="fb-pa"><table>
+    <tr><th></th><th>Gepland</th><th>Uitgevoerd</th></tr>
+    ${rows.map(r => `<tr><td class="lbl">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("")}
+  </table>${foot}</div>`;
+}
+function fbThreadHtml(d) {
+  const g = d.gesprek || [];
+  const bubbels = g.length
+    ? g.map(m => `<div class="fb-bub ${m.coach ? "coach" : "atl"}"><span class="fb-wie">${m.coach ? "Jij" : esc(m.wie || d.voornaam || "")}</span>${esc(m.tekst)}</div>`).join("")
+    : `<p class="muted klein">Geen bericht van de atleet — reageer op de uitvoering.</p>`;
+  return `<div class="fb-thread">${bubbels}</div>`;
+}
+
+// ── Acties: Genereer / Versturen (idle→sending→sent|error) / Overslaan ───────
+async function fbGen(id) {
+  const btn = $("#fb-gen"); if (btn) { btn.disabled = true; btn.innerHTML = `${ic("brain")} AI schrijft…`; }
+  const r = await jpost("/api/feedback/generate", { id }).catch(() => null);
+  if (btn) { btn.disabled = false; btn.innerHTML = `${ic("brain")} Genereer`; }
+  if (!r || !r.ok) return melding(r && r.err || "Genereren mislukt.", true);
+  const ta = $("#fb-ta"); if (ta) { ta.value = r.tekst || ""; fbDraftSave(id, ta.value); ta.focus(); }
+}
+async function fbSend(id) {
+  if (FB.sending || FB.sentSet.has(id)) return;      // dubbel-post-guard
+  const ta = $("#fb-ta"), tekst = (ta && ta.value || "").trim();
+  if (!tekst) return melding("Schrijf of genereer eerst een reactie.", true);
+  const btn = $("#fb-send"); FB.sending = true;
+  if (btn) { btn.disabled = true; btn.innerHTML = `${ic("clock")} Versturen…`; }
+  const r = await jpost("/api/feedback/post", { id, tekst }).catch(() => null);
+  FB.sending = false;
+  if (btn) { btn.disabled = false; btn.innerHTML = `${ic("message")} Versturen`; }
+  if (!r || !r.ok) return melding(r && r.err || "Versturen mislukt — je concept staat er nog.", true);
+  FB.sentSet.add(id); fbDraftClear(id);              // pas ná server-ok
+  FB.gepost = (FB.gepost || 0) + 1;
+  const idx = FB.items.findIndex(i => i.id === id);
+  if (idx >= 0) FB.items.splice(idx, 1);
+  renderQueue(); fbUpdateInfo(); haptic(15);
+  focusNextAfterAction(FB.items[idx] || FB.items[idx - 1] || null);
+}
+function fbSkip(id) {                                 // optimistic; POST volgt ná het undo-venster
+  const idx = FB.items.findIndex(i => i.id === id); if (idx < 0) return;
+  const item = FB.items[idx];
+  FB.items.splice(idx, 1); FB.skipSet.add(id);
+  renderQueue(); fbUpdateInfo(); haptic(10);
+  focusNextAfterAction(FB.items[idx] || FB.items[idx - 1] || null);
+  const herstel = () => { FB.skipSet.delete(id); FB.items.splice(Math.min(idx, FB.items.length), 0, item); renderQueue(); fbUpdateInfo(); };
+  fbToast(`Training van ${item.voornaam || item.naam} overgeslagen`,
+    herstel,                                          // Ongedaan → exacte plek terug, geen backend-call
+    async () => {                                     // venster voorbij → nu pas overslaan
+      const r = await jpost("/api/feedback/skip", { id }).catch(() => null);
+      if (!r || !r.ok) { herstel(); melding("Overslaan mislukt — teruggezet.", true); }
+    });
+}
+// Eén toast met gegarandeerd precies één afloop: Ongedaan óf commit (nooit beide).
+function fbToast(txt, onUndo, onCommit, ms = 5000) {
+  let t = $("#prio-toast");
+  if (!t) { t = document.createElement("div"); t.id = "prio-toast"; t.className = "prio-toast"; document.body.appendChild(t); }
+  t.innerHTML = `<span>${esc(txt)}</span><button class="pt-undo" type="button">Ongedaan</button>`;
+  requestAnimationFrame(() => t.classList.add("on"));
+  clearTimeout(t._h);
+  let done = false;
+  const finish = undo => { if (done) return; done = true; clearTimeout(t._h); t.classList.remove("on"); undo ? onUndo && onUndo() : onCommit && onCommit(); };
+  t._h = setTimeout(() => finish(false), ms);
+  t.querySelector(".pt-undo").onclick = () => finish(true);
+}
+
+// ── Balken/knoppen + toetsenbord (desktop) + keyboard-aware dock (mobiel) ─────
+$("#fb-nieuw").addEventListener("click", () => {
+  if (!FB.pending) return;
+  const p = FB.pending; FB.pending = null; $("#fb-nieuw").hidden = true;
+  fbApplyQueue(p);                                    // expliciete coach-actie → nu pas toepassen
+});
+$("#fb-refresh").addEventListener("click", async () => {
+  const r = await api("/api/feedback/queue?refresh=1").catch(() => null);
+  if (r && r.fs && Array.isArray(r.items)) { FB.gepost = r.gepost || 0; FB.pending = null; $("#fb-nieuw").hidden = true; fbApplyQueue(r.items); }
+});
+document.addEventListener("keydown", e => {
+  if (huidigeView !== "feedback") return;
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { if (FB.selId) { e.preventDefault(); fbSend(FB.selId); } return; }
+  const t = e.target;                                 // sneltoetsen NOOIT tijdens typen
+  if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.isContentEditable)) return;
+  if (e.key === "ArrowDown") { e.preventDefault(); fbMove(1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); fbMove(-1); }
+  else if (e.key === "g" || e.key === "G") { if (FB.selId) { e.preventDefault(); fbGen(FB.selId); } }
+  else if (e.key === "s" || e.key === "S") { if (FB.selId) { e.preventDefault(); fbSkip(FB.selId); } }
+  else if (e.key === "Escape") { e.preventDefault(); fbClose(); }
+});
+function fbMove(dir) {
+  if (!FB.items.length) return;
+  let idx = FB.items.findIndex(i => i.id === FB.selId);
+  idx = idx < 0 ? (dir > 0 ? 0 : FB.items.length - 1) : Math.max(0, Math.min(FB.items.length - 1, idx + dir));
+  fbOpen(FB.items[idx].id);
+}
+// Keyboard-aware editor-dock: houd het dock (Versturen/Genereer) boven het toetsenbord.
+function fbVV() {
+  const vv = window.visualViewport; if (!vv) return;
+  const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  document.body.classList.toggle("kb-open", kb > 120);
+  if (isDesktop()) return;
+  const col = $("#fb-focus-col");
+  if (col && col.classList.contains("on")) { col.style.height = vv.height + "px"; col.style.top = vv.offsetTop + "px"; }
+}
+if (window.visualViewport) { window.visualViewport.addEventListener("resize", fbVV); window.visualViewport.addEventListener("scroll", fbVV); }
 
 // ════════════════════════════════════════════════════════════════════════════
 // SCHEMA BOUWEN — opgeslagen intake → AI-plan → CSV-download voor FinalSurge
@@ -2090,7 +2330,7 @@ laders.strippen = laad;
 laders.atleten = laadDossierLijst;
 laders.intake = laadIntake;
 laders.documenten = laadDocs;
-laders.feedback = laadFeedback;
+laders.feedback = fbEnter;
 laders.schema = laadSchema;
 laders.races = laadRaces;
 laders["schema-verloop"] = laadSchemaVerloop;

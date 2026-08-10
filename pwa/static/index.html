@@ -173,13 +173,21 @@
       <div id="sb-werk" hidden></div>
     </section>
 
-    <!-- ════════ FEEDBACK ════════ -->
+    <!-- ════════ FEEDBACK — workbench (inbox → focus) ════════ -->
     <section class="view" data-view="feedback">
-      <header class="appbar"><h1>Feedback</h1>
-        <button class="iconbtn" id="fb-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
-      </header>
-      <p class="hint" id="fb-info">laden…</p>
-      <section id="fb-lijst" class="lijst"></section>
+      <div class="fb-split">
+        <div class="fb-queue-col">
+          <header class="appbar"><h1>Feedback</h1>
+            <button class="iconbtn" id="fb-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+          </header>
+          <button class="fb-nieuw" id="fb-nieuw" type="button" hidden></button>
+          <p class="hint" id="fb-info">laden…</p>
+          <section id="fb-queue" class="fb-queue"></section>
+        </div>
+        <div class="fb-focus-col" id="fb-focus-col" aria-hidden="true">
+          <div id="fb-focus" class="fb-focus"></div>
+        </div>
+      </div>
     </section>
 
     <!-- ════════ DOCUMENTEN ════════ -->

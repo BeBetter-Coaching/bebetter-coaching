@@ -743,3 +743,112 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
   .prio-dot{margin-top:6px}
   .prio-row .avatar{margin-top:1px}
 }
+
+/* ════════════════ FEEDBACK — workbench (inbox → focus) ════════════════════ */
+.fb-split{display:block}
+.fb-queue-col{min-width:0}
+.fb-queue{margin-top:2px}
+
+/* SWR-balk: "N nieuwe — tik om te tonen" (informatief, geen waarschuwing) */
+.fb-nieuw{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  background:rgba(94,230,235,.12);border:1px solid rgba(94,230,235,.34);color:#d4fbfd;
+  border-radius:11px;padding:10px 14px;margin:2px 0 8px;font-weight:650;font-size:13px;cursor:pointer}
+.fb-nieuw .ic{width:16px;height:16px}
+.fb-nieuw:active{transform:scale(.99)}
+
+/* Categorie-koppen boven de rijen */
+.fbq-cat{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.6px;
+  text-transform:uppercase;margin:16px 2px 7px}
+.fbq-cat:first-child{margin-top:6px}
+
+/* Compacte inbox-rij (geen grote kaarten) */
+.fbq-row{display:flex;align-items:center;gap:11px;width:100%;text-align:left;font:inherit;
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:10px 12px;margin:7px 0;cursor:pointer;color:var(--text);
+  transition:border-color .16s,background .16s,transform .08s}
+.fbq-row:hover{border-color:#2c507f}
+.fbq-row:active{transform:scale(.995)}
+.fbq-row.on{border-color:var(--acc);background:#0d284c}
+.fbq-row .avatar{width:36px;height:36px;flex:0 0 auto;font-size:13px}
+.fbq-body{flex:1;min-width:0;display:flex;flex-direction:column}
+.fbq-top{display:flex;align-items:center;gap:8px;min-width:0}
+.fbq-naam{font-weight:650;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbq-meta{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.fbq-prev{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.fbq-row>.ic{color:var(--muted);width:18px;height:18px;flex:0 0 auto}
+
+/* Eén categorie-badge per rij — kleur = betekenis; Reactie = cyaan (niet rood) */
+.fb-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;letter-spacing:.3px;flex:0 0 auto;white-space:nowrap}
+.fb-badge.reactie{background:rgba(94,230,235,.15);color:#8ff0f3;border:1px solid rgba(94,230,235,.30)}
+.fb-badge.gevoel{background:var(--card2);color:var(--muted);border:1px solid var(--border)}
+.fb-badge.uitgevoerd{background:transparent;color:var(--muted);border:1px solid var(--border)}
+
+/* Focus-kolom: mobiel = full-screen overlay; desktop = rechterpaneel (zie media) */
+.fb-focus-col{position:fixed;inset:0;z-index:30;background:var(--bg);
+  transform:translateX(100%);transition:transform .26s cubic-bezier(.2,.7,.3,1);
+  display:flex;flex-direction:column;visibility:hidden}
+.fb-focus-col.on{transform:none;visibility:visible}
+.fb-focus{display:flex;flex-direction:column;height:100%;min-height:0}
+
+/* sticky focus-header (blijft staan tijdens scroll) */
+.fbf-head{flex:0 0 auto;display:flex;align-items:center;gap:11px;
+  padding:calc(10px + env(safe-area-inset-top)) 15px 11px;
+  border-bottom:1px solid var(--border);background:var(--bg)}
+.fbf-back{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:10px;
+  width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;cursor:pointer}
+.fbf-back .ic{width:20px;height:20px}
+.fbf-head .avatar{width:38px;height:38px;flex:0 0 auto;font-size:14px}
+.fbf-htext{flex:1;min-width:0}
+.fbf-htext h2{margin:0;font-size:16px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbf-htext p{margin:1px 0 0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* scroll-gebied tussen header en dock */
+.fbf-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 15px 16px}
+
+/* planned vs actual — rustig/tabulair, zone-pills neutraal */
+.fb-pa{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:0 0 12px}
+.fb-pa table{width:100%;border-collapse:collapse;font-size:13px}
+.fb-pa th{text-align:left;font-weight:600;color:var(--muted);font-size:11px;padding:0 0 6px}
+.fb-pa th:first-child{width:34%}
+.fb-pa td{padding:4px 0;font-variant-numeric:tabular-nums;vertical-align:top}
+.fb-pa td.lbl{color:var(--muted)}
+.fb-pa-foot{margin:8px 0 0;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+.fb-zone{display:inline-block;background:var(--card2);border:1px solid var(--border);border-radius:7px;
+  padding:1px 7px;font-size:11.5px;color:var(--text)}
+.fb-afw{display:inline-block;font-size:11px;color:var(--muted)}
+
+/* recente context — voorbereid op fase 4; informatief (cyaan), amber terughoudend */
+.fb-ctx{background:rgba(94,230,235,.08);border:1px solid rgba(94,230,235,.22);border-radius:11px;
+  padding:10px 12px;margin:0 0 12px;font-size:12.5px;color:#bfe9ec;line-height:1.5}
+.fb-ctx.amber{background:rgba(239,159,39,.08);border-color:rgba(239,159,39,.28);color:#f0c98a}
+.fb-ctx b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;opacity:.85}
+
+/* editor-dock: sticky onderaan; Versturen primair, altijd zichtbaar */
+.fb-dock{flex:0 0 auto;border-top:1px solid var(--border);background:var(--card2);
+  padding:10px 15px calc(10px + env(safe-area-inset-bottom))}
+.fb-dock textarea{margin:0 0 8px;min-height:78px;resize:none}
+.fb-dock-row{display:flex;gap:8px}
+.fb-dock-row .btn{flex:1}
+.fb-dock-sec{display:flex;gap:8px;margin-top:8px}
+.fb-dock-sec .btn{flex:1}
+.fb-focus-empty{margin:auto;text-align:center;color:var(--muted);padding:40px 20px}
+.fb-focus-empty .ic{width:34px;height:34px;opacity:.7}
+.fb-focus-empty p{margin:12px 0 0;font-size:14px}
+
+/* Keyboard open (mobiel): secundaire acties inklappen, dock compacter */
+body.kb-open .fb-dock-sec{display:none}
+body.kb-open .fb-dock textarea{min-height:50px}
+
+@media(prefers-reduced-motion:reduce){.fb-focus-col{transition:none}}
+
+/* Desktop: master-detail (queue links, focus rechts — beide zichtbaar) */
+@media (min-width:900px){
+  .view[data-view="feedback"]{max-width:1180px}
+  .fb-split{display:grid;grid-template-columns:342px 1fr;gap:22px;align-items:start}
+  .fb-focus-col{position:sticky;top:22px;inset:auto;z-index:1;transform:none;visibility:visible;
+    height:calc(100vh - 44px);background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+  .fbf-head{padding:14px 16px}
+  .fbf-back{display:none}
+  .fb-dock{background:var(--card)}
+  body.kb-open .fb-dock-sec{display:flex}   /* geen keyboard-collapse op desktop */
+}
