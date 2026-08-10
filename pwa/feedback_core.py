@@ -759,6 +759,21 @@ def _plan_analyse(w: dict, d: dict, zones: list) -> dict:
             "structured_multi": True, "kern": kern, "context": context}
 
 
+def _type_veld_scan(obj: dict) -> dict:
+    """Tijdelijke, niet-gevoelige scan: geef de type-/activity-/sport-achtige velden
+    van een object terug (alleen scalaire waarden, key-namen die op type wijzen), om
+    het exacte FinalSurge-detailveld te vinden zonder te gokken. Geen notities/comments."""
+    if not isinstance(obj, dict):
+        return {}
+    uit = {}
+    for k, v in obj.items():
+        kl = str(k).lower()
+        if any(t in kl for t in ("activ", "type", "sport", "discipline")):
+            if v is None or isinstance(v, (str, int, float, bool)):
+                uit[k] = (v[:60] if isinstance(v, str) else v)
+    return uit
+
+
 def detail(wid: str) -> dict:
     """Lazy focus-detail voor één workout: trainingssamenvatting (gepland↔uitgevoerd,
     tempo/HF, zones deterministisch), afstandsafwijking, gevoel/RPE, laps, plan-
@@ -842,10 +857,22 @@ def detail(wid: str) -> dict:
         # Alleen GUID/typenaam — geen notities/comments/gevoel/persoonsgegevens.
         "type_debug": {
             "workout_key": w.get("workout_key"),
-            "activity_type_key": w.get("_dbg_at_key"),
-            "activity_type_name": w.get("_dbg_at_name"),
-            "act0_activity_type_key": w.get("_dbg_at0_key"),
-            "act0_activity_type_name": w.get("_dbg_at0_name"),
+            # Licht WorkoutList-item (waar de queue-classificatie nu op draait)
+            "list_activity_type_key": w.get("_dbg_at_key"),
+            "list_activity_type_name": w.get("_dbg_at_name"),
+            "list_act0_activity_type_key": w.get("_dbg_at0_key"),
+            "list_act0_activity_type_name": w.get("_dbg_at0_name"),
+            # Rijk detailobject (WorkoutPlannedCompleted) — dit is wat Streamlit
+            # heeft (include_details=True) en de lichte queue mist. Al geladen via
+            # _ensure_details; GEEN extra sweep-call.
+            "detail_activity_type_key": d.get("activity_type_key"),
+            "detail_activity_type_name": d.get("activity_type_name"),
+            "detail_act0_activity_type_key": act.get("activity_type_key"),
+            "detail_act0_activity_type_name": act.get("activity_type_name"),
+            # Niet-gevoelige scan naar type-achtige velden (om het exacte veld te
+            # vinden zonder te gokken): alleen scalar waarden, type/activity/sport-keys.
+            "detail_type_fields": _type_veld_scan(d),
+            "detail_act0_type_fields": _type_veld_scan(act),
             "classified_workout_type": wt,
         },
         "zone_type": zone_type or None,
