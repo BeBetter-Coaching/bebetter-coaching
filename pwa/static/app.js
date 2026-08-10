@@ -1910,8 +1910,10 @@ async function fbFetchDetail(id, preload) {
   const dur = Math.round(performance.now() - t0);
   if (d && d.ok) {
     FB.detailCache[id] = d;
-    fbLog(preload ? "preload_success" : "detail_fetch_success", { target: id, detail_fetch_duration_ms: dur });
-    if (d.type_debug) fbLog("type_debug", d.type_debug);   // tijdelijke data-controle (niet-gevoelig)
+    // Structurele productdiagnose: alleen het geclassificeerde type (run/strength/…),
+    // geen ruwe FinalSurge-veldscan meer (die tijdelijke onderzoeksdebug is verwijderd).
+    fbLog(preload ? "preload_success" : "detail_fetch_success",
+      { target: id, detail_fetch_duration_ms: dur, workout_type: d.workout_type || "unknown" });
   } else {
     fbLog(preload ? "preload_error" : "detail_fetch_error", { target: id, detail_fetch_duration_ms: dur });
   }

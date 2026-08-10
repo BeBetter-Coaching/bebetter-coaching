@@ -613,8 +613,27 @@ def generate_reply(workout_data: dict, thread: list) -> str:
     """
     Genereer een vervolg-reactie in een lopend gesprek.
     Reageert op het LAATSTE bericht van de atleet — zonder alle trainingsdata opnieuw te analyseren.
+
+    Workout-type-aware, met exact dezelfde centrale waarheid als generate_feedback
+    (fs_client.classify_workout_type → workout_data["workout_type"]): een hardloop-
+    training gebruikt het bewezen run-pad (SYSTEM_PROMPT + _build_workout_context);
+    kracht/andere bewezen non-run én onbekend gebruiken de neutrale _NONRUN_SYSTEM +
+    _build_nonrun_context (geen pace/afstand/hartslagzone/hardloopframing). UNKNOWN
+    wordt nooit als run behandeld. Geen aparte reply-promptset — hergebruik.
     """
-    context, first_name = _build_workout_context(workout_data)
+    workout_type = workout_data.get("workout_type") or "unknown"
+    is_run = (workout_type == "run")
+    if is_run:
+        context, first_name = _build_workout_context(workout_data)
+        system_prompt = SYSTEM_PROMPT
+        nonrun_note = ""
+    else:
+        context, first_name = _build_nonrun_context(workout_data)
+        system_prompt = _NONRUN_SYSTEM
+        nonrun_note = (
+            " Dit is GEEN hardlooptraining: gebruik geen tempo/hartslagzones, geen "
+            "afstand en geen run-termen; blijf bij de feitelijke gegevens."
+        )
 
     # Bouw de gespreksgeschiedenis op als multi-turn messages
     # Beginbericht: de volledige context als achtergrond
@@ -651,13 +670,13 @@ def generate_reply(workout_data: dict, thread: list) -> str:
     messages[-1]["content"] += (
         f"\n\n[Dit is het laatste bericht van {first_name}. "
         f"Reageer ALLEEN op dit bericht. Je hoeft de training niet opnieuw te analyseren. "
-        f"Houd het kort en persoonlijk, in de stijl van Jip.]"
+        f"Houd het kort en persoonlijk, in de stijl van Jip.{nonrun_note}]"
     )
 
     response = create_message(
         model="claude-sonnet-4-6",
         max_tokens=400,
-        system=SYSTEM_PROMPT,
+        system=system_prompt,
         messages=messages,
     )
 

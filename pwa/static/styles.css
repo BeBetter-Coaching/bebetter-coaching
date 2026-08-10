@@ -887,14 +887,15 @@ body.kb-open .fb-dock textarea{min-height:50px;max-height:22vh}
    achterliggende queue-kolom niet interactief (naast het `inert`-attribuut). */
 body.fb-focus-open .fb-queue-col{pointer-events:none}
 
-/* Mobiel (keyboard dicht): Overslaan = duidelijke tertiaire workflowactie,
-   volwaardig touch-target en visueel ondergeschikt aan Genereer/Versturen;
-   Kopieer wordt de compacte utility ernaast (geen button-soup). Reuse fbSkip.
+/* Mobiel (keyboard dicht): Overslaan = de enige tertiaire workflowactie, over de
+   volledige breedte, volwaardig touch-target en visueel ondergeschikt aan
+   Genereer/Versturen. Kopiëren hoort NIET in de mobiele composer-actiezone
+   (op desktop blijft het wél; zie desktop-blok) → hier verborgen. Reuse fbSkip.
    Tijdens kb-open blijft de hele rij verborgen (composer = alleen Gen/Send). */
 @media(max-width:899px){
   .fb-dock-sec .btn{min-height:44px}
-  .fb-dock-sec #fb-copy{flex:0 0 auto}
-  .fb-dock-sec #fb-skip{flex:1}
+  .fb-dock-sec #fb-copy{display:none}   /* Kopiëren niet in de mobiele composer-actiezone */
+  .fb-dock-sec #fb-skip{flex:1}          /* Overslaan = volledige breedte */
   /* Til de laatste dockrij (Overslaan) boven de iOS-onderchrome (Safari-onderbalk /
      home-indicator). De dock is bottom:0 van 100dvh; die onderrand loopt op iPhone
      achter de balk, waardoor de Overslaan-rij onzichtbaar wordt. Positionering blijft

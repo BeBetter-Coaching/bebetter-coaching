@@ -1006,12 +1006,6 @@ def get_workouts_needing_feedback(
             # Deterministisch workouttype (run/strength/bike/…): één bron van
             # waarheid zodat queue/detail/AI run-logica alleen op runs toepassen.
             "workout_type": classify_workout_type(cand["w"]),
-            # TIJDELIJKE data-controle (niet-gevoelig: alleen GUID/typenaam) — laat
-            # zien wat FinalSurge werkelijk levert vs. onze classificatie. Verwijderbaar.
-            "_dbg_at_key": cand["w"].get("activity_type_key"),
-            "_dbg_at_name": cand["w"].get("activity_type_name"),
-            "_dbg_at0_key": ((cand["w"].get("Activities") or [{}])[0] or {}).get("activity_type_key"),
-            "_dbg_at0_name": ((cand["w"].get("Activities") or [{}])[0] or {}).get("activity_type_name"),
             "post_notes": post_notes,
             "felt": cand["felt"],
             "effort": cand["effort"],
