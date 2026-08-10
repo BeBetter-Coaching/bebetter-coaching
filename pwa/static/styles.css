@@ -895,6 +895,12 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
   .fb-dock-sec .btn{min-height:44px}
   .fb-dock-sec #fb-copy{flex:0 0 auto}
   .fb-dock-sec #fb-skip{flex:1}
+  /* Til de laatste dockrij (Overslaan) boven de iOS-onderchrome (Safari-onderbalk /
+     home-indicator). De dock is bottom:0 van 100dvh; die onderrand loopt op iPhone
+     achter de balk, waardoor de Overslaan-rij onzichtbaar wordt. Positionering blijft
+     ongewijzigd — alleen genoeg bodemruimte zodat de rij bovenuit komt. Tijdens
+     kb-open wint de composer-regel (hogere specificiteit) → daar verandert niets. */
+  .fb-dock{padding-bottom:max(calc(10px + env(safe-area-inset-bottom)), 52px)}
 }
 
 /* ── Composer mode (mobiel, keyboard open) ───────────────────────────────────
