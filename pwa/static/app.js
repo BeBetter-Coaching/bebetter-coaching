@@ -1925,6 +1925,7 @@ async function fbOpen(id, reason) {
   const col = $("#fb-focus-col"); col.classList.add("on"); col.setAttribute("aria-hidden", "false");
   fbLockQueue(true);                                  // click-through hard blokkeren zolang focus open is
   fbKbReset();                                        // start zonder keyboard-offset; resize-handler vult later
+  fbKbCaptureBaseline();                              // ijk baseline nu (keyboard nog dicht)
   fbLog("focus_open", { reason: reason || "open" });
   if (FB.detailCache[id]) renderFocus(FB.detailCache[id]);
   else { renderFocusSkeleton(id); const d = await fbFetchDetail(id); if (FB.selId === id) renderFocus(d); }
@@ -1936,6 +1937,7 @@ function fbClose() {
   fbLockQueue(false);                                 // queue weer interactief
   document.body.classList.remove("kb-open");
   fbKbReset();                                        // keyboard-offset terug naar 0
+  _fbKbBaseline = null;                               // sessie-einde: baseline vrijgeven (volgende fbOpen ijkt opnieuw)
   fbLog("focus_close");
   FB.selId = null; renderQueue();
   if (isDesktop()) renderFocusEmpty();
@@ -2172,18 +2174,44 @@ function fbMove(dir) {
 // daarmee boven het toetsenbord; header/shell/scroll-geometrie bewegen niet.
 // Coalesced/debounced: één stabiele update rond de eindtoestand i.p.v. tientallen
 // writes tijdens de keyboardanimatie. Bij blur/close direct terug naar 0.
-let _fbKbTimer = 0, _fbKbRaf = 0;
-function _fbKbRead() {
+let _fbKbTimer = 0, _fbKbRaf = 0, _fbKbBaseline = null;
+// Zichtbare onderrand van de visual viewport (in layout-coördinaten).
+function _fbVisibleBottom() {
   const vv = window.visualViewport; if (!vv) return 0;
-  return Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+  return vv.offsetTop + vv.height;
+}
+// Keyboardhoogte t.o.v. een keyboard-DICHTE baseline i.p.v. de onbetrouwbare live
+// window.innerHeight (die op iOS mee-flapt met toolbars/animatie → gaf 0/131/316
+// bij dezelfde keyboard-state). Zolang het toetsenbord DICHT is, houden we de
+// baseline vers (absorbeert Safari-browserchrome); zodra het OPEN is, staat de
+// baseline vast en is kb = baseline − huidige zichtbare onderrand.
+function _fbKbCompute() {
+  const vv = window.visualViewport; if (!vv) return { kb: 0, vb: 0 };
+  const vb = _fbVisibleBottom();
+  const kbOpen = document.body.classList.contains("kb-open");
+  if (!kbOpen) { _fbKbBaseline = vb; return { kb: 0, vb }; }   // dicht → offset 0, baseline vers
+  if (_fbKbBaseline == null) _fbKbBaseline = vb;               // safety: geen baseline → geen sprong
+  return { kb: Math.max(0, Math.round(_fbKbBaseline - vb)), vb };
+}
+// Baseline (her)ijken — alleen zinvol wanneer het toetsenbord dicht is.
+function fbKbCaptureBaseline() {
+  if (!document.body.classList.contains("kb-open")) _fbKbBaseline = _fbVisibleBottom();
 }
 function _fbKbWrite() {
   const col = $("#fb-focus-col"); if (!col) return;
-  const kb = _fbKbRead();
+  const vv = window.visualViewport;
+  const { kb, vb } = _fbKbCompute();
   col.style.setProperty("--kb-h", kb + "px");
-  fbLog("kb_offset", { kb_h: kb,
+  fbLog("kb_offset", {
+    kb_h: kb, calculated_kb_h: kb,
+    window_inner_height: window.innerHeight,          // ALLEEN loggen, niet in de berekening
+    vv_height: vv ? Math.round(vv.height) : null,
+    vv_offset_top: vv ? Math.round(vv.offsetTop) : null,
+    vv_visible_bottom: Math.round(vb),
+    baseline_visible_bottom: _fbKbBaseline != null ? Math.round(_fbKbBaseline) : null,
     overlay_h: Math.round(col.getBoundingClientRect().height),
     dock_h: Math.round((document.querySelector(".fb-dock") || {}).getBoundingClientRect?.().height || 0),
+    keyboard_open: document.body.classList.contains("kb-open"),
     active: (document.activeElement && document.activeElement.id) || null });
 }
 // Debounced update: verzamel de resize-storm en schrijf één keer als het settelt.
@@ -2196,7 +2224,9 @@ function fbKbUpdate() {
     cancelAnimationFrame(_fbKbRaf); _fbKbRaf = requestAnimationFrame(_fbKbWrite);
   }, 90);
 }
-// Direct terug naar 0 (blur/close) — niet wachten op de debounce.
+// Direct terug naar 0 (blur/close) — niet wachten op de debounce. Baseline blijft
+// bewaard zodat een snelle re-focus meteen de juiste (keyboard-dichte) referentie
+// heeft; volledige sessie-einde wist hem in fbClose.
 function fbKbReset() {
   clearTimeout(_fbKbTimer); cancelAnimationFrame(_fbKbRaf);
   const col = $("#fb-focus-col"); if (col) col.style.setProperty("--kb-h", "0px");
