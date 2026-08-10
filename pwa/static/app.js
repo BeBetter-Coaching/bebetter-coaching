@@ -1981,10 +1981,22 @@ function fbBindDock(id) {
     ta.addEventListener("blur", () => { document.body.classList.remove("kb-open"); fbLog("keyboard_close", { via: "blur" }); });
     fbGrow(ta);
   }
-  const g = $("#fb-gen"); if (g) g.onclick = () => fbGen(id);
-  const s = $("#fb-send"); if (s) s.onclick = () => fbSend(id);
+  // Primaire acties (Genereer/Versturen): bruikbaar met OPEN keyboard. Op iOS
+  // blurt een gewone tap eerst de textarea (keyboard sluit → composer reflowt →
+  // de click mist / komt te laat). mousedown vuurt vóór de blur; preventDefault
+  // houdt de focus/het toetsenbord vast, waarna de click direct afvuurt. Zelfde
+  // handlers (fbGen/fbSend) — geen dubbele logica, geen keyboardgeometrie.
+  fbBindPrimary($("#fb-gen"), () => fbGen(id));
+  fbBindPrimary($("#fb-send"), () => fbSend(id));
   const c = $("#fb-copy"); if (c) c.onclick = () => { navigator.clipboard?.writeText($("#fb-ta")?.value || "").then(() => melding("Gekopieerd.")); };
   const sk = $("#fb-skip"); if (sk) sk.onclick = () => fbSkip(id);
+}
+// Bind een primaire composer-actie zó dat een tap de editor NIET blurt (keyboard
+// blijft open, geen reflow) en de click meteen afvuurt.
+function fbBindPrimary(btn, handler) {
+  if (!btn) return;
+  btn.addEventListener("mousedown", e => e.preventDefault());   // houd focus/keyboard vast
+  btn.onclick = handler;
 }
 // Begrensde textarea-groei: auto-size op content; de CSS `max-height` (stabiele vh,
 // niet visualViewport) klemt de hoogte af → daarna interne scroll. Bewust GEEN

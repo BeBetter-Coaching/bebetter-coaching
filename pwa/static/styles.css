@@ -898,6 +898,8 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
   body.kb-open .fbf-scroll{overflow:visible;flex:0 0 auto;padding-bottom:14px}
   body.kb-open .fb-dock{position:static;left:auto;right:auto;
     padding-bottom:calc(42vh + env(safe-area-inset-bottom))}
+  /* Genereer/Versturen: ruime touch-targets, direct onder de editor */
+  body.kb-open .fb-dock-row .btn{min-height:44px}
 }
 
 @media(prefers-reduced-motion:reduce){.fb-focus-col{transition:none}}
