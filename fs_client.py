@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
@@ -726,6 +727,10 @@ def get_workouts_needing_feedback(
     end = date.today()
     start = end - timedelta(days=days_back)
     today_str = date.today().isoformat()
+    # Fase-timings (alleen meten, geen gedrag/scope-wijziging). Wordt via de
+    # stats-dict teruggegeven zodat de Feedback-diag kan uitsplitsen waar de
+    # sweep-tijd zit. Bevat geen gevoelige inhoud.
+    _t_start = time.perf_counter()
     coach_key = get_coach_key()  # gecachet na eerste call
     athletes = get_athletes()
     if athlete_filter:
@@ -736,6 +741,7 @@ def get_workouts_needing_feedback(
             if not any(group_is_excluded(g, exclude_groups)
                        for g in (a.get("all_groups") or [a.get("group")]))
         ]
+    _roster_ms = int((time.perf_counter() - _t_start) * 1000)
 
     def _is_athlete_comment(c: dict) -> bool:
         if "is_athlete" in c:
@@ -746,10 +752,12 @@ def get_workouts_needing_feedback(
         return c.get("timestamp") or c.get("created_at") or ""
 
     # ── Fase 1: workouts parallel ophalen ──────────────────────────────────
+    _t_fanout = time.perf_counter()
     prefetched = dict(_parallel_per_athlete(
         athletes,
         lambda a: (a["user_key"], get_workouts_deduped(a["user_key"], start, end)),
     ))
+    _fanout_ms = int((time.perf_counter() - _t_fanout) * 1000)
 
     # ── Pre-filter op workout-data (geen API-calls nodig) ──────────────────
     candidates: list[dict] = []
@@ -821,7 +829,11 @@ def get_workouts_needing_feedback(
             cand["_comments_failed"] = True
         return cand
 
+    # Aantal kandidaten dat daadwerkelijk een comment-fetch (API-call) doet.
+    _comment_fetch_count = sum(1 for c in candidates if c["comment_count"])
+    _t_comments = time.perf_counter()
     with_comments = _parallel_per_athlete(candidates, _fetch_comments)
+    _comments_ms = int((time.perf_counter() - _t_comments) * 1000)
 
     # Vandaag gepost: workouts met ≥1 coach-comment van vandaag — geldt voor
     # beide coaches (zelfde account) en blijft kloppen over sessies/apparaten heen
@@ -940,7 +952,16 @@ def get_workouts_needing_feedback(
         })
 
     if return_stats:
-        return results, {"posted_today": posted_today}
+        return results, {
+            "posted_today": posted_today,
+            # Fase-timings + tellingen (alleen meten; geen gevoelige inhoud).
+            "roster_ms": _roster_ms,
+            "workouts_fanout_ms": _fanout_ms,
+            "comments_ms": _comments_ms,
+            "athlete_count": len(athletes),
+            "candidate_count": len(candidates),
+            "comment_fetch_count": _comment_fetch_count,
+        }
     return results
 
 

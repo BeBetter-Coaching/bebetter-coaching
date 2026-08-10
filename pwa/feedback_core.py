@@ -334,6 +334,11 @@ def _herstel_cache(snap: dict) -> None:
 # blijven). Bevat nooit gevoelige inhoud — alleen ok/fouttype.
 _LAST_PERSIST: dict = {"ok": None, "error": None, "at": None}
 
+# Fase-timings van de laatste sweep (alleen meten). Wordt NIET in de snapshot
+# opgeslagen — puur transiënt geheugen zodat een verse refresh in zijn diag kan
+# uitsplitsen waar de ~12 sec zit. Bevat geen gevoelige inhoud.
+_LAST_SWEEP_DIAG: dict = {}
+
 
 def _snapshot_leeftijd_sec(snap: dict):
     ber = snap.get("berekend") if isinstance(snap, dict) else None
@@ -459,6 +464,7 @@ _CAT_RANK = {"reactie": 0, "gevoel": 1, "uitgevoerd": 2}
 
 def _bouw_queue() -> dict:
     """De zware sweep (alleen bij refresh) → LICHTE queue (geen details)."""
+    global _LAST_SWEEP_DIAG
     if not heeft_token():
         return {"fs": False, "items": [], "gepost": 0}
     try:
@@ -470,12 +476,24 @@ def _bouw_queue() -> dict:
         if oud:
             return {**oud, "verouderd": True}
         return {"fs": True, "items": [], "gepost": 0, "err": "FinalSurge onbereikbaar."}
+    _t_build = time.perf_counter()
     workouts = _filter_skipped(workouts)
     items, volle = [], {}
     for w in workouts:
         wid = w.get("workout_key") or (str(w.get("athlete_key", "")) + ":" + str(w.get("workout_date", "")))
         volle[wid] = w
         items.append(_queue_item(wid, w))
+    # Fase-timings + tellingen uit de sweep bewaren voor de refresh-diag
+    # (transiënt; niet in de snapshot). build_ms = queue-opbouw ná FinalSurge.
+    _LAST_SWEEP_DIAG = {
+        "roster_ms": stats.get("roster_ms"),
+        "workouts_fanout_ms": stats.get("workouts_fanout_ms"),
+        "comments_ms": stats.get("comments_ms"),
+        "build_ms": int((time.perf_counter() - _t_build) * 1000),
+        "athlete_count": stats.get("athlete_count"),
+        "candidate_count": stats.get("candidate_count"),
+        "comment_fetch_count": stats.get("comment_fetch_count"),
+    }
     return {
         "fs": True, "items": items, "gepost": stats.get("posted_today", 0),
         "berekend": datetime.now().isoformat(timespec="seconds"),
@@ -545,13 +563,20 @@ def queue(refresh: bool = False) -> dict:
         return {"fs": True, "items": [], "pending": True, "cached": False,
                 "diag": _diag({}, {**bron, "verversen_bezig": True})}
     try:
+        _t_refresh = time.perf_counter()
         snap = _bouw_queue()
         if _queue_valid(snap) and "_volle" in snap:
             _herstel_cache(snap)
+            _t_persist = time.perf_counter()
             ok, err = _queue_persist(snap)
+            persist_ms = int((time.perf_counter() - _t_persist) * 1000)
+            total_refresh_ms = int((time.perf_counter() - _t_refresh) * 1000)
             return _queue_public(snap, cached=False, diag=_diag(snap, {
                 "bron": "sweep", "persist_ok": ok,
-                "persist_error": (err[:120] if (err and not ok) else None)}))
+                "persist_error": (err[:120] if (err and not ok) else None),
+                **_LAST_SWEEP_DIAG,
+                "persist_ms": persist_ms,
+                "total_refresh_ms": total_refresh_ms}))
         oud, bron = _queue_current_diag()                 # sweep faalde/leeg → oude houden
         if oud:
             return _queue_public(oud, cached=True, refresh_mislukt=True, diag=_diag(oud, {**bron, "refresh_mislukt": True}))
