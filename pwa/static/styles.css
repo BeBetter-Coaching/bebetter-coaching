@@ -756,10 +756,27 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 .fb-nieuw .ic{width:16px;height:16px}
 .fb-nieuw:active{transform:scale(.99)}
 
-/* Categorie-koppen boven de rijen */
+/* Groep-selector: compacte, horizontaal scrollbare pills (default Alle) */
+.fb-groups{display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  padding:2px 0 4px;margin:2px -2px 2px;scrollbar-width:none}
+.fb-groups::-webkit-scrollbar{display:none}
+.fbg-pill{flex:0 0 auto;background:var(--card);border:1px solid var(--border);color:var(--muted);
+  border-radius:20px;padding:6px 12px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap}
+.fbg-pill b{color:var(--text);font-weight:750;margin-left:2px}
+.fbg-pill.on{border-color:var(--acc);color:var(--text);background:#0d284c}
+.fbg-pill.on b{color:var(--acc)}
+
+/* Categorie-koppen boven de rijen (bij één geselecteerde groep) */
 .fbq-cat{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.6px;
   text-transform:uppercase;margin:16px 2px 7px}
 .fbq-cat:first-child{margin-top:6px}
+
+/* Slanke groepskop (bij Alle) — oriëntatie zonder heading-oerwoud */
+.fbq-groep{display:flex;align-items:center;gap:8px;color:var(--text);font-size:12.5px;font-weight:700;
+  margin:16px 2px 7px;text-transform:none;letter-spacing:0}
+.fbq-groep:first-child{margin-top:6px}
+.fbq-groep::after{content:"";flex:1;height:1px;background:var(--border);margin-left:2px}
+.fbq-groep span{color:var(--muted);font-weight:650;font-size:11.5px;order:3}
 
 /* Compacte inbox-rij (geen grote kaarten) */
 .fbq-row{display:flex;align-items:center;gap:11px;width:100%;text-align:left;font:inherit;
@@ -815,7 +832,10 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 .fb-pa-foot{margin:8px 0 0;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
 .fb-zone{display:inline-block;background:var(--card2);border:1px solid var(--border);border-radius:7px;
   padding:1px 7px;font-size:11.5px;color:var(--text)}
+.fb-zone.plan{border-color:rgba(94,230,235,.3);color:#bfe9ec}   /* geplande intentie (Z2 → Z3) */
 .fb-afw{display:inline-block;font-size:11px;color:var(--muted)}
+.fb-pa-intentie{margin:0 0 10px;font-size:13px;color:var(--text)}
+.fb-pa-intentie b{color:#bfe9ec;font-weight:700}
 
 /* recente context — voorbereid op fase 4; informatief (cyaan), amber terughoudend */
 .fb-ctx{background:rgba(94,230,235,.08);border:1px solid rgba(94,230,235,.22);border-radius:11px;

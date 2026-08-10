@@ -365,9 +365,40 @@ def _categorie(w: dict) -> tuple[str, str]:
     return "uitgevoerd", ""
 
 
+# ── Coachgroepen (begeleide abonnementen) ────────────────────────────────────
+# Centrale bron = fs_client.get_athletes (group/all_groups). Hier alléén de
+# presentatievolgorde + canonieke labels voor de Feedback-queue. Los
+# trainingsschema staat er BEWUST niet in: die groep is al uit de sweep
+# gefilterd (exclude_groups={"los schema"}) en heeft geen Feedback-werkvoorraad.
+_GROEPEN = [
+    ("start_to_run", "Start to Run", ("start", "run")),
+    ("getting_better", "Getting Better", ("getting", "better")),
+    ("high_performer", "High Performer", ("high", "performer")),
+    ("comfort", "Comfort", ("comfort",)),
+]
+_GROEP_RANK = {k: i for i, (k, _l, _w) in enumerate(_GROEPEN)}
+_GROEP_RANK["overig"] = 9
+_GROEP_LABEL = {k: l for k, l, _w in _GROEPEN}
+_GROEP_LABEL["overig"] = "Overig"
+
+
+def _canon_groep(groepen: list) -> str:
+    """Map de (alle_)groepen van een atleet op één canonieke begeleide-groep-sleutel.
+    Woord-subset-match (zoals fs_client.group_is_excluded), in vaste volgorde →
+    deterministisch. Geen match → 'overig'."""
+    low = [(g or "").lower() for g in (groepen or []) if g]
+    for key, _label, woorden in _GROEPEN:
+        for g in low:
+            if all(w in g for w in woorden):
+                return key
+    return "overig"
+
+
 def _queue_item(wid: str, w: dict) -> dict:
     naam = w.get("athlete_name", "")
     categorie, preview = _categorie(w)
+    groepen = w.get("athlete_groups") or ([w.get("athlete_group")] if w.get("athlete_group") else [])
+    groep = _canon_groep(groepen)
     return {
         "id": wid, "athlete_key": w.get("athlete_key", ""),
         "naam": naam,
@@ -375,6 +406,7 @@ def _queue_item(wid: str, w: dict) -> dict:
         "datum": (w.get("workout_date") or "")[:10],
         "workout": w.get("workout_name") or "Training",
         "categorie": categorie, "preview": preview,
+        "groep": groep, "groep_label": _GROEP_LABEL.get(groep, "Overig"),
         "heeft_thread": bool(_gesprek(w)),
         "athlete_ts": _athlete_latest_ts(w),
     }
@@ -409,13 +441,26 @@ def _bouw_queue() -> dict:
     }
 
 
+def _groep_samenvatting(items: list) -> list:
+    """Groepen (in vaste volgorde) met hun aantal, voor de queue-selector."""
+    tel: dict = {}
+    for i in items:
+        g = i.get("groep", "overig")
+        tel[g] = tel.get(g, 0) + 1
+    volgorde = sorted(tel.keys(), key=lambda g: _GROEP_RANK.get(g, 9))
+    return [{"key": g, "label": _GROEP_LABEL.get(g, "Overig"), "count": tel[g]} for g in volgorde]
+
+
 def _queue_public(snap: dict, cached: bool, **extra) -> dict:
-    """Snapshot → publieke payload (zonder _volle), gesorteerd: categorie
-    (reactie→gevoel→uitgevoerd), daarbinnen OUDSTE onbeantwoord eerst."""
+    """Snapshot → publieke payload (zonder _volle), gesorteerd: groep
+    (Start to Run→…→Comfort→Overig), dan categorie (reactie→gevoel→uitgevoerd),
+    daarbinnen OUDSTE onbeantwoord eerst. `groepen` = selector-samenvatting."""
     items = sorted(snap.get("items", []),
-                   key=lambda i: (_CAT_RANK.get(i["categorie"], 9),
+                   key=lambda i: (_GROEP_RANK.get(i.get("groep"), 9),
+                                  _CAT_RANK.get(i["categorie"], 9),
                                   i.get("athlete_ts") or "", i.get("datum") or ""))
-    out = {"fs": True, "items": items, "gepost": snap.get("gepost", 0),
+    out = {"fs": True, "items": items, "groepen": _groep_samenvatting(items),
+           "gepost": snap.get("gepost", 0),
            "berekend": snap.get("berekend"), "datum": snap.get("datum"),
            "cached": cached}
     out.update(extra)
@@ -515,40 +560,83 @@ def _actual_zone(act: dict, zone_type: str, zones: list) -> dict | None:
     return None
 
 
-def _planned_zone(w: dict, d: dict, zones: list) -> tuple[dict | None, str]:
-    """Geplande zone + korte structuur uit de workout-builder. Alleen als er ÉÉN
-    duidelijke geplande zone is (bv. rustige duurloop); bij wisselende zones
-    (interval) → None (eerlijk: geen enkele geplande zone). Best-effort."""
+def _plan_zone_sequence(steps) -> list:
+    """Zone-nummers in geplande volgorde uit de builder-steps, inclusief de
+    inner steps van repeat-blokken (step['data']). Deterministisch, geen AI."""
+    seq: list[int] = []
+
+    def _walk(sts):
+        for s in sts:
+            if not isinstance(s, dict):
+                continue
+            inner = s.get("data") or []
+            if inner:                                   # repeat-/groepsblok
+                _walk(inner)
+                continue
+            if (s.get("intensity") or "").upper() == "REST":
+                continue
+            for t in (s.get("target") or []):
+                if isinstance(t, dict) and "zone" in (t.get("targetType") or "") and t.get("zone"):
+                    try:
+                        seq.append(int(t["zone"]))
+                    except (TypeError, ValueError):
+                        pass
+                    break
+
+    _walk(steps or [])
+    return seq
+
+
+def _collapse(seq: list) -> list:
+    """Opeenvolgende duplicaten samenvouwen: [2,2,3,3] → [2,3] (de vorm)."""
+    out: list = []
+    for z in seq:
+        if not out or out[-1] != z:
+            out.append(z)
+    return out
+
+
+def _plan_analyse(w: dict, d: dict, zones: list) -> dict:
+    """Geplande trainingsINTENTIE uit de WorkoutBuilder — deterministisch.
+
+    Kernregel (semantisch): een gemiddelde is NOOIT de classificatie. Bij een
+    gestructureerde/multi-zone training (progressief/interval/tempo/repeats)
+    leiden we de intentie af uit de geplande zoneblokken (bv. 'Z2 → Z3') en
+    tonen we GEEN enkelvoudige zone. Alleen bij één duidelijke geplande zone
+    (rustige duurloop) geven we die als single_zone terug.
+
+    Geeft: {single_zone|None, structuur:str, structured_multi:bool}.
+    """
+    leeg = {"single_zone": None, "structuur": "", "structured_multi": False}
     if not d.get("has_structured_workout"):
-        return None, ""
+        return leeg
     wk, ak = w.get("workout_key"), w.get("athlete_key")
     if not (wk and ak):
-        return None, ""
+        return leeg
     try:
         steps = FS.get_workout_builder(wk, ak) or []
     except Exception:
-        return None, ""
-    zone_nums, blokken = set(), []
-    for s in steps:
-        if not isinstance(s, dict):
-            continue
-        if (s.get("intensity") or "").upper() == "REST":
-            blokken.append("rust")
-            continue
-        znum = None
-        for t in (s.get("target") or []):
-            if isinstance(t, dict) and "zone" in (t.get("targetType") or "") and t.get("zone"):
-                znum = int(t["zone"])
-                break
-        if znum is not None:
-            zone_nums.add(znum)
-            blokken.append(f"Z{znum}")
-    structuur = " → ".join(blokken) if blokken else ""
-    if len(zone_nums) != 1:
-        return None, structuur
-    num = zone_nums.pop()
-    naam = next((z["naam"] for z in zones if z.get("num") == num), "")
-    return {"num": num, "naam": naam}, structuur
+        return leeg
+
+    seq = _plan_zone_sequence(steps)
+    distinct = sorted(set(seq))
+    if not distinct:
+        return leeg
+    if len(distinct) == 1:                              # één duidelijke zone
+        num = distinct[0]
+        naam = next((z["naam"] for z in zones if z.get("num") == num), "")
+        return {"single_zone": {"num": num, "naam": naam}, "structuur": "", "structured_multi": False}
+
+    vorm = _collapse(seq)
+    # Progressief = de vorm loopt monotoon op en bevat elke zone één keer.
+    progressief = vorm == sorted(vorm) and len(vorm) == len(distinct)
+    if progressief:
+        structuur = " → ".join(f"Z{z}" for z in vorm)
+    elif len(distinct) <= 3:
+        structuur = " / ".join(f"Z{z}" for z in distinct)   # bv. interval Z2/Z4
+    else:
+        structuur = f"Z{distinct[0]}–Z{distinct[-1]}"
+    return {"single_zone": None, "structuur": structuur, "structured_multi": True}
 
 
 def detail(wid: str) -> dict:
@@ -578,8 +666,13 @@ def detail(wid: str) -> dict:
                 zones = zr.get("zones", [])
         except Exception:
             pass
-    actual_zone = _actual_zone(act, zone_type, zones) if zones else None
-    planned_zone, plan_structuur = _planned_zone(w, d, zones) if zones else (None, "")
+    plan = _plan_analyse(w, d, zones) if zones else {"single_zone": None, "structuur": "", "structured_multi": False}
+    # Semantische regel: bij een gestructureerde/multi-zone training NOOIT een
+    # enkelvoudige actual-zone tonen (het gemiddelde is misleidend). Alleen bij
+    # één duidelijke intentie (of geen builder) is de actual-zone betekenisvol.
+    actual_zone = None
+    if zones and not plan["structured_multi"]:
+        actual_zone = _actual_zone(act, zone_type, zones)
 
     def _num(x, factor=1):
         try:
@@ -592,8 +685,10 @@ def detail(wid: str) -> dict:
         gepland["km"] = _num(act.get("planned_amount"))
     if act.get("planned_duration"):
         gepland["min"] = _num(act.get("planned_duration"), 60)
-    if planned_zone:
-        gepland["zone"] = planned_zone
+    if plan["single_zone"]:
+        gepland["zone"] = plan["single_zone"]
+    if plan["structuur"]:
+        gepland["structuur"] = plan["structuur"]
 
     uitgevoerd = {
         "km": _num(act.get("amount")),
@@ -620,8 +715,9 @@ def detail(wid: str) -> dict:
         "afwijking": afwijking(act.get("planned_amount"), act.get("amount")),
         "gevoel": _felt_obj(w.get("felt")),
         "rpe": w.get("effort"),
+        "is_structured": plan["structured_multi"],
         "plan_beschrijving": (d.get("description") or "").strip()[:600] or None,
-        "plan_structuur": plan_structuur or None,
+        "plan_structuur": plan["structuur"] or None,
         "laps": laps,
         "gesprek": _gesprek(w),
     }

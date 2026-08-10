@@ -1662,6 +1662,9 @@ async function genereerDoc(t) {
 const FB = {
   items: [],            // zichtbare, gesorteerde queue
   pending: null,        // achtergrond-snapshot dat wacht op "N nieuwe — tik om te tonen"
+  pendingInitial: false,// koude cache: eerste verse sweep is nog de INITIËLE lading (geen "N nieuwe")
+  groups: [],           // [{key,label,count}] uit de backend-samenvatting
+  group: "alle",        // actieve groep-filter (blijft binnen de sessie behouden)
   selId: null,          // gefocuste workout
   gepost: 0,            // vandaag verstuurd (lokaal bijgewerkt)
   detailCache: {},      // id -> detailpayload
@@ -1669,16 +1672,70 @@ const FB = {
   skipSet: new Set(),   // optimistisch overgeslagen (idem, tot commit/rollback)
   sending: false,
   loaded: false,
+  log: [],              // geïsoleerde Feedback-debuglog (ringbuffer, max 300)
+  logOn: false,
 };
 const FB_CAT = { reactie: "Reactie", gevoel: "Gevoel", uitgevoerd: "Uitgevoerd" };
+
+// ── Geïsoleerde Feedback-debuglog ────────────────────────────────────────────
+// Volledig los van de Home-swipe-debug (SWDBG). Standaard UIT; aan/uit + wissen +
+// kopiëren via Meer. Logt ALLEEN keys/tellingen/timings — nooit tekst/notities/
+// comments/AI-output. Ringbuffer van 300 events zodat kopiëren op iPhone licht blijft.
+try { FB.logOn = localStorage.getItem("fb_log_on") === "1"; } catch {}
+function fbLog(ev, extra) {
+  if (!FB.logOn) return;
+  const vv = window.visualViewport;
+  const it = FB.selId ? FB.items.find(i => i.id === FB.selId) : null;
+  const dock = document.querySelector(".fb-dock");
+  const e = Object.assign({
+    t: new Date().toISOString(),
+    ev,
+    workout_key: FB.selId || null,
+    athlete_key: it ? (it.athlete_key || null) : null,
+    fbFocusId: FB.selId || null,
+    queue_length: FB.items.length,
+    pending_count: FB.pending ? FB.pending.length : 0,
+    sent_set_size: FB.sentSet.size,
+    skip_set_size: FB.skipSet.size,
+    current_group: FB.group,
+    current_category: it ? (it.categorie || null) : null,
+    viewport_height: vv ? Math.round(vv.height) : null,
+    dock_height: dock ? Math.round(dock.getBoundingClientRect().height) : null,
+    keyboard_open: document.body.classList.contains("kb-open"),
+  }, extra || {});
+  FB.log.push(e);
+  if (FB.log.length > 300) FB.log.splice(0, FB.log.length - 300);
+  fbLogStatus();
+}
+function fbLogStatus() {
+  const s = $("#fb-log-status"); if (!s) return;
+  s.textContent = `Logging staat ${FB.logOn ? "AAN" : "uit"} · ${FB.log.length} events`;
+  const t = $("#fb-log-toggle"); if (t) t.textContent = FB.logOn ? "Logging uitzetten" : "Logging aanzetten";
+}
+function fbLogBind() {
+  const t = $("#fb-log-toggle"); if (t) t.onclick = () => {
+    FB.logOn = !FB.logOn; try { localStorage.setItem("fb_log_on", FB.logOn ? "1" : "0"); } catch {}
+    fbLogStatus();
+  };
+  const c = $("#fb-log-copy"); if (c) c.onclick = () => {
+    const txt = JSON.stringify(FB.log, null, 2);
+    const out = $("#fb-log-out"); if (out) { out.hidden = false; out.value = txt; out.focus(); out.select(); }
+    navigator.clipboard?.writeText(txt).then(() => melding(`Feedback-log gekopieerd (${FB.log.length}).`),
+      () => melding("Selecteer de tekst hieronder en kopieer handmatig."));
+  };
+  const w = $("#fb-log-clear"); if (w) w.onclick = () => {
+    FB.log = []; const out = $("#fb-log-out"); if (out) { out.value = ""; out.hidden = true; } fbLogStatus();
+  };
+  fbLogStatus();
+}
 
 // ── Drafts (localStorage per workout_key) ────────────────────────────────────
 const FB_DRAFT_KEY = "fb_drafts_v1";
 function fbDrafts() { try { return JSON.parse(localStorage.getItem(FB_DRAFT_KEY) || "{}"); } catch { return {}; } }
 function fbDraftsSet(o) { try { localStorage.setItem(FB_DRAFT_KEY, JSON.stringify(o)); } catch {} }
-function fbDraftGet(id) { const d = fbDrafts()[id]; return (d && d.t) || ""; }
-function fbDraftSave(id, t) { const o = fbDrafts(); if (t && t.trim()) o[id] = { t, ts: Date.now() }; else delete o[id]; fbDraftsSet(o); }
-function fbDraftClear(id) { const o = fbDrafts(); if (o[id]) { delete o[id]; fbDraftsSet(o); } }
+function fbDraftGet(id) { const d = fbDrafts()[id]; const t = (d && d.t) || ""; if (t) fbLog("draft_restore", { target: id, len: t.length }); return t; }
+function fbDraftSave(id, t) { const o = fbDrafts(); if (t && t.trim()) o[id] = { t, ts: Date.now() }; else delete o[id]; fbDraftsSet(o); fbLog("draft_save", { target: id, len: (t || "").length }); }
+function fbDraftClear(id) { const o = fbDrafts(); if (o[id]) { delete o[id]; fbDraftsSet(o); fbLog("draft_clear", { target: id }); } }
 function fbDraftCleanup() {                          // >14 dagen oud → opruimen
   const o = fbDrafts(), cut = Date.now() - 14 * 864e5; let ch = false;
   for (const k in o) if (!o[k] || (o[k].ts || 0) < cut) { delete o[k]; ch = true; }
@@ -1694,26 +1751,57 @@ function fbApplyQueue(items) {
   renderQueue(); fbUpdateInfo();
   if (isDesktop() && !FB.selId) renderFocusEmpty();
 }
+function fbRenderLoading() {                          // rustige "aan het bijwerken"-state (NIET empty)
+  const g = $("#fb-groups"); if (g) g.hidden = true;
+  $("#fb-nieuw").hidden = true;
+  $("#fb-info").innerHTML = `<span class="versen">Feedback bijwerken…</span>`;
+  skeleton($("#fb-queue"), 4);
+}
 async function fbEnter() {                            // eerste keer openen van de pagina
-  fbDraftCleanup();
-  const info = $("#fb-info");
-  if (!FB.loaded) { info.textContent = "Inbox laden…"; skeleton($("#fb-queue"), 4); }
+  fbDraftCleanup(); fbLog("queue_enter");
+  if (!FB.loaded) fbRenderLoading();
   const r = await api("/api/feedback/queue").catch(() => null);
-  if (!r) { info.textContent = ""; if (!FB.items.length) $("#fb-queue").innerHTML = '<p class="muted center">Geen verbinding.</p>'; }
-  else if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; $("#fb-queue").innerHTML = ""; }
-  else { FB.gepost = r.gepost || 0; fbApplyQueue(r.items || []); FB.loaded = true; }
+  if (!r) { $("#fb-info").textContent = ""; if (!FB.items.length) $("#fb-queue").innerHTML = '<p class="muted center">Geen verbinding.</p>'; }
+  else if (!r.fs) { $("#fb-info").textContent = "FinalSurge nog niet gekoppeld."; $("#fb-queue").innerHTML = ""; FB.loaded = true; }
+  else if (r.pending && !(r.items && r.items.length)) {
+    // Koude/onbevestigde cache: NIET als definitief "niets te beoordelen" tonen.
+    FB.pendingInitial = true; fbRenderLoading(); fbLog("queue_empty_pending");
+  } else {
+    FB.gepost = r.gepost || 0; FB.groups = r.groepen || [];
+    fbApplyQueue(r.items || []); FB.loaded = true;
+    fbLog("queue_cache_loaded", { cached: !!r.cached, queue_length: FB.items.length });
+  }
   fbRefresh();                                        // achtergrond: verse sweep
 }
 async function fbRefresh() {                          // achtergrond-SWR: NOOIT stil hersorteren/muteren
+  fbLog("queue_refresh_start");
+  const t0 = performance.now();
   const r = await api("/api/feedback/queue?refresh=1").catch(() => null);
-  if (!r || !r.fs || !Array.isArray(r.items)) return;
+  const dur = Math.round(performance.now() - t0);
+  if (!r || !r.fs || !Array.isArray(r.items)) {
+    fbLog("queue_refresh_error", { queue_refresh_duration_ms: dur });
+    if (FB.pendingInitial && !FB.items.length) { $("#fb-info").textContent = "Kon Feedback niet laden — trek omlaag of ververs."; }
+    return;
+  }
   FB.gepost = r.gepost != null ? r.gepost : FB.gepost;
+  FB.groups = r.groepen || FB.groups;
   const fresh = fbFilterWeg(r.items);
+  fbLog("queue_refresh_success", { queue_refresh_duration_ms: dur, queue_length: fresh.length });
+  if (FB.pendingInitial) {                            // eerste bevestigde sweep = de initiële lading
+    FB.pendingInitial = false; FB.loaded = true;
+    fbApplyQueue(fresh); fbLog("queue_apply", { reason: "initial", queue_length: fresh.length });
+    if (!fresh.length) fbLog("queue_empty_confirmed");
+    return;
+  }
   const same = FB.items.map(i => i.id).join("|") === fresh.map(i => i.id).join("|");
-  if (same) { FB.items = fresh; FB.pending = null; fbNieuwBalk(0); fbUpdateInfo(); return; }
+  if (same) {
+    // Zelfde set/volgorde → geen mutatie voor de coach, maar wél verse data
+    // (groep/preview) overnemen. Herteken de queue: identieke rijen, geen sprong.
+    FB.items = fresh; FB.pending = null; fbNieuwBalk(0); renderQueue(); fbUpdateInfo(); return;
+  }
   FB.pending = fresh;                                 // verschil → wacht op coach
   const nieuw = fresh.filter(i => !FB.items.some(c => c.id === i.id)).length;
-  fbNieuwBalk(nieuw); fbUpdateInfo();
+  fbNieuwBalk(nieuw); fbUpdateInfo(); fbLog("queue_diff_found", { pending_count: nieuw });
 }
 function fbNieuwBalk(n) {
   const b = $("#fb-nieuw"); if (!b) return;
@@ -1729,16 +1817,56 @@ function fbUpdateInfo() {
     : `${FB.gepost || 0} vandaag verstuurd — inbox leeg`;
 }
 
-// ── Queue renderen (compacte inbox, per categorie) ───────────────────────────
+// ── Groep-selector (compacte, horizontaal scrollbare pills; default Alle) ─────
+function fbGroupOrder(items) {                        // aanwezige groepen in backend-volgorde
+  const present = [...new Set(items.map(i => i.groep || "overig"))];
+  const ordered = (FB.groups || []).map(g => g.key).filter(k => present.includes(k));
+  present.forEach(k => { if (!ordered.includes(k)) ordered.push(k); });
+  return ordered;
+}
+function renderGroupsBar() {
+  const bar = $("#fb-groups"); if (!bar) return;
+  const order = fbGroupOrder(FB.items);
+  // tellingen uit de ZICHTBARE items (na sent/skip-filter) zodat pill-getallen kloppen
+  const tel = {}; FB.items.forEach(i => { const g = i.groep || "overig"; tel[g] = (tel[g] || 0) + 1; });
+  const label = k => (FB.groups.find(g => g.key === k) || {}).label || (FB.items.find(i => i.groep === k) || {}).groep_label || "Overig";
+  if (order.length <= 1) { bar.hidden = true; return; }   // één groep → geen selector nodig
+  let html = `<button class="fbg-pill${FB.group === "alle" ? " on" : ""}" type="button" data-g="alle">Alle <b>${FB.items.length}</b></button>`;
+  order.forEach(k => { html += `<button class="fbg-pill${FB.group === k ? " on" : ""}" type="button" data-g="${esc(k)}">${esc(label(k))} <b>${tel[k]}</b></button>`; });
+  bar.innerHTML = html; bar.hidden = false;
+  $$(".fbg-pill", bar).forEach(p => p.onclick = () => {
+    FB.group = p.dataset.g; fbLog("group_select", { current_group: FB.group });
+    renderGroupsBar(); renderQueue();
+  });
+}
+
+// ── Queue renderen: bij Alle = groepskoppen (rijen dragen categorie via badge);
+//    bij één groep = categorie-koppen. Max twee informatieniveaus tegelijk. ────
 function renderQueue() {
   const box = $("#fb-queue"); if (!box) return;
-  if (!FB.items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Niks te beoordelen — netjes bijgewerkt.</p></div>`; return; }
+  renderGroupsBar();
+  // valt de actieve groep weg uit de queue? dan terug naar Alle (nooit vast op leeg)
+  if (FB.group !== "alle" && !FB.items.some(i => i.groep === FB.group)) FB.group = "alle";
+  const shown = FB.group === "alle" ? FB.items : FB.items.filter(i => i.groep === FB.group);
+  if (!shown.length) {
+    box.innerHTML = `<div class="leeg">${ic("check")}<p>Niks te beoordelen — netjes bijgewerkt.</p></div>`;
+    return;
+  }
   let html = "";
-  for (const key of ["reactie", "gevoel", "uitgevoerd"]) {
-    const rows = FB.items.filter(i => i.categorie === key);
-    if (!rows.length) continue;
-    html += `<p class="fbq-cat">${FB_CAT[key]} · ${rows.length}</p>`;
-    html += rows.map(fbRowHtml).join("");
+  if (FB.group === "alle") {                           // groepskoppen; items al gesorteerd groep→cat→leeftijd
+    fbGroupOrder(shown).forEach(gk => {
+      const rows = shown.filter(i => (i.groep || "overig") === gk);
+      if (!rows.length) return;
+      html += `<p class="fbq-groep">${esc(rows[0].groep_label || "Overig")}<span>${rows.length}</span></p>`;
+      html += rows.map(fbRowHtml).join("");
+    });
+  } else {                                             // categorie-koppen binnen de groep
+    for (const key of ["reactie", "gevoel", "uitgevoerd"]) {
+      const rows = shown.filter(i => i.categorie === key);
+      if (!rows.length) continue;
+      html += `<p class="fbq-cat">${FB_CAT[key]} · ${rows.length}</p>`;
+      html += rows.map(fbRowHtml).join("");
+    }
   }
   box.innerHTML = html;
   $$(".fbq-row", box).forEach(r => r.addEventListener("click", () => fbOpen(r.dataset.id)));
@@ -1757,20 +1885,28 @@ function fbRowHtml(it) {
 }
 
 // ── Focus (detail) ───────────────────────────────────────────────────────────
-async function fbFetchDetail(id) {
+async function fbFetchDetail(id, preload) {
   if (FB.detailCache[id]) return FB.detailCache[id];
+  fbLog(preload ? "preload_start" : "detail_fetch_start", { target: id });
+  const t0 = performance.now();
   const d = await api("/api/feedback/" + encodeURIComponent(id)).catch(() => null);
-  if (d && d.ok) FB.detailCache[id] = d;
+  const dur = Math.round(performance.now() - t0);
+  if (d && d.ok) {
+    FB.detailCache[id] = d;
+    fbLog(preload ? "preload_success" : "detail_fetch_success", { target: id, detail_fetch_duration_ms: dur });
+  } else {
+    fbLog(preload ? "preload_error" : "detail_fetch_error", { target: id, detail_fetch_duration_ms: dur });
+  }
   return d || { ok: false, err: "Kon detail niet laden." };
 }
 function fbPreloadNext(id) {                          // volgende 1–2 vast ophalen (geen spinner later)
   const idx = FB.items.findIndex(i => i.id === id); if (idx < 0) return;
-  FB.items.slice(idx + 1, idx + 3).forEach(it => { if (!FB.detailCache[it.id]) fbFetchDetail(it.id); });
+  FB.items.slice(idx + 1, idx + 3).forEach(it => { if (!FB.detailCache[it.id]) fbFetchDetail(it.id, true); });
 }
 async function fbOpen(id) {
   FB.selId = id; renderQueue();
   const col = $("#fb-focus-col"); col.classList.add("on"); col.setAttribute("aria-hidden", "false");
-  fbVV();
+  fbVV(); fbLog("focus_open");
   if (FB.detailCache[id]) renderFocus(FB.detailCache[id]);
   else { renderFocusSkeleton(id); const d = await fbFetchDetail(id); if (FB.selId === id) renderFocus(d); }
   fbPreloadNext(id);
@@ -1778,10 +1914,12 @@ async function fbOpen(id) {
 function fbClose() {
   const col = $("#fb-focus-col");
   if (col) { col.classList.remove("on"); col.setAttribute("aria-hidden", "true"); col.style.height = ""; col.style.top = ""; }
+  fbLog("focus_close");
   FB.selId = null; renderQueue();
   if (isDesktop()) renderFocusEmpty();
 }
 function focusNextAfterAction(next) {
+  fbLog("auto_next", { next: next ? next.id : null });
   if (next) fbOpen(next.id);
   else if (isDesktop()) { FB.selId = null; renderQueue(); renderFocusEmpty(); }
   else fbClose();
@@ -1843,7 +1981,7 @@ function fbCtxHtml(d) {
   return rc.map(c => `<div class="fb-ctx ${c.tone === "amber" ? "amber" : ""}">
     <b>${esc(c.label || "Context")}</b>${esc(c.text || "")}</div>`).join("");
 }
-function fbPaHtml(d) {                                // planned vs actual — rustig, tabulair
+function fbPaHtml(d) {                                // gepland (intentie) vs uitgevoerd — rustig, tabulair
   const g = d.gepland || {}, u = d.uitgevoerd || {}, afw = d.afwijking || {};
   const chip = (afw.relevance && afw.relevance !== "ignore" && afw.relevance !== "n/a" && afw.pct != null)
     ? ` <span class="fb-afw">${afw.pct > 0 ? "+" : ""}${afw.pct}%</span>` : "";
@@ -1853,11 +1991,17 @@ function fbPaHtml(d) {                                // planned vs actual — r
   if (g.min != null || u.min != null) rows.push(["Duur", g.min != null ? `${g.min} min` : "—", u.min != null ? `${u.min} min` : "—"]);
   if (u.pace) rows.push(["Tempo", "—", `${esc(u.pace)}/km`]);
   if (u.hr_avg) rows.push(["Hartslag", "—", `${esc(u.hr_avg)}${u.hr_max ? ` · max ${esc(u.hr_max)}` : ""}`]);
-  if (g.zone || u.zone) rows.push(["Zone", zp(g.zone), zp(u.zone)]);
+  // Zone-rij: geplande INTENTIE = enkelvoudige zone óf structuur "Z2 → Z3".
+  // Uitgevoerd toont ALLEEN een zone als die betekenisvol is (backend geeft er
+  // geen bij een gestructureerde/multi-zone training → geen misleidend gemiddelde).
+  const gzone = g.structuur ? `<span class="fb-zone plan">${esc(g.structuur)}</span>` : zp(g.zone);
+  if (g.zone || g.structuur || u.zone) rows.push(["Zone", gzone, zp(u.zone)]);
   const foot = (d.gevoel || d.rpe)
     ? `<p class="fb-pa-foot">${d.gevoel ? `Gevoel: ${esc(d.gevoel.label)}` : ""}${d.gevoel && d.rpe ? " · " : ""}${d.rpe ? `RPE ${esc(d.rpe)}` : ""}</p>` : "";
-  if (!rows.length) return foot ? `<div class="fb-pa">${foot}</div>` : "";
-  return `<div class="fb-pa"><table>
+  const intentie = (d.workout || g.structuur)
+    ? `<p class="fb-pa-intentie">${esc(d.workout || "Training")}${g.structuur ? ` · <b>${esc(g.structuur)}</b>` : (d.is_structured ? " · gestructureerd" : "")}</p>` : "";
+  if (!rows.length) return (intentie || foot) ? `<div class="fb-pa">${intentie}${foot}</div>` : "";
+  return `<div class="fb-pa">${intentie}<table>
     <tr><th></th><th>Gepland</th><th>Uitgevoerd</th></tr>
     ${rows.map(r => `<tr><td class="lbl">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("")}
   </table>${foot}</div>`;
@@ -1873,21 +2017,27 @@ function fbThreadHtml(d) {
 // ── Acties: Genereer / Versturen (idle→sending→sent|error) / Overslaan ───────
 async function fbGen(id) {
   const btn = $("#fb-gen"); if (btn) { btn.disabled = true; btn.innerHTML = `${ic("brain")} AI schrijft…`; }
+  fbLog("generate_start"); const t0 = performance.now();
   const r = await jpost("/api/feedback/generate", { id }).catch(() => null);
+  const dur = Math.round(performance.now() - t0);
   if (btn) { btn.disabled = false; btn.innerHTML = `${ic("brain")} Genereer`; }
-  if (!r || !r.ok) return melding(r && r.err || "Genereren mislukt.", true);
+  if (!r || !r.ok) { fbLog("generate_error", { generate_duration_ms: dur }); return melding(r && r.err || "Genereren mislukt.", true); }
+  fbLog("generate_success", { generate_duration_ms: dur });
   const ta = $("#fb-ta"); if (ta) { ta.value = r.tekst || ""; fbDraftSave(id, ta.value); ta.focus(); }
 }
 async function fbSend(id) {
-  if (FB.sending || FB.sentSet.has(id)) return;      // dubbel-post-guard
+  if (FB.sending || FB.sentSet.has(id)) { fbLog("send_blocked_duplicate", { target: id }); return; }  // dubbel-post-guard
   const ta = $("#fb-ta"), tekst = (ta && ta.value || "").trim();
   if (!tekst) return melding("Schrijf of genereer eerst een reactie.", true);
   const btn = $("#fb-send"); FB.sending = true;
   if (btn) { btn.disabled = true; btn.innerHTML = `${ic("clock")} Versturen…`; }
+  fbLog("send_start", { target: id }); const t0 = performance.now();
   const r = await jpost("/api/feedback/post", { id, tekst }).catch(() => null);
+  const dur = Math.round(performance.now() - t0);
   FB.sending = false;
   if (btn) { btn.disabled = false; btn.innerHTML = `${ic("message")} Versturen`; }
-  if (!r || !r.ok) return melding(r && r.err || "Versturen mislukt — je concept staat er nog.", true);
+  if (!r || !r.ok) { fbLog("send_error", { target: id, send_duration_ms: dur }); return melding(r && r.err || "Versturen mislukt — je concept staat er nog.", true); }
+  fbLog("send_success", { target: id, send_duration_ms: dur });
   FB.sentSet.add(id); fbDraftClear(id);              // pas ná server-ok
   FB.gepost = (FB.gepost || 0) + 1;
   const idx = FB.items.findIndex(i => i.id === id);
@@ -1899,14 +2049,15 @@ function fbSkip(id) {                                 // optimistic; POST volgt 
   const idx = FB.items.findIndex(i => i.id === id); if (idx < 0) return;
   const item = FB.items[idx];
   FB.items.splice(idx, 1); FB.skipSet.add(id);
-  renderQueue(); fbUpdateInfo(); haptic(10);
+  renderQueue(); fbUpdateInfo(); haptic(10); fbLog("skip_optimistic", { target: id });
   focusNextAfterAction(FB.items[idx] || FB.items[idx - 1] || null);
   const herstel = () => { FB.skipSet.delete(id); FB.items.splice(Math.min(idx, FB.items.length), 0, item); renderQueue(); fbUpdateInfo(); };
   fbToast(`Training van ${item.voornaam || item.naam} overgeslagen`,
-    herstel,                                          // Ongedaan → exacte plek terug, geen backend-call
+    () => { fbLog("skip_undo", { target: id }); herstel(); },   // Ongedaan → exacte plek terug, geen backend-call
     async () => {                                     // venster voorbij → nu pas overslaan
       const r = await jpost("/api/feedback/skip", { id }).catch(() => null);
-      if (!r || !r.ok) { herstel(); melding("Overslaan mislukt — teruggezet.", true); }
+      if (!r || !r.ok) { fbLog("skip_error", { target: id }); herstel(); melding("Overslaan mislukt — teruggezet.", true); }
+      else fbLog("skip_commit", { target: id });
     });
 }
 // Eén toast met gegarandeerd precies één afloop: Ongedaan óf commit (nooit beide).
@@ -1926,11 +2077,16 @@ function fbToast(txt, onUndo, onCommit, ms = 5000) {
 $("#fb-nieuw").addEventListener("click", () => {
   if (!FB.pending) return;
   const p = FB.pending; FB.pending = null; $("#fb-nieuw").hidden = true;
-  fbApplyQueue(p);                                    // expliciete coach-actie → nu pas toepassen
+  fbApplyQueue(p); fbLog("queue_apply", { reason: "coach_tap", queue_length: p.length });
 });
 $("#fb-refresh").addEventListener("click", async () => {
+  fbLog("queue_refresh_start", { reason: "manual" });
   const r = await api("/api/feedback/queue?refresh=1").catch(() => null);
-  if (r && r.fs && Array.isArray(r.items)) { FB.gepost = r.gepost || 0; FB.pending = null; $("#fb-nieuw").hidden = true; fbApplyQueue(r.items); }
+  if (r && r.fs && Array.isArray(r.items)) {
+    FB.gepost = r.gepost || 0; FB.groups = r.groepen || FB.groups; FB.pending = null; FB.pendingInitial = false;
+    $("#fb-nieuw").hidden = true; FB.loaded = true; fbApplyQueue(r.items);
+    fbLog("queue_apply", { reason: "manual", queue_length: FB.items.length });
+  }
 });
 document.addEventListener("keydown", e => {
   if (huidigeView !== "feedback") return;
@@ -1949,16 +2105,30 @@ function fbMove(dir) {
   idx = idx < 0 ? (dir > 0 ? 0 : FB.items.length - 1) : Math.max(0, Math.min(FB.items.length - 1, idx + dir));
   fbOpen(FB.items[idx].id);
 }
-// Keyboard-aware editor-dock: houd het dock (Versturen/Genereer) boven het toetsenbord.
+// Keyboard-aware editor-dock: houd het dock (Versturen/Genereer) boven het
+// toetsenbord. BELANGRIJK voor scroll-performance: we luisteren ALLEEN op
+// 'resize' (toetsenbord open/dicht, oriëntatie), NIET op 'scroll' — anders zou
+// elke scroll-frame een layout-write op de overlay doen (forced reflow = lag).
+// Writes gebeuren bovendien uitsluitend als de keyboard-toestand echt wijzigt.
+let _fbKb = false;
 function fbVV() {
   const vv = window.visualViewport; if (!vv) return;
   const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-  document.body.classList.toggle("kb-open", kb > 120);
-  if (isDesktop()) return;
-  const col = $("#fb-focus-col");
-  if (col && col.classList.contains("on")) { col.style.height = vv.height + "px"; col.style.top = vv.offsetTop + "px"; }
+  const open = kb > 120;
+  fbLog("visualviewport_resize", { viewport_height: Math.round(vv.height), keyboard_open: open });
+  if (open === _fbKb) return;                         // geen verandering → geen writes
+  _fbKb = open;
+  document.body.classList.toggle("kb-open", open);
+  if (!isDesktop()) {
+    const col = $("#fb-focus-col");
+    if (col && col.classList.contains("on")) {
+      if (open) { col.style.height = vv.height + "px"; col.style.top = vv.offsetTop + "px"; }
+      else { col.style.height = ""; col.style.top = ""; }
+    }
+  }
+  fbLog(open ? "keyboard_open" : "keyboard_close", { viewport_height: Math.round(vv.height) });
 }
-if (window.visualViewport) { window.visualViewport.addEventListener("resize", fbVV); window.visualViewport.addEventListener("scroll", fbVV); }
+if (window.visualViewport) window.visualViewport.addEventListener("resize", fbVV);
 
 // ════════════════════════════════════════════════════════════════════════════
 // SCHEMA BOUWEN — opgeslagen intake → AI-plan → CSV-download voor FinalSurge
@@ -2336,6 +2506,7 @@ laders.races = laadRaces;
 laders["schema-verloop"] = laadSchemaVerloop;
 laders.teampuls = laadTeampuls;
 laders.admin = laadAdmin;
+fbLogBind();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 toonOffline();
 if (navigator.onLine) flush();

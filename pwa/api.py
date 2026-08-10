@@ -368,7 +368,12 @@ def feedback_lijst(dagen: int = 7):
 
 @app.get("/api/feedback/queue")          # lichte gecachete inbox-queue (stale-while-revalidate)
 def feedback_queue(refresh: bool = False):
-    return feedback.queue(refresh=refresh)
+    # Server-Timing: laat de client (Feedback-debuglog) de servertijd afsplitsen
+    # van de netwerktijd — zo weten we waar de refresh-latency zit.
+    t0 = time.perf_counter()
+    data = feedback.queue(refresh=refresh)
+    dur = int((time.perf_counter() - t0) * 1000)
+    return JSONResponse(data, headers={"Server-Timing": f"queue;dur={dur}"})
 
 
 @app.get("/api/home/stats")
@@ -450,7 +455,10 @@ def feedback_skip(body: FeedbackGen):
 # /skip zodat die literals niet als workout_key worden opgevat.
 @app.get("/api/feedback/{workout_key}")  # lazy focus-detail (samenvatting/zones/afwijking)
 def feedback_detail(workout_key: str):
-    return feedback.detail(workout_key)
+    t0 = time.perf_counter()
+    data = feedback.detail(workout_key)
+    dur = int((time.perf_counter() - t0) * 1000)
+    return JSONResponse(data, headers={"Server-Timing": f"detail;dur={dur}"})
 
 
 # ── API: races (aankomende races + race-wens posten) ──────────────────────────

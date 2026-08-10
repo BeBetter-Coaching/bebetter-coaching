@@ -921,6 +921,11 @@ def get_workouts_needing_feedback(
             "athlete_name": athlete["name"],
             "athlete_first_name": athlete["first_name"],
             "athlete_key": athlete["user_key"],
+            # Coachgroep meesturen zodat de Feedback-queue erop kan groeperen
+            # (centrale bron: get_athletes → group/all_groups). Extra keys →
+            # Streamlit/Home negeren ze, dus backward-compatible.
+            "athlete_group": athlete.get("group", ""),
+            "athlete_groups": athlete.get("all_groups") or ([athlete["group"]] if athlete.get("group") else []),
             "workout_key": cand["workout_key"],
             "workout_name": cand["w"].get("name") or cand["w"].get("description") or "Training",
             "workout_date": cand["workout_date_str"],
