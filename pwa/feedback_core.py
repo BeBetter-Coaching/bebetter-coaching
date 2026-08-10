@@ -454,6 +454,7 @@ def _queue_item(wid: str, w: dict) -> dict:
         "workout": w.get("workout_name") or "Training",
         "categorie": categorie, "preview": preview,
         "groep": groep, "groep_label": _GROEP_LABEL.get(groep, "Overig"),
+        "workout_type": w.get("workout_type") or "unknown",
         "heeft_thread": bool(_gesprek(w)),
         "athlete_ts": _athlete_latest_ts(w),
     }
@@ -775,9 +776,15 @@ def detail(wid: str) -> dict:
     activities = d.get("Activities") or []
     act = activities[0] if activities else {}
 
+    # Deterministisch workouttype (bron: fs_client.classify_workout_type). Run-
+    # specifieke analyse (zones/tempo/afstandsafwijking/laps) draait ALLEEN bij run;
+    # niet-runs krijgen feitelijke context zonder hardloopoordeel.
+    wt = w.get("workout_type") or "unknown"
+    is_run = (wt == "run")
+
     zone_type, zones = "", []
     ak = w.get("athlete_key", "")
-    if ak:
+    if ak and is_run:
         try:
             zr = FS.get_athlete_zones(ak)
             if zr.get("zones"):
@@ -785,7 +792,8 @@ def detail(wid: str) -> dict:
                 zones = zr.get("zones", [])
         except Exception:
             pass
-    plan = _plan_analyse(w, d, zones) if zones else {"single_zone": None, "structuur": "", "structured_multi": False}
+    plan = _plan_analyse(w, d, zones) if zones else {
+        "single_zone": None, "structuur": "", "structured_multi": False, "kern": False, "context": None}
     # Semantische regel: bij een gestructureerde/multi-zone training NOOIT een
     # enkelvoudige actual-zone tonen (het gemiddelde is misleidend). Alleen bij
     # één duidelijke intentie (of geen builder) is de actual-zone betekenisvol.
@@ -817,10 +825,11 @@ def detail(wid: str) -> dict:
         "zone": actual_zone,
     }
     laps = []
-    for lap in (act.get("Laps") or [])[:20]:
-        if isinstance(lap, dict):
-            laps.append({"pace": lap.get("pace_display"), "hr": lap.get("hr_avg"),
-                         "afstand": lap.get("distance_display") or lap.get("amount")})
+    if is_run:
+        for lap in (act.get("Laps") or [])[:20]:
+            if isinstance(lap, dict):
+                laps.append({"pace": lap.get("pace_display"), "hr": lap.get("hr_avg"),
+                             "afstand": lap.get("distance_display") or lap.get("amount")})
 
     return {
         "ok": True, "id": wid, "naam": w.get("athlete_name", ""),
@@ -828,10 +837,21 @@ def detail(wid: str) -> dict:
         "workout": w.get("workout_name") or "Training",
         "datum": (w.get("workout_date") or "")[:10],
         "categorie": _categorie(w)[0],
+        "workout_type": wt, "is_run": is_run,
+        # TIJDELIJKE data-controle: ruwe FinalSurge type-velden vs. classificatie.
+        # Alleen GUID/typenaam — geen notities/comments/gevoel/persoonsgegevens.
+        "type_debug": {
+            "workout_key": w.get("workout_key"),
+            "activity_type_key": w.get("_dbg_at_key"),
+            "activity_type_name": w.get("_dbg_at_name"),
+            "act0_activity_type_key": w.get("_dbg_at0_key"),
+            "act0_activity_type_name": w.get("_dbg_at0_name"),
+            "classified_workout_type": wt,
+        },
         "zone_type": zone_type or None,
         "gepland": gepland or None,
         "uitgevoerd": uitgevoerd,
-        "afwijking": afwijking(act.get("planned_amount"), act.get("amount")),
+        "afwijking": afwijking(act.get("planned_amount"), act.get("amount")) if is_run else None,
         "gevoel": _felt_obj(w.get("felt")),
         "rpe": w.get("effort"),
         "is_structured": plan["structured_multi"],

@@ -1911,6 +1911,7 @@ async function fbFetchDetail(id, preload) {
   if (d && d.ok) {
     FB.detailCache[id] = d;
     fbLog(preload ? "preload_success" : "detail_fetch_success", { target: id, detail_fetch_duration_ms: dur });
+    if (d.type_debug) fbLog("type_debug", d.type_debug);   // tijdelijke data-controle (niet-gevoelig)
   } else {
     fbLog(preload ? "preload_error" : "detail_fetch_error", { target: id, detail_fetch_duration_ms: dur });
   }

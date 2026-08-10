@@ -177,6 +177,68 @@ ACTIVITY_TYPE_KEYS = {
     "Strength":      {"key": "00000007-0007-0007-0007-000000000007", "name": "Kracht training"},
 }
 
+# ── Deterministische workout-classificatie (ÉÉN bron van waarheid, vóór AI) ────
+# Interne types: run | strength | bike | swim | cross_training | other | unknown.
+# Hergebruikt de bestaande ACTIVITY_TYPE_KEYS-GUID's (hoogste waarheid) + de
+# FinalSurge activity_type_name (EN + NL). GEEN agressieve keyword-guessing:
+# expliciete metadata gaat vóór; titel is alleen een conservatieve laatste stap.
+_TYPE_BY_GUID = {
+    "00000001-0001-0001-0001-000000000001": "run",
+    "00000002-0002-0002-0002-000000000002": "bike",
+    "00000003-0003-0003-0003-000000000003": "swim",
+    "00000004-0004-0004-0004-000000000004": "cross_training",
+    "00000006-0006-0006-0006-000000000006": "other",       # Rest → geen coaching-metrics
+    "00000007-0007-0007-0007-000000000007": "strength",
+}
+# Exacte activity_type_name-waarden (EN uit ACTIVITY_TYPE_KEYS + NL uit FinalSurge).
+_TYPE_BY_NAME = {
+    "run": "run", "hardlopen": "run", "running": "run",
+    "bike": "bike", "fiets": "bike", "cycling": "bike",
+    "swim": "swim", "zwem": "swim", "swimming": "swim",
+    "crosstraining": "cross_training", "cross training": "cross_training", "cross-training": "cross_training",
+    "rest": "other", "rust dag": "other", "rustdag": "other",
+    "strength": "strength", "kracht training": "strength", "krachttraining": "strength",
+}
+
+
+def _type_from_guid(v) -> str | None:
+    return _TYPE_BY_GUID.get(str(v).strip().lower()) if v else None
+
+
+def _type_from_name(v) -> str | None:
+    if not v:
+        return None
+    s = str(v).strip().lower()
+    return _TYPE_BY_NAME.get(s)
+
+
+def classify_workout_type(w: dict) -> str:
+    """Bepaal deterministisch het workouttype VÓÓR AI, zodat queue/detail/AI dezelfde
+    waarde hergebruiken en run-specifieke logica niet op niet-runs wordt toegepast.
+
+    Volgorde (hoogste waarheid eerst, geen gok):
+      1. expliciete activity_type_key (GUID) — top-level, dan Activities[0]
+      2. expliciete activity_type_name (EN/NL) — top-level, dan Activities[0]
+      3. conservatieve titel-fallback: alléén ondubbelzinnige krachttermen
+      4. anders 'unknown' (nooit een run-aanname)
+    """
+    if not isinstance(w, dict):
+        return "unknown"
+    acts = w.get("Activities") or []
+    act0 = acts[0] if (acts and isinstance(acts[0], dict)) else {}
+    for src in (w.get("activity_type_key"), act0.get("activity_type_key")):
+        t = _type_from_guid(src)
+        if t:
+            return t
+    for src in (w.get("activity_type_name"), act0.get("activity_type_name")):
+        t = _type_from_name(src)
+        if t:
+            return t
+    naam = (w.get("name") or "").strip().lower()
+    if any(term in naam for term in ("krachttraining", "kracht training", "strength training")):
+        return "strength"
+    return "unknown"
+
 
 # ---------------------------------------------------------------------------
 # FinalSurge API calls
@@ -941,6 +1003,15 @@ def get_workouts_needing_feedback(
             "workout_key": cand["workout_key"],
             "workout_name": cand["w"].get("name") or cand["w"].get("description") or "Training",
             "workout_date": cand["workout_date_str"],
+            # Deterministisch workouttype (run/strength/bike/…): één bron van
+            # waarheid zodat queue/detail/AI run-logica alleen op runs toepassen.
+            "workout_type": classify_workout_type(cand["w"]),
+            # TIJDELIJKE data-controle (niet-gevoelig: alleen GUID/typenaam) — laat
+            # zien wat FinalSurge werkelijk levert vs. onze classificatie. Verwijderbaar.
+            "_dbg_at_key": cand["w"].get("activity_type_key"),
+            "_dbg_at_name": cand["w"].get("activity_type_name"),
+            "_dbg_at0_key": ((cand["w"].get("Activities") or [{}])[0] or {}).get("activity_type_key"),
+            "_dbg_at0_name": ((cand["w"].get("Activities") or [{}])[0] or {}).get("activity_type_name"),
             "post_notes": post_notes,
             "felt": cand["felt"],
             "effort": cand["effort"],

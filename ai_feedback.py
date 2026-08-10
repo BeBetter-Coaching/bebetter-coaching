@@ -502,8 +502,88 @@ Spreek {first_name} rechtstreeks aan. Benoem concreet wat goed ging (met een cij
     return _clean_text(response.content[0].text)
 
 
+# Neutrale (niet-run) systeem-prompt: zelfde coach/stijl, maar ZONDER hardloop-
+# semantiek. Wordt gebruikt voor strength/bike/swim/cross_training/other/unknown,
+# zodat pace-/HR-zones, afstand en run-termen niet op niet-runs worden toegepast.
+_NONRUN_SYSTEM = """Je schrijft concept-feedback namens coach Jip aan zijn atleten, in het Nederlands, in lopende zinnen. Neem Jips stijl over: kort, menselijk, nuchter en concreet; reageer eerst op wat de atleet zelf schrijft of ervaart. Gebruik nooit een streepje (-, –, —); gebruik een komma of punt. Geen AI-taal, geen opsommingen.
+
+BELANGRIJK — dit is NADRUKKELIJK GEEN hardlooptraining. Pas GEEN hardloopspecifieke logica toe:
+- geen tempo-/pace-zones, geen hartslagzone-oordeel, geen "je liep…", geen afstandsafwijking, geen easy/tempo/interval/progressive-run-interpretatie;
+- verzin geen hardloop-trainingsintentie.
+Gebruik UITSLUITEND de feitelijke, aangeleverde gegevens: het type training, de titel/omschrijving, eventuele oefeningen/sets/opzet, de uitgevoerd-status, gevoel/RPE, de notities van de atleet en relevante context. Bij weinig data: reageer kort en menselijk op wat er wél is, verzin niets. Ruwe getallen (zoals een gemiddelde hartslag) mag je feitelijk noemen, maar hang er geen zone-oordeel aan."""
+
+_TYPE_LABEL_NL = {
+    "strength": "krachttraining", "bike": "fietstraining", "swim": "zwemtraining",
+    "cross_training": "cross-training", "other": "training", "unknown": "training",
+}
+
+
+def _build_nonrun_context(workout_data: dict) -> tuple[str, str]:
+    """Feitelijke, niet-run context (geen zones/pace/afstand/laps)."""
+    first_name = workout_data.get("athlete_first_name") or workout_data["athlete_name"].split()[0]
+    wt = workout_data.get("workout_type") or "unknown"
+    type_label = _TYPE_LABEL_NL.get(wt, "training")
+    details = workout_data.get("details") or {}
+    plan_description = (details.get("description") or "").strip()
+
+    felt = workout_data.get("felt")
+    effort = workout_data.get("effort")
+    _FELT_LABELS = {"1": "Geweldig", "2": "Goed", "3": "Normaal", "4": "Slecht", "5": "Vreselijk"}
+    parts = []
+    if felt or effort:
+        rp = []
+        if felt:
+            fk = str(felt).split(".")[0]
+            rp.append(f"Gevoel: {_FELT_LABELS.get(fk, str(felt))} ({fk}/5 — 1=Geweldig t/m 5=Vreselijk)")
+        if effort:
+            rp.append(f"Inspanning (RPE): {effort}/10")
+        parts.append(" | ".join(rp))
+    if workout_data.get("post_notes"):
+        parts.append(workout_data["post_notes"])
+    for c in workout_data.get("athlete_comments", []):
+        if c.strip():
+            parts.append(c)
+    athlete_input = "\n".join(parts) if parts else "(geen notities van de atleet)"
+
+    profiel = (workout_data.get("coach_profiel") or "").strip()
+    profiel_section = (
+        f"\n\nWAT JE WEET OVER {first_name.upper()} (uit eerdere gesprekken):\n{profiel}\n"
+        f"Gebruik dit alleen voor toon/context, herhaal het niet letterlijk, verzin er niets bij."
+        if profiel else ""
+    )
+    context = f"""Type training: {type_label} (workout_type = {wt})
+Training: {workout_data.get('workout_name') or type_label}
+
+Opzet/omschrijving (indien aanwezig):
+{plan_description or 'Geen beschrijving.'}{profiel_section}
+
+Wat {first_name} zelf schrijft/zegt:
+{athlete_input}"""
+    return context, first_name
+
+
 def generate_feedback(workout_data: dict) -> str:
-    """Genereer het eerste feedback-concept op een training."""
+    """Genereer het eerste feedback-concept op een training. Run-specifieke context
+    en prompt draaien ALLEEN bij een hardlooptraining; andere types (of onbekend)
+    krijgen een neutrale, feitelijke prompt zonder hardloop-metrics."""
+    workout_type = workout_data.get("workout_type") or "unknown"
+    if workout_type != "run":
+        context, first_name = _build_nonrun_context(workout_data)
+        prompt = f"""Schrijf een concept-reactie voor Jip aan {first_name} op deze training:
+
+{context}
+
+AANPAK:
+1. Reageer PRIMAIR op wat {first_name} zelf schrijft of ervaart.
+2. Dit is GEEN hardlooptraining: gebruik geen tempo/hartslagzones, geen afstand, geen run-termen.
+3. Gebruik alleen de feitelijke gegevens hierboven. Bij weinig data: kort en menselijk, niets verzinnen.
+
+Schrijf nu de reactie. Kort en menselijk, in de stijl van Jip."""
+        response = create_message(
+            model="claude-sonnet-4-6", max_tokens=400,
+            system=_NONRUN_SYSTEM, messages=[{"role": "user", "content": prompt}])
+        return _clean_text(response.content[0].text)
+
     context, first_name = _build_workout_context(workout_data)
 
     prompt = f"""Schrijf een concept-reactie voor Jip aan {first_name} op deze training:

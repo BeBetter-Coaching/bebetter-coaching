@@ -887,6 +887,16 @@ body.kb-open .fb-dock textarea{min-height:50px;max-height:22vh}
    achterliggende queue-kolom niet interactief (naast het `inert`-attribuut). */
 body.fb-focus-open .fb-queue-col{pointer-events:none}
 
+/* Mobiel (keyboard dicht): Overslaan = duidelijke tertiaire workflowactie,
+   volwaardig touch-target en visueel ondergeschikt aan Genereer/Versturen;
+   Kopieer wordt de compacte utility ernaast (geen button-soup). Reuse fbSkip.
+   Tijdens kb-open blijft de hele rij verborgen (composer = alleen Gen/Send). */
+@media(max-width:899px){
+  .fb-dock-sec .btn{min-height:44px}
+  .fb-dock-sec #fb-copy{flex:0 0 auto}
+  .fb-dock-sec #fb-skip{flex:1}
+}
+
 /* ── Composer mode (mobiel, keyboard open) ───────────────────────────────────
    GEEN keyboardhoogte-berekening. De focus-view wordt één normale scroll-flow:
    .fb-focus scrollt, de dock staat in-flow direct onder de tekst met ruime
