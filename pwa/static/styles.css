@@ -818,8 +818,8 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
   transform:translateX(100%);transition:transform .26s cubic-bezier(.2,.7,.3,1);
   display:flex;flex-direction:column;visibility:hidden}
 .fb-focus-col.on{transform:none;visibility:visible}
-/* position:relative → anker voor de absoluut geplaatste editor-dock; de scroll-body
-   reserveert onderaan clearance ter grootte van de gemeten dockhoogte (--fb-dock-h). */
+/* position:relative → anker voor de absoluut geplaatste editor-dock (keyboard
+   dicht); de scroll-body reserveert onderaan een vaste clearance voor de dock. */
 .fb-focus{display:flex;flex-direction:column;height:100%;min-height:0;position:relative}
 
 /* sticky focus-header (blijft staan tijdens scroll) */
@@ -837,8 +837,8 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 /* scroll-gebied tussen header en dock; onderaan altijd genoeg ruimte voor de
    WERKELIJKE dockhoogte + safe-area + kleine marge → content valt nooit achter de dock */
 .fbf-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
-  padding:14px 15px calc(var(--fb-dock-h, 150px) + var(--kb-h, 0px) + env(safe-area-inset-bottom) + 10px);
-  scroll-padding-bottom:calc(var(--fb-dock-h, 150px) + var(--kb-h, 0px) + 10px)}
+  padding:14px 15px calc(170px + env(safe-area-inset-bottom));
+  scroll-padding-bottom:180px}
 
 /* planned vs actual — rustig/tabulair, zone-pills neutraal */
 .fb-pa{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:0 0 12px}
@@ -862,13 +862,12 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 .fb-ctx.amber{background:rgba(239,159,39,.08);border-color:rgba(239,159,39,.28);color:#f0c98a}
 .fb-ctx b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;opacity:.85}
 
-/* editor-dock: absoluut onderaan de focus (overlayt de scroll); Versturen altijd zichtbaar.
-   bottom = keyboard-offset (--kb-h, scoped op .fb-focus-col; 0 als geen keyboard) → de dock
-   schuift boven het toetsenbord terwijl de overlay-shell zelf full-screen/stabiel blijft. */
-.fb-dock{position:absolute;left:0;right:0;bottom:var(--kb-h,0px);z-index:2;
+/* editor-dock: keyboard DICHT (+ desktop) = absoluut onderaan de focus, Versturen
+   altijd zichtbaar. GEEN keyboard-geometrie meer. Bij keyboard OPEN op mobiel
+   schakelt de composer naar in-flow (zie composer mode onderaan). */
+.fb-dock{position:absolute;left:0;right:0;bottom:0;z-index:2;
   border-top:1px solid var(--border);background:var(--card2);
-  padding:10px 15px calc(10px + env(safe-area-inset-bottom));
-  transition:bottom .18s ease}
+  padding:10px 15px calc(10px + env(safe-area-inset-bottom))}
 .fb-dock textarea{margin:0 0 8px;min-height:78px;max-height:34vh;overflow-y:auto;resize:none}
 .fb-dock-row{display:flex;gap:8px}
 .fb-dock-row .btn{flex:1}
@@ -887,6 +886,19 @@ body.kb-open .fb-dock textarea{min-height:50px;max-height:22vh}
 /* Click-through defense-in-depth: zolang de mobiele focus open is, is de
    achterliggende queue-kolom niet interactief (naast het `inert`-attribuut). */
 body.fb-focus-open .fb-queue-col{pointer-events:none}
+
+/* ── Composer mode (mobiel, keyboard open) ───────────────────────────────────
+   GEEN keyboardhoogte-berekening. De focus-view wordt één normale scroll-flow:
+   .fb-focus scrollt, de dock staat in-flow direct onder de tekst met ruime
+   bodemmarge zodat Safari zelf het gefocuste #fb-ta boven het toetsenbord kan
+   scrollen. Shell blijft full-screen/stabiel; niets volgt de keyboardgeometrie.
+   Alleen mobiel (max-width:899px) → desktop master-detail volledig ongemoeid. */
+@media(max-width:899px){
+  body.kb-open .fb-focus{overflow-y:auto;-webkit-overflow-scrolling:touch}
+  body.kb-open .fbf-scroll{overflow:visible;flex:0 0 auto;padding-bottom:14px}
+  body.kb-open .fb-dock{position:static;left:auto;right:auto;
+    padding-bottom:calc(42vh + env(safe-area-inset-bottom))}
+}
 
 @media(prefers-reduced-motion:reduce){.fb-focus-col{transition:none}}
 

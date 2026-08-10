@@ -1924,8 +1924,6 @@ async function fbOpen(id, reason) {
   FB.selId = id; renderQueue();
   const col = $("#fb-focus-col"); col.classList.add("on"); col.setAttribute("aria-hidden", "false");
   fbLockQueue(true);                                  // click-through hard blokkeren zolang focus open is
-  fbKbReset();                                        // start zonder keyboard-offset; resize-handler vult later
-  fbKbCaptureBaseline();                              // ijk baseline nu (keyboard nog dicht)
   fbLog("focus_open", { reason: reason || "open" });
   if (FB.detailCache[id]) renderFocus(FB.detailCache[id]);
   else { renderFocusSkeleton(id); const d = await fbFetchDetail(id); if (FB.selId === id) renderFocus(d); }
@@ -1935,9 +1933,7 @@ function fbClose() {
   const col = $("#fb-focus-col");
   if (col) { col.classList.remove("on"); col.setAttribute("aria-hidden", "true"); }
   fbLockQueue(false);                                 // queue weer interactief
-  document.body.classList.remove("kb-open");
-  fbKbReset();                                        // keyboard-offset terug naar 0
-  _fbKbBaseline = null;                               // sessie-einde: baseline vrijgeven (volgende fbOpen ijkt opnieuw)
+  document.body.classList.remove("kb-open");          // composer mode uit
   fbLog("focus_close");
   FB.selId = null; renderQueue();
   if (isDesktop()) renderFocusEmpty();
@@ -1978,16 +1974,17 @@ function fbBindDock(id) {
   const ta = $("#fb-ta");
   if (ta) {
     ta.addEventListener("input", () => { fbDraftSave(id, ta.value); fbGrow(ta); });
-    // Keyboard-state betrouwbaar via focus/blur (robuuster op iOS dan vv-hoogte alleen).
-    ta.addEventListener("focus", () => { document.body.classList.add("kb-open"); fbLog("keyboard_open", { via: "focus" }); fbKbUpdate(); });
-    ta.addEventListener("blur", () => { document.body.classList.remove("kb-open"); fbLog("keyboard_close", { via: "blur" }); fbKbReset(); });
+    // kb-open = simpele UI-state (composer mode). GEEN keyboardhoogte-berekening:
+    // in composer mode wordt de focus-view een normale scroll-flow en brengt Safari
+    // zelf het gefocuste textarea boven het toetsenbord (zie styles.css).
+    ta.addEventListener("focus", () => { document.body.classList.add("kb-open"); fbLog("keyboard_open", { via: "focus" }); });
+    ta.addEventListener("blur", () => { document.body.classList.remove("kb-open"); fbLog("keyboard_close", { via: "blur" }); });
     fbGrow(ta);
   }
   const g = $("#fb-gen"); if (g) g.onclick = () => fbGen(id);
   const s = $("#fb-send"); if (s) s.onclick = () => fbSend(id);
   const c = $("#fb-copy"); if (c) c.onclick = () => { navigator.clipboard?.writeText($("#fb-ta")?.value || "").then(() => melding("Gekopieerd.")); };
   const sk = $("#fb-skip"); if (sk) sk.onclick = () => fbSkip(id);
-  fbObserveDock();
 }
 // Begrensde textarea-groei: auto-size op content; de CSS `max-height` (stabiele vh,
 // niet visualViewport) klemt de hoogte af → daarna interne scroll. Bewust GEEN
@@ -1997,22 +1994,6 @@ function fbGrow(ta) {
   if (!ta) return;
   ta.style.height = "auto";
   ta.style.height = (ta.scrollHeight + 2) + "px";     // CSS max-height klemt af (zie styles.css)
-}
-// Meet de WERKELIJKE dockhoogte → CSS-var --fb-dock-h (buiten de scroll-hotpath:
-// ResizeObserver vuurt bij layoutwijziging, niet tijdens scrollen).
-let _fbDockRO = null;
-function _fbSetDockH(h) { document.documentElement.style.setProperty("--fb-dock-h", Math.round(h) + "px"); }
-function fbObserveDock() {
-  const dock = document.querySelector(".fb-dock"); if (!dock) return;
-  _fbSetDockH(dock.getBoundingClientRect().height);   // directe meting op de HUIDIGE dock
-  if ("ResizeObserver" in window) {
-    // Callback leest e.target (de actueel geobserveerde dock), niet een gecapturede
-    // referentie → na een re-render meet hij nooit meer een losgekoppelde oude dock.
-    if (!_fbDockRO) _fbDockRO = new ResizeObserver(entries => {
-      for (const e of entries) if (e.target.isConnected) _fbSetDockH(e.target.getBoundingClientRect().height);
-    });
-    _fbDockRO.disconnect(); _fbDockRO.observe(dock);
-  }
 }
 function renderFocusSkeleton(id) {
   const it = FB.items.find(i => i.id === id) || {};
@@ -2165,72 +2146,6 @@ function fbMove(dir) {
   idx = idx < 0 ? (dir > 0 ? 0 : FB.items.length - 1) : Math.max(0, Math.min(FB.items.length - 1, idx + dir));
   fbOpen(FB.items[idx].id, "keyboard_nav");
 }
-// ── Keyboard-offset (Optie B: ÉÉN bron van waarheid) ─────────────────────────
-// De focus-overlay (.fb-focus-col) blijft ALTIJD full-screen (height:100dvh) en
-// wordt NOOIT meer aan de visualViewport aangepast — geen col.style.height/top,
-// geen geometry-chasing per animatieframe. We lezen visualViewport uitsluitend
-// READ-ONLY om de keyboardhoogte te bepalen en schrijven die als één CSS-var
-// (--kb-h) op de focus-kolom zelf (scoped → raakt Home niet). De dock schuift
-// daarmee boven het toetsenbord; header/shell/scroll-geometrie bewegen niet.
-// Coalesced/debounced: één stabiele update rond de eindtoestand i.p.v. tientallen
-// writes tijdens de keyboardanimatie. Bij blur/close direct terug naar 0.
-let _fbKbTimer = 0, _fbKbRaf = 0, _fbKbBaseline = null;
-// Zichtbare onderrand van de visual viewport (in layout-coördinaten).
-function _fbVisibleBottom() {
-  const vv = window.visualViewport; if (!vv) return 0;
-  return vv.offsetTop + vv.height;
-}
-// Keyboardhoogte t.o.v. een keyboard-DICHTE baseline i.p.v. de onbetrouwbare live
-// window.innerHeight (die op iOS mee-flapt met toolbars/animatie → gaf 0/131/316
-// bij dezelfde keyboard-state). Zolang het toetsenbord DICHT is, houden we de
-// baseline vers (absorbeert Safari-browserchrome); zodra het OPEN is, staat de
-// baseline vast en is kb = baseline − huidige zichtbare onderrand.
-function _fbKbCompute() {
-  const vv = window.visualViewport; if (!vv) return { kb: 0, vb: 0 };
-  const vb = _fbVisibleBottom();
-  const kbOpen = document.body.classList.contains("kb-open");
-  if (!kbOpen) { _fbKbBaseline = vb; return { kb: 0, vb }; }   // dicht → offset 0, baseline vers
-  if (_fbKbBaseline == null) _fbKbBaseline = vb;               // safety: geen baseline → geen sprong
-  return { kb: Math.max(0, Math.round(_fbKbBaseline - vb)), vb };
-}
-// Baseline (her)ijken — alleen zinvol wanneer het toetsenbord dicht is.
-function fbKbCaptureBaseline() {
-  if (!document.body.classList.contains("kb-open")) _fbKbBaseline = _fbVisibleBottom();
-}
-function _fbKbWrite() {
-  const col = $("#fb-focus-col"); if (!col) return;
-  const vv = window.visualViewport;
-  const { kb, vb } = _fbKbCompute();
-  col.style.setProperty("--kb-h", kb + "px");
-  fbLog("kb_offset", {
-    kb_h: kb, calculated_kb_h: kb,
-    window_inner_height: window.innerHeight,          // ALLEEN loggen, niet in de berekening
-    vv_height: vv ? Math.round(vv.height) : null,
-    vv_offset_top: vv ? Math.round(vv.offsetTop) : null,
-    vv_visible_bottom: Math.round(vb),
-    baseline_visible_bottom: _fbKbBaseline != null ? Math.round(_fbKbBaseline) : null,
-    overlay_h: Math.round(col.getBoundingClientRect().height),
-    dock_h: Math.round((document.querySelector(".fb-dock") || {}).getBoundingClientRect?.().height || 0),
-    keyboard_open: document.body.classList.contains("kb-open"),
-    active: (document.activeElement && document.activeElement.id) || null });
-}
-// Debounced update: verzamel de resize-storm en schrijf één keer als het settelt.
-function fbKbUpdate() {
-  if (isDesktop()) return;
-  const col = $("#fb-focus-col");
-  if (!(col && col.classList.contains("on"))) return;
-  clearTimeout(_fbKbTimer);
-  _fbKbTimer = setTimeout(() => {
-    cancelAnimationFrame(_fbKbRaf); _fbKbRaf = requestAnimationFrame(_fbKbWrite);
-  }, 90);
-}
-// Direct terug naar 0 (blur/close) — niet wachten op de debounce. Baseline blijft
-// bewaard zodat een snelle re-focus meteen de juiste (keyboard-dichte) referentie
-// heeft; volledige sessie-einde wist hem in fbClose.
-function fbKbReset() {
-  clearTimeout(_fbKbTimer); cancelAnimationFrame(_fbKbRaf);
-  const col = $("#fb-focus-col"); if (col) col.style.setProperty("--kb-h", "0px");
-}
 // Click-through hard blokkeren: zolang de mobiele focus open is, mag de
 // achterliggende queue/kolom NIET interactief zijn (geen tap die op een
 // blootliggende rij landt). Desktop = master-detail → queue blijft interactief.
@@ -2240,7 +2155,6 @@ function fbLockQueue(on) {
   if (on) { q.setAttribute("inert", ""); document.body.classList.add("fb-focus-open"); }
   else { q.removeAttribute("inert"); document.body.classList.remove("fb-focus-open"); }
 }
-if (window.visualViewport) window.visualViewport.addEventListener("resize", fbKbUpdate);
 
 // ════════════════════════════════════════════════════════════════════════════
 // SCHEMA BOUWEN — opgeslagen intake → AI-plan → CSV-download voor FinalSurge
