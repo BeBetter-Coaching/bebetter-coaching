@@ -932,3 +932,74 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
   .fb-dock{background:var(--card)}
   body.kb-open .fb-dock-sec{display:flex}   /* geen keyboard-collapse op desktop */
 }
+
+/* ══════════ Schema-workbench (Slice 1) ══════════
+   Rustige planning-workbench: contextchips → weken → workout openen/bewerken.
+   Mobiel = één week per scherm + full-screen focus-edit. Desktop = master-detail. */
+.sb-context{background:var(--card);border:1px solid var(--border);border-radius:16px;
+  padding:14px 15px;margin:8px 0 14px}
+.sb-ctx-head{display:flex;align-items:center;gap:12px}
+.sb-ctx-head .d-naam{font-size:19px}
+.sb-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.sb-chip{background:var(--card2);border:1px solid var(--border);color:var(--muted);
+  font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;white-space:nowrap}
+.sb-chip-sel{color:var(--acc);border-color:var(--acc)}
+
+.sb-weeknav{display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  padding:2px 0 10px;scrollbar-width:none}
+.sb-weeknav::-webkit-scrollbar{display:none}
+.sb-weekchip{flex:0 0 auto;background:var(--card2);border:1px solid var(--border);color:var(--muted);
+  font-size:13px;font-weight:650;padding:9px 14px;border-radius:10px;cursor:pointer;min-height:40px}
+.sb-weekchip.on{background:var(--card);border-color:var(--acc);color:var(--acc)}
+
+.sb-week{background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:6px 8px 8px;margin:0 0 12px}
+.sb-week-h{display:flex;align-items:baseline;gap:9px;padding:8px 8px 6px}
+.sb-week-t{font-size:14.5px;font-weight:700;color:var(--text)}
+.sb-week-sub{font-size:12px;color:var(--muted)}
+.sb-week-km{margin-left:auto;font-size:12px;font-weight:650;color:var(--acc)}
+.sb-rows{display:flex;flex-direction:column;gap:2px}
+
+.sb-row{display:grid;grid-template-columns:34px 78px 24px 1fr auto;align-items:center;gap:8px;
+  padding:9px 8px;min-height:48px;border-radius:10px;cursor:pointer;border:1px solid transparent}
+.sb-row:hover{background:var(--card2)}
+.sb-row.open{background:var(--card2);border-color:var(--acc)}
+.sb-row.excl{opacity:.5}
+.sb-row.excl .sb-row-name{text-decoration:line-through}
+.sb-inc{width:26px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;
+  background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--bg);cursor:pointer}
+.sb-inc.on{background:var(--acc);border-color:var(--acc)}
+.sb-inc .ic{width:15px;height:15px}
+.sb-row-day{font-size:12.5px;color:var(--muted);font-weight:600}
+.sb-row-ic{font-size:16px;text-align:center}
+.sb-row-name{font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  display:flex;align-items:center;gap:6px}
+.sb-row-meta{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.sb-edit-dot{width:6px;height:6px;border-radius:50%;background:#E6C15E;flex:0 0 auto;display:inline-block}
+
+.sb-tools{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 8px}
+
+.sb-edit{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 15px}
+.sb-edit-h{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.sb-row-ic.big{font-size:22px}
+.sb-edit-day{margin:0;font-size:13px;color:var(--muted);font-weight:600}
+.sb-edit-inc{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);
+  font-weight:600;cursor:pointer;white-space:nowrap}
+.sb-edit-inc input{width:auto;margin:0}
+.sb-revert{margin-top:12px}
+.sb-revert.hidden{display:none}
+.sb-detail-empty{text-align:center;color:var(--muted);padding:40px 20px}
+.sb-detail-empty .ic{width:26px;height:26px;margin-bottom:10px;color:var(--border)}
+
+/* Mobiel: focus-edit als full-screen overlay (parent .view verbergt 'm bij view-wissel) */
+.sb-focus{position:fixed;inset:0;z-index:40;background:var(--bg);overflow-y:auto;
+  -webkit-overflow-scrolling:touch}
+.sb-focus-in{padding:16px 16px calc(28px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto}
+.sb-focus .sb-edit{margin-top:6px}
+
+@media (min-width:900px){
+  .view[data-view="schema"]{max-width:1180px}
+  .sb-grid{display:grid;grid-template-columns:1fr 380px;gap:22px;align-items:start}
+  .sb-detail{position:sticky;top:22px}
+  .sb-focus{display:none}   /* op desktop nooit de overlay, altijd de detail-kolom */
+}

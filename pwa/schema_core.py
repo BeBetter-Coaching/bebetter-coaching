@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import os
 import sys
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 _HIER = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HIER)
@@ -65,6 +67,88 @@ def get_intake(key: str):
     return intake
 
 
+def context(key: str) -> dict:
+    """Compacte workbench-context (header) voor één atleet — puur uit de intake.
+
+    Geen nieuwe waarheid: leest de reeds opgeslagen bouwer-intake. Zonebron is
+    afgeleid van zone_type (zones-tekst blijft de enige intensiteitswaarheid).
+    """
+    intake = get_intake(key) or {}
+    _zt = intake.get("zone_type", "tempo")
+    return {
+        "naam": intake.get("athlete_name") or intake.get("naam") or key,
+        "voornaam": intake.get("naam", ""),
+        "doel": intake.get("doel", ""),
+        "weken": intake.get("weken", ""),
+        "trainingsdagen": intake.get("trainingsdagen", ""),
+        "startdatum": intake.get("startdatum", ""),
+        "zone_bron": "hartslag" if _zt in ("hartslag", "heart_rate") else "tempo",
+        "mode": intake.get("mode", "nieuw"),
+    }
+
+
+def _startweek_maandag(startdatum_str: str):
+    """Maandag van de startweek (of None). Basis van de maandag-uitlijning."""
+    try:
+        d = datetime.strptime(startdatum_str, "%Y-%m-%d")
+        return d - timedelta(days=d.weekday())
+    except Exception:
+        return None
+
+
+def groepeer_weken(rijen: list, startdatum_str: str) -> list:
+    """Groepeer canonieke rows deterministisch per maandag-week.
+
+    Hergebruikt EXACT de bewezen Streamlit-weeklogica (builder stap 3):
+    weeknummer = (datum - maandag_van_startweek) // 7 + 1. Geen tweede/andere
+    weekberekening. Kent elke row een stabiele `id` toe (positie in de
+    CSV-parse) zodat include/exclude en edits later betrouwbaar te koppelen zijn.
+    Muteert de rows in-place met `id` — de platte `rijen` in de response delen
+    dezelfde dicts, dus die krijgen ook een id.
+    """
+    start_monday = _startweek_maandag(startdatum_str)
+    for i, w in enumerate(rijen):
+        w.setdefault("id", f"r{i}")
+
+    buckets: dict = defaultdict(list)
+    for w in rijen:
+        try:
+            dt = datetime.strptime(w.get("date", ""), "%Y-%m-%d")
+        except Exception:
+            dt = None
+        if start_monday and dt:
+            wk = (dt - start_monday).days // 7 + 1
+        elif dt:
+            wk = dt.isocalendar()[1]        # geen startdatum → ISO-week (stabiel)
+        else:
+            wk = 0
+        buckets[wk].append(w)
+
+    weken = []
+    for wk in sorted(buckets):
+        rows = sorted(buckets[wk], key=lambda w: w.get("date", ""))
+        total_km = round(sum((w.get("planned_km") or 0) for w in rows))
+        if start_monday and wk >= 1:
+            mon = start_monday + timedelta(weeks=wk - 1)
+            sun = mon + timedelta(days=6)
+            datumrange = f"{mon.day}/{mon.month} – {sun.day}/{sun.month}"
+            week_start = mon.strftime("%Y-%m-%d")
+            label = f"Week {wk}"
+        else:
+            datumrange = ""
+            week_start = rows[0].get("date", "") if rows else ""
+            label = f"Week {wk}" if wk else "Overig"
+        weken.append({
+            "week_index": wk,
+            "week_start": week_start,
+            "label": label,
+            "datumrange": datumrange,
+            "total_km": total_km,
+            "rows": rows,
+        })
+    return weken
+
+
 def genereer_plan(key: str) -> str:
     """Genereer de plan-tekst (AI). Vereist een opgeslagen intake + de sleutel."""
     intake = get_intake(key)
@@ -86,7 +170,8 @@ def genereer_csv(key: str, plan_tekst: str):
     csv_tekst = SB.generate_csv(plan_tekst, intake)
     csv_clean = SB.extract_csv_block(csv_tekst)
     rijen = SB.parse_csv_text(csv_tekst)
-    return csv_clean, rijen
+    weken = groepeer_weken(rijen, intake.get("startdatum", ""))
+    return csv_clean, rijen, weken
 
 
 def push(key: str, csv_tekst: str) -> dict:

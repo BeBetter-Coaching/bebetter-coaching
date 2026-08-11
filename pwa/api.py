@@ -556,18 +556,19 @@ def schema_plan(body: SchemaGen):
         return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"Plan mislukt: {e}"}, status_code=500)
-    return {"ok": True, "plan": plan}
+    return {"ok": True, "plan": plan, "context": schema_core.context(body.key)}
 
 
 @app.post("/api/schema/csv")
 def schema_csv(body: SchemaGen):
     try:
-        csv_tekst, rijen = schema_core.genereer_csv(body.key, body.plan)
+        csv_tekst, rijen, weken = schema_core.genereer_csv(body.key, body.plan)
     except ValueError as e:
         return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"CSV mislukt: {e}"}, status_code=500)
-    return {"ok": True, "csv": csv_tekst, "rijen": rijen}
+    return {"ok": True, "csv": csv_tekst, "rijen": rijen, "weken": weken,
+            "context": schema_core.context(body.key)}
 
 
 @app.post("/api/schema/push")            # WRITE: zet de trainingen op de FS-kalender

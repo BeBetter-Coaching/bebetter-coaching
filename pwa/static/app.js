@@ -2203,66 +2203,287 @@ async function laadSchema() {
   });
 }
 
+// ── Schema workbench (Slice 1): canonieke rows → week-preview → open/edit ─────
+// GEEN FinalSurge-write in deze flow. De bestaande /api/schema/push-route blijft
+// bestaan voor compat, maar wordt hier bewust niet aangeroepen. State/edits leven
+// in-memory + een localStorage-draft (bewezen Feedback-patroon), zodat reload en
+// navigatie niets verliezen. We hergebruiken NIET de Streamlit builder_state.json:
+// dat is één live single-session-slot die Streamlit elke run leest — delen zou de
+// PWA en de Streamlit-bouwer elkaars half-afgemaakte schema laten overschrijven.
+let sbState = null;
+
+const SB_TYPE_IC = { Run: "🏃", Bike: "🚴", Swim: "🏊", Strength: "🏋️",
+  CrossTraining: "💪", Walk: "🚶", Rest: "😴" };
+const sbTypeIc = t => SB_TYPE_IC[t] || "🏃";
+const SB_DAG = ["ma", "di", "wo", "do", "vr", "za", "zo"];
+function sbParseDate(s) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+function sbDagDatum(s) { const d = sbParseDate(s); return d ? `${SB_DAG[(d.getDay() + 6) % 7]} ${d.getDate()}/${d.getMonth() + 1}` : esc(s || ""); }
+function sbLog(ev, data) { try { console.debug("[schema]", ev, data || {}); } catch {} }   // alleen keys/tellingen/timings, geen schema-inhoud
+
+// Draft (localStorage) — instant resume op hetzelfde device, geen server-churn.
+const SB_DRAFT_KEY = "bb_schema_drafts";
+function sbDraftsAll() { try { return JSON.parse(localStorage.getItem(SB_DRAFT_KEY) || "{}"); } catch { return {}; } }
+function sbDraftsSet(o) { try { localStorage.setItem(SB_DRAFT_KEY, JSON.stringify(o)); } catch {} }
+function sbDraftSave() { if (!sbState || !sbState.key) return; const o = sbDraftsAll(); o[sbState.key] = { ts: Date.now(), s: sbState }; sbDraftsSet(o); }
+function sbDraftLoad(key) { const d = sbDraftsAll()[key]; return d && d.s ? d.s : null; }
+let _sbSaveT = null;
+function sbDebouncedSave() { clearTimeout(_sbSaveT); _sbSaveT = setTimeout(sbDraftSave, 400); }
+(function sbDraftCleanup() { const o = sbDraftsAll(); const cut = Date.now() - 14 * 864e5; let ch = false; for (const k in o) if ((o[k].ts || 0) < cut) { delete o[k]; ch = true; } if (ch) sbDraftsSet(o); })();
+
 function schemaWerk(a) {
   $("#sb-lijst").hidden = true;
-  const wrap = $("#sb-werk"); wrap.hidden = false;
+  $("#sb-werk").hidden = false;
+  const draft = sbDraftLoad(a.key);
+  if (draft && draft.weken && draft.weken.length) { sbState = draft; sbState.naam = a.naam; sbRenderWorkbench(); return; }
+  sbRenderPrep(a);
+}
+
+// Fase A — plan → schema opbouwen. Klein en dicht bij de bewezen flow.
+function sbRenderPrep(a, existingPlan) {
+  const wrap = $("#sb-werk");
   wrap.innerHTML = `
     <button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
     <div class="d-head"><span class="avatar big">${initialen(a.naam)}</span>
       <div><h2 class="d-naam">${esc(a.naam)}</h2>
         <p class="muted klein">${a.doel ? esc(a.doel) : ""}${a.weken ? " · " + a.weken + " weken" : ""}</p></div></div>
     <section class="panel open-static">
-      <button class="btn primary" id="sb-plan">${ic("brain")} Genereer plan</button>
+      <button class="btn primary" id="sb-plan">${ic("brain")} ${existingPlan ? "Plan opnieuw genereren" : "Genereer plan"}</button>
       <p class="hint" id="sb-status">Het plan maken duurt ~30-60s (AI).</p>
-      <div id="sb-planbox" hidden>
-        <label class="lbl">Plan — pas het gerust aan vóór de CSV</label>
-        <textarea id="sb-plantekst" rows="12"></textarea>
-        <button class="btn primary" id="sb-csv" style="margin-top:10px">${ic("check")} Genereer CSV</button>
-        <div id="sb-na" hidden>
-          <button class="btn" id="sb-download">${ic("download")} Download CSV</button>
-          <button class="btn primary" id="sb-push">${ic("refresh")} Zet in FinalSurge</button>
-        </div>
+      <div id="sb-planbox" ${existingPlan ? "" : "hidden"}>
+        <label class="lbl">Plan — pas het gerust aan vóór je het schema opbouwt</label>
+        <textarea id="sb-plantekst" rows="12">${existingPlan ? esc(existingPlan) : ""}</textarea>
+        <button class="btn primary" id="sb-csv" style="margin-top:10px">${ic("check")} Bouw schema</button>
         <p class="hint" id="sb-csvstatus"></p>
       </div>
     </section>`;
-  $("#sb-terug").addEventListener("click", laadSchema);
+  $("#sb-terug").addEventListener("click", () => { sbState = null; laadSchema(); });
   $("#scroller").scrollTo({ top: 0 });
+  let planCtx = existingPlan && sbState ? sbState.context : null;
   $("#sb-plan").addEventListener("click", async () => {
     const btn = $("#sb-plan"); btn.disabled = true; btn.textContent = "AI bouwt het plan…";
+    const t0 = performance.now();
     const r = await jpost("/api/schema/plan", { key: a.key }).catch(() => null);
+    sbLog("plan_gen", { key: a.key, ms: Math.round(performance.now() - t0), ok: !!(r && r.ok) });
     btn.disabled = false; btn.innerHTML = `${ic("refresh")} Opnieuw`;
     if (!r || !r.ok) return melding(r?.err || "Plan mislukt.", true);
+    planCtx = r.context || null;
     $("#sb-planbox").hidden = false;
     $("#sb-plantekst").value = r.plan || "";
   });
-  let csvTekst = "", rijenN = 0;
   $("#sb-csv").addEventListener("click", async () => {
-    const st = $("#sb-csvstatus"); st.textContent = "CSV genereren…";
+    const st = $("#sb-csvstatus"); st.textContent = "Schema opbouwen…";
+    const t0 = performance.now();
     const r = await jpost("/api/schema/csv", { key: a.key, plan: $("#sb-plantekst").value }).catch(() => null);
-    if (!r || !r.ok) { st.textContent = ""; return melding(r?.err || "CSV mislukt.", true); }
-    csvTekst = r.csv || ""; rijenN = (r.rijen || []).length;
-    $("#sb-na").hidden = false;
-    st.textContent = `CSV klaar — ${rijenN} trainingen. Download 'm, of zet ze direct op de FinalSurge-kalender.`;
+    sbLog("csv_gen", { key: a.key, ms: Math.round(performance.now() - t0), ok: !!(r && r.ok), n: ((r && r.rijen) || []).length });
+    if (!r || !r.ok) { st.textContent = ""; return melding(r?.err || "Schema mislukt.", true); }
+    sbBuild(a, r, planCtx || r.context, $("#sb-plantekst").value);
     haptic(15);
   });
-  $("#sb-download").addEventListener("click", () => {
-    const url = URL.createObjectURL(new Blob([csvTekst], { type: "text/csv" }));
-    const dl = document.createElement("a");
-    dl.href = url; dl.download = `Schema - ${a.naam}.csv`;
-    document.body.appendChild(dl); dl.click(); dl.remove(); URL.revokeObjectURL(url);
-  });
-  $("#sb-push").addEventListener("click", async () => {
-    if (!confirm(`${rijenN} trainingen op de FinalSurge-kalender van ${a.naam} zetten? Bestaande trainingen blijven staan (worden niet gewist).`)) return;
-    const btn = $("#sb-push"); btn.disabled = true; btn.textContent = "Bezig met pushen…";
-    const st = $("#sb-csvstatus"); st.textContent = "Trainingen in FinalSurge zetten… (kan even duren)";
-    const r = await jpost("/api/schema/push", { key: a.key, csv: csvTekst }).catch(() => null);
-    btn.disabled = false; btn.innerHTML = `${ic("refresh")} Zet in FinalSurge`;
-    if (!r || !r.ok) { st.textContent = ""; return melding(r?.err || "Pushen mislukt.", true); }
-    const fout = (r.fouten || []).length;
-    st.textContent = `${r.ok_aantal} van ${r.totaal} trainingen in FinalSurge gezet${fout ? `, ${fout} met een fout` : ""}. ✓`;
-    haptic(20);
-  });
 }
+
+function sbBuild(a, r, ctx, planText) {
+  const weken = (r.weken || []).map(w => ({
+    week_index: w.week_index, label: w.label, datumrange: w.datumrange, week_start: w.week_start,
+    rows: (w.rows || []).map(row => ({
+      id: row.id, date: row.date, activity_type: row.activity_type || "Run", name: row.name || "",
+      planned_km: row.planned_km ?? null, planned_min: row.planned_min ?? null, description: row.description || "",
+      included: true, edited: false,
+      _orig: { name: row.name || "", planned_km: row.planned_km ?? null, planned_min: row.planned_min ?? null, description: row.description || "" },
+    })),
+  }));
+  sbState = { key: a.key, naam: a.naam, plan: planText || "", context: ctx || {},
+    weken, selectedWeek: weken[0] ? weken[0].week_index : null, openRow: null };
+  sbDraftSave();
+  sbRenderWorkbench();
+}
+
+// Fase B — de workbench zelf.
+function sbRenderWorkbench() {
+  const ctx = sbState.context || {};
+  $("#sb-werk").innerHTML = `
+    <button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
+    <div class="sb-context">
+      <div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
+        <div><h2 class="d-naam">${esc(sbState.naam)}</h2>
+          <p class="muted klein">${ctx.doel ? esc(ctx.doel) : "nieuw schema"}</p></div></div>
+      <div class="sb-chips">
+        <span class="sb-chip">🆕 nieuw</span>
+        ${ctx.weken ? `<span class="sb-chip">${esc(String(ctx.weken))} weken</span>` : ""}
+        ${ctx.trainingsdagen ? `<span class="sb-chip">${esc(ctx.trainingsdagen)}</span>` : ""}
+        <span class="sb-chip">zones · ${esc(ctx.zone_bron || "tempo")}</span>
+        <span class="sb-chip sb-chip-sel"></span>
+      </div>
+    </div>
+    <div class="sb-grid">
+      <div class="sb-master">
+        <div class="sb-weeknav" id="sb-weeknav" hidden></div>
+        <div class="sb-weeks" id="sb-weeks"></div>
+        <div class="sb-tools">
+          <button class="btn ghost" id="sb-download">${ic("download")} Download CSV</button>
+          <button class="btn ghost" id="sb-replan">${ic("refresh")} Plan opnieuw</button>
+        </div>
+      </div>
+      <aside class="sb-detail" id="sb-detail"></aside>
+    </div>
+    <div class="sb-focus" id="sb-focus" hidden></div>`;
+  $("#sb-terug").addEventListener("click", () => { sbState = null; laadSchema(); });
+  $("#sb-download").addEventListener("click", sbDownload);
+  $("#sb-replan").addEventListener("click", () => sbRenderPrep(
+    { key: sbState.key, naam: sbState.naam, doel: ctx.doel, weken: ctx.weken }, sbState.plan));
+  $("#scroller").scrollTo({ top: 0 });
+  sbWasDesktop = isDesktop();
+  sbRenderWeeks();
+  sbRenderDetail();
+  sbUpdateChips();
+}
+
+function sbFindRow(id) { for (const w of sbState.weken) { const r = w.rows.find(x => x.id === id); if (r) return r; } return null; }
+function sbWeekVanRow(id) { return sbState.weken.find(w => w.rows.some(r => r.id === id)); }
+
+function sbRenderWeeks() {
+  const host = $("#sb-weeks"), nav = $("#sb-weeknav"); if (!host) return;
+  const desktop = isDesktop();
+  if (desktop || sbState.weken.length <= 1) { nav.hidden = true; }
+  else {
+    nav.hidden = false;
+    nav.innerHTML = sbState.weken.map(w =>
+      `<button class="sb-weekchip ${w.week_index === sbState.selectedWeek ? "on" : ""}" data-wk="${w.week_index}">${esc(w.label)}</button>`).join("");
+    nav.querySelectorAll(".sb-weekchip").forEach(b => b.addEventListener("click", () => {
+      sbState.selectedWeek = +b.dataset.wk; sbDraftSave(); sbRenderWeeks();
+    }));
+  }
+  const weken = desktop ? sbState.weken : sbState.weken.filter(w => w.week_index === sbState.selectedWeek);
+  host.innerHTML = weken.map(sbWeekHtml).join("") || `<p class="muted center">Geen trainingen herkend.</p>`;
+  host.querySelectorAll("[data-row]").forEach(el => el.addEventListener("click", e => {
+    if (e.target.closest(".sb-inc")) return; sbOpenRow(el.dataset.row);
+  }));
+  host.querySelectorAll(".sb-inc").forEach(el => el.addEventListener("click", e => {
+    e.stopPropagation(); sbToggleInclude(el.dataset.inc);
+  }));
+}
+
+function sbWeekHtml(w) {
+  const km = w.rows.filter(r => r.included).reduce((s, r) => s + (r.planned_km || 0), 0);
+  const kmStr = km ? `<span class="sb-week-km">${Math.round(km)} km</span>` : "";
+  return `<section class="sb-week">
+    <div class="sb-week-h"><span class="sb-week-t">${esc(w.label)}</span>
+      ${w.datumrange ? `<span class="sb-week-sub">${esc(w.datumrange)}</span>` : ""}${kmStr}</div>
+    <div class="sb-rows">${w.rows.map(sbRowHtml).join("")}</div>
+  </section>`;
+}
+
+function sbRowHtml(r) {
+  const meta = r.planned_km != null ? `${r.planned_km} km` : (r.planned_min != null ? `${r.planned_min} min` : "");
+  return `<div class="sb-row ${r.included ? "" : "excl"} ${sbState.openRow === r.id ? "open" : ""}" data-row="${r.id}">
+    <button class="sb-inc ${r.included ? "on" : ""}" data-inc="${r.id}" aria-label="Meenemen of uitsluiten">${r.included ? ic("check") : ""}</button>
+    <span class="sb-row-day">${sbDagDatum(r.date)}</span>
+    <span class="sb-row-ic">${sbTypeIc(r.activity_type)}</span>
+    <span class="sb-row-name">${esc(r.name)}${r.edited ? `<span class="sb-edit-dot" title="handmatig aangepast"></span>` : ""}</span>
+    <span class="sb-row-meta">${esc(meta)}</span>
+  </div>`;
+}
+
+function sbOpenRow(id) { sbState.openRow = id; sbDraftSave(); if (isDesktop()) { sbRenderWeeks(); sbRenderDetail(); } else sbRenderFocus(); }
+function sbCloseDetail() { sbState.openRow = null; sbDraftSave(); const f = $("#sb-focus"); if (f) { f.hidden = true; f.innerHTML = ""; } sbRenderWeeks(); sbRenderDetail(); }
+
+function sbRenderDetail() {
+  const host = $("#sb-detail"); if (!host) return;
+  if (!isDesktop()) { host.innerHTML = ""; return; }        // mobiel gebruikt de focus-overlay
+  const r = sbState.openRow ? sbFindRow(sbState.openRow) : null;
+  if (!r) { host.innerHTML = `<div class="sb-detail-empty">${ic("note")}<p>Kies een training om te bekijken of aan te passen.</p></div>`; return; }
+  host.innerHTML = sbEditHtml(r);
+  sbBindEdit(host, r);
+}
+
+function sbRenderFocus() {
+  const r = sbState.openRow ? sbFindRow(sbState.openRow) : null;
+  const f = $("#sb-focus"); if (!f) return;
+  if (!r) { f.hidden = true; f.innerHTML = ""; return; }
+  f.hidden = false;
+  f.innerHTML = `<div class="sb-focus-in">
+    <button class="btn ghost back" id="sb-focus-back">${ic("back")} Terug naar week</button>
+    ${sbEditHtml(r)}</div>`;
+  f.querySelector("#sb-focus-back").addEventListener("click", sbCloseDetail);
+  sbBindEdit(f, r);
+}
+
+function sbEditHtml(r) {
+  const showKm = r.planned_km != null || ["Run", "Bike", "Swim"].includes(r.activity_type);
+  const showMin = r.planned_min != null;
+  return `<div class="sb-edit">
+    <div class="sb-edit-h"><span class="sb-row-ic big">${sbTypeIc(r.activity_type)}</span>
+      <p class="sb-edit-day">${sbDagDatum(r.date)} · ${esc(r.activity_type)}</p>
+      <label class="sb-edit-inc"><input type="checkbox" data-ef="included" ${r.included ? "checked" : ""}> meenemen</label></div>
+    <label class="lbl">Naam</label>
+    <input type="text" data-ef="name" value="${esc(r.name)}">
+    ${showKm ? `<label class="lbl">Afstand (km)</label><input type="number" step="0.1" inputmode="decimal" data-ef="planned_km" value="${r.planned_km != null ? r.planned_km : ""}">` : ""}
+    ${showMin ? `<label class="lbl">Duur (min)</label><input type="number" step="1" inputmode="numeric" data-ef="planned_min" value="${r.planned_min != null ? r.planned_min : ""}">` : ""}
+    <label class="lbl">Beschrijving</label>
+    <textarea data-ef="description" rows="5">${esc(r.description)}</textarea>
+    <button class="btn ghost sb-revert ${r.edited ? "" : "hidden"}" data-revert="${r.id}">${ic("refresh")} Herstel naar gegenereerd</button>
+  </div>`;
+}
+
+function sbBindEdit(root, r) {
+  root.querySelectorAll("[data-ef]").forEach(el => {
+    const f = el.dataset.ef;
+    el.addEventListener(el.type === "checkbox" ? "change" : "input", () => {
+      if (f === "included") { r.included = el.checked; sbDraftSave(); sbRenderWeeks(); sbUpdateChips(); return; }
+      let v = el.value;
+      if (f === "planned_km" || f === "planned_min") { v = v.trim() === "" ? null : parseFloat(v); if (v != null && isNaN(v)) v = null; }
+      r[f] = v;
+      sbMarkEdited(r);
+      root.querySelector(".sb-revert")?.classList.toggle("hidden", !r.edited);
+      sbDebouncedSave();
+      sbRenderWeeks();            // aparte subtree → focus in dit veld blijft behouden
+    });
+  });
+  root.querySelector("[data-revert]")?.addEventListener("click", () => sbRevert(r));
+}
+
+function sbMarkEdited(r) {
+  const o = r._orig || {};
+  r.edited = r.name !== o.name || r.planned_km !== o.planned_km || r.planned_min !== o.planned_min || r.description !== o.description;
+}
+function sbRevert(r) {
+  const o = r._orig || {};
+  r.name = o.name; r.planned_km = o.planned_km; r.planned_min = o.planned_min; r.description = o.description; r.edited = false;
+  sbDraftSave(); sbRenderWeeks(); if (isDesktop()) sbRenderDetail(); else sbRenderFocus();
+}
+function sbToggleInclude(id) {
+  const r = sbFindRow(id); if (!r) return;
+  r.included = !r.included; sbDraftSave(); sbRenderWeeks(); sbUpdateChips();
+  if (isDesktop() && sbState.openRow === id) sbRenderDetail();
+  haptic(8);
+}
+function sbUpdateChips() {
+  const el = $(".sb-chip-sel"); if (!el) return;
+  const total = sbState.weken.reduce((n, w) => n + w.rows.length, 0);
+  const incl = sbState.weken.reduce((n, w) => n + w.rows.filter(r => r.included).length, 0);
+  el.textContent = `${incl}/${total} geselecteerd`;
+}
+
+// Download reflecteert edits + includes (rows = canonieke bron). GEEN write.
+function sbDownload() {
+  const q = s => { s = String(s ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const lines = ["Date,ActivityType,WorkoutName,PlannedTimeMinutes,PlannedDistance,mi/km/m/y,WorkoutDescription"];
+  sbState.weken.forEach(w => w.rows.forEach(r => { if (!r.included) return;
+    lines.push([r.date, r.activity_type, q(r.name), r.planned_min ?? "", r.planned_km ?? "", "km", q(r.description)].join(",")); }));
+  const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  const dl = document.createElement("a"); dl.href = url; dl.download = `Schema - ${sbState.naam}.csv`;
+  document.body.appendChild(dl); dl.click(); dl.remove(); URL.revokeObjectURL(url);
+}
+
+// Breakpoint-wissel: layout opnieuw kiezen zonder state te verliezen.
+let sbWasDesktop = null;
+window.addEventListener("resize", () => {
+  if (!sbState || huidigeView !== "schema" || !$("#sb-weeks")) return;
+  const d = isDesktop(); if (d === sbWasDesktop) return;
+  sbWasDesktop = d;
+  sbRenderWeeks(); sbRenderDetail();
+  const f = $("#sb-focus");
+  if (f) { if (d) { f.hidden = true; f.innerHTML = ""; } else if (sbState.openRow) sbRenderFocus(); }
+});
 $("#sb-refresh").addEventListener("click", () => { geladen.schema = true; laadSchema(); });
 
 // ════════════════════════════════════════════════════════════════════════════
