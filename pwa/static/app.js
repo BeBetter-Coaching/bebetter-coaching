@@ -2236,6 +2236,9 @@ const SB_DAG = ["ma", "di", "wo", "do", "vr", "za", "zo"];
 function sbParseDate(s) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
 function sbDagDatum(s) { const d = sbParseDate(s); return d ? `${SB_DAG[(d.getDay() + 6) % 7]} ${d.getDate()}/${d.getMonth() + 1}` : esc(s || ""); }
 function sbLog(ev, data) { try { console.debug("[schema]", ev, data || {}); } catch {} }   // alleen keys/tellingen/timings, geen schema-inhoud
+// Deterministische fingerprint van de plantekst (FNV-1a) — geen timestamp. Bepaalt
+// of 'Bouw schema' de bestaande workbench mag hergebruiken (plan inhoudelijk gelijk).
+function sbHash(s) { s = String(s || ""); let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16); }
 
 // Draft (localStorage) — instant resume op hetzelfde device, geen server-churn.
 const SB_DRAFT_KEY = "bb_schema_drafts";
@@ -2497,6 +2500,11 @@ async function sbChatSend() {
 async function sbBuildSchema() {
   const edit = $("#sb-plan-edit");
   if (edit && !edit.hidden && edit.value !== sbState.plan) { sbState.plan = edit.value; sbState.planEdited = true; }
+  // Plan inhoudelijk ongewijzigd sinds de laatste build → hergebruik de bestaande
+  // workbench (geen generate_csv), met behoud van edits/include/selectie/state.
+  if (sbState.weken && sbState.weken.length && sbState.built_plan_hash === sbHash(sbState.plan)) {
+    sbState.stage = "workbench"; sbDraftSave(); sbRenderWorkbench(); haptic(8); return;
+  }
   const btn = $("#sb-build"); if (btn.disabled) return;
   btn.disabled = true; btn.textContent = "Schema opbouwen…";
   const st = $("#sb-chat-status"); if (st) st.textContent = "De weken worden opgebouwd. Dit kan even duren…";
@@ -2667,6 +2675,7 @@ function sbEnterWorkbench(r) {
   if (r.context) sbState.context = r.context;
   sbState.selectedWeek = sbState.weken[0] ? sbState.weken[0].week_index : null;
   sbState.openRow = null; sbState.stage = "workbench";
+  sbState.built_plan_hash = sbHash(sbState.plan);     // deze rows horen bij dit plan
   sbDraftSave();
   sbRenderWorkbench();
 }
