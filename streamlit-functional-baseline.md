@@ -75,7 +75,7 @@ De home-tegels definiëren de canonieke modulelijst (11 modules + Home-dashboard
 | 4 | **Races** | S+PWA | Aankomende races + AI-raceplan + persoonlijke succeswens | `races_page.py`, `ai_feedback.generate_race_*` | `races_core.py` → `/api/races*` |
 | 5 | **Administratie** | S+PWA | KOR-bewaking, omzet/categorie, facturen, klantadmin (pincode) | `admin.py`, `rompslomp_client.py`, `belasting.py` | `admin_core.py` → `/api/admin/*` |
 | 6 | **Intake** | S+PWA | Nieuwe atleet vastleggen (doel/niveau/achtergrond); publieke intakelink + inbox | `intake_page.py`, `intake_form.py`, `intake_store.py`, `schema_builder.extract_intake_fields` | `intake_core.py` → `/api/intake/*` |
-| 7 | **Schema bouwen** | S+PWA (deels) | Trainingsplan genereren op doel/niveau/datum → CSV → FinalSurge-import incl. workout-builder | `builder_page.py`, `schema_builder.py` | `schema_core.py` → `/api/schema/*` (**lichter**, zie §8) |
+| 7 | **Schema bouwen** | S+PWA | Trainingsplan genereren op doel/niveau/datum → workbench → veilige FinalSurge-write incl. workout-builder | `builder_page.py`, `schema_builder.py` | `schema_core.py`+`athlete_context.py` → `/api/schema/*` (**Nieuw = production proven & LOCKED**; Verlengen/Bijsturen nog niet — §8) |
 | 8 | **Atleet-dossiers** | S+PWA (deels) | Alles per atleet: intake, notities, compliance, trends, races, zones | `dossier.py`, `intake_store` notes/profielen | `dossier_core.py` + `atleten_core.py` → `/api/dossier/*`, `/api/atleten` |
 | 9 | **Documenten** | S+PWA | Persoonlijk PDF-document (handleiding/wedstrijd/voeding/kracht) in huisstijl, AI-stukjes | `documenten_page.py`, `docgen/` | `documenten_core.py` → `/api/docs/*` |
 | 10 | **Builder bijvullen & zones** | **S-only** | Workout-builder vullen voor bestaande trainingen; heel schema tempo↔hartslag omzetten | `main.py` (`page=="backfill_builder"`, r.2689+), `fs_client.convert_schema_zones` | **MISSING in PWA** |
@@ -234,7 +234,7 @@ Zie [[feedback-mobile-composer-locked]]. Streamlit-equivalenten die NIET overgen
 
 **MISSING in PWA (bestaat alleen in Streamlit):**
 - **Builder bijvullen & zones** (module 10: backfill workout-builder + `convert_schema_zones`).
-- **Schema bouwen — volledige flow**: `schema_core.py` doet plan/csv/push, maar de rijke `builder_page` (Nieuw/Verlengen/Bijsturen-modi, prefill, state-save, chat-over-plan) is **nog niet** in PWA.
+- **Schema bouwen — Verlengen & Bijsturen**: modus **Nieuw** is per 11 aug 2026 **end-to-end PWA production proven en LOCKED** (config→masterbrein-context→plan→AI-chat→workbench→preview→veilige write; `schema_core.py` + `pwa/athlete_context.py`). **Verlengen** (`_prefill_builder_from_prev`/`get_last_planned_date`) en **Bijsturen** (`_render_bijsturen_flow`/`delete_workout`) zijn de resterende modi — nog niet in PWA. Zie [[schema-workbench-slice1]].
 - **Dossier-diepte**: `dossier_core` is lichter dan `dossier.py` (evaluatie/klantbericht/Garmin-paneel deels).
 - **Belasting-aangifte-tab** (admin sub-tab) in PWA onvolledig.
 
@@ -253,7 +253,7 @@ Zie [[feedback-mobile-composer-locked]]. Streamlit-equivalenten die NIET overgen
 | Races | S+PWA | `generate_race_*` | fs_client, ai_feedback | volledig (`races_core`) | — | laag |
 | Admin | S+PWA | KOR/btw/matching, rompslomp | admin, rompslomp_client | volledig (`admin_core`, pincode) | UX | midden (financieel) |
 | Intake | S+PWA | `extract_intake_fields`, publieke link | intake_store, schema_builder | volledig (`intake_core`) | UX | midden |
-| Schema bouwen | S+PWA (deels) | `build_prompt`→`import_to_finalsurge`, `generate_builder_steps` | schema_builder, fs_client | **licht** (`schema_core`: plan/csv/push) | modi + adherentie (plan) | **hoog** (WRITE naar FS) |
+| Schema bouwen | S+PWA | `build_prompt`→`import_to_finalsurge`, `generate_builder_steps`, `chat_about_plan` | schema_builder, fs_client, athlete_context | **Nieuw = production proven & LOCKED** (config→context→plan→chat→workbench→veilige write); Verlengen/Bijsturen nog niet | Verlengen + Bijsturen (modi) | **hoog** (WRITE) — voor Nieuw afgedekt (preview+per-rij+idempotent) |
 | Atleet-dossiers | S+PWA (deels) | `dossier._analyse_log`, evaluatie | dossier, intake_store | licht (`dossier_core`+`atleten_core`) | evaluatie/klantbericht/trends | midden |
 | Documenten | S+PWA | `docgen/` | intake_store | volledig (`documenten_core`) | — | laag |
 | Builder bijvullen & zones | **S-only** | `convert_schema_zones` | fs_client | **MISSING** | nieuw bouwen | hoog (WRITE) |
