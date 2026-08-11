@@ -2230,65 +2230,223 @@ let _sbSaveT = null;
 function sbDebouncedSave() { clearTimeout(_sbSaveT); _sbSaveT = setTimeout(sbDraftSave, 400); }
 (function sbDraftCleanup() { const o = sbDraftsAll(); const cut = Date.now() - 14 * 864e5; let ch = false; for (const k in o) if ((o[k].ts || 0) < cut) { delete o[k]; ch = true; } if (ch) sbDraftsSet(o); })();
 
+// ══ Schema flow (Slice 2): config → conceptplan → AI-sparfase → Slice-1 workbench ══
+// Stage-aware: één draft per atleet bewaart config, actuele planversie, chat én
+// (na Bouw schema) de workbench-rows. Re-entry/reload herstelt exact de juiste fase.
 function schemaWerk(a) {
   $("#sb-lijst").hidden = true;
   $("#sb-werk").hidden = false;
   const draft = sbDraftLoad(a.key);
-  if (draft && draft.weken && draft.weken.length) { sbState = draft; sbState.naam = a.naam; sbRenderWorkbench(); return; }
-  sbState = null;                       // geen draft → schone lei (geen leak van vorige atleet)
-  sbRenderPrep(a);
+  if (draft && draft.stage) {
+    sbState = draft; sbState.naam = a.naam;
+    if (sbState.stage === "workbench" && sbState.weken && sbState.weken.length) return sbRenderWorkbench();
+    if (sbState.stage === "plan") return sbRenderPlan();
+    if (sbState.stage === "config") return sbRenderConfig();
+  }
+  sbState = null;                       // geen geldige draft → schone lei (geen leak)
+  sbStartConfig(a);
 }
 
-// Fase A — plan → schema opbouwen. Klein en dicht bij de bewezen flow.
-function sbRenderPrep(a, existingPlan) {
+function sbBackToList() { sbState = null; laadSchema(); }
+
+// ── Fase 1 — schema-instellingen (modus NIEUW), slimme prefill ───────────────
+async function sbStartConfig(a) {
   const wrap = $("#sb-werk");
-  wrap.innerHTML = `
-    <button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
+  wrap.innerHTML = `<button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
     <div class="d-head"><span class="avatar big">${initialen(a.naam)}</span>
-      <div><h2 class="d-naam">${esc(a.naam)}</h2>
-        <p class="muted klein">${a.doel ? esc(a.doel) : ""}${a.weken ? " · " + a.weken + " weken" : ""}</p></div></div>
-    <section class="panel open-static">
-      <button class="btn primary" id="sb-plan">${ic("brain")} ${existingPlan ? "Plan opnieuw genereren" : "Genereer plan"}</button>
-      <p class="hint" id="sb-status">Het plan maken duurt ~30-60s (AI).</p>
-      <div id="sb-planbox" ${existingPlan ? "" : "hidden"}>
-        <label class="lbl">Plan — pas het gerust aan vóór je het schema opbouwt</label>
-        <textarea id="sb-plantekst" rows="12">${existingPlan ? esc(existingPlan) : ""}</textarea>
-        <button class="btn primary" id="sb-csv" style="margin-top:10px">${ic("check")} Bouw schema</button>
-        <p class="hint" id="sb-csvstatus"></p>
-      </div>
-    </section>`;
-  $("#sb-terug").addEventListener("click", () => { sbState = null; laadSchema(); });
-  $("#scroller").scrollTo({ top: 0 });
-  let planCtx = existingPlan && sbState ? sbState.context : null;
-  $("#sb-plan").addEventListener("click", async () => {
-    const btn = $("#sb-plan"); btn.disabled = true; btn.textContent = "AI bouwt het plan…";
-    const t0 = performance.now();
-    const r = await jpost("/api/schema/plan", { key: a.key }).catch(() => null);
-    sbLog("plan_gen", { key: a.key, ms: Math.round(performance.now() - t0), ok: !!(r && r.ok) });
-    btn.disabled = false; btn.innerHTML = `${ic("refresh")} Opnieuw`;
-    if (!r || !r.ok) return melding(r?.err || "Plan mislukt.", true);
-    planCtx = r.context || null;
-    $("#sb-planbox").hidden = false;
-    $("#sb-plantekst").value = r.plan || "";
-  });
-  $("#sb-csv").addEventListener("click", async () => {
-    const btn = $("#sb-csv"); if (btn.disabled) return;      // geen dubbele generatie
-    btn.disabled = true; btn.textContent = "Schema opbouwen…";
-    const st = $("#sb-csvstatus"); st.textContent = "Bezig — de weken worden opgebouwd (±20–40s). Even geduld, niet nogmaals klikken.";
-    const t0 = performance.now();
-    const r = await jpost("/api/schema/csv", { key: a.key, plan: $("#sb-plantekst").value }).catch(() => null);
-    sbLog("csv_gen", { key: a.key, ms: Math.round(performance.now() - t0), ok: !!(r && r.ok), n: ((r && r.rijen) || []).length });
-    if (!r || !r.ok) {
-      btn.disabled = false; btn.innerHTML = `${ic("check")} Bouw schema`; st.textContent = "";
-      return melding(r?.err || "Schema mislukt.", true);
-    }
-    sbBuild(a, r, planCtx || r.context, $("#sb-plantekst").value);   // → workbench (vervangt dit scherm)
-    haptic(15);
-  });
+      <div><h2 class="d-naam">${esc(a.naam)}</h2><p class="muted klein" id="sb-cfg-load">Instellingen laden…</p></div></div>`;
+  $("#sb-terug").addEventListener("click", sbBackToList);
+  const r = await api("/api/schema/config?key=" + encodeURIComponent(a.key)).catch(() => null);
+  if (!r || !r.ok) { const l = $("#sb-cfg-load"); if (l) l.textContent = "Kon instellingen niet laden."; return; }
+  sbState = { key: a.key, naam: a.naam, stage: "config", config: r.config || {},
+    context: r.context || {}, plan: "", planEdited: false, prevPlan: null, chat: [] };
+  sbDraftSave();
+  sbRenderConfig();
 }
 
-function sbBuild(a, r, ctx, planText) {
-  const weken = (r.weken || []).map(w => ({
+const SB_DAG_NL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"];
+function sbDagenUitString(s) { const p = (s || "").toLowerCase().split(/[^a-z]+/).filter(Boolean); return SB_DAG.map((d, i) => i).filter(i => p.includes(SB_DAG[i])); }
+function sbDagenNaarString() { return [...$("#cfg-dagen").querySelectorAll(".sb-dag.on")].map(b => +b.dataset.d).sort((x, y) => x - y).map(i => SB_DAG[i]).join("/"); }
+
+// Display-samenvatting; de AI-harde-eisen komen server-side uit _harde_eisen_secties
+// (enige bron voor het model). Deze lijst spiegelt dezelfde config-velden.
+function sbAfspraken(c) {
+  const dagen = sbDagenUitString(c.trainingsdagen || ""), out = [];
+  if (c.doel) out.push("Doel: " + c.doel);
+  if (c.weken) out.push(`Periode: ${c.weken} weken · start ${c.startdatum || "?"}`);
+  out.push(dagen.length ? `Trainingsdagen (${dagen.length}/week): ${dagen.map(i => SB_DAG_NL[i]).join(", ")}`
+                        : "Trainingsdagen: nog niet gekozen — de AI kiest ze zelf");
+  out.push(`Zones (${c.zone_type || "tempo"}): ${c.zones ? "ingesteld" : "—"}`);
+  if (c.huidig_volume) out.push("Huidig volume: " + c.huidig_volume);
+  if (c.race_prioriteit) out.push("Race: " + c.race_prioriteit);
+  if (c.coach_notitie) out.push("Coachinstructie: " + c.coach_notitie.split("\n")[0]);
+  out.push("Variatie verplicht; op elke trainingsdag een training.");
+  return out;
+}
+function sbRefreshAfspraken() { const ul = $("#cfg-afspraken"); if (ul) ul.innerHTML = sbAfspraken(sbState.config).map(a => `<li>${esc(a)}</li>`).join(""); }
+
+function sbSyncConfig() {
+  const c = sbState.config;
+  c.doel = $("#cfg-doel").value; c.startdatum = $("#cfg-start").value; c.weken = $("#cfg-weken").value;
+  c.trainingsdagen = sbDagenNaarString(); c.huidig_volume = $("#cfg-vol").value;
+  c.race_prioriteit = $("#cfg-race").value; c.coach_notitie = $("#cfg-notitie").value;
+  c.schema_einddatum = "";                       // server herberekent uit start+weken
+  sbDebouncedSave();
+}
+
+function sbRenderConfig() {
+  const c = sbState.config, sel = sbDagenUitString(c.trainingsdagen);
+  $("#sb-werk").innerHTML = `
+    <button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
+    <div class="sb-context"><div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
+      <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Nieuw schema · instellingen</p></div></div></div>
+    <div class="sb-cfg">
+      <div class="sb-cfg-grid">
+        <div><label class="lbl">Doel</label><textarea id="cfg-doel" rows="2" placeholder="bijv. 10km in sub 50">${esc(c.doel)}</textarea></div>
+        <div class="sb-cfg-row2">
+          <div><label class="lbl">Startdatum</label><input type="date" id="cfg-start" value="${esc(c.startdatum)}"></div>
+          <div><label class="lbl">Weken</label><input type="number" id="cfg-weken" min="1" max="52" value="${esc(c.weken)}"></div></div>
+        <div><label class="lbl">Trainingsdagen</label>
+          <div class="sb-dagen" id="cfg-dagen">${SB_DAG.map((d, i) => `<button type="button" class="sb-dag ${sel.includes(i) ? "on" : ""}" data-d="${i}">${d[0].toUpperCase() + d.slice(1)}</button>`).join("")}</div></div>
+        <div class="sb-cfg-row2">
+          <div><label class="lbl">Huidig volume</label><input type="text" id="cfg-vol" placeholder="bijv. 25-30 km/week" value="${esc(c.huidig_volume)}"></div>
+          <div><label class="lbl">Race-prioriteit</label><input type="text" id="cfg-race" placeholder="bijv. A-race" value="${esc(c.race_prioriteit)}"></div></div>
+        <div><label class="lbl">Coachinstructies</label><textarea id="cfg-notitie" rows="2" placeholder="bijv. rustig opbouwen; meer tempowerk richting 10km">${esc(c.coach_notitie)}</textarea></div>
+        <div class="sb-zones"><span class="lbl">Zones · ${esc(c.zone_type || "tempo")} (uit FinalSurge — enige intensiteitsbron)</span>
+          <pre class="sb-zonebox">${esc(c.zones || "geen zones gevonden in FinalSurge")}</pre></div>
+      </div>
+      <aside class="sb-afspraken">
+        <p class="sb-afspraken-h">${ic("check")} Schema-afspraken</p>
+        <ul id="cfg-afspraken">${sbAfspraken(c).map(a => `<li>${esc(a)}</li>`).join("")}</ul>
+        <button class="btn primary block" id="cfg-gen">${ic("brain")} Genereer conceptplan</button>
+        <p class="hint" id="cfg-status">De AI maakt een compleet conceptplan (±20–40s).</p>
+      </aside>
+    </div>`;
+  $("#sb-terug").addEventListener("click", sbBackToList);
+  $("#scroller").scrollTo({ top: 0 });
+  $("#cfg-dagen").querySelectorAll(".sb-dag").forEach(b => b.addEventListener("click", () => { b.classList.toggle("on"); sbSyncConfig(); sbRefreshAfspraken(); }));
+  ["cfg-doel", "cfg-start", "cfg-weken", "cfg-vol", "cfg-race", "cfg-notitie"].forEach(id => $("#" + id).addEventListener("input", () => { sbSyncConfig(); sbRefreshAfspraken(); }));
+  $("#cfg-gen").addEventListener("click", sbGenPlan);
+}
+
+async function sbGenPlan() {
+  sbSyncConfig();
+  const btn = $("#cfg-gen"); if (btn.disabled) return;
+  btn.disabled = true; btn.textContent = "AI bouwt het conceptplan…";
+  const st = $("#cfg-status"); st.textContent = "Bezig — compleet conceptplan (±20–40s). Niet nogmaals klikken.";
+  const t0 = performance.now();
+  const r = await jpost("/api/schema/plan", { key: sbState.key, config: sbState.config }).catch(() => null);
+  sbLog("plan_gen", { key: sbState.key, ms: Math.round(performance.now() - t0), ok: !!(r && r.ok) });
+  if (!r || !r.ok) { btn.disabled = false; btn.innerHTML = `${ic("brain")} Genereer conceptplan`; st.textContent = ""; return melding(r?.err || "Plan mislukt.", true); }
+  if (r.context_blob) sbState.config._context = r.context_blob;   // hergebruik in chat (geen refetch)
+  if (r.context) sbState.context = r.context;
+  sbState.plan = r.plan || ""; sbState.planEdited = false; sbState.prevPlan = null; sbState.chat = [];
+  sbState.stage = "plan"; sbDraftSave();
+  sbRenderPlan();
+}
+
+// ── Fase 2 — conceptplan (read-first) + AI-sparfase ──────────────────────────
+function sbPlanHtml(plan) { return esc(plan || "").replace(/\n/g, "<br>"); }
+function sbChatHtml() {
+  if (!sbState.chat || !sbState.chat.length)
+    return `<p class="sb-chat-empty">Stel een vraag of geef een wijziging — ik pas het hele plan consistent aan.</p>`;
+  return sbState.chat.map(m => `<div class="sb-bub ${m.role === "user" ? "me" : "ai"}">${esc(m.content)}${m.updated ? `<span class="sb-bub-tag">plan bijgewerkt</span>` : ""}</div>`).join("");
+}
+function sbChatScroll() { const l = $("#sb-chat-log"); if (l) l.scrollTop = l.scrollHeight; }
+
+function sbRenderPlan() {
+  const doel = (sbState.context && sbState.context.doel) || "conceptplan";
+  $("#sb-werk").innerHTML = `
+    <button class="btn ghost back" id="sb-terug">${ic("back")} Instellingen</button>
+    <div class="sb-context"><div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
+      <div><h2 class="d-naam">${esc(sbState.naam)}</h2>
+        <p class="muted klein">${esc(doel)}${sbState.planEdited ? " · handmatig aangepast" : ""}</p></div>
+      <button class="btn primary" id="sb-build">${ic("check")} Bouw schema</button></div></div>
+    <div class="sb-plan-grid">
+      <div class="sb-plan-col">
+        <div class="sb-plan-head"><span class="lbl">Conceptplan</span>
+          <div class="sb-plan-acts">
+            ${sbState.prevPlan ? `<button class="btn ghost sm" id="sb-undo">${ic("refresh")} Undo AI-wijziging</button>` : ""}
+            <button class="btn ghost sm" id="sb-edit-toggle">${ic("note")} Handmatig bewerken</button></div></div>
+        <div class="sb-plan-read" id="sb-plan-read">${sbPlanHtml(sbState.plan)}</div>
+        <textarea class="sb-plan-edit" id="sb-plan-edit" rows="20" hidden>${esc(sbState.plan)}</textarea>
+      </div>
+      <aside class="sb-chat">
+        <p class="sb-chat-h">${ic("brain")} Sparren met je assistent-coach</p>
+        <div class="sb-chat-log" id="sb-chat-log">${sbChatHtml()}</div>
+        <div class="sb-chat-input">
+          <textarea id="sb-chat-ta" rows="2" placeholder="bijv. maak week 4 rustiger, of: meer tempowerk richting 10km"></textarea>
+          <button class="btn primary" id="sb-chat-send">${ic("message")} Vraag / wijzig</button></div>
+        <p class="hint" id="sb-chat-status"></p>
+      </aside>
+    </div>`;
+  $("#sb-terug").addEventListener("click", () => { sbState.stage = "config"; sbDraftSave(); sbRenderConfig(); });
+  $("#sb-build").addEventListener("click", sbBuildSchema);
+  $("#sb-edit-toggle").addEventListener("click", sbToggleManualEdit);
+  $("#sb-chat-send").addEventListener("click", sbChatSend);
+  if (sbState.prevPlan) $("#sb-undo").addEventListener("click", sbUndoPlan);
+  $("#scroller").scrollTo({ top: 0 });
+  sbChatScroll();
+}
+
+function sbToggleManualEdit() {
+  const read = $("#sb-plan-read"), edit = $("#sb-plan-edit");
+  if (edit.hidden) { edit.hidden = false; read.hidden = true; edit.value = sbState.plan; edit.focus(); }
+  else {
+    if (edit.value !== sbState.plan) { sbState.plan = edit.value; sbState.planEdited = true; sbDraftSave(); }
+    sbRenderPlan();                                // toont edited-markering + read-view
+  }
+}
+function sbUndoPlan() {
+  if (!sbState.prevPlan) return;
+  sbState.plan = sbState.prevPlan; sbState.prevPlan = null; sbState.planEdited = false;
+  sbState.chat.push({ role: "assistant", content: "Laatste AI-wijziging teruggedraaid." });
+  sbDraftSave(); sbRenderPlan();
+}
+
+async function sbChatSend() {
+  const ta = $("#sb-chat-ta"), tekst = (ta.value || "").trim();
+  if (!tekst) return;
+  const send = $("#sb-chat-send"); if (send.disabled) return;
+  send.disabled = true; ta.disabled = true;
+  sbState.chat.push({ role: "user", content: tekst });
+  $("#sb-chat-log").innerHTML = sbChatHtml(); sbChatScroll(); ta.value = "";
+  const st = $("#sb-chat-status"); st.textContent = "De assistent-coach denkt na…";
+  const hist = sbState.chat.map(m => ({ role: m.role, content: m.content }));
+  const t0 = performance.now();
+  const r = await jpost("/api/schema/chat", { key: sbState.key, config: sbState.config, plan: sbState.plan, history: hist }).catch(() => null);
+  sbLog("chat", { key: sbState.key, ms: Math.round(performance.now() - t0), ok: !!(r && r.ok), updated: !!(r && r.plan_updated) });
+  send.disabled = false; ta.disabled = false; st.textContent = "";
+  if (!r || !r.ok) {                              // fout → plan blijft intact, retry mogelijk
+    sbState.chat.push({ role: "assistant", content: (r && r.err) || "Er ging iets mis — probeer het opnieuw." });
+    $("#sb-chat-log").innerHTML = sbChatHtml(); sbChatScroll(); sbDraftSave(); return;
+  }
+  const msg = { role: "assistant", content: r.reply || "Oké." };
+  if (r.plan_updated && r.plan) {
+    sbState.prevPlan = sbState.plan;             // één-staps undo
+    sbState.plan = r.plan; sbState.planEdited = false; msg.updated = true;
+    if (r.truncated) msg.content += " (⚠️ respons afgekapt — vraag zo nodig ‘ga verder’.)";
+  }
+  sbState.chat.push(msg); sbDraftSave();
+  sbRenderPlan();                                 // plan-update + chat atomair zichtbaar
+}
+
+async function sbBuildSchema() {
+  const edit = $("#sb-plan-edit");
+  if (edit && !edit.hidden && edit.value !== sbState.plan) { sbState.plan = edit.value; sbState.planEdited = true; }
+  const btn = $("#sb-build"); if (btn.disabled) return;
+  btn.disabled = true; btn.textContent = "Schema opbouwen…";
+  const st = $("#sb-chat-status"); if (st) st.textContent = "De weken worden opgebouwd (±20–40s)…";
+  const t0 = performance.now();
+  const r = await jpost("/api/schema/csv", { key: sbState.key, config: sbState.config, plan: sbState.plan }).catch(() => null);
+  sbLog("csv_gen", { key: sbState.key, ms: Math.round(performance.now() - t0), ok: !!(r && r.ok), n: ((r && r.rijen) || []).length });
+  if (!r || !r.ok) { btn.disabled = false; btn.innerHTML = `${ic("check")} Bouw schema`; if (st) st.textContent = ""; return melding(r?.err || "Schema mislukt.", true); }
+  sbEnterWorkbench(r); haptic(15);
+}
+
+// ── Fase 3 — bestaande Slice-1 workbench (rows uit de actuele planversie) ─────
+function sbEnterWorkbench(r) {
+  sbState.weken = (r.weken || []).map(w => ({
     week_index: w.week_index, label: w.label, datumrange: w.datumrange, week_start: w.week_start,
     rows: (w.rows || []).map(row => ({
       id: row.id, date: row.date, activity_type: row.activity_type || "Run", name: row.name || "",
@@ -2297,8 +2455,10 @@ function sbBuild(a, r, ctx, planText) {
       _orig: { name: row.name || "", planned_km: row.planned_km ?? null, planned_min: row.planned_min ?? null, description: row.description || "" },
     })),
   }));
-  sbState = { key: a.key, naam: a.naam, plan: planText || "", context: ctx || {},
-    weken, selectedWeek: weken[0] ? weken[0].week_index : null, openRow: null };
+  sbState.csv = r.csv || "";
+  if (r.context) sbState.context = r.context;
+  sbState.selectedWeek = sbState.weken[0] ? sbState.weken[0].week_index : null;
+  sbState.openRow = null; sbState.stage = "workbench";
   sbDraftSave();
   sbRenderWorkbench();
 }
@@ -2326,7 +2486,7 @@ function sbRenderWorkbench() {
         <div class="sb-weeks" id="sb-weeks"></div>
         <div class="sb-tools">
           <button class="btn ghost" id="sb-download">${ic("download")} Download CSV</button>
-          <button class="btn ghost" id="sb-replan">${ic("refresh")} Plan opnieuw</button>
+          <button class="btn ghost" id="sb-replan">${ic("back")} Plan aanpassen</button>
         </div>
       </div>
       <aside class="sb-detail" id="sb-detail"></aside>

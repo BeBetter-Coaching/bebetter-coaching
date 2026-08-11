@@ -541,6 +541,8 @@ class SchemaGen(BaseModel):
     key: str = ""
     plan: str = ""
     csv: str = ""
+    config: dict = {}
+    history: list = []
 
 
 @app.get("/api/schema/atleten")
@@ -548,10 +550,20 @@ def schema_atleten():
     return {"atleten": schema_core.bouwbare_atleten(), "ai": schema_core.heeft_key()}
 
 
+@app.get("/api/schema/config")            # Slice 2: prefill schema-instellingen (modus NIEUW)
+def schema_config(key: str = ""):
+    try:
+        return {"ok": True, **schema_core.config_prefill(key)}
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Config mislukt: {e}"}, status_code=500)
+
+
 @app.post("/api/schema/plan")
 def schema_plan(body: SchemaGen):
     try:
-        plan = schema_core.genereer_plan(body.key)
+        if body.config:                    # Slice 2: plan uit de coach-config
+            return {"ok": True, **schema_core.genereer_plan_config(body.key, body.config)}
+        plan = schema_core.genereer_plan(body.key)          # Slice 1 legacy-pad
     except ValueError as e:
         return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
     except Exception as e:
@@ -559,16 +571,31 @@ def schema_plan(body: SchemaGen):
     return {"ok": True, "plan": plan, "context": schema_core.context(body.key)}
 
 
+@app.post("/api/schema/chat")             # Slice 2: AI plan-sparfase (===PLAN UPDATE===)
+def schema_chat(body: SchemaGen):
+    try:
+        res = schema_core.chat_plan(body.key, body.config, body.plan, body.history)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Chat mislukt: {e}"}, status_code=500)
+    return {"ok": True, **res}
+
+
 @app.post("/api/schema/csv")
 def schema_csv(body: SchemaGen):
     try:
-        csv_tekst, rijen, weken = schema_core.genereer_csv(body.key, body.plan)
+        if body.config:                    # Slice 2: bouw uit de actuele planversie + config
+            csv_tekst, rijen, weken = schema_core.genereer_csv_config(body.key, body.config, body.plan)
+            ctx = schema_core.context_config(body.config)
+        else:                              # Slice 1 legacy-pad
+            csv_tekst, rijen, weken = schema_core.genereer_csv(body.key, body.plan)
+            ctx = schema_core.context(body.key)
     except ValueError as e:
         return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"CSV mislukt: {e}"}, status_code=500)
-    return {"ok": True, "csv": csv_tekst, "rijen": rijen, "weken": weken,
-            "context": schema_core.context(body.key)}
+    return {"ok": True, "csv": csv_tekst, "rijen": rijen, "weken": weken, "context": ctx}
 
 
 @app.post("/api/schema/push")            # WRITE: zet de trainingen op de FS-kalender

@@ -1003,3 +1003,52 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
   .sb-detail{position:sticky;top:22px}
   .sb-focus{display:none}   /* op desktop nooit de overlay, altijd de detail-kolom */
 }
+
+/* ══════════ Schema Slice 2 — config + AI plan-sparfase ══════════ */
+.btn.sm{padding:7px 11px;font-size:13px}
+.btn.block{width:100%;justify-content:center;margin-top:12px}
+
+/* Config (schema-instellingen) */
+.sb-cfg{display:grid;gap:16px}
+.sb-cfg-grid{display:grid;gap:12px}
+.sb-cfg-row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sb-dagen{display:flex;gap:6px;flex-wrap:wrap}
+.sb-dag{flex:0 0 auto;min-width:46px;min-height:42px;background:var(--card2);border:1px solid var(--border);
+  color:var(--muted);border-radius:10px;font-size:13px;font-weight:650;cursor:pointer}
+.sb-dag.on{background:var(--acc);border-color:var(--acc);color:var(--bg)}
+.sb-zones .lbl{margin-bottom:4px}
+.sb-zonebox{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:0;
+  font-size:12.5px;color:var(--text);white-space:pre-wrap;word-break:break-word;font-family:inherit;line-height:1.5}
+.sb-afspraken{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 15px;height:max-content}
+.sb-afspraken-h{margin:0 0 8px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px}
+.sb-afspraken-h .ic{width:16px;height:16px;color:var(--acc)}
+.sb-afspraken ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
+.sb-afspraken li{font-size:12.5px;color:var(--muted);line-height:1.45}
+
+/* Plan read-first + chat */
+.sb-plan-grid{display:grid;gap:16px}
+.sb-plan-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.sb-plan-acts{display:flex;gap:7px;flex-wrap:wrap}
+.sb-plan-read{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;
+  font-size:13.5px;line-height:1.6;color:var(--text);max-height:62vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sb-plan-edit{min-height:320px;line-height:1.55;font-size:13.5px}
+.sb-chat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 13px;display:flex;flex-direction:column}
+.sb-chat-h{margin:0 0 8px;font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:7px}
+.sb-chat-h .ic{width:16px;height:16px;color:var(--acc)}
+.sb-chat-log{display:flex;flex-direction:column;gap:8px;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  min-height:120px;max-height:46vh;padding-right:2px}
+.sb-chat-empty{color:var(--muted);font-size:12.5px;line-height:1.5;margin:6px 2px}
+.sb-bub{max-width:92%;padding:9px 12px;border-radius:13px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.sb-bub.me{align-self:flex-end;background:var(--blue);color:#fff;border-bottom-right-radius:5px}
+.sb-bub.ai{align-self:flex-start;background:var(--card2);border:1px solid var(--border);color:var(--text);border-bottom-left-radius:5px}
+.sb-bub-tag{display:block;margin-top:5px;font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--acc);text-transform:uppercase}
+.sb-chat-input{display:flex;gap:8px;align-items:flex-end;margin-top:10px}
+.sb-chat-input textarea{flex:1;resize:none}
+.sb-chat-input .btn{flex:0 0 auto;min-height:44px}
+
+@media (min-width:900px){
+  .sb-cfg{grid-template-columns:1fr 320px;align-items:start}
+  .sb-afspraken{position:sticky;top:22px}
+  .sb-plan-grid{grid-template-columns:1fr 400px;align-items:start}
+  .sb-chat{position:sticky;top:22px;max-height:calc(100vh - 44px)}
+}
