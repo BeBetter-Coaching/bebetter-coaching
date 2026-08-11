@@ -2239,6 +2239,10 @@ function sbLog(ev, data) { try { console.debug("[schema]", ev, data || {}); } ca
 // Deterministische fingerprint van de plantekst (FNV-1a) — geen timestamp. Bepaalt
 // of 'Bouw schema' de bestaande workbench mag hergebruiken (plan inhoudelijk gelijk).
 function sbHash(s) { s = String(s || ""); let h = 0x811c9dc5 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16); }
+// Eén deterministische normalisatie vóór hashing: line-endings + trailing whitespace.
+// Voorkomt dat onzichtbare whitespace-drift een rebuild forceert; niet inhoudelijk.
+function sbNormPlan(s) { return String(s || "").replace(/\r\n?/g, "\n").split("\n").map(l => l.replace(/[ \t]+$/, "")).join("\n").trim(); }
+function sbPlanHash() { return sbHash(sbNormPlan(sbState.plan)); }
 
 // Draft (localStorage) — instant resume op hetzelfde device, geen server-churn.
 const SB_DRAFT_KEY = "bb_schema_drafts";
@@ -2262,6 +2266,9 @@ function schemaWerk(a) {
     sbState = draft; sbState.naam = a.naam;
     // 'publish' is een live check → val terug op de workbench (rows intact); coach opent preview opnieuw.
     if ((sbState.stage === "workbench" || sbState.stage === "publish") && sbState.weken && sbState.weken.length) {
+      // Draft met rows maar zonder hash (bv. gebouwd op een oudere versie) → backfill:
+      // die rows hóren bij dit plan, dus 'Bouw schema' mag ze straks hergebruiken.
+      if (!sbState.built_plan_hash) sbState.built_plan_hash = sbPlanHash();
       sbState.stage = "workbench"; return sbRenderWorkbench();
     }
     if (sbState.stage === "plan") return sbRenderPlan();
@@ -2502,9 +2509,12 @@ async function sbBuildSchema() {
   if (edit && !edit.hidden && edit.value !== sbState.plan) { sbState.plan = edit.value; sbState.planEdited = true; }
   // Plan inhoudelijk ongewijzigd sinds de laatste build → hergebruik de bestaande
   // workbench (geen generate_csv), met behoud van edits/include/selectie/state.
-  if (sbState.weken && sbState.weken.length && sbState.built_plan_hash === sbHash(sbState.plan)) {
-    sbState.stage = "workbench"; sbDraftSave(); sbRenderWorkbench(); haptic(8); return;
-  }
+  const cur = sbPlanHash(), heeftRows = !!(sbState.weken && sbState.weken.length);
+  const reuse = heeftRows && sbState.built_plan_hash === cur;
+  sbLog("build_decision", { rows: heeftRows ? sbState.weken.length : 0,
+    stored: sbState.built_plan_hash || null, current: cur, equal: sbState.built_plan_hash === cur,
+    branch: reuse ? "reuse" : "rebuild" });
+  if (reuse) { sbState.stage = "workbench"; sbDraftSave(); sbRenderWorkbench(); haptic(8); return; }
   const btn = $("#sb-build"); if (btn.disabled) return;
   btn.disabled = true; btn.textContent = "Schema opbouwen…";
   const st = $("#sb-chat-status"); if (st) st.textContent = "De weken worden opgebouwd. Dit kan even duren…";
@@ -2675,7 +2685,7 @@ function sbEnterWorkbench(r) {
   if (r.context) sbState.context = r.context;
   sbState.selectedWeek = sbState.weken[0] ? sbState.weken[0].week_index : null;
   sbState.openRow = null; sbState.stage = "workbench";
-  sbState.built_plan_hash = sbHash(sbState.plan);     // deze rows horen bij dit plan
+  sbState.built_plan_hash = sbPlanHash();              // deze rows horen bij dit plan (genormaliseerd)
   sbDraftSave();
   sbRenderWorkbench();
 }
