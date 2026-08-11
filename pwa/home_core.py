@@ -200,16 +200,55 @@ def _persist(data: dict) -> None:
             pass
 
 
+def _apply_handled_overlay(snap: dict) -> dict:
+    """Reconcile een (mogelijk verouderde) snapshot met de DUURZAME home_handled-store.
+
+    home_handled is de bron van waarheid voor Gezien/Later. De snapshot is slechts
+    een cache; op een cold read (Render-spindown, geëvicteerd geheugen, andere
+    instance, of een refresh die vóór de actie startte) kan die nog niet-gedempte
+    signalen bevatten. Daarom filteren we op ELK leespad alsnog de afgehandelde
+    signalen weg — zo blijft een afgehandeld signaal na refresh duurzaam verborgen.
+    Idempotent: op een al gedempte snapshot verandert er niets. Recomputeert de
+    team-telling (hero) zodat 'actie/aandacht/rustig' consistent blijven."""
+    if not snap or snap.get("prioriteit") is None:
+        return snap
+    try:
+        handled = (intake_store.load_home_handled() or {}) if intake_store else {}
+    except Exception:
+        handled = {}
+    if not handled:
+        return snap
+    vandaag = date.today()
+    items = []
+    for it in snap.get("prioriteit", []):
+        uk = it.get("user_key")
+        zichtbaar = [s for s in it.get("signalen", [])
+                     if not _handled_active(handled.get(f"{uk}|{s['soort']}"),
+                                            s.get("severity"), vandaag)]
+        herbouwd = _bouw_item(uk, it.get("naam", ""), it.get("voornaam", ""), zichtbaar)
+        if herbouwd:
+            items.append(herbouwd)
+    n_actie = sum(1 for i in items if i["tier"] == "actie")
+    n_aandacht = sum(1 for i in items if i["tier"] == "aandacht")
+    team = dict(snap.get("team") or {})
+    team["actie"] = n_actie
+    team["aandacht"] = n_aandacht
+    team["rustig"] = max(snap.get("atleten", 0) - n_actie - n_aandacht, 0)
+    return {**snap, "prioriteit": items, "prioriteit_totaal": len(items), "team": team}
+
+
 def cockpit(refresh: bool = False) -> dict:
     """Home-cockpit. Standaard direct uit de cache (geheugen→store); refresh=True
-    herbouwt (single-flight) en behoudt bij mislukking de laatst geldige snapshot."""
+    herbouwt (single-flight) en behoudt bij mislukking de laatst geldige snapshot.
+    Elk leespad past de home_handled-overlay toe → afgehandelde signalen blijven
+    ook na refresh/cold start verborgen (bron van waarheid = home_handled)."""
     if not _heeft_token():
         return {"fs": False}
 
     if not refresh:
         snap = _current()
         if snap:
-            return {**snap, "cached": True}
+            return {**_apply_handled_overlay(snap), "cached": True}
         # Nog nooit opgebouwd (eerste-ooit): geen zware sweep in het renderpad.
         # Client toont shell + skeletons en triggert de achtergrond-refresh.
         return {"fs": True, "prioriteit": None, "pending": True, "cached": False,
@@ -225,19 +264,22 @@ def cockpit(refresh: bool = False) -> dict:
         # Er draait al een refresh op deze instance → geen tweede zware sweep.
         snap = _current()
         if snap:
-            return {**snap, "cached": True, "verversen_bezig": True}
+            return {**_apply_handled_overlay(snap), "cached": True, "verversen_bezig": True}
         return {"fs": True, "prioriteit": None, "pending": True, "cached": False}
 
     try:
         data = _bereken()
         if _valid(data):
+            # Overlay ook hier: een Gezien/Later die tijdens de ~26s-sweep binnenkwam
+            # wordt zo meteen meegenomen én mee gepersisteerd (durable snapshot klopt).
+            data = _apply_handled_overlay(data)
             data["cached"] = False
             _persist(data)
             return data
         # Mislukte/incomplete refresh → gooi bruikbare oude data niet weg.
         oud = _current()
         if oud:
-            return {**oud, "cached": True, "refresh_mislukt": True}
+            return {**_apply_handled_overlay(oud), "cached": True, "refresh_mislukt": True}
         return {**data, "cached": False}
     finally:
         with _FLAG_LOCK:

@@ -2235,6 +2235,7 @@ function schemaWerk(a) {
   $("#sb-werk").hidden = false;
   const draft = sbDraftLoad(a.key);
   if (draft && draft.weken && draft.weken.length) { sbState = draft; sbState.naam = a.naam; sbRenderWorkbench(); return; }
+  sbState = null;                       // geen draft → schone lei (geen leak van vorige atleet)
   sbRenderPrep(a);
 }
 
@@ -2271,12 +2272,17 @@ function sbRenderPrep(a, existingPlan) {
     $("#sb-plantekst").value = r.plan || "";
   });
   $("#sb-csv").addEventListener("click", async () => {
-    const st = $("#sb-csvstatus"); st.textContent = "Schema opbouwen…";
+    const btn = $("#sb-csv"); if (btn.disabled) return;      // geen dubbele generatie
+    btn.disabled = true; btn.textContent = "Schema opbouwen…";
+    const st = $("#sb-csvstatus"); st.textContent = "Bezig — de weken worden opgebouwd (±20–40s). Even geduld, niet nogmaals klikken.";
     const t0 = performance.now();
     const r = await jpost("/api/schema/csv", { key: a.key, plan: $("#sb-plantekst").value }).catch(() => null);
     sbLog("csv_gen", { key: a.key, ms: Math.round(performance.now() - t0), ok: !!(r && r.ok), n: ((r && r.rijen) || []).length });
-    if (!r || !r.ok) { st.textContent = ""; return melding(r?.err || "Schema mislukt.", true); }
-    sbBuild(a, r, planCtx || r.context, $("#sb-plantekst").value);
+    if (!r || !r.ok) {
+      btn.disabled = false; btn.innerHTML = `${ic("check")} Bouw schema`; st.textContent = "";
+      return melding(r?.err || "Schema mislukt.", true);
+    }
+    sbBuild(a, r, planCtx || r.context, $("#sb-plantekst").value);   // → workbench (vervangt dit scherm)
     haptic(15);
   });
 }
@@ -2769,7 +2775,20 @@ laders["schema-verloop"] = laadSchemaVerloop;
 laders.teampuls = laadTeampuls;
 laders.admin = laadAdmin;
 fbLogBind();
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+if ("serviceWorker" in navigator) {
+  // Bij een nieuwe deploy installeert de nieuwe SW (skipWaiting + clients.claim) en
+  // neemt de controle over → 'controllerchange'. De AL geladen pagina draait dan nog
+  // de oude JS; daarom herladen we één keer zodat de nieuwe app.js/css meteen actief
+  // wordt (anders bleef een tab op de oude bundel hangen). Draft-state overleeft de
+  // reload (localStorage). Eerste installatie (nog geen controller) → niet herladen.
+  let _hadCtrl = !!navigator.serviceWorker.controller, _swReloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!_hadCtrl) { _hadCtrl = true; return; }     // eerste claim, geen update
+    if (_swReloaded) return; _swReloaded = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
 toonOffline();
 if (navigator.onLine) flush();
 renderHome();
