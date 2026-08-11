@@ -2343,13 +2343,35 @@ function sbRenderConfig() {
         <button class="btn primary block" id="cfg-gen">${ic("brain")} Genereer conceptplan</button>
         <p class="hint" id="cfg-status">De AI maakt een compleet conceptplan (±20–40s).</p>
       </aside>
-    </div>`;
+    </div>
+    <section class="sb-known">
+      <p class="sb-known-h">${ic("brain")} Bekende atleetcontext <span class="muted klein">— wat BeBetter al weet (weegt de AI mee)</span></p>
+      <div id="sb-known-body" class="sb-known-body"><p class="muted klein">Context laden…</p></div>
+      <p class="hint">Klopt iets niet of ontbreekt het? Voeg het toe bij <b>Coachinstructies</b> hierboven — de AI neemt dat mee. (Dossier-bewerking volgt later.)</p>
+    </section>`;
   $("#sb-terug").addEventListener("click", sbBackToList);
   $("#scroller").scrollTo({ top: 0 });
   $("#cfg-dagen").querySelectorAll(".sb-dag").forEach(b => b.addEventListener("click", () => { b.classList.toggle("on"); sbSyncConfig(); sbRefreshAfspraken(); sbUpdateGate(); }));
   ["cfg-doel", "cfg-start", "cfg-weken", "cfg-vol", "cfg-race", "cfg-notitie"].forEach(id => $("#" + id).addEventListener("input", () => { sbSyncConfig(); sbRefreshAfspraken(); sbUpdateGate(); }));
   $("#cfg-gen").addEventListener("click", sbGenPlan);
   sbUpdateGate();                          // begintoestand: knop uit tot verplichte velden kloppen
+  sbLoadContext(sbState.key);              // 'Bekende atleetcontext' lazy laden
+}
+
+// Masterbrein: toon wat BeBetter al over de atleet weet (lazy; leak-safe).
+async function sbLoadContext(key) {
+  const box = $("#sb-known-body"); if (!box) return;
+  const r = await api("/api/schema/context?key=" + encodeURIComponent(key)).catch(() => null);
+  if (!$("#sb-known-body") || !sbState || sbState.key !== key) return;   // atleet gewisseld → niet renderen (geen leak)
+  if (!r || !r.ok) { box.innerHTML = `<p class="muted klein">Context niet beschikbaar.</p>`; return; }
+  if (r.used) sbLog("context_used", r.used);                            // traceability, geen gevoelige tekst
+  const secties = r.secties || [];
+  box.innerHTML = secties.map(s => `
+    <div class="sb-known-sec${s.onbekend ? " leeg" : ""}">
+      <p class="sb-known-t">${esc(s.titel)}</p>
+      ${s.onbekend ? `<p class="sb-known-onb">onbekend</p>`
+                   : `<ul>${s.regels.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`}
+    </div>`).join("") || `<p class="muted klein">Nog niets bekend — vul de configuratie in.</p>`;
 }
 
 async function sbGenPlan() {

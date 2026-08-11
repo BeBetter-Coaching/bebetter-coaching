@@ -383,54 +383,46 @@ def _intake_from_config(key: str, config: dict) -> dict:
 
 
 def _actuele_context(key: str, intake: dict) -> str:
-    """Bounded, best-effort recente atleetcontext via BEWEZEN datapaden: Garmin-herstel
-    + kalenderlabels + trainingslog (4 mnd). Recency/relevantie i.p.v. alles-ooit; faalt
-    stil. Later verplaatsbaar naar een gedeelde athlete-context (masterbrein-richting)."""
+    """Compacte, taakgerichte atleetcontext via het gedeelde masterbrein
+    (athlete_context): recency/relevantie-gefilterd, geen alles-ooit. Faalt stil."""
     try:
-        import fs_client as FS
-        import schema_builder as SB
+        import athlete_context as AC
+        ctx = AC.build_athlete_context(key, intake.get("athlete_name") or intake.get("naam") or "")
+        return AC.to_prompt_text(AC.schema_projection(ctx))
     except Exception:
         return ""
-    delen = []
+
+
+def bekende_context(key: str) -> dict:
+    """'Bekende atleetcontext' voor de UI + traceability (booleans/tellingen)."""
     try:
-        g = intake_store.garmin_context_text(key)
-        if g:
-            delen.append(g)
-    except Exception:
-        pass
-    try:
-        start = date.fromisoformat(intake.get("startdatum", ""))
-        weken = int(intake.get("weken") or 8)
-        labels = FS.get_calendar_labels(key, start - timedelta(days=7),
-                                        start + timedelta(days=weken * 7 + 7))
-        if labels:
-            regels = [f"  - {l['start_date']}"
-                      f"{(' t/m ' + l['end_date']) if l.get('end_date') and l['end_date'] != l['start_date'] else ''}"
-                      f": {l['name']}" for l in labels]
-            delen.append("KALENDER-LABELS (verplicht verwerken):\n" + "\n".join(regels))
-    except Exception:
-        pass
-    try:
-        log = FS.get_training_log(key, months=4)
-        if log:
-            delen.append(SB.format_training_log(log)[:9000])
-    except Exception:
-        pass
-    return "\n\n".join(delen)
+        import athlete_context as AC
+        ctx = AC.build_athlete_context(key)
+        return {"secties": AC.ui_sections(ctx), "used": AC.used_summary(ctx)}
+    except Exception as e:
+        return {"secties": [], "used": {}, "err": str(e)}
 
 
 def genereer_plan_config(key: str, config: dict) -> dict:
-    """Conceptplan (AI) uit de coach-config. Vult eenmalig de zware actuele context en
-    geeft die als context_blob terug zodat de chat 'm hergebruikt (geen refetch)."""
+    """Conceptplan (AI) uit de coach-config. Bouwt eenmalig de gedeelde atleetcontext
+    (masterbrein) en geeft die als context_blob + traceability terug zodat de chat
+    'm hergebruikt (geen refetch)."""
     intake = _intake_from_config(key, config)
     context_blob = (config or {}).get("_context", "")
+    context_used = {}
     if not context_blob:
-        context_blob = _actuele_context(key, intake)
+        try:
+            import athlete_context as AC
+            actx = AC.build_athlete_context(key, intake.get("athlete_name") or intake.get("naam") or "")
+            context_blob = AC.to_prompt_text(AC.schema_projection(actx))
+            context_used = AC.used_summary(actx)
+        except Exception:
+            context_blob = ""
         if context_blob:
             intake["uploaded_summary"] = context_blob
     import schema_builder as SB
     plan = SB.generate_plan(intake)
-    return {"plan": plan, "context_blob": context_blob,
+    return {"plan": plan, "context_blob": context_blob, "context_used": context_used,
             "afspraken": afspraken(config), "context": context_config(config)}
 
 

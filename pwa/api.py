@@ -558,6 +558,14 @@ def schema_config(key: str = ""):
         return JSONResponse({"ok": False, "err": f"Config mislukt: {e}"}, status_code=500)
 
 
+@app.get("/api/schema/context")           # masterbrein: 'Bekende atleetcontext' (lazy)
+def schema_bekende_context(key: str = ""):
+    try:
+        return {"ok": True, **schema_core.bekende_context(key)}
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Context mislukt: {e}"}, status_code=500)
+
+
 @app.post("/api/schema/plan")
 def schema_plan(body: SchemaGen):
     try:

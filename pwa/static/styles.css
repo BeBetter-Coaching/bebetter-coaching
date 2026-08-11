@@ -1046,9 +1046,22 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
 .sb-chat-input textarea{flex:1;resize:none}
 .sb-chat-input .btn{flex:0 0 auto;min-height:44px}
 
+/* Bekende atleetcontext (masterbrein) */
+.sb-known{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 15px;margin-top:16px}
+.sb-known-h{margin:0 0 10px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.sb-known-h .ic{width:16px;height:16px;color:var(--acc)}
+.sb-known-body{display:grid;gap:12px}
+.sb-known-sec{background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:10px 12px}
+.sb-known-sec.leeg{opacity:.55}
+.sb-known-t{margin:0 0 5px;font-size:12.5px;font-weight:700;color:var(--text)}
+.sb-known-sec ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:3px}
+.sb-known-sec li{font-size:12.5px;color:var(--muted);line-height:1.45}
+.sb-known-onb{margin:0;font-size:12px;color:var(--muted);font-style:italic}
+
 @media (min-width:900px){
   .sb-cfg{grid-template-columns:1fr 320px;align-items:start}
   .sb-afspraken{position:sticky;top:22px}
   .sb-plan-grid{grid-template-columns:1fr 400px;align-items:start}
   .sb-chat{position:sticky;top:22px;max-height:calc(100vh - 44px)}
+  .sb-known-body{grid-template-columns:repeat(2,1fr)}
 }

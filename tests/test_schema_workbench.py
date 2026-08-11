@@ -243,3 +243,28 @@ class TestSlice2Roster:
         assert c["doel"] == "" and c["trainingsdagen"] == ""                # geen gegokte waarden
         assert c["weken"] and c["startdatum"]                              # veilige defaults
         assert res["context"]["mode"] == "nieuw"
+
+
+class TestMasterbreinContext:
+    """Schema-chat gebruikt de gedeelde athlete_context (masterbrein)."""
+
+    def test_plan_gen_voedt_context_en_traceability(self, monkeypatch):
+        import schema_builder as SB
+        import athlete_context as AC
+        monkeypatch.setattr(schema_core, "_nieuwste_intake", lambda k: {})
+        fake_ctx = {"naam": "Anna", "health": {"actuele_klachten": [
+            {"tekst": "achilles", "bron": "coach-notitie", "datum": "2026-08-08", "status": "recent"}]}}
+        monkeypatch.setattr(AC, "build_athlete_context", lambda key, naam="", today=None: fake_ctx)
+        captured = {}
+        monkeypatch.setattr(SB, "generate_plan", lambda intake: captured.update(intake) or "PLAN")
+        res = schema_core.genereer_plan_config("A", {"doel": "10km", "startdatum": "2026-08-10",
+                                                     "weken": "8", "trainingsdagen": "di/do"})
+        assert "achilles" in captured.get("uploaded_summary", "").lower()   # context vóór AI
+        assert res["context_used"]["active_complaints"] == 1                # traceability
+
+    def test_bekende_context_endpoint_shape(self, monkeypatch):
+        import athlete_context as AC
+        monkeypatch.setattr(AC, "build_athlete_context",
+                            lambda key, naam="", today=None: {"naam": "X", "health": {}})
+        out = schema_core.bekende_context("A")
+        assert "secties" in out and "used" in out and isinstance(out["secties"], list)
