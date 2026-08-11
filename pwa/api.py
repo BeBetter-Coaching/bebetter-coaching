@@ -547,7 +547,7 @@ class SchemaGen(BaseModel):
 
 @app.get("/api/schema/atleten")
 def schema_atleten():
-    return {"atleten": schema_core.bouwbare_atleten(), "ai": schema_core.heeft_key()}
+    return {"atleten": schema_core.coachbare_atleten(), "ai": schema_core.heeft_key()}
 
 
 @app.get("/api/schema/config")            # Slice 2: prefill schema-instellingen (modus NIEUW)

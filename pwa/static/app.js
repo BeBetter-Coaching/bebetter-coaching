@@ -2183,20 +2183,25 @@ async function laadSchema() {
   if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
   schemaAtleten = r.atleten || [];
   info.textContent = r.ai
-    ? "Kies een atleet met een opgeslagen intake. De AI maakt het plan; jij controleert en downloadt de CSV voor FinalSurge."
+    ? "Kies een atleet. De AI maakt een conceptplan waar je over spart; een bestaande intake wordt slim voorgevuld."
     : "AI-sleutel nog niet ingesteld.";
   if (!schemaAtleten.length) {
-    box.innerHTML = `<div class="leeg">${ic("brain")}<p>Nog geen atleten met een opgeslagen bouwer-intake.<br>Vul de intake in de bouwer (Streamlit), dan verschijnen ze hier.</p></div>`;
+    box.innerHTML = `<div class="leeg">${ic("brain")}<p>Geen atleten gevonden.<br>Controleer de FinalSurge-koppeling.</p></div>`;
     return;
   }
   box.innerHTML = "";
   schemaAtleten.forEach(a => {
     const el = document.createElement("button");
     el.className = "listcard";
+    // Intake = prefill-hint, geen voorwaarde. Zonder intake: groep + "nieuw schema".
+    const sub = a.doel ? esc(a.doel) : (a.groep ? esc(a.groep) : "nieuw schema");
+    const meta = a.heeft_intake
+      ? `${a.weken ? a.weken + " weken" : ""}${a.trainingsdagen ? " · " + esc(a.trainingsdagen) : ""}`
+      : "nog geen intake — je vult de config in";
     el.innerHTML = `<span class="avatar">${initialen(a.naam)}</span>
       <span class="lc-body"><span class="lc-title">${esc(a.naam)}</span>
-        <span class="lc-sub">${a.doel ? esc(a.doel) : "geen doel"}</span>
-        <span class="lc-meta">${a.weken ? a.weken + " weken" : ""}${a.trainingsdagen ? " · " + esc(a.trainingsdagen) : ""}</span>
+        <span class="lc-sub">${sub}</span>
+        <span class="lc-meta">${meta}</span>
       </span>${ic("chevron")}`;
     el.addEventListener("click", () => schemaWerk(a));
     box.appendChild(el);
@@ -2285,6 +2290,23 @@ function sbAfspraken(c) {
 }
 function sbRefreshAfspraken() { const ul = $("#cfg-afspraken"); if (ul) ul.innerHTML = sbAfspraken(sbState.config).map(a => `<li>${esc(a)}</li>`).join(""); }
 
+// Verplichte velden vóór plan-generatie (geen gokken; coach vult ontbrekende in).
+function sbConfigValid(c) {
+  const m = [];
+  if (!(c.doel || "").trim()) m.push("doel");
+  if (!sbDagenUitString(c.trainingsdagen || "").length) m.push("trainingsdagen");
+  if (!(c.startdatum || "").trim()) m.push("startdatum");
+  if (!(parseInt(c.weken, 10) > 0)) m.push("weken");
+  return m;
+}
+function sbUpdateGate() {
+  const miss = sbConfigValid(sbState.config), btn = $("#cfg-gen"), st = $("#cfg-status");
+  if (!btn) return;
+  btn.disabled = miss.length > 0;
+  if (st) st.textContent = miss.length ? "Vul eerst in: " + miss.join(", ") + "."
+                                       : "De AI maakt een compleet conceptplan (±20–40s).";
+}
+
 function sbSyncConfig() {
   const c = sbState.config;
   c.doel = $("#cfg-doel").value; c.startdatum = $("#cfg-start").value; c.weken = $("#cfg-weken").value;
@@ -2324,13 +2346,16 @@ function sbRenderConfig() {
     </div>`;
   $("#sb-terug").addEventListener("click", sbBackToList);
   $("#scroller").scrollTo({ top: 0 });
-  $("#cfg-dagen").querySelectorAll(".sb-dag").forEach(b => b.addEventListener("click", () => { b.classList.toggle("on"); sbSyncConfig(); sbRefreshAfspraken(); }));
-  ["cfg-doel", "cfg-start", "cfg-weken", "cfg-vol", "cfg-race", "cfg-notitie"].forEach(id => $("#" + id).addEventListener("input", () => { sbSyncConfig(); sbRefreshAfspraken(); }));
+  $("#cfg-dagen").querySelectorAll(".sb-dag").forEach(b => b.addEventListener("click", () => { b.classList.toggle("on"); sbSyncConfig(); sbRefreshAfspraken(); sbUpdateGate(); }));
+  ["cfg-doel", "cfg-start", "cfg-weken", "cfg-vol", "cfg-race", "cfg-notitie"].forEach(id => $("#" + id).addEventListener("input", () => { sbSyncConfig(); sbRefreshAfspraken(); sbUpdateGate(); }));
   $("#cfg-gen").addEventListener("click", sbGenPlan);
+  sbUpdateGate();                          // begintoestand: knop uit tot verplichte velden kloppen
 }
 
 async function sbGenPlan() {
   sbSyncConfig();
+  const miss = sbConfigValid(sbState.config);
+  if (miss.length) return melding("Vul eerst in: " + miss.join(", ") + ".", true);
   const btn = $("#cfg-gen"); if (btn.disabled) return;
   btn.disabled = true; btn.textContent = "AI bouwt het conceptplan…";
   const st = $("#cfg-status"); st.textContent = "Bezig — compleet conceptplan (±20–40s). Niet nogmaals klikken.";

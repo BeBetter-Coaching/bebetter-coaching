@@ -41,8 +41,45 @@ def _intakes() -> dict:
         return {}
 
 
+def coachbare_atleten() -> list[dict]:
+    """Volledige coachbare FinalSurge-roster voor Schema bouwen (modus NIEUW).
+
+    Een bestaande intake is een PREFILL-bron, GEEN toelatingsvoorwaarde: atleten
+    zónder intake staan er óók in en starten straks met een leeg/default config-
+    object. Hergebruikt fs_core.roster() (dezelfde bron als de Atleten-module)."""
+    try:
+        import fs_core
+        roster = fs_core.roster()
+    except Exception:
+        roster = []
+    if not roster:
+        return bouwbare_atleten()            # FS niet gekoppeld → nooit een lege pagina
+    try:
+        module_intakes = intake_store.load_intakes() or {}
+    except Exception:
+        module_intakes = {}
+    laatste = _intakes()
+    out = []
+    for a in roster:
+        key = a.get("user_key", "")
+        if not key:
+            continue
+        ik = intake_store.nieuwste_intake(module_intakes.get(key), laatste.get(key))
+        ik = ik if isinstance(ik, dict) else {}
+        out.append({
+            "key": key,
+            "naam": a.get("naam") or key,
+            "groep": a.get("groep", ""),
+            "doel": ik.get("doel", ""),
+            "weken": ik.get("weken", ""),
+            "trainingsdagen": ik.get("trainingsdagen", ""),
+            "heeft_intake": bool(ik),        # alleen een hint; geen filter
+        })
+    return out
+
+
 def bouwbare_atleten() -> list[dict]:
-    """Atleten met een opgeslagen bouwer-intake (klaar om een plan te maken)."""
+    """Atleten met een opgeslagen bouwer-intake (prefill-hint / FS-loze fallback)."""
     out = []
     for key, intake in _intakes().items():
         if not isinstance(intake, dict):
@@ -53,6 +90,7 @@ def bouwbare_atleten() -> list[dict]:
             "doel": intake.get("doel", ""),
             "weken": intake.get("weken", ""),
             "trainingsdagen": intake.get("trainingsdagen", ""),
+            "heeft_intake": True,
         })
     out.sort(key=lambda a: str(a["naam"]).lower())
     return out
@@ -275,8 +313,20 @@ def config_prefill(key: str) -> dict:
     """Slimme prefill voor modus NIEUW uit bestaande atleet-/intakecontext + FS-zones.
     Snel: geen zware sweep (trainingslog volgt pas bij plan-generatie)."""
     base = _nieuwste_intake(key)
-    naam_vol = base.get("athlete_name") or base.get("naam") or key
-    voornaam = base.get("naam") or (naam_vol.split()[0] if naam_vol else "")
+    naam_vol = base.get("athlete_name") or base.get("naam")
+    voornaam = base.get("naam")
+    if not naam_vol or not voornaam:         # atleet zonder intake → identity uit de roster
+        try:
+            import fs_core
+            for a in fs_core.roster():
+                if a.get("user_key") == key:
+                    naam_vol = naam_vol or a.get("naam") or key
+                    voornaam = voornaam or a.get("voornaam") or (a.get("naam", "").split()[0] if a.get("naam") else "")
+                    break
+        except Exception:
+            pass
+    naam_vol = naam_vol or key
+    voornaam = voornaam or (naam_vol.split()[0] if naam_vol and naam_vol != key else "")
     zones_text = base.get("zones", "")
     zone_type = base.get("zone_type", "tempo")
     try:

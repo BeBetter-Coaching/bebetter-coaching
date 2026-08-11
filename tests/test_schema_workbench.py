@@ -199,3 +199,47 @@ class TestSlice2Chat:
         import pytest
         with pytest.raises(ValueError):
             schema_core.chat_plan("A", {}, "   ", [])
+
+
+class TestSlice2Roster:
+    """Acceptance-fix: selector toont de VOLLE coachbare roster; intake = prefill,
+    geen toelatingsvoorwaarde."""
+
+    def _roster(self, monkeypatch, roster, intakes=None, module_intakes=None):
+        import types
+        fake = types.SimpleNamespace(roster=lambda: roster)
+        monkeypatch.setitem(sys.modules, "fs_core", fake)
+        monkeypatch.setattr(schema_core.intake_store, "load_laatste_intakes", lambda: intakes or {})
+        monkeypatch.setattr(schema_core.intake_store, "load_intakes", lambda: module_intakes or {})
+
+    def test_atleet_met_en_zonder_intake_beide_in_selector(self, monkeypatch):
+        self._roster(monkeypatch, [
+            {"user_key": "A", "naam": "Anna Appel", "voornaam": "Anna", "groep": "Gevorderd"},
+            {"user_key": "B", "naam": "Bram Bakker", "voornaam": "Bram", "groep": "Beginners"},
+        ], intakes={"A": {"doel": "10km", "weken": "8", "trainingsdagen": "di/do"}})
+        out = schema_core.coachbare_atleten()
+        keys = {a["key"]: a for a in out}
+        assert "A" in keys and "B" in keys            # ZONDER intake (B) staat er óók in
+        assert keys["A"]["heeft_intake"] is True and keys["A"]["doel"] == "10km"
+        assert keys["B"]["heeft_intake"] is False and keys["B"]["doel"] == ""
+
+    def test_config_prefill_met_intake(self, monkeypatch):
+        self._roster(monkeypatch, [{"user_key": "A", "naam": "Anna Appel", "voornaam": "Anna"}],
+                     intakes={"A": {"athlete_name": "Anna Appel", "naam": "Anna", "doel": "10km sub 50",
+                                    "trainingsdagen": "di/do", "zone_type": "tempo", "zones": "Z1..Z5",
+                                    "startdatum": "2026-09-07", "weken": "8"}})
+        monkeypatch.setattr(schema_core, "_nieuwste_intake", schema_core._nieuwste_intake)  # echte merge
+        # get_athlete_zones niet nodig (val terug op opgeslagen zones); FS-import faalt stil
+        res = schema_core.config_prefill("A")
+        c = res["config"]
+        assert c["naam"] == "Anna" and c["doel"] == "10km sub 50"
+        assert c["trainingsdagen"] == "di/do" and c["zones"] == "Z1..Z5"
+
+    def test_config_prefill_zonder_intake_defaults_en_identity(self, monkeypatch):
+        self._roster(monkeypatch, [{"user_key": "B", "naam": "Bram Bakker", "voornaam": "Bram"}])
+        res = schema_core.config_prefill("B")
+        c = res["config"]
+        assert c["athlete_name"] == "Bram Bakker" and c["naam"] == "Bram"   # identity uit roster
+        assert c["doel"] == "" and c["trainingsdagen"] == ""                # geen gegokte waarden
+        assert c["weken"] and c["startdatum"]                              # veilige defaults
+        assert res["context"]["mode"] == "nieuw"
