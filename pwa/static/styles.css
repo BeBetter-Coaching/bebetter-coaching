@@ -1046,6 +1046,29 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
 .sb-chat-input textarea{flex:1;resize:none}
 .sb-chat-input .btn{flex:0 0 auto;min-height:44px}
 
+/* Publiceren naar FinalSurge (Slice 3) */
+.sb-pub-banner{border-radius:12px;padding:11px 13px;margin:12px 0;font-size:13px;line-height:1.5;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sb-pub-banner .ic{width:17px;height:17px;flex:0 0 auto}
+.sb-pub-banner.ok{background:rgba(94,230,235,.10);border:1px solid var(--acc);color:var(--text)}
+.sb-pub-banner.warn{background:rgba(230,193,94,.10);border:1px solid #E6C15E;color:var(--text)}
+.sb-pub-banner.fail{background:rgba(230,110,110,.10);border:1px solid #E06E6E;color:var(--text)}
+.sb-pub-list{display:flex;flex-direction:column;gap:2px;margin-bottom:14px}
+.sb-pub-row{display:grid;grid-template-columns:78px 24px 1fr auto;align-items:center;gap:8px;
+  padding:9px 8px;border-bottom:1px solid var(--border)}
+.sb-pub-row .sb-row-name{white-space:normal}
+.sb-pub-stat{grid-column:1 / -1;font-size:11.5px;color:var(--muted);padding-left:110px}
+.sb-pub-stat.ok{color:var(--acc)}
+.sb-pub-stat.warn{color:#E6C15E}
+.sb-pub-stat.fail{color:#E06E6E}
+.sb-pub-ack{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--muted);margin:4px 0 12px;line-height:1.45}
+.sb-pub-ack input{width:auto;margin:2px 0 0}
+.sb-pub-cta{margin-top:8px}
+@media (min-width:900px){
+  .sb-pub-row{grid-template-columns:90px 26px 1fr auto auto}
+  .sb-pub-stat{grid-column:auto;padding-left:0;text-align:right;white-space:nowrap}
+}
+
 /* Bekende atleetcontext (masterbrein) */
 .sb-known{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 15px;margin-top:16px}
 .sb-known-h{margin:0 0 10px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px;flex-wrap:wrap}

@@ -543,6 +543,8 @@ class SchemaGen(BaseModel):
     csv: str = ""
     config: dict = {}
     history: list = []
+    rows: list = []
+    write_id: str = ""
 
 
 @app.get("/api/schema/atleten")
@@ -606,7 +608,25 @@ def schema_csv(body: SchemaGen):
     return {"ok": True, "csv": csv_tekst, "rijen": rijen, "weken": weken, "context": ctx}
 
 
-@app.post("/api/schema/push")            # WRITE: zet de trainingen op de FS-kalender
+@app.post("/api/schema/publish/preview")  # Slice 3: write-preview (validatie + dup-check, GEEN write)
+def schema_publish_preview(body: SchemaGen):
+    try:
+        return {"ok": True, **schema_core.publish_preview(body.key, body.config, body.rows)}
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Preview mislukt: {e}"}, status_code=500)
+
+
+@app.post("/api/schema/publish")          # Slice 3: WRITE naar FinalSurge (na expliciete bevestiging)
+def schema_publish(body: SchemaGen):
+    try:
+        return {"ok": True, **schema_core.publish(body.key, body.config, body.rows, body.write_id)}
+    except ValueError as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Publiceren mislukt: {e}"}, status_code=500)
+
+
+@app.post("/api/schema/push")            # WRITE (legacy): zet de trainingen op de FS-kalender
 def schema_push(body: SchemaGen):
     try:
         res = schema_core.push(body.key, body.csv)

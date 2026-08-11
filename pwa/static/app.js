@@ -2190,21 +2190,33 @@ async function laadSchema() {
     return;
   }
   box.innerHTML = "";
+  // Gegroepeerd per coachgroep in centrale FinalSurge-volgorde (server), binnen
+  // groep alfabetisch. 'Los trainingsschema' hoort hier gewoon bij.
+  const groepen = [];
+  const perGroep = {};
   schemaAtleten.forEach(a => {
-    const el = document.createElement("button");
-    el.className = "listcard";
-    // Intake = prefill-hint, geen voorwaarde. Zonder intake: groep + "nieuw schema".
-    const sub = a.doel ? esc(a.doel) : (a.groep ? esc(a.groep) : "nieuw schema");
-    const meta = a.heeft_intake
-      ? `${a.weken ? a.weken + " weken" : ""}${a.trainingsdagen ? " · " + esc(a.trainingsdagen) : ""}`
-      : "nog geen intake — je vult de config in";
-    el.innerHTML = `<span class="avatar">${initialen(a.naam)}</span>
-      <span class="lc-body"><span class="lc-title">${esc(a.naam)}</span>
-        <span class="lc-sub">${sub}</span>
-        <span class="lc-meta">${meta}</span>
-      </span>${ic("chevron")}`;
-    el.addEventListener("click", () => schemaWerk(a));
-    box.appendChild(el);
+    const g = a.groep || "Overig";
+    if (!perGroep[g]) { perGroep[g] = []; groepen.push(g); }
+    perGroep[g].push(a);
+  });
+  groepen.forEach(g => {
+    const h = document.createElement("p"); h.className = "sec-label"; h.textContent = g;
+    box.appendChild(h);
+    perGroep[g].forEach(a => {
+      const el = document.createElement("button");
+      el.className = "listcard";
+      const sub = a.doel ? esc(a.doel) : "nieuw schema";   // intake = prefill-hint, geen voorwaarde
+      const meta = a.heeft_intake
+        ? `${a.weken ? a.weken + " weken" : ""}${a.trainingsdagen ? " · " + esc(a.trainingsdagen) : ""}`
+        : "nog geen intake — je vult de config in";
+      el.innerHTML = `<span class="avatar">${initialen(a.naam)}</span>
+        <span class="lc-body"><span class="lc-title">${esc(a.naam)}</span>
+          <span class="lc-sub">${sub}</span>
+          <span class="lc-meta">${meta}</span>
+        </span>${ic("chevron")}`;
+      el.addEventListener("click", () => schemaWerk(a));
+      box.appendChild(el);
+    });
   });
 }
 
@@ -2231,6 +2243,7 @@ function sbDraftsAll() { try { return JSON.parse(localStorage.getItem(SB_DRAFT_K
 function sbDraftsSet(o) { try { localStorage.setItem(SB_DRAFT_KEY, JSON.stringify(o)); } catch {} }
 function sbDraftSave() { if (!sbState || !sbState.key) return; const o = sbDraftsAll(); o[sbState.key] = { ts: Date.now(), s: sbState }; sbDraftsSet(o); }
 function sbDraftLoad(key) { const d = sbDraftsAll()[key]; return d && d.s ? d.s : null; }
+function sbDraftClear(key) { const o = sbDraftsAll(); if (o[key]) { delete o[key]; sbDraftsSet(o); } }
 let _sbSaveT = null;
 function sbDebouncedSave() { clearTimeout(_sbSaveT); _sbSaveT = setTimeout(sbDraftSave, 400); }
 (function sbDraftCleanup() { const o = sbDraftsAll(); const cut = Date.now() - 14 * 864e5; let ch = false; for (const k in o) if ((o[k].ts || 0) < cut) { delete o[k]; ch = true; } if (ch) sbDraftsSet(o); })();
@@ -2244,7 +2257,10 @@ function schemaWerk(a) {
   const draft = sbDraftLoad(a.key);
   if (draft && draft.stage) {
     sbState = draft; sbState.naam = a.naam;
-    if (sbState.stage === "workbench" && sbState.weken && sbState.weken.length) return sbRenderWorkbench();
+    // 'publish' is een live check → val terug op de workbench (rows intact); coach opent preview opnieuw.
+    if ((sbState.stage === "workbench" || sbState.stage === "publish") && sbState.weken && sbState.weken.length) {
+      sbState.stage = "workbench"; return sbRenderWorkbench();
+    }
     if (sbState.stage === "plan") return sbRenderPlan();
     if (sbState.stage === "config") return sbRenderConfig();
   }
@@ -2304,7 +2320,7 @@ function sbUpdateGate() {
   if (!btn) return;
   btn.disabled = miss.length > 0;
   if (st) st.textContent = miss.length ? "Vul eerst in: " + miss.join(", ") + "."
-                                       : "De AI maakt een compleet conceptplan (±20–40s).";
+                                       : "BeBetter maakt het conceptplan. Dit kan even duren.";
 }
 
 function sbSyncConfig() {
@@ -2341,7 +2357,7 @@ function sbRenderConfig() {
         <p class="sb-afspraken-h">${ic("check")} Schema-afspraken</p>
         <ul id="cfg-afspraken">${sbAfspraken(c).map(a => `<li>${esc(a)}</li>`).join("")}</ul>
         <button class="btn primary block" id="cfg-gen">${ic("brain")} Genereer conceptplan</button>
-        <p class="hint" id="cfg-status">De AI maakt een compleet conceptplan (±20–40s).</p>
+        <p class="hint" id="cfg-status">BeBetter maakt het conceptplan. Dit kan even duren.</p>
       </aside>
     </div>
     <section class="sb-known">
@@ -2380,7 +2396,7 @@ async function sbGenPlan() {
   if (miss.length) return melding("Vul eerst in: " + miss.join(", ") + ".", true);
   const btn = $("#cfg-gen"); if (btn.disabled) return;
   btn.disabled = true; btn.textContent = "AI bouwt het conceptplan…";
-  const st = $("#cfg-status"); st.textContent = "Bezig — compleet conceptplan (±20–40s). Niet nogmaals klikken.";
+  const st = $("#cfg-status"); st.textContent = "BeBetter maakt het conceptplan. Dit kan even duren — niet nogmaals klikken.";
   const t0 = performance.now();
   const r = await jpost("/api/schema/plan", { key: sbState.key, config: sbState.config }).catch(() => null);
   sbLog("plan_gen", { key: sbState.key, ms: Math.round(performance.now() - t0), ok: !!(r && r.ok) });
@@ -2483,12 +2499,157 @@ async function sbBuildSchema() {
   if (edit && !edit.hidden && edit.value !== sbState.plan) { sbState.plan = edit.value; sbState.planEdited = true; }
   const btn = $("#sb-build"); if (btn.disabled) return;
   btn.disabled = true; btn.textContent = "Schema opbouwen…";
-  const st = $("#sb-chat-status"); if (st) st.textContent = "De weken worden opgebouwd (±20–40s)…";
+  const st = $("#sb-chat-status"); if (st) st.textContent = "De weken worden opgebouwd. Dit kan even duren…";
   const t0 = performance.now();
   const r = await jpost("/api/schema/csv", { key: sbState.key, config: sbState.config, plan: sbState.plan }).catch(() => null);
   sbLog("csv_gen", { key: sbState.key, ms: Math.round(performance.now() - t0), ok: !!(r && r.ok), n: ((r && r.rijen) || []).length });
   if (!r || !r.ok) { btn.disabled = false; btn.innerHTML = `${ic("check")} Bouw schema`; if (st) st.textContent = ""; return melding(r?.err || "Schema mislukt.", true); }
   sbEnterWorkbench(r); haptic(15);
+}
+
+// ══ Fase 4 — veilige publicatie naar FinalSurge (preview → expliciete write) ══
+// Enige write-input = de actuele workbench-rows (included + edits). Geen optimistic
+// success; UI-status volgt de backend. Idempotent via een stabiel write_id.
+const SB_PUB_STAT = { nieuw: "Nieuw", bestaande_op_datum: "Bestaande training op deze datum",
+  mogelijk_duplicaat: "Mogelijk duplicaat" };
+const SB_RES_STAT = { success: "Gepubliceerd", failed: "Mislukt",
+  builder_failed: "Gepubliceerd — WorkoutBuilder mislukt" };
+
+function sbRowsPayload() {                            // exacte, actuele rows (incl. edits + include-state)
+  const out = [];
+  sbState.weken.forEach(w => w.rows.forEach(r => out.push({
+    id: r.id, included: !!r.included, edited: !!r.edited, date: r.date,
+    activity_type: r.activity_type, name: r.name,
+    planned_km: r.planned_km, planned_min: r.planned_min, description: r.description,
+  })));
+  return out;
+}
+
+async function sbPublishPreview() {
+  sbState.publish = { write_id: "w" + Date.now() + Math.random().toString(36).slice(2, 8),
+    state: "checking", results: null, acked: false };
+  sbState.stage = "publish"; sbDraftSave();
+  $("#sb-werk").innerHTML = `<button class="btn ghost back" id="sb-pub-back">${ic("back")} Terug naar schema</button>
+    <p class="hint">Publicatie controleren — bestaande FinalSurge-planning wordt gecheckt…</p>`;
+  $("#sb-pub-back").addEventListener("click", sbPublishBack);
+  const r = await jpost("/api/schema/publish/preview",
+    { key: sbState.key, config: sbState.config, rows: sbRowsPayload() }).catch(() => null);
+  if (!sbState || sbState.stage !== "publish") return;          // weg genavigeerd → niet renderen
+  if (!r || !r.ok) { melding(r?.err || "Preview mislukt.", true); return sbPublishBack(); }
+  sbState.publish.preview = r; sbState.publish.state = r.valid ? "ready" : "error";
+  sbDraftSave(); sbRenderPublish();
+}
+function sbPublishBack() { sbState.stage = "workbench"; sbDraftSave(); sbRenderWorkbench(); }
+
+function sbRenderPublish() {
+  const p = sbState.publish, pv = p.preview || {}, c = pv.counts || {}, dr = pv.date_range;
+  const resById = {}; (p.results || []).forEach(x => resById[x.id] = x);
+  const done = p.state === "success" || p.state === "partial_failure";
+  const inc = [];
+  sbState.weken.forEach(w => w.rows.forEach(r => { if (r.included) inc.push(r); }));
+
+  const rijHtml = (pv.items || []).map(it => {
+    const res = resById[it.id];
+    const label = res ? (SB_RES_STAT[res.status] || res.status) : (SB_PUB_STAT[it.status] || it.status);
+    const cls = res ? (res.status === "failed" ? "fail" : (res.status === "builder_failed" ? "warn" : "ok"))
+                    : (it.status === "nieuw" ? "" : "warn");
+    const meta = it.planned_km != null ? `${it.planned_km} km` : (it.planned_min != null ? `${it.planned_min} min` : "");
+    return `<div class="sb-pub-row">
+      <span class="sb-row-day">${sbDagDatum(it.date)}</span>
+      <span class="sb-row-ic">${sbTypeIc(it.activity_type)}</span>
+      <span class="sb-row-name">${esc(it.name)}</span>
+      <span class="sb-row-meta">${esc(meta)}</span>
+      <span class="sb-pub-stat ${cls}">${esc(label)}${res && res.err ? ` · ${esc(res.err)}` : ""}</span>
+    </div>`;
+  }).join("");
+
+  let cta = "", banner = "";
+  if (p.state === "error") {
+    banner = `<div class="sb-pub-banner fail">${(pv.errors || []).map(e => esc(e)).join("<br>")}</div>`;
+  } else if (p.state === "writing") {
+    cta = `<button class="btn primary block" id="sb-pub-go" disabled>${p.progress || "Publiceren…"}</button>`;
+  } else if (p.state === "success") {
+    banner = `<div class="sb-pub-banner ok">${ic("check")} ${p.counts.success} trainingen gepubliceerd naar FinalSurge` +
+      `${dr ? ` (${esc(dr.van)} – ${esc(dr.tot)})` : ""}.` +
+      `${p.counts.builder_failed ? ` ${p.counts.builder_failed}× WorkoutBuilder-detail mislukt (trainingen staan er wel).` : ""}</div>`;
+    cta = `<div class="sb-tools"><button class="btn ghost" id="sb-pub-workbench">${ic("back")} Terug naar schema</button>
+      <button class="btn ghost" id="sb-pub-list">${ic("back")} Alle atleten</button>
+      <button class="btn" id="sb-pub-new">${ic("plus")} Nieuwe planning starten</button></div>`;
+  } else if (p.state === "partial_failure") {
+    banner = `<div class="sb-pub-banner warn">${p.counts.success} gepubliceerd · ${p.counts.failed} mislukt. ` +
+      `De succesvolle trainingen staan al in FinalSurge; retry stuurt alleen de mislukte opnieuw.</div>`;
+    cta = `<div class="sb-tools"><button class="btn primary" id="sb-pub-retry">${ic("refresh")} Probeer ${p.counts.failed} mislukte opnieuw</button>
+      <button class="btn ghost" id="sb-pub-workbench">${ic("back")} Terug naar schema</button></div>`;
+  } else {  // ready
+    const conflicts = c.conflicts || 0;
+    const ackHtml = conflicts
+      ? `<label class="sb-pub-ack"><input type="checkbox" id="sb-pub-ack"> Ik heb de ${conflicts} aandachtspunten (bestaande/duplicaat) gecontroleerd en wil toch publiceren.</label>`
+      : "";
+    banner = conflicts
+      ? `<div class="sb-pub-banner warn">Let op: ${conflicts} van de ${c.included} trainingen vallen op een datum met een bestaande FinalSurge-training. Bestaande trainingen worden NIET overschreven of verwijderd — je voegt toe.</div>`
+      : `<div class="sb-pub-banner ok">${c.included} trainingen klaar om toe te voegen. Geen conflicten met bestaande planning gevonden.</div>`;
+    cta = ackHtml + `<button class="btn primary block" id="sb-pub-go"${conflicts ? " disabled" : ""}>${ic("check")} Publiceer ${c.included} trainingen naar FinalSurge</button>`;
+  }
+
+  $("#sb-werk").innerHTML = `
+    <button class="btn ghost back" id="sb-pub-back">${ic("back")} Terug naar schema</button>
+    <div class="sb-context"><div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
+      <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Publiceren naar FinalSurge</p></div></div>
+      <div class="sb-chips">
+        <span class="sb-chip">${c.included || 0} publiceren</span>
+        ${c.excluded ? `<span class="sb-chip">${c.excluded} uitgesloten</span>` : ""}
+        ${c.edited ? `<span class="sb-chip">${c.edited} aangepast</span>` : ""}
+        ${c.conflicts ? `<span class="sb-chip warn">${c.conflicts} let op</span>` : ""}
+        ${c.builder ? `<span class="sb-chip">${c.builder} met WorkoutBuilder</span>` : ""}
+        ${dr ? `<span class="sb-chip">${esc(dr.van)} – ${esc(dr.tot)}</span>` : ""}
+      </div>
+    </div>
+    ${banner}
+    <div class="sb-pub-list">${rijHtml}</div>
+    <div class="sb-pub-cta">${cta}</div>`;
+  $("#sb-pub-back").addEventListener("click", () => { if (p.state !== "writing") sbPublishBack(); });
+  const ack = $("#sb-pub-ack");
+  if (ack) ack.addEventListener("change", () => { const g = $("#sb-pub-go"); if (g) g.disabled = !ack.checked; });
+  $("#sb-pub-go")?.addEventListener("click", () => sbDoPublish(inc));
+  $("#sb-pub-retry")?.addEventListener("click", () => sbDoPublish(inc.filter(r => (resById[r.id] || {}).status === "failed")));
+  $("#sb-pub-workbench")?.addEventListener("click", sbPublishBack);
+  $("#sb-pub-list")?.addEventListener("click", () => { sbState = null; laadSchema(); });
+  $("#sb-pub-new")?.addEventListener("click", () => { const k = sbState.key, n = sbState.naam; sbDraftClear(k); sbState = null; schemaWerk({ key: k, naam: n }); });
+  $("#scroller").scrollTo({ top: 0 });
+}
+
+// Irreversibele write-state-machine. Publiceert in batches → echte teller; idempotent
+// via het stabiele write_id (server slaat al-geschreven rijen over). Backend = waarheid.
+async function sbDoPublish(rowsToWrite) {
+  const p = sbState.publish;
+  if (p.state === "writing") return;                 // single-submit
+  const rows = (rowsToWrite || []).map(r => ({
+    id: r.id, included: true, edited: !!r.edited, date: r.date, activity_type: r.activity_type,
+    name: r.name, planned_km: r.planned_km, planned_min: r.planned_min, description: r.description,
+  }));
+  if (!rows.length) return;
+  p.state = "writing"; p.progress = `Publiceren 0 / ${rows.length}…`; sbRenderPublish();
+  const BATCH = 8;
+  const merged = {}; (p.results || []).forEach(x => merged[x.id] = x);   // behoud eerdere successen
+  let written = 0, hardError = false;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const chunk = rows.slice(i, i + BATCH);
+    const r = await jpost("/api/schema/publish",
+      { key: sbState.key, config: sbState.config, rows: chunk, write_id: p.write_id }).catch(() => null);
+    if (!r || !r.ok) { hardError = true; melding(r?.err || "Publiceren mislukt.", true); break; }
+    (r.results || []).forEach(x => merged[x.id] = x);
+    written += chunk.length;
+    p.progress = `Publiceren ${Math.min(written, rows.length)} / ${rows.length}…`;
+    const go = $("#sb-pub-go"); if (go) go.textContent = p.progress;
+  }
+  p.results = Object.values(merged);
+  const fail = p.results.filter(x => x.status === "failed").length;
+  const ok = p.results.filter(x => x.status === "success" || x.status === "builder_failed").length;
+  const bf = p.results.filter(x => x.status === "builder_failed").length;
+  p.counts = { success: ok, failed: fail, builder_failed: bf };
+  p.state = hardError ? "partial_failure" : (fail ? "partial_failure" : "success");
+  sbLog("publish", { key: sbState.key, success: ok, failed: fail, builder_failed: bf });
+  sbDraftSave(); sbRenderPublish(); haptic(fail ? 30 : 20);
 }
 
 // ── Fase 3 — bestaande Slice-1 workbench (rows uit de actuele planversie) ─────
@@ -2532,17 +2693,18 @@ function sbRenderWorkbench() {
         <div class="sb-weeknav" id="sb-weeknav" hidden></div>
         <div class="sb-weeks" id="sb-weeks"></div>
         <div class="sb-tools">
-          <button class="btn ghost" id="sb-download">${ic("download")} Download CSV</button>
+          <button class="btn primary" id="sb-publish">${ic("check")} Controleer publicatie</button>
           <button class="btn ghost" id="sb-replan">${ic("back")} Plan aanpassen</button>
+          <button class="btn ghost" id="sb-download">${ic("download")} Download CSV</button>
         </div>
       </div>
       <aside class="sb-detail" id="sb-detail"></aside>
     </div>
     <div class="sb-focus" id="sb-focus" hidden></div>`;
   $("#sb-terug").addEventListener("click", () => { sbState = null; laadSchema(); });
+  $("#sb-publish").addEventListener("click", sbPublishPreview);
   $("#sb-download").addEventListener("click", sbDownload);
-  $("#sb-replan").addEventListener("click", () => sbRenderPrep(
-    { key: sbState.key, naam: sbState.naam, doel: ctx.doel, weken: ctx.weken }, sbState.plan));
+  $("#sb-replan").addEventListener("click", () => { sbState.stage = "plan"; sbDraftSave(); sbRenderPlan(); });
   $("#scroller").scrollTo({ top: 0 });
   sbWasDesktop = isDesktop();
   sbRenderWeeks();

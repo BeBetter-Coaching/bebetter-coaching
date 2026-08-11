@@ -45,36 +45,38 @@ def coachbare_atleten() -> list[dict]:
     """Volledige coachbare FinalSurge-roster voor Schema bouwen (modus NIEUW).
 
     Een bestaande intake is een PREFILL-bron, GEEN toelatingsvoorwaarde: atleten
-    zónder intake staan er óók in en starten straks met een leeg/default config-
-    object. Hergebruikt fs_core.roster() (dezelfde bron als de Atleten-module)."""
+    zónder intake staan er óók in. Gegroepeerd per coachgroep in de CENTRALE
+    FinalSurge-volgorde (get_athletes_by_group), binnen elke groep alfabetisch.
+    'Los trainingsschema' hoort hier WEL zichtbaar te zijn (geen Feedback-uitsluiting)."""
     try:
-        import fs_core
-        roster = fs_core.roster()
+        import fs_client as FS
+        groepen = FS.get_athletes_by_group()     # {groep: [atleet...]}, FS-volgorde
     except Exception:
-        roster = []
-    if not roster:
-        return bouwbare_atleten()            # FS niet gekoppeld → nooit een lege pagina
+        groepen = {}
+    if not groepen:
+        return bouwbare_atleten()                # FS niet gekoppeld → nooit een lege pagina
     try:
         module_intakes = intake_store.load_intakes() or {}
     except Exception:
         module_intakes = {}
     laatste = _intakes()
     out = []
-    for a in roster:
-        key = a.get("user_key", "")
-        if not key:
-            continue
-        ik = intake_store.nieuwste_intake(module_intakes.get(key), laatste.get(key))
-        ik = ik if isinstance(ik, dict) else {}
-        out.append({
-            "key": key,
-            "naam": a.get("naam") or key,
-            "groep": a.get("groep", ""),
-            "doel": ik.get("doel", ""),
-            "weken": ik.get("weken", ""),
-            "trainingsdagen": ik.get("trainingsdagen", ""),
-            "heeft_intake": bool(ik),        # alleen een hint; geen filter
-        })
+    for groep, leden in groepen.items():
+        for a in sorted(leden, key=lambda x: str(x.get("name") or "").lower()):
+            key = a.get("user_key", "")
+            if not key:
+                continue
+            ik = intake_store.nieuwste_intake(module_intakes.get(key), laatste.get(key))
+            ik = ik if isinstance(ik, dict) else {}
+            out.append({
+                "key": key,
+                "naam": a.get("name") or key,
+                "groep": groep,
+                "doel": ik.get("doel", ""),
+                "weken": ik.get("weken", ""),
+                "trainingsdagen": ik.get("trainingsdagen", ""),
+                "heeft_intake": bool(ik),        # alleen een hint; geen filter
+            })
     return out
 
 
@@ -466,6 +468,202 @@ def genereer_csv_config(key: str, config: dict, plan_tekst: str):
     rijen = SB.parse_csv_text(csv_tekst)
     weken = groepeer_weken(rijen, intake.get("startdatum", ""))
     return csv_clean, rijen, weken
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Slice 3 — veilige publicatie naar FinalSurge (preview → expliciete write)
+# Enige write-input = de canonieke workbench-rows (included + edits). Hergebruikt
+# de bewezen import_to_finalsurge PER RIJ → exacte per-rij-status, echte partial-
+# failure en retry-alleen-mislukte. Geen tweede importer, geen optimistic success.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _included(rows: list) -> list:
+    return [r for r in (rows or []) if r.get("included", True)]
+
+
+def _valid_date(s) -> bool:
+    try:
+        date.fromisoformat(str(s)[:10]); return True
+    except Exception:
+        return False
+
+
+def validate_rows(key: str, rows: list) -> list:
+    """Deterministische server-side validatie vóór ELKE externe write. Backend is
+    beslissend (frontend-validatie is alleen UX)."""
+    errs = []
+    if not key:
+        errs.append("Geen atleet gekoppeld.")
+    if not rows:
+        errs.append("Geen trainingen in het schema.")
+    inc = _included(rows)
+    if rows and not inc:
+        errs.append("Geen enkele training geselecteerd.")
+    seen = set()
+    for r in inc:
+        rid = r.get("id")
+        if rid in seen:
+            errs.append(f"Dubbele training-id in de payload ({rid}).")
+        seen.add(rid)
+        d = r.get("date")
+        if not _valid_date(d):
+            errs.append(f"Ongeldige datum: {d}")
+        if not (r.get("name") or "").strip():
+            errs.append(f"Naam ontbreekt ({d}).")
+        at = (r.get("activity_type") or "").strip()
+        if not at:
+            errs.append(f"Trainingstype ontbreekt ({d}).")
+        for val, lbl in ((r.get("planned_km"), "afstand"), (r.get("planned_min"), "duur")):
+            if val in (None, ""):
+                continue
+            try:
+                if float(val) < 0:
+                    errs.append(f"Negatieve {lbl} ({d}).")
+            except (TypeError, ValueError):
+                errs.append(f"Ongeldige {lbl} ({d}).")
+    return errs
+
+
+def _to_write_row(r: dict) -> dict:
+    """Canonieke row → import_to_finalsurge-vorm (edits zitten al in de row)."""
+    return {
+        "date": r.get("date"),
+        "name": r.get("name") or r.get("activity_type") or "Training",
+        "description": r.get("description", ""),
+        "activity_type": r.get("activity_type", "Run"),
+        "planned_km": r.get("planned_km"),
+        "planned_min": r.get("planned_min"),
+    }
+
+
+def _dup_status(inc: list, bestaand: list) -> dict:
+    """Classificeer per included-row t.o.v. bestaande geplande FS-workouts:
+    nieuw / bestaande_op_datum / mogelijk_duplicaat. Geen agressieve fuzzy match."""
+    per_datum = {}
+    for b in bestaand or []:
+        per_datum.setdefault(str(b.get("date"))[:10], []).append(b)
+    out = {}
+    for r in inc:
+        d = str(r.get("date"))[:10]
+        ex = per_datum.get(d, [])
+        if not ex:
+            out[r.get("id")] = "nieuw"
+            continue
+        nm = (r.get("name") or "").strip().lower()
+        match = any(nm and nm == (str(b.get("name") or "").strip().lower()) for b in ex)
+        out[r.get("id")] = "mogelijk_duplicaat" if match else "bestaande_op_datum"
+    return out
+
+
+def _bestaande_in_range(key: str, van: str, tot: str) -> list:
+    """Eén read van bestaande geplande FS-workouts in de datumrange (read-before-write)."""
+    try:
+        import fs_client as FS
+        lijst = FS.get_planned_workouts_from(key, date.fromisoformat(van))
+        return [b for b in (lijst or []) if str(b.get("date"))[:10] <= tot]
+    except Exception:
+        return []
+
+
+def _n_builder(inc: list) -> int:
+    return sum(1 for r in inc
+              if r.get("activity_type") in ("Run", "Bike", "Swim") and (r.get("description") or "").strip())
+
+
+def publish_preview(key: str, config: dict, rows: list) -> dict:
+    """Write-preview: validatie + read-before-write duplicaatcheck. GEEN write."""
+    errs = validate_rows(key, rows)
+    inc = _included(rows)
+    dup, date_range, conflicts = {}, None, 0
+    if inc and not errs:
+        dates = sorted(str(r["date"])[:10] for r in inc if _valid_date(r.get("date")))
+        if dates:
+            date_range = {"van": dates[0], "tot": dates[-1]}
+            bestaand = _bestaande_in_range(key, dates[0], dates[-1])
+            dup = _dup_status(inc, bestaand)
+            conflicts = sum(1 for s in dup.values() if s in ("mogelijk_duplicaat", "bestaande_op_datum"))
+    items = [{
+        "id": r.get("id"), "date": r.get("date"), "activity_type": r.get("activity_type", "Run"),
+        "name": r.get("name", ""), "planned_km": r.get("planned_km"), "planned_min": r.get("planned_min"),
+        "status": dup.get(r.get("id"), "nieuw"),
+    } for r in inc]
+    return {
+        "valid": not errs, "errors": errs, "date_range": date_range,
+        "counts": {"included": len(inc), "excluded": len(rows or []) - len(inc),
+                   "edited": sum(1 for r in inc if r.get("edited")),
+                   "conflicts": conflicts, "builder": _n_builder(inc)},
+        "items": items,
+    }
+
+
+# Idempotency: per write_id onthouden welke rij-signatures al succesvol geschreven
+# zijn (dubbelklik/retry/timeout → nooit dubbel schrijven). In-memory volstaat voor
+# de sessie; de read-before-write preview vangt reeds bestaande duplicaten los daarvan.
+_WRITE_RECEIPTS: dict = {}
+
+
+def _row_sig(r: dict) -> str:
+    return f"{str(r.get('date'))[:10]}|{(r.get('name') or '').strip().lower()}|{r.get('planned_km')}|{r.get('planned_min')}"
+
+
+def _audit(key: str, attempted: int, ok: int, fail: int, builderfail: int, date_range) -> None:
+    """Compacte write-receipt in de log — GEEN workoutbeschrijvingen/gevoelige tekst."""
+    try:
+        print("[schema_write]", {
+            "athlete": key, "ts": datetime.now().isoformat(timespec="seconds"), "mode": "nieuw",
+            "attempted": attempted, "success": ok, "failed": fail, "builder_failed": builderfail,
+            "range": date_range,
+        })
+    except Exception:
+        pass
+
+
+def publish(key: str, config: dict, rows: list, write_id: str = "") -> dict:
+    """Publiceer included rows naar FinalSurge. Per rij via import_to_finalsurge →
+    exacte status. success=blijvend (nooit opnieuw), builder_failed=workout bestaat
+    (nooit opnieuw aanmaken), failed=retry-eligible. Backend is de waarheid."""
+    errs = validate_rows(key, rows)
+    if errs:
+        raise ValueError("; ".join(errs))
+    inc = _included(rows)
+    intake = _intake_from_config(key, config)
+    _zt = intake.get("zone_type", "tempo")
+    zone_type = "heart_rate" if _zt in ("hartslag", "heart_rate") else "pace"
+    op_tijd = bool(intake.get("op_tijd"))
+    import schema_builder as SB
+    receipt = _WRITE_RECEIPTS.setdefault(write_id or "anon", {"success": set()})
+    done = receipt["success"]
+
+    results, ok, fail, builderfail, skipped = [], 0, 0, 0, 0
+    for r in inc:
+        sig = _row_sig(r)
+        if sig in done:                                   # idempotent: al geschreven
+            results.append({"id": r.get("id"), "status": "success", "skipped": True}); ok += 1; skipped += 1
+            continue
+        try:
+            o, e, be = SB.import_to_finalsurge(
+                athlete_key=key, workouts=[_to_write_row(r)], zone_type=zone_type,
+                fill_builder=True, op_tijd=op_tijd)
+        except Exception as ex:
+            results.append({"id": r.get("id"), "status": "failed", "err": str(ex)[:200]}); fail += 1
+            continue
+        if o == 1 and not be:
+            done.add(sig); results.append({"id": r.get("id"), "status": "success"}); ok += 1
+        elif o == 1:                                      # workout ok, builder faalde → nooit opnieuw aanmaken
+            done.add(sig); builderfail += 1
+            results.append({"id": r.get("id"), "status": "builder_failed", "err": (be[0] if be else "")[:200]}); ok += 1
+        else:
+            results.append({"id": r.get("id"), "status": "failed", "err": (e[0] if e else "onbekend")[:200]}); fail += 1
+
+    dates = sorted(str(r["date"])[:10] for r in inc if _valid_date(r.get("date")))
+    dr = {"van": dates[0], "tot": dates[-1]} if dates else None
+    _audit(key, len(inc), ok, fail, builderfail, dr)
+    return {
+        "results": results,
+        "counts": {"attempted": len(inc), "success": ok, "failed": fail,
+                   "builder_failed": builderfail, "skipped": skipped},
+        "state": "success" if fail == 0 else "partial_failure",
+    }
 
 
 def push(key: str, csv_tekst: str) -> dict:

@@ -207,8 +207,15 @@ class TestSlice2Roster:
 
     def _roster(self, monkeypatch, roster, intakes=None, module_intakes=None):
         import types
-        fake = types.SimpleNamespace(roster=lambda: roster)
+        import fs_client as FS
+        fake = types.SimpleNamespace(roster=lambda: roster)      # config_prefill gebruikt fs_core.roster
         monkeypatch.setitem(sys.modules, "fs_core", fake)
+        # coachbare_atleten gebruikt de centrale get_athletes_by_group (gegroepeerd)
+        groepen = {}
+        for a in roster:
+            groepen.setdefault(a.get("groep") or "Overig", []).append(
+                {"name": a.get("naam"), "user_key": a.get("user_key"), "first_name": a.get("voornaam")})
+        monkeypatch.setattr(FS, "get_athletes_by_group", lambda: groepen)
         monkeypatch.setattr(schema_core.intake_store, "load_laatste_intakes", lambda: intakes or {})
         monkeypatch.setattr(schema_core.intake_store, "load_intakes", lambda: module_intakes or {})
 
@@ -268,3 +275,140 @@ class TestMasterbreinContext:
                             lambda key, naam="", today=None: {"naam": "X", "health": {}})
         out = schema_core.bekende_context("A")
         assert "secties" in out and "used" in out and isinstance(out["secties"], list)
+
+
+# ── Slice 3: veilige publicatie (validatie, dup-check, partial-failure, retry) ─
+def _rows():
+    return [
+        {"id": "r0", "included": True, "edited": True, "date": "2026-09-01", "activity_type": "Run",
+         "name": "Duurloop", "planned_km": 10, "planned_min": None, "description": "Z2"},
+        {"id": "r1", "included": False, "date": "2026-09-02", "activity_type": "Run",
+         "name": "Interval", "planned_km": 8, "planned_min": None, "description": "Z4"},
+        {"id": "r2", "included": True, "date": "2026-09-03", "activity_type": "Strength",
+         "name": "Kracht", "planned_km": None, "planned_min": 45, "description": "core"},
+    ]
+
+
+class TestPublishValidatie:
+    def test_geldige_rows(self):
+        assert schema_core.validate_rows("ATL", _rows()) == []
+
+    def test_lege_selectie_blokkeert(self):
+        rows = [{"id": "a", "included": False, "date": "2026-09-01", "name": "x", "activity_type": "Run"}]
+        assert any("geselecteerd" in e for e in schema_core.validate_rows("ATL", rows))
+
+    def test_ontbrekende_naam_en_datum_blokkeren(self):
+        rows = [{"id": "a", "included": True, "date": "fout", "name": "", "activity_type": "Run"}]
+        errs = schema_core.validate_rows("ATL", rows)
+        assert any("datum" in e.lower() for e in errs) and any("naam" in e.lower() for e in errs)
+
+    def test_negatieve_waarde_blokkeert(self):
+        rows = [{"id": "a", "included": True, "date": "2026-09-01", "name": "x", "activity_type": "Run", "planned_km": -5}]
+        assert any("negatieve" in e.lower() for e in schema_core.validate_rows("ATL", rows))
+
+    def test_geen_atleet_blokkeert(self):
+        assert any("atleet" in e.lower() for e in schema_core.validate_rows("", _rows()))
+
+
+class TestPublishPreview:
+    def _fs(self, monkeypatch, bestaand):
+        import fs_client as FS
+        monkeypatch.setattr(FS, "get_planned_workouts_from", lambda k, d: bestaand)
+
+    def test_excluded_nooit_in_payload_en_dupclassificatie(self, monkeypatch):
+        self._fs(monkeypatch, [{"date": "2026-09-01", "name": "Duurloop", "key": "w1"},
+                               {"date": "2026-09-03", "name": "Iets anders", "key": "w2"}])
+        pv = schema_core.publish_preview("ATL", {"zone_type": "tempo"}, _rows())
+        ids = {i["id"]: i["status"] for i in pv["items"]}
+        assert "r1" not in ids                                   # excluded nooit meegestuurd
+        assert ids["r0"] == "mogelijk_duplicaat"                 # zelfde datum + naam
+        assert ids["r2"] == "bestaande_op_datum"                 # zelfde datum, andere naam
+        assert pv["counts"]["included"] == 2 and pv["counts"]["excluded"] == 1
+        assert pv["counts"]["edited"] == 1 and pv["counts"]["conflicts"] == 2
+
+    def test_vrije_datum_is_nieuw(self, monkeypatch):
+        self._fs(monkeypatch, [])
+        pv = schema_core.publish_preview("ATL", {"zone_type": "tempo"}, _rows())
+        assert all(i["status"] == "nieuw" for i in pv["items"]) and pv["counts"]["conflicts"] == 0
+
+    def test_invalid_preview_geen_write_mogelijk(self, monkeypatch):
+        self._fs(monkeypatch, [])
+        rows = [{"id": "a", "included": True, "date": "2026-09-01", "name": "", "activity_type": "Run"}]
+        pv = schema_core.publish_preview("ATL", {}, rows)
+        assert pv["valid"] is False and pv["errors"]
+
+
+class TestPublishWrite:
+    def setup_method(self):
+        schema_core._WRITE_RECEIPTS.clear()
+
+    def _patch_import(self, monkeypatch, faildict=None, builderfail=None):
+        import schema_builder as SB
+        self.calls = []
+        faildict = faildict or {}
+        builderfail = builderfail or set()
+        def fake(athlete_key, workouts, zone_type, fill_builder, op_tijd):
+            w = workouts[0]; self.calls.append(w["name"])
+            if w["name"] in faildict:
+                return (0, [f'{w["date"]} {w["name"]}: {faildict[w["name"]]}'], [])
+            if w["name"] in builderfail:
+                return (1, [], [f'{w["date"]} {w["name"]} (builder): boom'])
+            return (1, [], [])
+        monkeypatch.setattr(SB, "import_to_finalsurge", fake)
+        monkeypatch.setattr(schema_core, "_nieuwste_intake", lambda k: {})
+
+    def test_volledig_succes(self, monkeypatch):
+        self._patch_import(monkeypatch)
+        res = schema_core.publish("ATL", {"zone_type": "tempo"}, _rows(), "w1")
+        assert res["state"] == "success" and res["counts"]["success"] == 2
+        assert "Interval" not in self.calls                     # excluded nooit geschreven
+
+    def test_partial_failure(self, monkeypatch):
+        self._patch_import(monkeypatch, faildict={"Kracht": "500"})
+        res = schema_core.publish("ATL", {"zone_type": "tempo"}, _rows(), "w2")
+        assert res["state"] == "partial_failure"
+        assert res["counts"]["success"] == 1 and res["counts"]["failed"] == 1
+
+    def test_retry_alleen_mislukte(self, monkeypatch):
+        self._patch_import(monkeypatch, faildict={"Kracht": "500"})
+        schema_core.publish("ATL", {"zone_type": "tempo"}, _rows(), "w3")
+        self.calls.clear()
+        schema_core.publish("ATL", {"zone_type": "tempo"}, _rows(), "w3")   # zelfde write_id
+        assert self.calls == ["Kracht"]                         # Duurloop (succes) nooit opnieuw
+
+    def test_builder_failure_apart_en_niet_dubbel_aanmaken(self, monkeypatch):
+        self._patch_import(monkeypatch, builderfail={"Duurloop"})
+        res = schema_core.publish("ATL", {"zone_type": "tempo"}, _rows(), "w4")
+        by = {r["id"]: r["status"] for r in res["results"]}
+        assert by["r0"] == "builder_failed" and res["counts"]["builder_failed"] == 1
+        assert res["state"] == "success"                        # workout is aangemaakt → geen 'failed'
+        self.calls.clear()
+        schema_core.publish("ATL", {"zone_type": "tempo"}, _rows(), "w4")
+        assert "Duurloop" not in self.calls                     # nooit opnieuw aanmaken
+
+    def test_lege_selectie_weigert_write(self, monkeypatch):
+        self._patch_import(monkeypatch)
+        import pytest
+        rows = [{"id": "a", "included": False, "date": "2026-09-01", "name": "x", "activity_type": "Run"}]
+        with pytest.raises(ValueError):
+            schema_core.publish("ATL", {}, rows, "w5")
+
+
+class TestSlice3Guards:
+    def _app_js(self):
+        with open(os.path.join(_ROOT, "pwa", "static", "app.js"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_geen_confirm_als_enige_beveiliging(self):
+        # De publish-flow gebruikt een expliciete preview + CTA, geen browser confirm().
+        js = self._app_js()
+        assert "sbPublishPreview" in js and "publish/preview" in js
+        assert "Publiceer " in js                                # expliciete CTA met aantal
+
+    def test_write_alleen_via_publish_endpoint(self):
+        js = self._app_js()
+        assert 'jpost("/api/schema/publish"' in js               # nieuwe write
+        assert 'jpost("/api/schema/push"' not in js              # geen legacy write-CTA
+
+    def test_generatietekst_geen_vaste_belofte(self):
+        assert "20–40s" not in self._app_js()
