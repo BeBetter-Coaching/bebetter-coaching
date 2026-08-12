@@ -5,13 +5,16 @@
 > Geen implementatie-doc — per module geldt principe 3 (baseline lezen → Streamlit inspecteren →
 > REUSE/KEEP/MERGE/IMPROVE/MISSING/DO NOT TOUCH → dán bouwen).
 
-## Status — LOCKED (11 aug 2026)
-**SCHEMA NIEUW END-TO-END V1 = PRODUCTION PROVEN.** Live bewezen op desktop mét een echte gecontroleerde
-FinalSurge-write (5 gepubliceerd / 22 uitgesloten / 5 met WorkoutBuilder, juiste datumrange). SW v56.
-- **Home** ✅ · **Feedback** ✅ · **Schema Nieuw (Slice 1–3)** ✅ · **Masterbrein v1** ✅ = FROZEN references.
+## Status — LOCKED (12 aug 2026)
+**SCHEMA NIEUW + VERLENGEN END-TO-END V1 = PRODUCTION PROVEN.** Beide live bewezen op desktop mét een
+echte gecontroleerde FinalSurge-write. Verlengen (12 aug) visueel gecontroleerd: juiste aansluiting op het
+bestaande blok, geen ongewenste overlap, oude planning/doelrace intact, resultaat correct in FinalSurge.
+- **Home** ✅ · **Feedback** ✅ · **Schema Nieuw (Slice 1–3)** ✅ · **Schema Verlengen** ✅ · **Masterbrein v1** ✅ = FROZEN references.
 - DO NOT TOUCH zonder concrete bug / bewezen performanceprobleem / expliciete nieuwe requirement.
-- Kern-coachloop `Home → Feedback → Schema` is nu **compleet voor Nieuw**. Zie
+- Kern-coachloop `Home → Feedback → Schema` is compleet voor **Nieuw én Verlengen**. Zie
   [[schema-workbench-slice1]], [[bebetter-masterbrein-context]], [[feedback-frozen-quality-reference]].
+- **Hoogste prioriteit nu: MASTERBREIN V2** (H2-intelligentielaag). Kwaliteitsronde: eerst volledige
+  technische inventarisatie (geen code) vóór de definitieve architectuur. Bijsturen (DELETE-flow) geparkeerd.
 
 ## North Star
 BeBetter groeit van coach-PWA naar een world-class coaching-platform dat FinalSurge/TrainingPeaks kan
