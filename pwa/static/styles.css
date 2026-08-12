@@ -1088,3 +1088,50 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
   .sb-chat{position:sticky;top:22px;max-height:calc(100vh - 44px)}
   .sb-known-body{grid-template-columns:repeat(2,1fr)}
 }
+
+/* ── Schema Verlengen — modus-schakelaar + herijking ─────────────────────── */
+.sb-modebar{display:inline-flex;background:var(--card2);border:1px solid var(--border);
+  border-radius:10px;overflow:hidden;margin:0 0 12px}
+.sb-modebtn{background:none;border:0;color:var(--muted);padding:9px 18px;font-size:14px;
+  font-weight:600;cursor:pointer}
+.sb-modebtn.on{background:var(--card);color:var(--acc)}
+.sb-vorigblok{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px 15px;margin:0 0 12px}
+.sb-vb-h{margin:0 0 6px;font-weight:700;display:flex;align-items:center;gap:7px}
+.sb-vb-h .ic{width:17px;height:17px;color:var(--acc)}
+.sb-vb-rij{margin:0;display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13.5px}
+.sb-vb-rij span{color:var(--text)}
+.sb-vb-tag{display:inline-block;margin-top:8px;font-size:12.5px;color:var(--muted)}
+.sb-vb-tag.warn{color:var(--warn)}
+.sb-herijk-intro{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted);margin:0 0 10px}
+.sb-herijk-intro .ic{width:18px;height:18px;color:var(--acc);flex:0 0 auto}
+.sb-nieuweperiode{display:grid;grid-template-columns:1fr 120px;gap:12px;background:var(--card2);
+  border:1px solid var(--border);border-radius:var(--radius);padding:12px 15px;margin:0 0 14px}
+.sb-nieuweperiode .hint{grid-column:1/-1;margin:0}
+.sb-hg{margin:0 0 14px}
+.sb-hg-h{font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--muted);margin:0 0 7px}
+.sb-hi{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--border);
+  border-radius:10px;padding:10px 13px;margin:0 0 7px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+.sb-hi.veranderd{border-left-color:var(--blue)}
+.sb-hi.aandacht{border-left-color:var(--warn)}
+.sb-hi.controleren{border-left-color:var(--acc)}
+.sb-hi.geldig{border-left-color:#2c6e49;opacity:.85}
+.sb-hi.acked{opacity:.6}
+.sb-hi-label{font-weight:600;font-size:14px}
+.sb-hi-delta{font-size:13px;color:var(--muted)}
+.sb-hi-delta b{color:var(--text)}
+.sb-hi-val{font-size:13px;color:var(--text)}
+.sb-hi-bron{font-size:11.5px;color:var(--muted)}
+.sb-hi-act{margin-left:auto;flex:0 0 auto}
+.sb-hi-edit{flex-basis:100%}
+.sb-hi-edit:not([hidden]){margin-top:8px}
+.sb-vraag{margin:0 0 8px}
+.sb-herijk-foot{margin-top:6px}
+.sb-ready{border-radius:10px;padding:11px 14px;font-size:13.5px;font-weight:600;margin:0 0 10px;
+  display:flex;align-items:center;gap:8px}
+.sb-ready .ic{width:18px;height:18px;flex:0 0 auto}
+.sb-ready.klaar{background:rgba(44,110,73,.18);border:1px solid #2c6e49;color:#8fe6b4}
+.sb-ready.controle{background:rgba(239,159,39,.12);border:1px solid #5a4a1e;color:var(--warn)}
+.sb-ready.blok{background:rgba(229,103,75,.12);border:1px solid #6a3326;color:var(--danger)}
+.btn.block{width:100%;justify-content:center;margin:0 0 8px}

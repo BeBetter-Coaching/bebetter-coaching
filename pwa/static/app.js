@@ -2248,9 +2248,11 @@ function sbPlanHash() { return sbHash(sbNormPlan(sbState.plan)); }
 const SB_DRAFT_KEY = "bb_schema_drafts";
 function sbDraftsAll() { try { return JSON.parse(localStorage.getItem(SB_DRAFT_KEY) || "{}"); } catch { return {}; } }
 function sbDraftsSet(o) { try { localStorage.setItem(SB_DRAFT_KEY, JSON.stringify(o)); } catch {} }
-function sbDraftSave() { if (!sbState || !sbState.key) return; const o = sbDraftsAll(); o[sbState.key] = { ts: Date.now(), s: sbState }; sbDraftsSet(o); }
-function sbDraftLoad(key) { const d = sbDraftsAll()[key]; return d && d.s ? d.s : null; }
-function sbDraftClear(key) { const o = sbDraftsAll(); if (o[key]) { delete o[key]; sbDraftsSet(o); } }
+// Draft-id = atleet + modus, zodat Nieuw en Verlengen elkaar NOOIT overschrijven.
+function sbDraftId(key, mode) { return key + "::" + (mode || "nieuw"); }
+function sbDraftSave() { if (!sbState || !sbState.key) return; const o = sbDraftsAll(); o[sbDraftId(sbState.key, sbState.mode)] = { ts: Date.now(), s: sbState }; sbDraftsSet(o); }
+function sbDraftLoad(key, mode) { const d = sbDraftsAll()[sbDraftId(key, mode)]; return d && d.s ? d.s : null; }
+function sbDraftClear(key, mode) { const o = sbDraftsAll(); const id = sbDraftId(key, mode); if (o[id]) { delete o[id]; sbDraftsSet(o); } }
 let _sbSaveT = null;
 function sbDebouncedSave() { clearTimeout(_sbSaveT); _sbSaveT = setTimeout(sbDraftSave, 400); }
 (function sbDraftCleanup() { const o = sbDraftsAll(); const cut = Date.now() - 14 * 864e5; let ch = false; for (const k in o) if ((o[k].ts || 0) < cut) { delete o[k]; ch = true; } if (ch) sbDraftsSet(o); })();
@@ -2258,12 +2260,13 @@ function sbDebouncedSave() { clearTimeout(_sbSaveT); _sbSaveT = setTimeout(sbDra
 // ══ Schema flow (Slice 2): config → conceptplan → AI-sparfase → Slice-1 workbench ══
 // Stage-aware: één draft per atleet bewaart config, actuele planversie, chat én
 // (na Bouw schema) de workbench-rows. Re-entry/reload herstelt exact de juiste fase.
-function schemaWerk(a) {
+function schemaWerk(a, mode) {
+  mode = mode || "nieuw";
   $("#sb-lijst").hidden = true;
   $("#sb-werk").hidden = false;
-  const draft = sbDraftLoad(a.key);
+  const draft = sbDraftLoad(a.key, mode);
   if (draft && draft.stage) {
-    sbState = draft; sbState.naam = a.naam;
+    sbState = draft; sbState.naam = a.naam; sbState.mode = mode;
     // 'publish' is een live check → val terug op de workbench (rows intact); coach opent preview opnieuw.
     if ((sbState.stage === "workbench" || sbState.stage === "publish") && sbState.weken && sbState.weken.length) {
       // Draft met rows maar zonder hash (bv. gebouwd op een oudere versie) → backfill:
@@ -2272,10 +2275,29 @@ function schemaWerk(a) {
       sbState.stage = "workbench"; return sbRenderWorkbench();
     }
     if (sbState.stage === "plan") return sbRenderPlan();
+    if (sbState.stage === "herijking") return sbRenderHerijking();
     if (sbState.stage === "config") return sbRenderConfig();
   }
   sbState = null;                       // geen geldige draft → schone lei (geen leak)
-  sbStartConfig(a);
+  if (mode === "verlengen") sbStartVerleng(a);
+  else sbStartConfig(a);
+}
+
+// Modus-schakelaar (Nieuw | Verlengen). Draft is per key+mode geïsoleerd, dus wisselen
+// bewaart de huidige modus en herstelt (of start) de andere zonder te clobberen.
+function sbModeBar(active) {
+  const t = m => m === "verlengen" ? "Verlengen" : "Nieuw";
+  return `<div class="sb-modebar" id="sb-modebar">${["nieuw", "verlengen"].map(m =>
+    `<button type="button" class="sb-modebtn ${m === active ? "on" : ""}" data-mode="${m}">${t(m)}</button>`).join("")}</div>`;
+}
+function sbWireModeBar() {
+  const bar = $("#sb-modebar"); if (!bar) return;
+  bar.querySelectorAll(".sb-modebtn").forEach(b => b.addEventListener("click", () => {
+    const m = b.dataset.mode; if (m === (sbState && sbState.mode)) return;
+    const a = { key: sbState.key, naam: sbState.naam };
+    if (sbState) sbDraftSave();          // huidige modus bewaren
+    schemaWerk(a, m);
+  }));
 }
 
 function sbBackToList() { sbState = null; laadSchema(); }
@@ -2289,10 +2311,197 @@ async function sbStartConfig(a) {
   $("#sb-terug").addEventListener("click", sbBackToList);
   const r = await api("/api/schema/config?key=" + encodeURIComponent(a.key)).catch(() => null);
   if (!r || !r.ok) { const l = $("#sb-cfg-load"); if (l) l.textContent = "Kon instellingen niet laden."; return; }
-  sbState = { key: a.key, naam: a.naam, stage: "config", config: r.config || {},
+  sbState = { key: a.key, naam: a.naam, mode: "nieuw", stage: "config", config: r.config || {},
     context: r.context || {}, plan: "", planEdited: false, prevPlan: null, chat: [] };
+  sbState.config.mode = "nieuw";
   sbDraftSave();
   sbRenderConfig();
+}
+
+// ── Verlengen — slimme herijking i.p.v. intakeformulier ──────────────────────
+async function sbStartVerleng(a) {
+  const wrap = $("#sb-werk");
+  wrap.innerHTML = `<button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
+    ${sbModeBar("verlengen")}
+    <div class="d-head"><span class="avatar big">${initialen(a.naam)}</span>
+      <div><h2 class="d-naam">${esc(a.naam)}</h2><p class="muted klein" id="sb-vl-load">Vorige blok evalueren…</p></div></div>`;
+  $("#sb-terug").addEventListener("click", sbBackToList);
+  sbWireModeBar();
+  const r = await api("/api/schema/verleng?key=" + encodeURIComponent(a.key)).catch(() => null);
+  if (!$("#sb-vl-load")) return;                 // navigatie weg tijdens laden → geen state zetten (leak-safe)
+  if (!r || !r.ok) { const l = $("#sb-vl-load"); if (l) l.textContent = r?.err || "Kon vorige blok niet evalueren."; return; }
+  sbState = { key: a.key, naam: a.naam, mode: "verlengen", stage: "herijking",
+    config: r.config || {}, context: r.context || {}, plan: "", planEdited: false, prevPlan: null, chat: [],
+    vorig_blok: r.vorig_blok || {}, herijking: r.herijking || [], readiness: r.readiness || {},
+    vragen: r.vragen || [], acks: {}, allesKlopt: false };
+  sbState.config.mode = "verlengen";
+  sbLog("verleng_start", { key: a.key, readiness: (r.readiness || {}).status,
+    items: (r.herijking || []).length, bron: (r.vorig_blok || {}).bron });
+  sbDraftSave();
+  sbRenderHerijking();
+}
+
+const SB_HERIJK_GROEP = [
+  ["veranderd", "Veranderd", "BeBetter heeft dit met actuele data geactualiseerd"],
+  ["aandacht", "Aandacht", "Weeg dit mee in het nieuwe blok"],
+  ["controleren", "Nog controleren", "Kort bevestigen of aanpassen"],
+  ["geldig", "Nog geldig", "Ongewijzigd overgenomen"],
+];
+
+function sbVorigBlokHtml(vb) {
+  const p = vb.periode || {}, rij = [];
+  if (p.van || p.tot) rij.push(`periode ${esc(p.van || "?")} – ${esc(p.tot || "?")}`);
+  if (vb.frequentie) rij.push(`${esc(vb.frequentie)}×/week gepland`);
+  if (vb.doel) rij.push(`doel: ${esc(vb.doel)}`);
+  let status = "";
+  if (vb.loopt_nog) status = `<span class="sb-vb-tag">loopt nog · laatste geplande training ${esc(vb.laatste_datum)}</span>`;
+  else if (vb.afgelopen_dagen != null) status = `<span class="sb-vb-tag">vorige blok eindigde ${vb.afgelopen_dagen} dag(en) geleden (${esc(vb.laatste_datum)})</span>`;
+  else status = `<span class="sb-vb-tag warn">geen lopend schema gevonden — controleer de startdatum</span>`;
+  return `<div class="sb-vorigblok">
+    <p class="sb-vb-h">${ic("check")} Vorige blok <span class="muted klein">— ${esc(vb.bron || "onbekend")}</span></p>
+    <p class="sb-vb-rij">${rij.map(esc => `<span>${esc}</span>`).join("")}</p>
+    ${status}</div>`;
+}
+
+function sbReadinessHtml(rd) {
+  const s = rd.status;
+  if (s === "geblokkeerd") return `<div class="sb-ready blok">${ic("close")} Kan nog niet verlengen — ${esc(rd.reden || "ontbrekende gegevens")}.</div>`;
+  if (s === "controle") return `<div class="sb-ready controle">${ic("note")} Bijna klaar — controleer nog ${rd.te_controleren} punt(en)${rd.kritiek ? `, waarvan ${rd.kritiek} aandachtspunt` : ""}.</div>`;
+  return `<div class="sb-ready klaar">${ic("check")} Klaar om te verlengen — BeBetter heeft voldoende actuele context.</div>`;
+}
+
+function sbHerijkItemHtml(it, idx) {
+  const acked = it.kritiek && sbState.acks[idx];
+  const val = it.actueel || it.oud || "";
+  let body = `<span class="sb-hi-label">${esc(it.label)}</span>`;
+  if (it.status === "veranderd") body += `<span class="sb-hi-delta">${esc(it.oud || "onbekend")} → <b>${esc(it.actueel)}</b></span>`;
+  else if (val) body += `<span class="sb-hi-val">${esc(val)}</span>`;
+  if (it.bron) body += `<span class="sb-hi-bron">${esc(it.bron)}${it.zekerheid ? " · zekerheid " + esc(it.zekerheid) : ""}</span>`;
+  let act = "";
+  if (it.kritiek) act = `<button class="btn ${acked ? "ghost" : "primary"} sm" data-ack="${idx}">${acked ? ic("check") + " meegenomen" : "Meegenomen"}</button>`;
+  else if (it.status === "controleren" && (it.sleutel === "trainingsdagen" || it.sleutel === "doel"))
+    act = `<button class="btn ghost sm" data-corr="${idx}" data-sleutel="${esc(it.sleutel)}">Aanpassen</button>`;
+  return `<div class="sb-hi ${it.status}${acked ? " acked" : ""}">${body}<div class="sb-hi-act">${act}</div>
+    <div class="sb-hi-edit" id="sb-hi-edit-${idx}" hidden></div></div>`;
+}
+
+function sbRenderHerijking() {
+  const c = sbState.config, vb = sbState.vorig_blok || {}, items = sbState.herijking || [];
+  const groepen = SB_HERIJK_GROEP.map(([st, titel, sub]) => {
+    const list = items.map((it, i) => [it, i]).filter(([it]) => it.status === st);
+    if (!list.length) return "";
+    return `<div class="sb-hg"><p class="sb-hg-h">${esc(titel)} <span class="muted klein">— ${esc(sub)}</span></p>
+      ${list.map(([it, i]) => sbHerijkItemHtml(it, i)).join("")}</div>`;
+  }).join("");
+  const vragen = (sbState.vragen || []).length ? `
+    <div class="sb-hg"><p class="sb-hg-h">Mini-update <span class="muted klein">— alleen wat we nog niet weten (optioneel)</span></p>
+      ${sbState.vragen.map((q, i) => `<div class="sb-vraag"><label class="lbl">${esc(q.vraag)}</label>
+        <input type="text" id="sb-vraag-${i}" data-sleutel="${esc(q.sleutel)}" placeholder="optioneel"></div>`).join("")}</div>` : "";
+  const heeftControle = items.some(it => it.status === "controleren");
+  $("#sb-werk").innerHTML = `
+    <button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
+    ${sbModeBar("verlengen")}
+    <div class="sb-context"><div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
+      <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Verlengen · herijking</p></div></div></div>
+    ${sbVorigBlokHtml(vb)}
+    <p class="sb-herijk-intro">${ic("brain")} BeBetter heeft dit herijkt — controleer alleen wat veranderd of onzeker is.</p>
+    <div class="sb-nieuweperiode">
+      <div><label class="lbl">Nieuwe start</label><input type="date" id="vl-start" value="${esc(c.startdatum)}"></div>
+      <div><label class="lbl">Weken</label><input type="number" id="vl-weken" min="1" max="52" value="${esc(c.weken)}"></div>
+      <p class="hint" id="vl-startwarn"></p>
+    </div>
+    ${groepen}
+    ${vragen}
+    <div class="sb-herijk-foot">
+      ${sbReadinessHtml(sbState.readiness)}
+      ${heeftControle && !sbState.allesKlopt ? `<button class="btn ghost block" id="vl-allesklopt">${ic("check")} Alles klopt</button>` : ""}
+      <button class="btn primary block" id="vl-gen">${ic("brain")} Maak vervolgplan</button>
+      <p class="hint" id="vl-status"></p>
+    </div>`;
+  $("#sb-terug").addEventListener("click", sbBackToList);
+  sbWireModeBar();
+  $("#scroller").scrollTo({ top: 0 });
+  $("#vl-start").addEventListener("input", sbVlPeriode);
+  $("#vl-weken").addEventListener("input", sbVlPeriode);
+  $("#sb-werk").querySelectorAll("[data-ack]").forEach(b => b.addEventListener("click", () => {
+    const i = +b.dataset.ack; sbState.acks[i] = !sbState.acks[i]; sbDraftSave(); sbRenderHerijking();
+  }));
+  $("#sb-werk").querySelectorAll("[data-corr]").forEach(b => b.addEventListener("click", () => sbHerijkCorrect(+b.dataset.corr, b.dataset.sleutel)));
+  const ak = $("#vl-allesklopt"); if (ak) ak.addEventListener("click", () => { sbState.allesKlopt = true; sbDraftSave(); sbRenderHerijking(); });
+  $("#vl-gen").addEventListener("click", sbVerlengGen);
+  sbVlGate();
+}
+
+function sbVlPeriode() {
+  const c = sbState.config;
+  c.startdatum = $("#vl-start").value || c.startdatum;
+  c.weken = $("#vl-weken").value || c.weken;
+  const warn = $("#vl-startwarn"), laatste = c._verleng_laatste || "";
+  if (warn) warn.textContent = (laatste && c.startdatum && c.startdatum <= laatste)
+    ? `⚠️ Start ligt op/vóór de laatste geplande training (${laatste}) — verzet de start ná het bestaande blok.` : "";
+  sbDebouncedSave(); sbVlGate();
+}
+
+// Kritieke aandachtspunten moeten expliciet erkend; 'controleren' mag via Alles klopt.
+function sbVlGate() {
+  const items = sbState.herijking || [], c = sbState.config;
+  const kritiekOpen = items.some((it, i) => it.kritiek && !sbState.acks[i]);
+  const heeftControle = items.some(it => it.status === "controleren");
+  const geblokkeerd = (sbState.readiness || {}).status === "geblokkeerd";
+  const laatste = c._verleng_laatste || "";
+  const overlap = !!(laatste && c.startdatum && c.startdatum <= laatste);
+  const ok = !geblokkeerd && !kritiekOpen && !overlap && (!heeftControle || sbState.allesKlopt);
+  const btn = $("#vl-gen"); if (btn) btn.disabled = !ok;
+  const st = $("#vl-status");
+  if (st) st.textContent = geblokkeerd ? "" :
+    overlap ? "Verzet eerst de startdatum ná het bestaande blok." :
+    kritiekOpen ? "Erken eerst de aandachtspunten." :
+    (heeftControle && !sbState.allesKlopt) ? "Bevestig de te controleren punten (‘Alles klopt’) of pas ze aan." : "";
+}
+
+function sbHerijkCorrect(idx, sleutel) {
+  const box = $("#sb-hi-edit-" + idx); if (!box) return;
+  if (!box.hidden) { box.hidden = true; box.innerHTML = ""; return; }
+  const c = sbState.config;
+  if (sleutel === "doel") {
+    box.innerHTML = `<textarea id="corr-doel" rows="2">${esc(c.doel || "")}</textarea>`;
+    box.hidden = false;
+    $("#corr-doel").addEventListener("input", e => { c.doel = e.target.value; sbDebouncedSave(); });
+  } else if (sleutel === "trainingsdagen") {
+    const sel = sbDagenUitString(c.trainingsdagen || "");
+    box.innerHTML = `<div class="sb-dagen" id="corr-dagen">${SB_DAG.map((d, i) =>
+      `<button type="button" class="sb-dag ${sel.includes(i) ? "on" : ""}" data-d="${i}">${d[0].toUpperCase() + d.slice(1)}</button>`).join("")}</div>`;
+    box.hidden = false;
+    box.querySelectorAll(".sb-dag").forEach(b => b.addEventListener("click", () => {
+      b.classList.toggle("on");
+      c.trainingsdagen = [...box.querySelectorAll(".sb-dag.on")].map(x => +x.dataset.d).sort((p, q) => p - q).map(i => SB_DAG[i]).join("/");
+      sbDebouncedSave();
+    }));
+  }
+}
+
+async function sbVerlengGen() {
+  const btn = $("#vl-gen"); if (btn.disabled) return;
+  // mini-update-antwoorden → coachinstructie (in-app, niet extern verstuurd)
+  const c = sbState.config, extra = [];
+  (sbState.vragen || []).forEach((q, i) => {
+    const v = ($("#sb-vraag-" + i) || {}).value; if (v && v.trim()) {
+      if (q.sleutel === "trainingsdagen" && !c.trainingsdagen) c.trainingsdagen = v.trim();
+      else extra.push(v.trim());
+    }
+  });
+  if (extra.length) c.coach_notitie = ((c.coach_notitie || "") + " " + extra.join(" ")).trim();
+  btn.disabled = true; btn.textContent = "AI bouwt het vervolgplan…";
+  const st = $("#vl-status"); if (st) st.textContent = "BeBetter bouwt logisch voort op het vorige blok. Dit kan even duren.";
+  const t0 = performance.now();
+  const r = await jpost("/api/schema/plan", { key: sbState.key, config: sbState.config }).catch(() => null);
+  sbLog("plan_gen", { key: sbState.key, mode: "verlengen", ms: Math.round(performance.now() - t0), ok: !!(r && r.ok) });
+  if (!r || !r.ok) { btn.disabled = false; btn.innerHTML = `${ic("brain")} Maak vervolgplan`; if (st) st.textContent = ""; return melding(r?.err || "Plan mislukt.", true); }
+  if (r.context_blob) sbState.config._context = r.context_blob;
+  if (r.context) sbState.context = r.context;
+  sbState.plan = r.plan || ""; sbState.planEdited = false; sbState.prevPlan = null; sbState.chat = [];
+  sbState.stage = "plan"; sbDraftSave();
+  sbRenderPlan();
 }
 
 const SB_DAG_NL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"];
@@ -2346,6 +2555,7 @@ function sbRenderConfig() {
   const c = sbState.config, sel = sbDagenUitString(c.trainingsdagen);
   $("#sb-werk").innerHTML = `
     <button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
+    ${sbModeBar("nieuw")}
     <div class="sb-context"><div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
       <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Nieuw schema · instellingen</p></div></div></div>
     <div class="sb-cfg">
@@ -2376,6 +2586,7 @@ function sbRenderConfig() {
       <p class="hint">Klopt iets niet of ontbreekt het? Voeg het toe bij <b>Coachinstructies</b> hierboven — de AI neemt dat mee. (Dossier-bewerking volgt later.)</p>
     </section>`;
   $("#sb-terug").addEventListener("click", sbBackToList);
+  sbWireModeBar();
   $("#scroller").scrollTo({ top: 0 });
   $("#cfg-dagen").querySelectorAll(".sb-dag").forEach(b => b.addEventListener("click", () => { b.classList.toggle("on"); sbSyncConfig(); sbRefreshAfspraken(); sbUpdateGate(); }));
   ["cfg-doel", "cfg-start", "cfg-weken", "cfg-vol", "cfg-race", "cfg-notitie"].forEach(id => $("#" + id).addEventListener("input", () => { sbSyncConfig(); sbRefreshAfspraken(); sbUpdateGate(); }));
@@ -2453,7 +2664,10 @@ function sbRenderPlan() {
         <p class="hint" id="sb-chat-status"></p>
       </aside>
     </div>`;
-  $("#sb-terug").addEventListener("click", () => { sbState.stage = "config"; sbDraftSave(); sbRenderConfig(); });
+  $("#sb-terug").addEventListener("click", () => {
+    if (sbState.mode === "verlengen") { sbState.stage = "herijking"; sbDraftSave(); return sbRenderHerijking(); }
+    sbState.stage = "config"; sbDraftSave(); sbRenderConfig();
+  });
   $("#sb-build").addEventListener("click", sbBuildSchema);
   $("#sb-edit-toggle").addEventListener("click", sbToggleManualEdit);
   $("#sb-chat-send").addEventListener("click", sbChatSend);
@@ -2632,7 +2846,7 @@ function sbRenderPublish() {
   $("#sb-pub-retry")?.addEventListener("click", () => sbDoPublish(inc.filter(r => (resById[r.id] || {}).status === "failed")));
   $("#sb-pub-workbench")?.addEventListener("click", sbPublishBack);
   $("#sb-pub-list")?.addEventListener("click", () => { sbState = null; laadSchema(); });
-  $("#sb-pub-new")?.addEventListener("click", () => { const k = sbState.key, n = sbState.naam; sbDraftClear(k); sbState = null; schemaWerk({ key: k, naam: n }); });
+  $("#sb-pub-new")?.addEventListener("click", () => { const k = sbState.key, n = sbState.naam, m = sbState.mode; sbDraftClear(k, m); sbState = null; schemaWerk({ key: k, naam: n }, m); });
   $("#scroller").scrollTo({ top: 0 });
 }
 

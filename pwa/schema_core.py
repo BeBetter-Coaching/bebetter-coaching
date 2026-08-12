@@ -275,7 +275,7 @@ def context_config(config: dict) -> dict:
         "trainingsdagen": config.get("trainingsdagen", ""),
         "startdatum": config.get("startdatum", ""),
         "zone_bron": "hartslag" if zt in ("hartslag", "heart_rate") else "tempo",
-        "mode": "nieuw",
+        "mode": (config or {}).get("mode", "nieuw"),
     }
 
 
@@ -373,7 +373,7 @@ def _intake_from_config(key: str, config: dict) -> dict:
             intake[f] = cfg[f]
     intake["athlete_key"] = key
     intake["athlete_name"] = cfg.get("athlete_name") or intake.get("athlete_name") or key
-    intake["mode"] = "nieuw"
+    intake["mode"] = cfg.get("mode", "nieuw") if cfg.get("mode") in ("nieuw", "verlengen", "bijsturen") else "nieuw"
     weken_int, einddatum = _bereken_periode(
         intake.get("startdatum", ""), cfg.get("weken") or intake.get("weken"),
         cfg.get("schema_einddatum") or "")
@@ -403,6 +403,253 @@ def bekende_context(key: str) -> dict:
         return {"secties": AC.ui_sections(ctx), "used": AC.used_summary(ctx)}
     except Exception as e:
         return {"secties": [], "used": {}, "err": str(e)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# VERLENGEN — slimme herijking (geen nieuwe intake). Vorige blok + actuele
+# werkelijkheid worden vergeleken; alleen verandering/onzekerheid gaat terug naar
+# de coach. Hergebruikt het masterbrein (athlete_context) + bewezen FS-planning.
+# ══════════════════════════════════════════════════════════════════════════════
+_MIN_BLOK_WORKOUTS = 4        # < dit = 'los schema', niet betrouwbaar als blok (spiegelt fs_client)
+
+
+def _planned_window(key: str) -> list:
+    """Geplande (structured, niet-race) FS-trainingen rond heden (−120..+180 dagen),
+    gesorteerd op datum. Basis om het lopende/laatste blok betrouwbaar te herkennen."""
+    try:
+        import fs_client as FS
+        van = date.today() - timedelta(days=120)
+        lijst = FS.get_planned_workouts_from(key, van, horizon_days=300)
+        return sorted(lijst or [], key=lambda x: str(x.get("date"))[:10])
+    except Exception:
+        return []
+
+
+def vorig_blok(key: str) -> dict:
+    """Identificeer het lopende/laatste blok betrouwbaar. Bronvolgorde:
+    (1) daadwerkelijke geplande FS-workouts (heden ± venster) → hardste bron;
+    (2) opgeslagen schema-intake (laatste_intakes) als er geen FS-planning is.
+    Geeft periode, laatste geplande datum, frequentie en of het blok nog loopt."""
+    planned = _planned_window(key)
+    intake = _nieuwste_intake(key)
+    today = date.today()
+    eerste = planned[0]["date"] if planned else ""
+    laatste = planned[-1]["date"] if planned else ""
+    n = len(planned)
+    freq = None
+    if n >= 2 and eerste and laatste:
+        weken = max(1, ((date.fromisoformat(laatste) - date.fromisoformat(eerste)).days // 7) + 1)
+        freq = round(n / weken, 1)
+    # Betrouwbaar = genoeg echte geplande trainingen, óf een opgeslagen schema-intake.
+    # Zonder FS-planning is er GEEN overlaprisico (niets om mee te botsen).
+    betrouwbaar = (n >= _MIN_BLOK_WORKOUTS) or bool(intake.get("startdatum") or intake.get("doel"))
+    loopt_nog, afgelopen_dagen = False, None
+    if laatste:
+        ld = date.fromisoformat(laatste)
+        if ld >= today:
+            loopt_nog = True
+        else:
+            afgelopen_dagen = (today - ld).days
+    return {
+        "betrouwbaar": bool(betrouwbaar),
+        "bron": "finalsurge" if n else ("intake" if betrouwbaar else "onbekend"),
+        "periode": {"van": eerste, "tot": laatste},
+        "laatste_datum": laatste,
+        "aantal_gepland": n,
+        "frequentie": freq,
+        "trainingsdagen_intake": intake.get("trainingsdagen", ""),
+        "doel": intake.get("doel", ""),
+        "loopt_nog": loopt_nog,
+        "afgelopen_dagen": afgelopen_dagen,
+    }
+
+
+def _verleng_start(vb: dict) -> str:
+    """Nieuwe start = dag ná de laatste geplande training (bewezen Streamlit-regel).
+    Nooit vóór het einde van het vorige blok. Geen FS-planning → default (eerstvolgende
+    maandag), coach bevestigt dan zelf."""
+    laatste = vb.get("laatste_datum") or ""
+    if laatste:
+        try:
+            return (date.fromisoformat(laatste) + timedelta(days=1)).isoformat()
+        except Exception:
+            pass
+    return _default_start()
+
+
+def _dagen_aantal(trainingsdagen: str) -> int:
+    try:
+        import schema_builder as SB
+        return len(SB._parse_weekdagen(trainingsdagen or ""))
+    except Exception:
+        return 0
+
+
+def _herijking(key: str, config: dict, vb: dict) -> tuple:
+    """Vergelijk oud (intake/vorig blok) met actueel (athlete_context + live FS-zones).
+    Produceert herijkings-items met status/zekerheid/bron. FEITEN mogen automatisch
+    actualiseren (config muteren); COACHBESLUITEN nooit stil (alleen 'controleren').
+    Geeft (items, ctx) terug; ctx is de al-gebouwde masterbreincontext (hergebruik)."""
+    import athlete_context as AC
+    ctx = AC.build_athlete_context(key, config.get("athlete_name") or config.get("naam") or "")
+    tr = ctx.get("training") or {}
+    health = ctx.get("health") or {}
+    fb = ctx.get("feedback") or {}
+    intake = _nieuwste_intake(key)
+    items = []
+
+    def add(sleutel, label, status, zekerheid, oud="", actueel="", bron="", kritiek=False):
+        items.append({"sleutel": sleutel, "label": label, "status": status,
+                      "zekerheid": zekerheid, "oud": str(oud), "actueel": str(actueel),
+                      "bron": bron, "kritiek": bool(kritiek)})
+
+    # 1. ZONES — feit uit FinalSurge (config_prefill zette al de live zones in config)
+    oud_zones = (intake.get("zones") or "").strip()
+    live_zones = (config.get("zones") or "").strip()
+    if live_zones and oud_zones and live_zones != oud_zones:
+        add("zones", "Zones", "veranderd", "hoog", oud_zones[:60], live_zones[:60],
+            "FinalSurge (live)")
+    elif live_zones:
+        add("zones", "Zones", "geldig", "hoog", actueel=live_zones[:60], bron="FinalSurge")
+
+    # 2. VOLUME — actueel gemeten volume mag als FEIT worden geactualiseerd
+    km = tr.get("km_per_week")
+    oud_vol = (intake.get("huidig_volume") or "").strip()
+    if km:
+        config["huidig_volume"] = f"{km} km/week (recent gemeten)"
+        status = "veranderd" if oud_vol and str(km) not in oud_vol else "geldig"
+        add("volume", "Volume", status, "hoog", oud_vol or "onbekend",
+            f"{km} km/week", "trainingslog")
+
+    # 3. FREQUENTIE — actueel = observatie (feit); GEWENST = coachbesluit (niet stil wijzigen)
+    gewenst = _dagen_aantal(config.get("trainingsdagen", ""))
+    runs = tr.get("runs_per_week")
+    if runs and gewenst and abs(round(runs) - gewenst) >= 1:
+        add("frequentie", "Gewenste frequentie", "controleren", "middel",
+            f"vorig schema {gewenst}×/week", f"recent ~{round(runs)}×/week uitgevoerd",
+            "trainingslog", kritiek=False)
+    elif gewenst:
+        add("frequentie", "Frequentie", "geldig", "middel",
+            actueel=f"{gewenst}×/week", bron="vorig schema")
+
+    # 4. TRAININGSDAGEN — welke dagen blijft een coach-check (haalbaarheid), niet stil wijzigen
+    if config.get("trainingsdagen"):
+        add("trainingsdagen", "Trainingsdagen nog haalbaar?", "controleren", "middel",
+            actueel=config.get("trainingsdagen"), bron="vorig schema")
+    else:
+        add("trainingsdagen", "Trainingsdagen onbekend", "controleren", "laag",
+            bron="—")
+
+    # 5. DOEL
+    if config.get("doel"):
+        add("doel", "Doel blijft hoofddoel?", "controleren", "middel",
+            actueel=config.get("doel"), bron="vorig schema")
+
+    # 6. ONDERBREKING — actief aandachtspunt (belastbaarheid), kritiek
+    if tr.get("onderbreking"):
+        add("onderbreking", "Onderbreking", "aandacht", "hoog",
+            actueel=tr["onderbreking"], bron="trainingslog", kritiek=True)
+
+    # 7. KLACHTEN — recente/actuele klachten, kritiek
+    for k in (health.get("actuele_klachten") or []):
+        add("klacht", "Actuele klacht", "aandacht", "hoog",
+            actueel=f"{k.get('tekst','')} ({k.get('bron','')}, {k.get('datum','')})",
+            bron=k.get("bron", ""), kritiek=True)
+
+    # 8. BELASTING-SIGNAAL — verse hoge belasting, kritiek
+    bs = fb.get("belasting_signaal")
+    if bs:
+        add("belasting", "Belastingsignaal", "aandacht", "hoog",
+            actueel=f"{bs.get('ernst','')}: " + "; ".join(bs.get("signalen") or []),
+            bron="belasting-stand", kritiek=True)
+
+    # 9. BEPERKTE RECENTE DATA — context, geen blokkade
+    if not km and not runs:
+        add("data", "Beperkte recente trainingsdata", "aandacht", "middel",
+            actueel="weinig/geen recente uitvoering — herijk belastbaarheid conservatief",
+            bron="trainingslog", kritiek=False)
+
+    return items, ctx
+
+
+def _verleng_vragen(key: str, config: dict, ctx: dict) -> list:
+    """Mini-update: alléén vragen waarvan BeBetter het antwoord NIET al kent.
+    In deze slice in-app door de coach te beantwoorden (niet extern verstuurd)."""
+    vragen = []
+    if not (config.get("trainingsdagen") or "").strip():
+        vragen.append({"sleutel": "trainingsdagen",
+                       "vraag": "Op welke dagen kan de atleet de komende weken trainen?"})
+    if not (ctx.get("recovery")):
+        vragen.append({"sleutel": "werk_slaap",
+                       "vraag": "Is het werk-/slaapritme de afgelopen weken veranderd?"})
+    # Vakantie/afwezigheid kunnen we nooit uit data weten → altijd zinvol, maar optioneel.
+    vragen.append({"sleutel": "afwezig",
+                   "vraag": "Zijn er vakanties of periodes met minder trainingsruimte?"})
+    return vragen[:4]
+
+
+def _verleng_readiness(config: dict, vb: dict, items: list) -> dict:
+    """Rijk readiness-model: klaar / controle / geblokkeerd. Blokkeer alléén op een
+    echte harde voorwaarde (geen doel/zones, ongeldige atleet). Weinig data, net
+    afgelopen blok of een onderbreking blokkeren NIET — die zijn juist context."""
+    if not config.get("athlete_key"):
+        return {"status": "geblokkeerd", "reden": "Ongeldige atleet.", "ontbreekt": ["atleet"]}
+    ontbreekt = []
+    if not (config.get("doel") or "").strip():
+        ontbreekt.append("doel")
+    if not (config.get("zones") or "").strip():
+        ontbreekt.append("zones")
+    if ontbreekt:
+        return {"status": "geblokkeerd",
+                "reden": "Kernconfig ontbreekt: " + ", ".join(ontbreekt), "ontbreekt": ontbreekt}
+    kritiek = [i for i in items if i["status"] == "aandacht" and i.get("kritiek")]
+    controle = [i for i in items if i["status"] == "controleren"]
+    if kritiek or controle:
+        return {"status": "controle", "kritiek": len(kritiek), "controle": len(controle),
+                "te_controleren": len(kritiek) + len(controle)}
+    return {"status": "klaar"}
+
+
+def verleng_prefill(key: str) -> dict:
+    """Verlengen-ingang: oud (intake) als basis → herijkt met actuele werkelijkheid.
+    Geeft config (mode=verlengen, start ná laatste geplande training) + vorig_blok +
+    herijking + readiness + mini-update-vragen. Eén assembled config voedt daarna de
+    bewezen Nieuw-flow (plan→chat→workbench→publish) ongewijzigd."""
+    prefill = config_prefill(key)                 # basis: intake + live FS-zones
+    config = prefill["config"]
+    config["mode"] = "verlengen"
+    vb = vorig_blok(key)
+    config["startdatum"] = _verleng_start(vb)
+    config["_verleng_laatste"] = vb.get("laatste_datum", "")
+    weken_int, einddatum = _bereken_periode(config["startdatum"], config.get("weken") or "8", "")
+    config["weken"] = str(weken_int)
+    config["schema_einddatum"] = einddatum
+    items, ctx = _herijking(key, config, vb)      # kan config muteren (feiten actualiseren)
+    vragen = _verleng_vragen(key, config, ctx)
+    readiness = _verleng_readiness(config, vb, items)
+    return {
+        "config": config, "context": context_config(config), "afspraken": afspraken(config),
+        "vorig_blok": vb, "herijking": items, "readiness": readiness, "vragen": vragen,
+    }
+
+
+def _overlap_errors(key: str, config: dict, inc: list) -> list:
+    """Verlengen: alleen TOEVOEGEN ná het bestaande blok. Een included row op/vóór de
+    laatste geplande datum = blokkerende overlap (geen delete/overwrite)."""
+    if (config or {}).get("mode") != "verlengen" or not inc:
+        return []
+    laatste = (config or {}).get("_verleng_laatste") or ""
+    if not laatste:
+        laatste = vorig_blok(key).get("laatste_datum") or ""
+    if not laatste:
+        return []                                 # geen bestaand blok → geen overlaprisico
+    bad = [str(r["date"])[:10] for r in inc
+           if _valid_date(r.get("date")) and str(r["date"])[:10] <= laatste]
+    if bad:
+        return [f"Overlap met het bestaande blok: {len(bad)} training(en) op/vóór de laatste "
+                f"geplande datum ({laatste}). Een verlenging voegt alléén ná het bestaande "
+                f"blok toe — verzet de startdatum."]
+    return []
 
 
 def genereer_plan_config(key: str, config: dict) -> dict:
@@ -574,6 +821,7 @@ def publish_preview(key: str, config: dict, rows: list) -> dict:
     """Write-preview: validatie + read-before-write duplicaatcheck. GEEN write."""
     errs = validate_rows(key, rows)
     inc = _included(rows)
+    errs = errs + _overlap_errors(key, config, inc)   # verlengen: overlap = blokkerend
     dup, date_range, conflicts = {}, None, 0
     if inc and not errs:
         dates = sorted(str(r["date"])[:10] for r in inc if _valid_date(r.get("date")))
@@ -606,11 +854,12 @@ def _row_sig(r: dict) -> str:
     return f"{str(r.get('date'))[:10]}|{(r.get('name') or '').strip().lower()}|{r.get('planned_km')}|{r.get('planned_min')}"
 
 
-def _audit(key: str, attempted: int, ok: int, fail: int, builderfail: int, date_range) -> None:
+def _audit(key: str, mode: str, attempted: int, ok: int, fail: int, builderfail: int, date_range) -> None:
     """Compacte write-receipt in de log — GEEN workoutbeschrijvingen/gevoelige tekst."""
     try:
         print("[schema_write]", {
-            "athlete": key, "ts": datetime.now().isoformat(timespec="seconds"), "mode": "nieuw",
+            "athlete": key, "ts": datetime.now().isoformat(timespec="seconds"),
+            "mode": mode or "nieuw",
             "attempted": attempted, "success": ok, "failed": fail, "builder_failed": builderfail,
             "range": date_range,
         })
@@ -622,10 +871,10 @@ def publish(key: str, config: dict, rows: list, write_id: str = "") -> dict:
     """Publiceer included rows naar FinalSurge. Per rij via import_to_finalsurge →
     exacte status. success=blijvend (nooit opnieuw), builder_failed=workout bestaat
     (nooit opnieuw aanmaken), failed=retry-eligible. Backend is de waarheid."""
-    errs = validate_rows(key, rows)
+    inc = _included(rows)
+    errs = validate_rows(key, rows) + _overlap_errors(key, config, inc)
     if errs:
         raise ValueError("; ".join(errs))
-    inc = _included(rows)
     intake = _intake_from_config(key, config)
     _zt = intake.get("zone_type", "tempo")
     zone_type = "heart_rate" if _zt in ("hartslag", "heart_rate") else "pace"
@@ -657,7 +906,7 @@ def publish(key: str, config: dict, rows: list, write_id: str = "") -> dict:
 
     dates = sorted(str(r["date"])[:10] for r in inc if _valid_date(r.get("date")))
     dr = {"van": dates[0], "tot": dates[-1]} if dates else None
-    _audit(key, len(inc), ok, fail, builderfail, dr)
+    _audit(key, (config or {}).get("mode", "nieuw"), len(inc), ok, fail, builderfail, dr)
     return {
         "results": results,
         "counts": {"attempted": len(inc), "success": ok, "failed": fail,

@@ -560,6 +560,14 @@ def schema_config(key: str = ""):
         return JSONResponse({"ok": False, "err": f"Config mislukt: {e}"}, status_code=500)
 
 
+@app.get("/api/schema/verleng")           # Verlengen: herijking (vorig blok + delta + readiness)
+def schema_verleng(key: str = ""):
+    try:
+        return {"ok": True, **schema_core.verleng_prefill(key)}
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Verlengen mislukt: {e}"}, status_code=500)
+
+
 @app.get("/api/schema/context")           # masterbrein: 'Bekende atleetcontext' (lazy)
 def schema_bekende_context(key: str = ""):
     try:
