@@ -781,67 +781,50 @@ def _min_sessies(sessies_per_week) -> int:
         return 0
 
 
-def _week_verwacht(spw: int, week_mon, schema_start, trainingsdagen_set: set,
-                   dubbel_set: set) -> int:
-    """Verwacht (vereist) aantal sessies voor ÉÉN Ma–Zo-week, kalenderbewust.
-
-    Volle week (start valt op/vóór de maandag) → volledige frequentie `spw` blijft
-    streng gelden. PARTIËLE week (schema start valt midden in deze week, bijv. een
-    vervolgblok dat op zondag na een doelrace begint) → verwacht alleen wat binnen de
-    daadwerkelijk actieve dagen logisch gepland kan worden. Geen blinde 8/7-rekensom:
-    gebruik de echte trainingsdag-/dubbeldag-config, of val terug op 1 sessie per
-    actieve kalenderdag als de beschikbare dagen onbekend zijn."""
-    week_sun = week_mon + timedelta(days=6)
-    if schema_start is None or schema_start <= week_mon:
-        return spw                                  # volle week → strenge frequentie
-    active_start = schema_start
-    if active_start > week_sun:
-        return 0                                     # week valt volledig vóór de start
-    actief = [d for d in range(7) if active_start <= week_mon + timedelta(days=d) <= week_sun]
-    if trainingsdagen_set:
-        dagen = [d for d in actief if d in trainingsdagen_set]
-    else:
-        dagen = actief                               # dagen onbekend → 1 sessie/actieve dag
-    cap = len(dagen) + len([d for d in dagen if d in dubbel_set])
-    return min(spw, cap)                              # nooit méér eisen dan de weekfrequentie
-
-
 def plan_completeness(weken: list, sessies_per_week, config: dict = None) -> tuple:
-    """Deterministische completeness-check op de GEGENEREERDE rows (betrouwbaar — geen
-    fragiele plantekst-parse). Elke niet-laatste week moet >= het VERWACHTE aantal
-    sessies bevatten; de laatste week mag korter (taper/raceweek). Volle weken worden
-    streng op `sessies_per_week` gecontroleerd; kalendertechnisch PARTIËLE weken (een
-    blok dat midden in de week begint) krijgen een proportioneel/logisch aangepaste
-    verwachting op basis van de echte dag-/dubbeldag-config (zie `_week_verwacht`).
+    """FREQUENCY-GUARD op de GEGENEREERDE rows. Eén bron van waarheid, één invariant:
+
+        Een VOLLE Ma–Zo-week moet minstens de afgesproken weekfrequentie
+        (`sessies_per_week`) aan sessies bevatten.
+
+    Dat is precies waar de guard voor bedoeld is: voorkomen dat een te dun conceptplan
+    (bijv. 3 sessies terwijl 8/week is afgesproken) als "compleet" wordt gebouwd. De
+    rows zijn een EXACTE vertaling van het plan (build_csv_prompt verbiedt verzinnen),
+    dus te weinig rows in een volle week = een incompleet plan.
+
+    Wat de guard NIET doet — bewust, om geen coachinhoud te verzinnen:
+      • partiële weken (schema start valt ná de maandag, bijv. een vervolgblok dat op
+        zondag na een doelrace begint) krijgen GEEN zelfbedacht minimum. Alleen de
+        eerste week kan aangesneden zijn; alle tussenweken lopen vol ma–zo.
+      • de laatste week wordt nooit gecontroleerd (taper/raceweek).
+      • `dubbele_dagen` verlaagt of verhoogt de eis niet: het is een mogelijkheid voor
+        de AI, geen verplichte tweede sessie. De volle-week-eis blijft simpelweg `spw`.
+
     Alleen actief als sessies_per_week is gezet. Geeft (ok, melding)."""
     spw = _min_sessies(sessies_per_week)
     if spw <= 0 or not weken:
         return True, ""
-    cfg = config or {}
-    import schema_builder as SB
     try:
-        schema_start = datetime.strptime(str(cfg.get("startdatum", ""))[:10], "%Y-%m-%d")
+        schema_start = date.fromisoformat(str((config or {}).get("startdatum", ""))[:10])
     except Exception:
         schema_start = None
-    trainingsdagen_set = set(SB._parse_weekdagen(cfg.get("trainingsdagen", "")))
-    dubbel_set = set(SB._parse_weekdagen(cfg.get("dubbele_dagen", "")))
     for i, w in enumerate(weken):
-        if i == len(weken) - 1:                 # laatste week mag taperen
+        if i == len(weken) - 1:                 # laatste week: taper/raceweek, nooit checken
             continue
+        # Aangesneden eerste week: het schema begint later dan de maandag van deze week,
+        # dus er zijn minder actieve dagen. Geen frequentie-eis — we verzinnen geen minimum.
         try:
-            week_mon = datetime.strptime(str(w.get("week_start", ""))[:10], "%Y-%m-%d")
+            week_mon = date.fromisoformat(str(w.get("week_start", ""))[:10])
         except Exception:
             week_mon = None
-        verwacht = spw if week_mon is None else _week_verwacht(
-            spw, week_mon, schema_start, trainingsdagen_set, dubbel_set)
-        if verwacht <= 0:
-            continue                             # geen actieve dagen in deze week
+        if schema_start is not None and week_mon is not None and week_mon < schema_start:
+            continue
         n = len(w.get("rows", []))
-        if n < verwacht:
+        if n < spw:                             # volle week mist sessies → plan incompleet
             return False, (f"Conceptplan is nog niet compleet: week {w.get('week_index', i + 1)} "
-                           f"bevat {n} van de {'gewenste ' + str(spw) if verwacht == spw else 'verwachte ' + str(verwacht)} sessies. "
-                           f"Laat BeBetter eerst álle sessies uitwerken (vraag in de chat om het plan "
-                           f"compleet te maken) vóór je het schema bouwt — de CSV vult niets zelf aan.")
+                           f"bevat {n} van de gewenste {spw} sessies. Laat BeBetter eerst álle "
+                           f"sessies uitwerken (vraag in de chat om het plan compleet te maken) "
+                           f"vóór je het schema bouwt — de CSV vult niets zelf aan.")
     return True, ""
 
 

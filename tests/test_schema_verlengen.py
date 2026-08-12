@@ -356,9 +356,9 @@ class TestSessiesEnCompleteness:
         ok, _ = schema_core.plan_completeness(self._weken([7, 7, 7, 3]), "7-9")
         assert ok is True                                 # "7-9" → ondergrens 7
 
-    # ── Kalenderbewuste completeness: partiële weken ──────────────────────────
+    # ── Kalenderbewuste completeness (frequency-guard, één invariant) ─────────
     def _weken_kal(self, counts, eerste_maandag):
-        """Weken mét week_start (maandag) zodat de partiële-week-logica werkt."""
+        """Weken mét week_start (maandag) zodat de volle-vs-partiële-weeklogica werkt."""
         from datetime import date, timedelta
         mon0 = date.fromisoformat(eerste_maandag)
         return [{"week_index": i + 1,
@@ -366,48 +366,58 @@ class TestSessiesEnCompleteness:
                  "rows": [{"id": f"r{i}{j}"} for j in range(c)]}
                 for i, c in enumerate(counts)]
 
-    def test_case1_start_zondag_partiele_eerste_week_pass(self):
-        # doelrace za 15-8 → vervolgstart zo 16-8 (weekmaandag = 10-8); week 1 = alleen zondag
-        cfg = {"startdatum": "2026-08-16", "sessies_per_week": "8"}
-        weken = self._weken_kal([1, 8, 8, 3], "2026-08-10")
-        ok, melding = schema_core.plan_completeness(weken, "8", cfg)
-        assert ok is True, melding                        # 1 zondagtraining is compleet voor die dag
+    def test_case1_live_race_za_start_zo(self):
+        # LIVE CASE: race za 15-8 → vervolgstart zo 16-8 (weekmaandag 10-8); week 1 = 1 zondagtraining.
+        # Partiële eerste week → verwacht = 1, GEEN "1 van 8" en GEEN "1 van 2".
+        cfg = {"startdatum": "2026-08-16", "sessies_per_week": "8", "dubbele_dagen": "zo"}
+        ok, melding = schema_core.plan_completeness(self._weken_kal([1, 8, 8, 3], "2026-08-10"), "8", cfg)
+        assert ok is True, melding
 
-    def test_case2_start_donderdag_verwacht_alleen_actieve_dagen(self):
-        # start do 20-8 (weekmaandag 17-8): actief do/vr/za/zo = 4 dagen, dagen onbekend → verwacht 4
-        cfg = {"startdatum": "2026-08-20", "sessies_per_week": "8"}
-        assert schema_core.plan_completeness(self._weken_kal([4, 8, 3], "2026-08-17"), "8", cfg)[0] is True
-        ok, melding = schema_core.plan_completeness(self._weken_kal([3, 8, 3], "2026-08-17"), "8", cfg)
-        assert ok is False and "3 van de verwachte 4" in melding
-
-    def test_case3_volle_week_blijft_streng(self):
-        # start maandag → week 1 is een volle week: volledige frequentie blijft vereist
+    def test_case2_volle_week_te_weinig_faalt(self):
+        # start maandag → week 1 is vol; 3 van 8 → FAIL
         cfg = {"startdatum": "2026-08-17", "sessies_per_week": "8"}
-        ok, melding = schema_core.plan_completeness(self._weken_kal([3, 8, 3], "2026-08-17"), "8", cfg)
+        ok, melding = schema_core.plan_completeness(self._weken_kal([3, 8], "2026-08-17"), "8", cfg)
         assert ok is False and "3 van de gewenste 8" in melding
 
-    def test_case4_laatste_partiele_week_mag_taperen(self):
+    def test_case3_volle_week_compleet_pass(self):
         cfg = {"startdatum": "2026-08-17", "sessies_per_week": "8"}
-        ok, _ = schema_core.plan_completeness(self._weken_kal([8, 8, 8, 2], "2026-08-17"), "8", cfg)
-        assert ok is True                                 # laatste week wordt nooit gecontroleerd
+        assert schema_core.plan_completeness(self._weken_kal([8, 8, 3], "2026-08-17"), "8", cfg)[0] is True
 
-    def test_case5_dubbele_dag_binnen_partiele_week_telt_mee(self):
-        # start zo 16-8; zondag is trainingsdag én dubbele dag → verwacht 2 sessies die dag
+    def test_case4_volle_week_met_dubbels_pass(self):
+        # 9/week (2 dubbele dagen) → 9 rows in een volle week → PASS
+        cfg = {"startdatum": "2026-08-17", "sessies_per_week": "9", "dubbele_dagen": "di do"}
+        assert schema_core.plan_completeness(self._weken_kal([9, 9, 3], "2026-08-17"), "9", cfg)[0] is True
+
+    def test_case5_volle_week_dubbelmogelijk_maar_te_weinig_faalt(self):
+        # dubbele_dagen verlaagt de eis NIET: volle 9-week met 7 rows mist 2 sessies → FAIL
+        cfg = {"startdatum": "2026-08-17", "sessies_per_week": "9", "dubbele_dagen": "di do"}
+        ok, melding = schema_core.plan_completeness(self._weken_kal([7, 9, 3], "2026-08-17"), "9", cfg)
+        assert ok is False and "7 van de gewenste 9" in melding
+
+    def test_case6_partiele_week_start_donderdag_geen_zelfbedacht_minimum(self):
+        # start do 20-8 (weekmaandag 17-8): aangesneden week → geen minimum, ook al is 8/week de norm
+        cfg = {"startdatum": "2026-08-20", "sessies_per_week": "8"}
+        assert schema_core.plan_completeness(self._weken_kal([2, 8, 3], "2026-08-17"), "8", cfg)[0] is True
+
+    def test_case7_partiele_week_dubbele_dag_niet_automatisch_verplicht(self):
+        # start zo; dubbele_dagen bevat zondag; plan heeft 1 zondagtraining → NIET automatisch 2 eisen
         cfg = {"startdatum": "2026-08-16", "sessies_per_week": "8",
-               "trainingsdagen": "ma di wo do vr za zo", "dubbele_dagen": "zo"}
+               "trainingsdagen": "za zo", "dubbele_dagen": "zo"}
+        ok, melding = schema_core.plan_completeness(self._weken_kal([1, 8, 3], "2026-08-10"), "8", cfg)
+        assert ok is True, melding
+
+    def test_case8_partiele_week_twee_sessies_een_dag_pass(self):
+        # plan zet bewust 2 sessies op zondag in de aangesneden week → guard accepteert beide
+        cfg = {"startdatum": "2026-08-16", "sessies_per_week": "8", "dubbele_dagen": "zo"}
         assert schema_core.plan_completeness(self._weken_kal([2, 8, 3], "2026-08-10"), "8", cfg)[0] is True
-        ok, melding = schema_core.plan_completeness(self._weken_kal([1, 8, 3], "2026-08-10"), "8", cfg)
-        assert ok is False and "1 van de verwachte 2" in melding
 
-    def test_case6_dubbele_dag_buiten_actief_deel_telt_niet(self):
-        # start zo 16-8; dubbele dag = woensdag (niet actief in week 1) → verwacht blijft 1
-        cfg = {"startdatum": "2026-08-16", "sessies_per_week": "8",
-               "trainingsdagen": "ma di wo do vr za zo", "dubbele_dagen": "wo"}
-        ok, melding = schema_core.plan_completeness(self._weken_kal([1, 8, 3], "2026-08-10"), "8", cfg)
-        assert ok is True, melding
+    def test_case9_geen_bovengrens_integriteit_via_csv_prompt(self):
+        # 'CSV verzint extra' is niet betrouwbaar uit de vrije-tekst-plan af te leiden en
+        # wordt geborgd door de harde CSV-prompt (build_csv_prompt), niet door deze guard.
+        # De frequency-guard kent dus geen bovengrens: meer rows dan spw blokkeert niet.
+        cfg = {"startdatum": "2026-08-17", "sessies_per_week": "8"}
+        assert schema_core.plan_completeness(self._weken_kal([10, 8, 3], "2026-08-17"), "8", cfg)[0] is True
 
-    def test_case7_live_acceptance_race_zaterdag_start_zondag(self):
-        # exacte live-case: race za → start zo → week 1 = 1 zondagtraining → GEEN blokkade
-        cfg = {"startdatum": "2026-08-16", "sessies_per_week": "8", "trainingsdagen": "za zo"}
-        ok, melding = schema_core.plan_completeness(self._weken_kal([1, 8, 8, 2], "2026-08-10"), "8", cfg)
-        assert ok is True, melding
+    def test_case10_laatste_taperweek_pass(self):
+        cfg = {"startdatum": "2026-08-17", "sessies_per_week": "8"}
+        assert schema_core.plan_completeness(self._weken_kal([8, 8, 8, 2], "2026-08-17"), "8", cfg)[0] is True
