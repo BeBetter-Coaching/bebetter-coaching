@@ -2244,6 +2244,19 @@ function sbHash(s) { s = String(s || ""); let h = 0x811c9dc5 >>> 0; for (let i =
 function sbNormPlan(s) { return String(s || "").replace(/\r\n?/g, "\n").split("\n").map(l => l.replace(/[ \t]+$/, "")).join("\n").trim(); }
 function sbPlanHash() { return sbHash(sbNormPlan(sbState.plan)); }
 
+// Schema-affecting config-fingerprint (Verlengen). ALLEEN velden die de uiteindelijke
+// schema-inhoud kunnen veranderen; géén UI-only state (resolved/acks/allesKlopt/mode/
+// _context/_verleng_laatste). Deterministisch: vaste veldvolgorde, genormaliseerde
+// waarden → semantisch gelijke config = gelijke hash. Voorkomt onnodige plan-regen.
+const SB_FP_FIELDS = ["doel", "startdatum", "weken", "schema_einddatum", "wedstrijddatum",
+  "trainingsdagen", "sessies_per_week", "sleuteldagen", "dubbele_dagen", "zones", "zone_type",
+  "huidig_volume", "tijd_per_training", "race_prioriteit", "tussenraces", "coach_notitie",
+  "referentie_prestatie", "blessurehistorie", "andere_sporten", "op_tijd"];
+function sbConfigFp(c) {
+  c = c || sbState.config || {};
+  return sbHash(SB_FP_FIELDS.map(k => k + "=" + sbNormPlan(String(c[k] == null ? "" : c[k]))).join("\n"));
+}
+
 // Draft (localStorage) — instant resume op hetzelfde device, geen server-churn.
 const SB_DRAFT_KEY = "bb_schema_drafts";
 function sbDraftsAll() { try { return JSON.parse(localStorage.getItem(SB_DRAFT_KEY) || "{}"); } catch { return {}; } }
@@ -2604,6 +2617,19 @@ async function sbVerlengGen() {
     }
   });
   if (extra.length) c.coach_notitie = ((c.coach_notitie || "") + " " + extra.join(" ")).trim();
+  // Fast-path: als de schema-affecting config niet is gewijzigd sinds het huidige plan
+  // gemaakt werd én er al een plan is, NIET opnieuw genereren (AI is nondeterministisch
+  // → zou de planhash veranderen en een onnodige generate_csv forceren). Terug naar de
+  // bestaande workbench als de rows nog bij dit plan horen, anders naar de plan-stap.
+  const fp = sbConfigFp(c);
+  const planExists = !!(sbState.plan && sbState.plan.trim());
+  if (planExists && sbState.plan_input_fp === fp) {
+    const rowsMatch = !!(sbState.weken && sbState.weken.length) && sbState.built_plan_hash === sbPlanHash();
+    sbLog("schema_reuse", { mode: "verlengen", stap: "plan", reuse: true, target: rowsMatch ? "workbench" : "plan" });
+    if (rowsMatch) { sbState.stage = "workbench"; sbDraftSave(); sbRenderWorkbench(); haptic(8); return; }
+    sbState.stage = "plan"; sbDraftSave(); sbRenderPlan(); return;
+  }
+  sbLog("schema_reuse", { mode: "verlengen", stap: "plan", reuse: false, reason: planExists ? "config_changed" : "no_plan" });
   btn.disabled = true; btn.textContent = "AI bouwt het vervolgplan…";
   const st = $("#vl-status"); if (st) st.textContent = "BeBetter bouwt logisch voort op het vorige blok. Dit kan even duren.";
   const t0 = performance.now();
@@ -2613,6 +2639,7 @@ async function sbVerlengGen() {
   if (r.context_blob) sbState.config._context = r.context_blob;
   if (r.context) sbState.context = r.context;
   sbState.plan = r.plan || ""; sbState.planEdited = false; sbState.prevPlan = null; sbState.chat = [];
+  sbState.plan_input_fp = fp;                 // vastleggen: dit plan hoort bij deze config
   sbState.stage = "plan"; sbDraftSave();
   sbRenderPlan();
 }
