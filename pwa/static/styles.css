@@ -1144,3 +1144,7 @@ button.sb-ready:hover{filter:brightness(1.08)}
 .sb-hi.flash{animation:sbflash 1.2s ease}
 @keyframes sbflash{0%,100%{box-shadow:none}30%{box-shadow:0 0 0 2px var(--acc)}}
 .sb-hi-edit .lbl{margin-top:8px}
+
+/* ── Verlengen readiness: resolved-visual voor bevestigde/erkende items ───── */
+.sb-hi.resolved{opacity:.62}
+.sb-hi.resolved .sb-hi-label::before{content:"✓ ";color:#8fe6b4;font-weight:700}

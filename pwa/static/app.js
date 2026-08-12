@@ -2333,7 +2333,7 @@ async function sbStartVerleng(a) {
   sbState = { key: a.key, naam: a.naam, mode: "verlengen", stage: "herijking",
     config: r.config || {}, context: r.context || {}, plan: "", planEdited: false, prevPlan: null, chat: [],
     vorig_blok: r.vorig_blok || {}, herijking: r.herijking || [], readiness: r.readiness || {},
-    vragen: r.vragen || [], acks: {}, allesKlopt: false };
+    vragen: r.vragen || [], acks: {}, resolved: {}, allesKlopt: false };
   sbState.config.mode = "verlengen";
   sbLog("verleng_start", { key: a.key, readiness: (r.readiness || {}).status,
     items: (r.herijking || []).length, bron: (r.vorig_blok || {}).bron });
@@ -2366,42 +2366,83 @@ function sbVorigBlokHtml(vb) {
     ${status}${race}</div>`;
 }
 
-function sbReadinessHtml(rd) {
-  const s = rd.status;
-  if (s === "geblokkeerd") return `<button type="button" class="sb-ready blok" id="sb-ready-nav">${ic("close")} Kan nog niet verlengen — ${esc(rd.reden || "ontbrekende gegevens")}. <span class="sb-ready-hint">Klik om het op te lossen</span></button>`;
-  if (s === "controle") return `<button type="button" class="sb-ready controle" id="sb-ready-nav">${ic("note")} Bijna klaar — controleer nog ${rd.te_controleren} punt(en)${rd.kritiek ? `, waarvan ${rd.kritiek} aandachtspunt` : ""}. <span class="sb-ready-hint">Klik naar het eerste punt</span></button>`;
+// ── Readiness = ÉÉN afgeleide waarheid uit de ACTUELE state ───────────────────
+// Bepaalt overal (banner-tekst, aantal, klik-target, plan-gate) dezelfde unresolved-
+// set uit config + kritiek-acks + coach-bevestigingen. Geen backend-snapshot of
+// per-onderdeel eigen logica meer.
+function sbItemResolved(it, i) {
+  if (it.kritiek) return !!sbState.acks[i];                 // kritiek: expliciete erkenning
+  if (it.status !== "controleren") return true;            // geldig/veranderd/info = geen actie
+  if (it.sleutel === "doel")                               // waarde-vereist: leeg → weer open (case 6)
+    return !!((sbState.config.doel || "").trim());
+  return !!sbState.allesKlopt || !!(sbState.resolved && sbState.resolved[i]);   // bevestigd/gecorrigeerd
+}
+function sbUnresolved() {
+  const items = sbState.herijking || [], out = [];
+  items.forEach((it, i) => {
+    const actie = it.kritiek || it.status === "controleren";
+    if (actie && !sbItemResolved(it, i)) out.push(i);
+  });
+  return out;
+}
+function sbReadinessState() {
+  const c = sbState.config || {}, un = sbUnresolved();
+  const ontbreekt = [];
+  if (!((c.doel || "").trim())) ontbreekt.push("doel");
+  if (!((c.zones || "").trim())) ontbreekt.push("zones");
+  const laatste = c._verleng_laatste || "";
+  const overlap = !!(laatste && c.startdatum && c.startdatum <= laatste);
+  const kritiek = un.filter(i => (sbState.herijking[i] || {}).kritiek).length;
+  let status = "klaar", reden = "";
+  if (ontbreekt.length) { status = "geblokkeerd"; reden = "Kernconfig ontbreekt: " + ontbreekt.join(", "); }
+  else if (overlap) { status = "geblokkeerd"; reden = "Startdatum ligt op/vóór het bestaande blok"; }
+  else if (un.length) status = "controle";
+  return { status, reden, unresolved: un, kritiek, controle: un.length - kritiek,
+           te_controleren: un.length, overlap };
+}
+
+function sbReadinessHtml(rs) {
+  if (rs.status === "geblokkeerd") return `<button type="button" class="sb-ready blok" id="sb-ready-nav">${ic("close")} Kan nog niet verlengen — ${esc(rs.reden || "ontbrekende gegevens")}. <span class="sb-ready-hint">Klik om het op te lossen</span></button>`;
+  if (rs.status === "controle") return `<button type="button" class="sb-ready controle" id="sb-ready-nav">${ic("note")} Bijna klaar — controleer nog ${rs.te_controleren} punt(en)${rs.kritiek ? `, waarvan ${rs.kritiek} aandachtspunt` : ""}. <span class="sb-ready-hint">Klik naar het eerste punt</span></button>`;
   return `<div class="sb-ready klaar">${ic("check")} Klaar om te verlengen — BeBetter heeft voldoende actuele context.</div>`;
 }
 
-// Springt naar het eerste onopgeloste punt: kritiek-niet-erkend > controleren > (geblokkeerd)
-// het doel-/config-item dat de blokkade veroorzaakt.
+// Springt naar het eerste ACTUEEL onopgeloste punt (nooit naar een reeds resolved item).
 function sbReadinessNav() {
-  const items = sbState.herijking || [], geblokkeerd = (sbState.readiness || {}).status === "geblokkeerd";
-  let idx = items.findIndex((it, i) => it.kritiek && it.status === "aandacht" && !sbState.acks[i]);
-  if (idx < 0 && (!sbState.allesKlopt || geblokkeerd)) idx = items.findIndex(it => it.status === "controleren");
-  const el = idx >= 0 ? $("#sb-hi-" + idx) : null;
-  if (el) {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1200);
-    const btn = el.querySelector("[data-corr],[data-ack]"); if (btn) setTimeout(() => btn.focus(), 300);
-  } else {
-    ($("#sb-nieuweperiode") || $("#vl-gen"))?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const rs = sbReadinessState();
+  if (rs.unresolved.length) {
+    const el = $("#sb-hi-" + rs.unresolved[0]);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1200);
+      const btn = el.querySelector("[data-corr],[data-ack],[data-confirm]"); if (btn) setTimeout(() => btn.focus(), 300);
+      return;
+    }
   }
+  const t = rs.overlap ? $("#vl-start") : ($("#sb-nieuweperiode") || $("#vl-gen"));
+  t?.scrollIntoView({ behavior: "smooth", block: "center" }); t?.focus?.();
 }
 
 function sbHerijkItemHtml(it, idx) {
-  const acked = it.kritiek && sbState.acks[idx];
+  const resolved = sbItemResolved(it, idx);
   const val = it.actueel || it.oud || "";
   let body = `<span class="sb-hi-label">${esc(it.label)}</span>`;
   if (it.status === "veranderd") body += `<span class="sb-hi-delta">${esc(it.oud || "onbekend")} → <b>${esc(it.actueel)}</b></span>`;
   else if (val) body += `<span class="sb-hi-val">${esc(val)}</span>`;
   if (it.bron) body += `<span class="sb-hi-bron">${esc(it.bron)}${it.zekerheid ? " · zekerheid " + esc(it.zekerheid) : ""}</span>`;
-  let act = "";
   const bewerkbaar = ["trainingsdagen", "doel", "frequentie"];
-  if (it.kritiek) act = `<button class="btn ${acked ? "ghost" : "primary"} sm" data-ack="${idx}">${acked ? ic("check") + " meegenomen" : "Meegenomen"}</button>`;
-  else if (it.status === "controleren" && bewerkbaar.includes(it.sleutel))
-    act = `<button class="btn ghost sm" data-corr="${idx}" data-sleutel="${esc(it.sleutel)}">Aanpassen</button>`;
-  return `<div class="sb-hi ${it.status}${acked ? " acked" : ""}" id="sb-hi-${idx}">${body}<div class="sb-hi-act">${act}</div>
+  let act = "";
+  if (it.kritiek) {
+    act = `<button class="btn ${resolved ? "ghost" : "primary"} sm" data-ack="${idx}">${resolved ? ic("check") + " meegenomen" : "Meegenomen"}</button>`;
+  } else if (it.status === "controleren") {
+    // 'doel' is waarde-vereist (geen los Klopt); overige controleren: Klopt of Aanpassen.
+    if (it.sleutel !== "doel")
+      act += `<button class="btn ${resolved ? "ghost" : "primary"} sm" data-confirm="${idx}">${resolved ? ic("check") + " bevestigd" : "Klopt"}</button>`;
+    if (bewerkbaar.includes(it.sleutel))
+      act += `<button class="btn ghost sm" data-corr="${idx}" data-sleutel="${esc(it.sleutel)}">Aanpassen</button>`;
+  }
+  const cls = it.status + ((it.kritiek || it.status === "controleren") && resolved ? " resolved" : "");
+  return `<div class="sb-hi ${cls}" id="sb-hi-${idx}">${body}<div class="sb-hi-act">${act}</div>
     <div class="sb-hi-edit" id="sb-hi-edit-${idx}" hidden></div></div>`;
 }
 
@@ -2417,7 +2458,6 @@ function sbRenderHerijking() {
     <div class="sb-hg"><p class="sb-hg-h">Mini-update <span class="muted klein">— alleen wat we nog niet weten (optioneel)</span></p>
       ${sbState.vragen.map((q, i) => `<div class="sb-vraag"><label class="lbl">${esc(q.vraag)}</label>
         <input type="text" id="sb-vraag-${i}" data-sleutel="${esc(q.sleutel)}" placeholder="optioneel"></div>`).join("")}</div>` : "";
-  const heeftControle = items.some(it => it.status === "controleren");
   $("#sb-werk").innerHTML = `
     <button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
     ${sbModeBar("verlengen")}
@@ -2425,19 +2465,14 @@ function sbRenderHerijking() {
       <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Verlengen · herijking</p></div></div></div>
     ${sbVorigBlokHtml(vb)}
     <p class="sb-herijk-intro">${ic("brain")} BeBetter heeft dit herijkt — controleer alleen wat veranderd of onzeker is.</p>
-    <div class="sb-nieuweperiode">
+    <div class="sb-nieuweperiode" id="sb-nieuweperiode">
       <div><label class="lbl">Nieuwe start</label><input type="date" id="vl-start" value="${esc(c.startdatum)}"></div>
       <div><label class="lbl">Weken</label><input type="number" id="vl-weken" min="1" max="52" value="${esc(c.weken)}"></div>
       <p class="hint" id="vl-startwarn"></p>
     </div>
     ${groepen}
     ${vragen}
-    <div class="sb-herijk-foot">
-      ${sbReadinessHtml(sbState.readiness)}
-      ${heeftControle && !sbState.allesKlopt ? `<button class="btn ghost block" id="vl-allesklopt">${ic("check")} Alles klopt</button>` : ""}
-      <button class="btn primary block" id="vl-gen">${ic("brain")} Maak vervolgplan</button>
-      <p class="hint" id="vl-status"></p>
-    </div>`;
+    <div class="sb-herijk-foot" id="sb-herijk-foot">${sbFootHtml()}</div>`;
   $("#sb-terug").addEventListener("click", sbBackToList);
   sbWireModeBar();
   $("#scroller").scrollTo({ top: 0 });
@@ -2446,10 +2481,34 @@ function sbRenderHerijking() {
   $("#sb-werk").querySelectorAll("[data-ack]").forEach(b => b.addEventListener("click", () => {
     const i = +b.dataset.ack; sbState.acks[i] = !sbState.acks[i]; sbDraftSave(); sbRenderHerijking();
   }));
+  $("#sb-werk").querySelectorAll("[data-confirm]").forEach(b => b.addEventListener("click", () => {
+    const i = +b.dataset.confirm; sbState.resolved[i] = !sbState.resolved[i]; sbDraftSave(); sbRenderHerijking();
+  }));
   $("#sb-werk").querySelectorAll("[data-corr]").forEach(b => b.addEventListener("click", () => sbHerijkCorrect(+b.dataset.corr, b.dataset.sleutel)));
+  sbWireFoot();
+  sbVlGate();
+}
+
+// De foot (banner + Alles klopt + Maak vervolgplan) wordt uit de ACTUELE readiness
+// gebouwd, zodat banner/aantal/gate altijd dezelfde waarheid tonen.
+function sbFootHtml() {
+  const rs = sbReadinessState();
+  const openControle = (sbState.herijking || []).some((it, i) =>
+    !it.kritiek && it.status === "controleren" && it.sleutel !== "doel" && !sbItemResolved(it, i));
+  return `${sbReadinessHtml(rs)}
+    ${openControle && !sbState.allesKlopt ? `<button class="btn ghost block" id="vl-allesklopt">${ic("check")} Alles klopt</button>` : ""}
+    <button class="btn primary block" id="vl-gen">${ic("brain")} Maak vervolgplan</button>
+    <p class="hint" id="vl-status"></p>`;
+}
+function sbWireFoot() {
   const ak = $("#vl-allesklopt"); if (ak) ak.addEventListener("click", () => { sbState.allesKlopt = true; sbDraftSave(); sbRenderHerijking(); });
   $("#sb-ready-nav")?.addEventListener("click", sbReadinessNav);
-  $("#vl-gen").addEventListener("click", sbVerlengGen);
+  $("#vl-gen")?.addEventListener("click", sbVerlengGen);
+}
+// Live update van banner/aantal/gate zonder de item-editors te herrenderen (behoudt
+// invoerfocus). Voor tekstinvoer; toggles/erkenning doen een volledige re-render.
+function sbRefreshFoot() {
+  const foot = $("#sb-herijk-foot"); if (foot) { foot.innerHTML = sbFootHtml(); sbWireFoot(); }
   sbVlGate();
 }
 
@@ -2460,38 +2519,38 @@ function sbVlPeriode() {
   const warn = $("#vl-startwarn"), laatste = c._verleng_laatste || "";
   if (warn) warn.textContent = (laatste && c.startdatum && c.startdatum <= laatste)
     ? `⚠️ Start ligt op/vóór de laatste geplande training (${laatste}) — verzet de start ná het bestaande blok.` : "";
-  sbDebouncedSave(); sbVlGate();
+  sbDebouncedSave(); sbRefreshFoot();
 }
 
-// Kritieke aandachtspunten moeten expliciet erkend; 'controleren' mag via Alles klopt.
+// Plan-gate = dezelfde afgeleide readiness. 'Maak vervolgplan' kan alléén bij KLAAR
+// (geen unresolved, geen ontbrekende kernconfig, geen overlap).
 function sbVlGate() {
-  const items = sbState.herijking || [], c = sbState.config;
-  const kritiekOpen = items.some((it, i) => it.kritiek && !sbState.acks[i]);
-  const heeftControle = items.some(it => it.status === "controleren");
-  const geblokkeerd = (sbState.readiness || {}).status === "geblokkeerd";
-  const laatste = c._verleng_laatste || "";
-  const overlap = !!(laatste && c.startdatum && c.startdatum <= laatste);
-  const ok = !geblokkeerd && !kritiekOpen && !overlap && (!heeftControle || sbState.allesKlopt);
-  const btn = $("#vl-gen"); if (btn) btn.disabled = !ok;
+  const rs = sbReadinessState();
+  const btn = $("#vl-gen"); if (btn) btn.disabled = rs.status !== "klaar";
   const st = $("#vl-status");
-  if (st) st.textContent = geblokkeerd ? "" :
-    overlap ? "Verzet eerst de startdatum ná het bestaande blok." :
-    kritiekOpen ? "Erken eerst de aandachtspunten." :
-    (heeftControle && !sbState.allesKlopt) ? "Bevestig de te controleren punten (‘Alles klopt’) of pas ze aan." : "";
+  if (st) st.textContent =
+    rs.status === "klaar" ? "" :
+    rs.overlap ? "Verzet eerst de startdatum ná het bestaande blok." :
+    (rs.status === "geblokkeerd") ? (rs.reden || "") :
+    rs.kritiek ? "Erken eerst de aandachtspunt(en)." :
+    "Bevestig of pas de te controleren punten aan (of ‘Alles klopt’).";
 }
 
 function sbHerijkCorrect(idx, sleutel) {
   const box = $("#sb-hi-edit-" + idx); if (!box) return;
   if (!box.hidden) { box.hidden = true; box.innerHTML = ""; return; }
   const c = sbState.config;
+  // Bij een correctie geldt het item als opgelost (bevestigd óf gewijzigd). Voor 'doel'
+  // is resolution waarde-gebaseerd (leeg → weer open), dus daar geen vlag; wel live refresh.
+  const markResolved = () => { if (sleutel !== "doel") sbState.resolved[idx] = true; sbRefreshFoot(); };
   if (sleutel === "doel") {
-    box.innerHTML = `<textarea id="corr-doel" rows="2">${esc(c.doel || "")}</textarea>`;
+    box.innerHTML = `<textarea id="corr-doel" rows="2" placeholder="nieuw hoofddoel voor dit blok">${esc(c.doel || "")}</textarea>`;
     box.hidden = false;
-    $("#corr-doel").addEventListener("input", e => { c.doel = e.target.value; sbDebouncedSave(); });
+    $("#corr-doel").addEventListener("input", e => { c.doel = e.target.value; sbDebouncedSave(); sbRefreshFoot(); });
   } else if (sleutel === "trainingsdagen") {
     box.innerHTML = sbDagenEditorHtml("corr-dagen", c.trainingsdagen || "");
     box.hidden = false;
-    sbWireDagenEditor(box, "corr-dagen", v => { c.trainingsdagen = v; });
+    sbWireDagenEditor(box, "corr-dagen", v => { c.trainingsdagen = v; markResolved(); });
   } else if (sleutel === "frequentie") {
     // Beschikbare dagen ≠ sessies/week ≠ sleuteldagen ≠ dubbele dagen — expliciet apart.
     box.innerHTML = `
@@ -2502,9 +2561,9 @@ function sbHerijkCorrect(idx, sleutel) {
       <label class="lbl">Dubbele-sessiedagen (optioneel)</label>
       ${sbDagenEditorHtml("corr-dubbel", c.dubbele_dagen || "")}`;
     box.hidden = false;
-    $("#corr-spw").addEventListener("input", e => { c.sessies_per_week = e.target.value.trim(); sbDebouncedSave(); });
-    sbWireDagenEditor(box, "corr-sleutel", v => { c.sleuteldagen = v; });
-    sbWireDagenEditor(box, "corr-dubbel", v => { c.dubbele_dagen = v; });
+    $("#corr-spw").addEventListener("input", e => { c.sessies_per_week = e.target.value.trim(); sbDebouncedSave(); markResolved(); });
+    sbWireDagenEditor(box, "corr-sleutel", v => { c.sleuteldagen = v; markResolved(); });
+    sbWireDagenEditor(box, "corr-dubbel", v => { c.dubbele_dagen = v; markResolved(); });
   }
 }
 
