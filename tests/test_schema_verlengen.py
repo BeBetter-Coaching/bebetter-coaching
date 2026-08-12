@@ -154,12 +154,22 @@ class TestHerijking:
         v = next(i for i in items if i["sleutel"] == "volume")
         assert v["status"] == "veranderd"
 
-    def test_hogere_uitvoeringsfrequentie_wijzigt_trainingsdagen_niet(self, monkeypatch):
-        cfg = {"trainingsdagen": "di/do/za"}             # gewenst 3
-        items, _ = self._run(monkeypatch, cfg, self._ctx(training={"runs_per_week": 5}))
+    def test_grote_discrepantie_herlabelt_sleuteldagen_en_stelt_sessies_voor(self, monkeypatch):
+        # 8×/week uitgevoerd maar 3 (sleutel)dagen geconfigureerd → trainingsdagen droegen
+        # KWALITEITSDAGEN, niet alle sessies. Voorstel sessies/week; dagen niet stil gelijk zetten.
+        cfg = {"trainingsdagen": "di/do/za"}             # 3 sleuteldagen
+        items, _ = self._run(monkeypatch, cfg, self._ctx(training={"runs_per_week": 8}))
         f = next(i for i in items if i["sleutel"] == "frequentie")
-        assert f["status"] == "controleren"             # coach-check, geen auto-wijziging
-        assert cfg["trainingsdagen"] == "di/do/za"       # ongewijzigd
+        assert f["status"] == "controleren"             # coach-check, geen stille lock
+        assert cfg["sleuteldagen"] == "di/do/za"         # kwaliteitsdagen bewaard
+        assert cfg["sessies_per_week"] == "8"            # voorstel = feitelijke uitvoering
+        assert cfg["trainingsdagen"] == ""               # beschikbare dagen = coach-check (niet gokken)
+
+    def test_milde_afwijking_wist_trainingsdagen_niet(self, monkeypatch):
+        cfg = {"trainingsdagen": "di/do/za"}             # 3
+        items, _ = self._run(monkeypatch, cfg, self._ctx(training={"runs_per_week": 4}))
+        assert cfg["trainingsdagen"] == "di/do/za"       # diff 1 → alleen een note, geen herlabel
+        assert not cfg.get("sessies_per_week")
 
     def test_onderbreking_is_kritiek_aandachtspunt(self, monkeypatch):
         cfg = {"trainingsdagen": "di/do"}
@@ -263,3 +273,85 @@ class TestVerlengPrefill:
         assert res["config"]["_verleng_laatste"] == "2026-08-16"
         assert res["readiness"]["status"] in ("klaar", "controle")
         assert "vorig_blok" in res and "herijking" in res
+
+
+# ── PUNT 2 — TRAINING ≠ DOELRACE ─────────────────────────────────────────────
+class TestDoelrace:
+    def _mock(self, monkeypatch, planned, intake):
+        monkeypatch.setattr(schema_core, "_planned_window", lambda k: planned)
+        monkeypatch.setattr(schema_core, "_nieuwste_intake", lambda k: intake)
+
+    def _rijen(self, datums):
+        return [{"key": f"k{i}", "date": d, "name": "training"} for i, d in enumerate(datums)]
+
+    def test_workout_op_wedstrijddatum_is_doelrace_geen_training(self, monkeypatch):
+        # laatste 'workout' valt op de bekende wedstrijddatum → doelrace, niet laatste training
+        datums = ["2026-08-01", "2026-08-05", "2026-08-08", "2026-08-22"]
+        self._mock(monkeypatch, self._rijen(datums),
+                   {"wedstrijddatum": "2026-08-22", "race_prioriteit": "10km A-race", "doel": "sub-40"})
+        vb = schema_core.vorig_blok("A")
+        assert vb["doelrace"] and vb["doelrace"]["datum"] == "2026-08-22"
+        assert vb["blok_einde"] == "2026-08-08"          # laatste échte training vóór de race
+        # vervolgstart valt ná de doelrace, niet ná de laatste training
+        assert schema_core._verleng_start(vb) == "2026-08-23"
+
+    def test_geen_wedstrijddatum_geen_doelrace(self, monkeypatch):
+        datums = ["2026-08-01", "2026-08-05", "2026-08-08"]
+        self._mock(monkeypatch, self._rijen(datums), {"doel": "opbouw"})
+        vb = schema_core.vorig_blok("A")
+        assert vb["doelrace"] is None
+        assert vb["blok_einde"] == "2026-08-08"
+
+    def test_doelrace_rolt_oud_hoofddoel_niet_door(self, monkeypatch):
+        cfg = {"doel": "sub-40 10km", "trainingsdagen": "di/do"}
+        monkeypatch.setattr(AC, "build_athlete_context",
+                            lambda key, naam="", today=None: {"naam": "T", "training": {}, "health": {}, "feedback": {}})
+        monkeypatch.setattr(schema_core, "_nieuwste_intake", lambda k: {})
+        vb = {"doelrace": {"datum": "2026-08-22", "naam": "10km A-race"}}
+        items, _ = schema_core._herijking("A", cfg, vb)
+        assert cfg["doel"] == ""                          # geen roll-over → coach kiest nieuw hoofddoel
+        d = next(i for i in items if i["sleutel"] == "doel")
+        assert "hoofddoel" in d["label"].lower()
+
+    def test_leeg_doel_na_doelrace_blokkeert_readiness(self):
+        cfg = {"athlete_key": "A", "doel": "", "zones": "z"}
+        assert schema_core._verleng_readiness(cfg, {}, [])["status"] == "geblokkeerd"
+
+
+# ── PUNT 3 — SESSIES/WEEK-DIRECTIVE + PLAN-COMPLETENESS ──────────────────────
+class TestSessiesEnCompleteness:
+    def test_sessies_per_week_geeft_harde_eis(self, monkeypatch):
+        monkeypatch.setattr(schema_core, "_nieuwste_intake", lambda k: {})
+        intake = schema_core._intake_from_config("A", {
+            "mode": "verlengen", "trainingsdagen": "", "sessies_per_week": "8",
+            "sleuteldagen": "di/do/zo", "dubbele_dagen": "di/do"})
+        harde, _ = SB._harde_eisen_secties(intake)
+        assert "SESSIES PER WEEK" in harde and "8" in harde
+        assert "di/do" in harde                            # dubbele dagen genoemd
+
+    def test_geen_sessies_per_week_geen_sessie_eis(self, monkeypatch):
+        # Nieuw/bestaande flow: zonder sessies_per_week GEEN sessie-hardregel (byte-gedrag ongewijzigd)
+        monkeypatch.setattr(schema_core, "_nieuwste_intake", lambda k: {})
+        intake = schema_core._intake_from_config("A", {"trainingsdagen": "di/do"})
+        harde, _ = SB._harde_eisen_secties(intake)
+        assert "SESSIES PER WEEK" not in harde
+
+    def _weken(self, counts):
+        return [{"week_index": i + 1, "rows": [{"id": f"r{i}{j}"} for j in range(c)]}
+                for i, c in enumerate(counts)]
+
+    def test_completeness_blokkeert_te_weinig_sessies(self):
+        ok, melding = schema_core.plan_completeness(self._weken([3, 3, 3, 2]), "7")
+        assert ok is False and "week 1" in melding and "3 van de gewenste 7" in melding
+
+    def test_completeness_laatste_week_mag_taperen(self):
+        ok, _ = schema_core.plan_completeness(self._weken([7, 7, 7, 3]), "7")
+        assert ok is True                                 # alleen de laatste week is korter
+
+    def test_completeness_uit_zonder_sessies_per_week(self):
+        ok, _ = schema_core.plan_completeness(self._weken([1, 1, 1]), "")
+        assert ok is True                                 # geen eis → nooit blokkeren
+
+    def test_completeness_bereik_gebruikt_ondergrens(self):
+        ok, _ = schema_core.plan_completeness(self._weken([7, 7, 7, 3]), "7-9")
+        assert ok is True                                 # "7-9" → ondergrens 7

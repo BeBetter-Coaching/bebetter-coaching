@@ -807,6 +807,25 @@ def _harde_eisen_secties(intake: dict) -> tuple[str, str]:
             f"op een dag (bijv. '2x per dag' of 'ochtend + avond'), plan die dan ook. "
             f"In een deload-/herstelweek verlaag je de OMVANG, niet het aantal dagen."
         )
+    # Sessies/week is een APARTE eis van trainingsdagen: een atleet kan 7 beschikbare
+    # dagen hebben maar 9 sessies/week willen (dubbele dagen), met kwaliteit op enkele
+    # sleuteldagen. Alleen actief als de coach dit expliciet meegeeft (leeg => Nieuw/
+    # bestaande flow ongewijzigd). Voorkomt dat het plan tot alleen sleuteldagen degradeert.
+    _spw = str(intake.get("sessies_per_week") or "").strip()
+    if _spw:
+        _sleutel = str(intake.get("sleuteldagen") or "").strip()
+        _dubbel = str(intake.get("dubbele_dagen") or "").strip()
+        _s = (f"SESSIES PER WEEK: werk ELKE week {_spw} volledig uitgewerkte sessies uit "
+              f"(naam + zone + opbouw), niet alleen de kwaliteitstrainingen. Ondersteunende/"
+              f"rustige sessies (Z1–Z2) MOETEN óók expliciet in het plan staan. Laat NOOIT "
+              f"sessies over voor een latere stap (de CSV vult NIETS aan). ")
+        if _dubbel:
+            _s += f"Dubbele sessies (2 per dag) zijn toegestaan op: {_dubbel}. "
+        if _sleutel:
+            _s += f"Sleutel-/kwaliteitsdagen: {_sleutel} (de rest is ondersteunend). "
+        _s += ("Alleen een bewuste taper-/herstel-/raceweek mag minder sessies bevatten, en "
+               "dat motiveer je dan expliciet in het plan.")
+        harde_regels.append(_s)
     harde_regels.append(
         "VARIATIE: elke week een mix van trainingsvormen (rustig/drempel/interval/"
         "snelheid/fartlek) passend bij de fase. NOOIT meerdere eentonige duurlopen in "
@@ -1271,6 +1290,10 @@ DATUMREGEL: Weken lopen altijd van MAANDAG t/m ZONDAG. Startdatum schema: {start
 Vandaag is het {vandaag}.
 {week_datums_sectie}
 HARDE REGELS VOOR DE CSV (niet onderhandelbaar):
+- Voeg NOOIT trainingen, dagen of sessies toe die niet in het goedgekeurde schema
+  hierboven staan. De CSV is een EXACTE vertaling van het plan: verzin geen extra
+  Z1/Z2-sessies om dagen "vol" te maken en repareer geen frequentie. Staat een sessie
+  niet in het plan, dan komt hij ook niet in de CSV.
 - GEEN rustdagen als CSV-regel. Zet ALLEEN de daadwerkelijke trainingen als rijen.
   Rustdagen laat je gewoon weg (geen ActivityType "Rest", geen lege dagen).
 - ELKE WorkoutDescription is VOLLEDIG en meerregelig volgens het format hieronder

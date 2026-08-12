@@ -295,6 +295,11 @@ def afspraken(config: dict) -> list:
         out.append(f"Trainingsdagen ({len(dagen)}/week): {namen}")
     else:
         out.append("Trainingsdagen: nog niet gekozen — de AI kiest ze dan zelf")
+    if str(cfg.get("sessies_per_week") or "").strip():
+        _sd = (cfg.get("sleuteldagen") or "").strip()
+        out.append(f"Sessies/week: {cfg['sessies_per_week']}"
+                   + (f" · sleuteldagen {_sd}" if _sd else "")
+                   + (f" · dubbele dagen {cfg['dubbele_dagen']}" if (cfg.get('dubbele_dagen') or '').strip() else ""))
     zt = "hartslag" if cfg.get("zone_type") in ("hartslag", "heart_rate") else "tempo"
     out.append(f"Zones ({zt}): {cfg.get('zones') or '—'}")
     if cfg.get("huidig_volume"):
@@ -368,7 +373,8 @@ def _intake_from_config(key: str, config: dict) -> dict:
     for f in ("naam", "athlete_name", "doel", "startdatum", "trainingsdagen",
               "huidig_volume", "tijd_per_training", "zone_type", "zones",
               "race_prioriteit", "tussenraces", "coach_notitie", "wedstrijddatum",
-              "referentie_prestatie", "blessurehistorie", "andere_sporten", "op_tijd"):
+              "referentie_prestatie", "blessurehistorie", "andere_sporten", "op_tijd",
+              "sessies_per_week", "sleuteldagen", "dubbele_dagen"):
         if f in cfg and cfg.get(f) not in (None, ""):
             intake[f] = cfg[f]
     intake["athlete_key"] = key
@@ -425,11 +431,24 @@ def _planned_window(key: str) -> list:
         return []
 
 
+def _norm_datum(s) -> str:
+    """Losse datum-string → YYYY-MM-DD, of '' als onparseerbaar."""
+    s = str(s or "")[:10]
+    try:
+        return date.fromisoformat(s).isoformat()
+    except Exception:
+        return ""
+
+
 def vorig_blok(key: str) -> dict:
     """Identificeer het lopende/laatste blok betrouwbaar. Bronvolgorde:
     (1) daadwerkelijke geplande FS-workouts (heden ± venster) → hardste bron;
     (2) opgeslagen schema-intake (laatste_intakes) als er geen FS-planning is.
-    Geeft periode, laatste geplande datum, frequentie en of het blok nog loopt."""
+
+    TRAINING ≠ DOELRACE: een geplande workout op de bekende wedstrijddatum is de
+    doelrace/target-event, GEEN gewone laatste training. Het blok-einde (waarná we
+    verlengen) ligt dan op de laatste échte training vóór de race; de vervolgstart
+    valt logisch ná de doelrace."""
     planned = _planned_window(key)
     intake = _nieuwste_intake(key)
     today = date.today()
@@ -440,21 +459,37 @@ def vorig_blok(key: str) -> dict:
     if n >= 2 and eerste and laatste:
         weken = max(1, ((date.fromisoformat(laatste) - date.fromisoformat(eerste)).days // 7) + 1)
         freq = round(n / weken, 1)
-    # Betrouwbaar = genoeg echte geplande trainingen, óf een opgeslagen schema-intake.
-    # Zonder FS-planning is er GEEN overlaprisico (niets om mee te botsen).
     betrouwbaar = (n >= _MIN_BLOK_WORKOUTS) or bool(intake.get("startdatum") or intake.get("doel"))
+
+    # Doelrace-detectie via de bekende wedstrijddatum (deterministisch, bestaande bron).
+    race_datum = _norm_datum(intake.get("wedstrijddatum"))
+    race_naam = intake.get("race_prioriteit") or intake.get("doel") or "doelrace"
+    doelrace = None
+    blok_einde = laatste
+    if race_datum:
+        datums = [d["date"] for d in planned]
+        # De laatste échte training = laatste geplande workout strikt vóór de racedatum.
+        trainingen_voor_race = [d for d in datums if d < race_datum]
+        if race_datum in datums or (laatste and laatste <= race_datum):
+            doelrace = {"datum": race_datum, "naam": race_naam,
+                        "toekomstig": race_datum >= today.isoformat()}
+            blok_einde = trainingen_voor_race[-1] if trainingen_voor_race else (laatste or race_datum)
+
     loopt_nog, afgelopen_dagen = False, None
-    if laatste:
-        ld = date.fromisoformat(laatste)
-        if ld >= today:
+    ref = blok_einde or laatste
+    if ref:
+        rd = date.fromisoformat(ref)
+        if rd >= today:
             loopt_nog = True
         else:
-            afgelopen_dagen = (today - ld).days
+            afgelopen_dagen = (today - rd).days
     return {
         "betrouwbaar": bool(betrouwbaar),
         "bron": "finalsurge" if n else ("intake" if betrouwbaar else "onbekend"),
-        "periode": {"van": eerste, "tot": laatste},
+        "periode": {"van": eerste, "tot": blok_einde or laatste},
         "laatste_datum": laatste,
+        "blok_einde": blok_einde or laatste,
+        "doelrace": doelrace,
         "aantal_gepland": n,
         "frequentie": freq,
         "trainingsdagen_intake": intake.get("trainingsdagen", ""),
@@ -465,13 +500,14 @@ def vorig_blok(key: str) -> dict:
 
 
 def _verleng_start(vb: dict) -> str:
-    """Nieuwe start = dag ná de laatste geplande training (bewezen Streamlit-regel).
-    Nooit vóór het einde van het vorige blok. Geen FS-planning → default (eerstvolgende
-    maandag), coach bevestigt dan zelf."""
-    laatste = vb.get("laatste_datum") or ""
-    if laatste:
+    """Nieuwe start = dag ná het blok-einde. Bij een doelrace is dat ná de race
+    (vervolgblok is voor daarná), anders ná de laatste geplande training. Nooit vóór
+    het einde. Geen FS-planning → default (eerstvolgende maandag)."""
+    dr = vb.get("doelrace") or {}
+    anker = dr.get("datum") or vb.get("blok_einde") or vb.get("laatste_datum") or ""
+    if anker:
         try:
-            return (date.fromisoformat(laatste) + timedelta(days=1)).isoformat()
+            return (date.fromisoformat(anker) + timedelta(days=1)).isoformat()
         except Exception:
             pass
     return _default_start()
@@ -521,27 +557,56 @@ def _herijking(key: str, config: dict, vb: dict) -> tuple:
         add("volume", "Volume", status, "hoog", oud_vol or "onbekend",
             f"{km} km/week", "trainingslog")
 
-    # 3. FREQUENTIE — actueel = observatie (feit); GEWENST = coachbesluit (niet stil wijzigen)
-    gewenst = _dagen_aantal(config.get("trainingsdagen", ""))
+    # 3. FREQUENTIE ≠ TRAININGSDAGEN. Beschikbare dagen, sessies/week, dubbele dagen en
+    #    sleuteldagen zijn APARTE begrippen. Feitelijke uitvoering = observatie; de
+    #    gewenste sessies/week voor het volgende blok = coachbesluit (voorstel, geen stille
+    #    reductie tot alleen de sleuteldagen).
+    gewenst_dagen = _dagen_aantal(config.get("trainingsdagen", ""))
     runs = tr.get("runs_per_week")
-    if runs and gewenst and abs(round(runs) - gewenst) >= 1:
-        add("frequentie", "Gewenste frequentie", "controleren", "middel",
-            f"vorig schema {gewenst}×/week", f"recent ~{round(runs)}×/week uitgevoerd",
+    runs_r = round(runs) if runs else 0
+    if runs_r and gewenst_dagen and runs_r - gewenst_dagen >= 2:
+        # Duidelijke discrepantie: er staan veel minder (sleutel)dagen geconfigureerd dan de atleet
+        # feitelijk traint → trainingsdagen droeg de KWALITEITSDAGEN, niet alle sessies.
+        # Herlabel naar sleuteldagen, stel sessies/week voor (= feitelijke uitvoering) en
+        # laat de beschikbare dagen als coach-check open (AI verdeelt tot de coach ze zet).
+        if not (config.get("sleuteldagen") or "").strip():
+            config["sleuteldagen"] = config.get("trainingsdagen", "")
+        if not str(config.get("sessies_per_week") or "").strip():
+            config["sessies_per_week"] = str(runs_r)
+        config["trainingsdagen"] = ""      # beschikbare dagen onbekend → niet gokken
+        add("frequentie", "Gewenste sessies per week", "controleren", "middel",
+            f"vorig schema {gewenst_dagen} sleuteldag(en)",
+            f"recent ~{runs_r}×/week uitgevoerd → voorstel {config['sessies_per_week']} sessies/week "
+            f"(kwaliteit op {config.get('sleuteldagen') or '—'})",
             "trainingslog", kritiek=False)
-    elif gewenst:
+    elif runs_r and gewenst_dagen and abs(runs_r - gewenst_dagen) >= 1:
+        add("frequentie", "Gewenste frequentie", "controleren", "middel",
+            f"vorig schema {gewenst_dagen}×/week", f"recent ~{runs_r}×/week uitgevoerd",
+            "trainingslog", kritiek=False)
+    elif gewenst_dagen:
         add("frequentie", "Frequentie", "geldig", "middel",
-            actueel=f"{gewenst}×/week", bron="vorig schema")
+            actueel=f"{gewenst_dagen}×/week", bron="vorig schema")
 
-    # 4. TRAININGSDAGEN — welke dagen blijft een coach-check (haalbaarheid), niet stil wijzigen
+    # 4. BESCHIKBARE TRAININGSDAGEN — coach-check (haalbaarheid), niet stil wijzigen
     if config.get("trainingsdagen"):
         add("trainingsdagen", "Trainingsdagen nog haalbaar?", "controleren", "middel",
             actueel=config.get("trainingsdagen"), bron="vorig schema")
     else:
-        add("trainingsdagen", "Trainingsdagen onbekend", "controleren", "laag",
-            bron="—")
+        _sd = (config.get("sleuteldagen") or "").strip()
+        add("trainingsdagen", "Beschikbare trainingsdagen", "controleren", "laag",
+            actueel=(f"onbekend — sleuteldagen {_sd}; vul de dagen aan of laat BeBetter verdelen"
+                     if _sd else "nog kiezen"), bron="—")
 
-    # 5. DOEL
-    if config.get("doel"):
+    # 5. DOEL — een afsluitende doelrace mag NIET automatisch weer hoofddoel worden
+    if vb.get("doelrace"):
+        config["doel"] = ""                 # forceer een bewust nieuw hoofddoel (geen roll-over)
+        _dr = vb["doelrace"]
+        add("doel", "Nieuw hoofddoel nodig", "controleren", "laag",
+            oud=f"vorige doelrace: {_dr.get('naam','')} ({_dr.get('datum','')})",
+            actueel="de vorige doelrace is het afsluitende doel van het vorige blok — "
+                    "kies een nieuw hoofddoel voor het vervolg",
+            bron="doelrace", kritiek=False)
+    elif config.get("doel"):
         add("doel", "Doel blijft hoofddoel?", "controleren", "middel",
             actueel=config.get("doel"), bron="vorig schema")
 
@@ -620,7 +685,11 @@ def verleng_prefill(key: str) -> dict:
     config["mode"] = "verlengen"
     vb = vorig_blok(key)
     config["startdatum"] = _verleng_start(vb)
-    config["_verleng_laatste"] = vb.get("laatste_datum", "")
+    # Overlap-anker = de laatste dag die het vervolgblok NIET mag raken: het blok-einde,
+    # of de doelrace als die later valt (vervolgblok begint erná).
+    _anker = max([d for d in (vb.get("blok_einde"), vb.get("laatste_datum"),
+                              (vb.get("doelrace") or {}).get("datum")) if d] or [""])
+    config["_verleng_laatste"] = _anker
     weken_int, einddatum = _bereken_periode(config["startdatum"], config.get("weken") or "8", "")
     config["weken"] = str(weken_int)
     config["schema_einddatum"] = einddatum
@@ -704,6 +773,34 @@ def chat_plan(key: str, config: dict, plan: str, history: list) -> dict:
     return _split_plan_update(reply)
 
 
+def _min_sessies(sessies_per_week) -> int:
+    """'7' of '7-9' → ondergrens 7. Onbruikbaar → 0 (geen completeness-eis)."""
+    try:
+        return int(str(sessies_per_week or "").split("-")[0].strip())
+    except Exception:
+        return 0
+
+
+def plan_completeness(weken: list, sessies_per_week) -> tuple:
+    """Deterministische completeness-check op de GEGENEREERDE rows (betrouwbaar — geen
+    fragiele plantekst-parse). Elke niet-laatste week moet >= gewenste sessies bevatten;
+    de laatste week mag korter (taper/raceweek). Alleen actief als sessies_per_week is
+    gezet. Geeft (ok, melding)."""
+    spw = _min_sessies(sessies_per_week)
+    if spw <= 0 or not weken:
+        return True, ""
+    for i, w in enumerate(weken):
+        if i == len(weken) - 1:                 # laatste week mag taperen
+            continue
+        n = len(w.get("rows", []))
+        if n < spw:
+            return False, (f"Conceptplan is nog niet compleet: week {w.get('week_index', i + 1)} "
+                           f"bevat {n} van de gewenste {spw} sessies. Laat BeBetter eerst álle "
+                           f"sessies uitwerken (vraag in de chat om het plan compleet te maken) "
+                           f"vóór je het schema bouwt — de CSV vult niets zelf aan.")
+    return True, ""
+
+
 def genereer_csv_config(key: str, config: dict, plan_tekst: str):
     """Bouw het schema (CSV→rows→weken) uit de ACTUELE planversie + de coach-config."""
     if not (plan_tekst or "").strip():
@@ -714,6 +811,9 @@ def genereer_csv_config(key: str, config: dict, plan_tekst: str):
     csv_clean = SB.extract_csv_block(csv_tekst)
     rijen = SB.parse_csv_text(csv_tekst)
     weken = groepeer_weken(rijen, intake.get("startdatum", ""))
+    ok, melding = plan_completeness(weken, (config or {}).get("sessies_per_week"))
+    if not ok:
+        raise ValueError(melding)               # blokkeer: plan eerst compleet maken
     return csv_clean, rijen, weken
 
 

@@ -2349,25 +2349,44 @@ const SB_HERIJK_GROEP = [
 ];
 
 function sbVorigBlokHtml(vb) {
-  const p = vb.periode || {}, rij = [];
-  if (p.van || p.tot) rij.push(`periode ${esc(p.van || "?")} – ${esc(p.tot || "?")}`);
+  const p = vb.periode || {}, rij = [], einde = vb.blok_einde || vb.laatste_datum;
+  if (p.van || einde) rij.push(`trainingsperiode ${esc(p.van || "?")} – ${esc(einde || "?")}`);
   if (vb.frequentie) rij.push(`${esc(vb.frequentie)}×/week gepland`);
-  if (vb.doel) rij.push(`doel: ${esc(vb.doel)}`);
+  if (vb.doel) rij.push(`vorig doel: ${esc(vb.doel)}`);
   let status = "";
-  if (vb.loopt_nog) status = `<span class="sb-vb-tag">loopt nog · laatste geplande training ${esc(vb.laatste_datum)}</span>`;
-  else if (vb.afgelopen_dagen != null) status = `<span class="sb-vb-tag">vorige blok eindigde ${vb.afgelopen_dagen} dag(en) geleden (${esc(vb.laatste_datum)})</span>`;
+  if (vb.loopt_nog) status = `<span class="sb-vb-tag">loopt nog · blok-einde ${esc(einde)}</span>`;
+  else if (vb.afgelopen_dagen != null) status = `<span class="sb-vb-tag">vorig blok eindigde ${vb.afgelopen_dagen} dag(en) geleden (${esc(einde)})</span>`;
   else status = `<span class="sb-vb-tag warn">geen lopend schema gevonden — controleer de startdatum</span>`;
+  // TRAINING ≠ DOELRACE: toon de afsluitende doelrace apart, niet als 'laatste training'.
+  const dr = vb.doelrace;
+  const race = dr ? `<span class="sb-vb-race">🏁 afsluitende doelrace: ${esc(dr.naam || "race")} op ${esc(dr.datum)}${dr.toekomstig ? " (nog te lopen)" : ""} — vervolgblok start hierná</span>` : "";
   return `<div class="sb-vorigblok">
     <p class="sb-vb-h">${ic("check")} Vorige blok <span class="muted klein">— ${esc(vb.bron || "onbekend")}</span></p>
-    <p class="sb-vb-rij">${rij.map(esc => `<span>${esc}</span>`).join("")}</p>
-    ${status}</div>`;
+    <p class="sb-vb-rij">${rij.map(x => `<span>${esc(x)}</span>`).join("")}</p>
+    ${status}${race}</div>`;
 }
 
 function sbReadinessHtml(rd) {
   const s = rd.status;
-  if (s === "geblokkeerd") return `<div class="sb-ready blok">${ic("close")} Kan nog niet verlengen — ${esc(rd.reden || "ontbrekende gegevens")}.</div>`;
-  if (s === "controle") return `<div class="sb-ready controle">${ic("note")} Bijna klaar — controleer nog ${rd.te_controleren} punt(en)${rd.kritiek ? `, waarvan ${rd.kritiek} aandachtspunt` : ""}.</div>`;
+  if (s === "geblokkeerd") return `<button type="button" class="sb-ready blok" id="sb-ready-nav">${ic("close")} Kan nog niet verlengen — ${esc(rd.reden || "ontbrekende gegevens")}. <span class="sb-ready-hint">Klik om het op te lossen</span></button>`;
+  if (s === "controle") return `<button type="button" class="sb-ready controle" id="sb-ready-nav">${ic("note")} Bijna klaar — controleer nog ${rd.te_controleren} punt(en)${rd.kritiek ? `, waarvan ${rd.kritiek} aandachtspunt` : ""}. <span class="sb-ready-hint">Klik naar het eerste punt</span></button>`;
   return `<div class="sb-ready klaar">${ic("check")} Klaar om te verlengen — BeBetter heeft voldoende actuele context.</div>`;
+}
+
+// Springt naar het eerste onopgeloste punt: kritiek-niet-erkend > controleren > (geblokkeerd)
+// het doel-/config-item dat de blokkade veroorzaakt.
+function sbReadinessNav() {
+  const items = sbState.herijking || [], geblokkeerd = (sbState.readiness || {}).status === "geblokkeerd";
+  let idx = items.findIndex((it, i) => it.kritiek && it.status === "aandacht" && !sbState.acks[i]);
+  if (idx < 0 && (!sbState.allesKlopt || geblokkeerd)) idx = items.findIndex(it => it.status === "controleren");
+  const el = idx >= 0 ? $("#sb-hi-" + idx) : null;
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1200);
+    const btn = el.querySelector("[data-corr],[data-ack]"); if (btn) setTimeout(() => btn.focus(), 300);
+  } else {
+    ($("#sb-nieuweperiode") || $("#vl-gen"))?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 }
 
 function sbHerijkItemHtml(it, idx) {
@@ -2378,10 +2397,11 @@ function sbHerijkItemHtml(it, idx) {
   else if (val) body += `<span class="sb-hi-val">${esc(val)}</span>`;
   if (it.bron) body += `<span class="sb-hi-bron">${esc(it.bron)}${it.zekerheid ? " · zekerheid " + esc(it.zekerheid) : ""}</span>`;
   let act = "";
+  const bewerkbaar = ["trainingsdagen", "doel", "frequentie"];
   if (it.kritiek) act = `<button class="btn ${acked ? "ghost" : "primary"} sm" data-ack="${idx}">${acked ? ic("check") + " meegenomen" : "Meegenomen"}</button>`;
-  else if (it.status === "controleren" && (it.sleutel === "trainingsdagen" || it.sleutel === "doel"))
+  else if (it.status === "controleren" && bewerkbaar.includes(it.sleutel))
     act = `<button class="btn ghost sm" data-corr="${idx}" data-sleutel="${esc(it.sleutel)}">Aanpassen</button>`;
-  return `<div class="sb-hi ${it.status}${acked ? " acked" : ""}">${body}<div class="sb-hi-act">${act}</div>
+  return `<div class="sb-hi ${it.status}${acked ? " acked" : ""}" id="sb-hi-${idx}">${body}<div class="sb-hi-act">${act}</div>
     <div class="sb-hi-edit" id="sb-hi-edit-${idx}" hidden></div></div>`;
 }
 
@@ -2428,6 +2448,7 @@ function sbRenderHerijking() {
   }));
   $("#sb-werk").querySelectorAll("[data-corr]").forEach(b => b.addEventListener("click", () => sbHerijkCorrect(+b.dataset.corr, b.dataset.sleutel)));
   const ak = $("#vl-allesklopt"); if (ak) ak.addEventListener("click", () => { sbState.allesKlopt = true; sbDraftSave(); sbRenderHerijking(); });
+  $("#sb-ready-nav")?.addEventListener("click", sbReadinessNav);
   $("#vl-gen").addEventListener("click", sbVerlengGen);
   sbVlGate();
 }
@@ -2468,16 +2489,37 @@ function sbHerijkCorrect(idx, sleutel) {
     box.hidden = false;
     $("#corr-doel").addEventListener("input", e => { c.doel = e.target.value; sbDebouncedSave(); });
   } else if (sleutel === "trainingsdagen") {
-    const sel = sbDagenUitString(c.trainingsdagen || "");
-    box.innerHTML = `<div class="sb-dagen" id="corr-dagen">${SB_DAG.map((d, i) =>
-      `<button type="button" class="sb-dag ${sel.includes(i) ? "on" : ""}" data-d="${i}">${d[0].toUpperCase() + d.slice(1)}</button>`).join("")}</div>`;
+    box.innerHTML = sbDagenEditorHtml("corr-dagen", c.trainingsdagen || "");
     box.hidden = false;
-    box.querySelectorAll(".sb-dag").forEach(b => b.addEventListener("click", () => {
-      b.classList.toggle("on");
-      c.trainingsdagen = [...box.querySelectorAll(".sb-dag.on")].map(x => +x.dataset.d).sort((p, q) => p - q).map(i => SB_DAG[i]).join("/");
-      sbDebouncedSave();
-    }));
+    sbWireDagenEditor(box, "corr-dagen", v => { c.trainingsdagen = v; });
+  } else if (sleutel === "frequentie") {
+    // Beschikbare dagen ≠ sessies/week ≠ sleuteldagen ≠ dubbele dagen — expliciet apart.
+    box.innerHTML = `
+      <label class="lbl">Gewenste sessies per week</label>
+      <input type="text" id="corr-spw" value="${esc(c.sessies_per_week || "")}" placeholder="bijv. 8 of 7-9">
+      <label class="lbl">Sleutel-/kwaliteitsdagen</label>
+      ${sbDagenEditorHtml("corr-sleutel", c.sleuteldagen || "")}
+      <label class="lbl">Dubbele-sessiedagen (optioneel)</label>
+      ${sbDagenEditorHtml("corr-dubbel", c.dubbele_dagen || "")}`;
+    box.hidden = false;
+    $("#corr-spw").addEventListener("input", e => { c.sessies_per_week = e.target.value.trim(); sbDebouncedSave(); });
+    sbWireDagenEditor(box, "corr-sleutel", v => { c.sleuteldagen = v; });
+    sbWireDagenEditor(box, "corr-dubbel", v => { c.dubbele_dagen = v; });
   }
+}
+
+function sbDagenEditorHtml(id, waarde) {
+  const sel = sbDagenUitString(waarde || "");
+  return `<div class="sb-dagen" id="${id}">${SB_DAG.map((d, i) =>
+    `<button type="button" class="sb-dag ${sel.includes(i) ? "on" : ""}" data-d="${i}">${d[0].toUpperCase() + d.slice(1)}</button>`).join("")}</div>`;
+}
+function sbWireDagenEditor(box, id, set) {
+  const wrap = box.querySelector("#" + id); if (!wrap) return;
+  wrap.querySelectorAll(".sb-dag").forEach(b => b.addEventListener("click", () => {
+    b.classList.toggle("on");
+    set([...wrap.querySelectorAll(".sb-dag.on")].map(x => +x.dataset.d).sort((p, q) => p - q).map(i => SB_DAG[i]).join("/"));
+    sbDebouncedSave();
+  }));
 }
 
 async function sbVerlengGen() {

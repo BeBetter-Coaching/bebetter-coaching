@@ -1135,3 +1135,12 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
 .sb-ready.controle{background:rgba(239,159,39,.12);border:1px solid #5a4a1e;color:var(--warn)}
 .sb-ready.blok{background:rgba(229,103,75,.12);border:1px solid #6a3326;color:var(--danger)}
 .btn.block{width:100%;justify-content:center;margin:0 0 8px}
+
+/* ── Verlengen acceptance-fix: klikbare readiness + doelrace + flash ──────── */
+button.sb-ready{width:100%;text-align:left;cursor:pointer;font-family:inherit}
+button.sb-ready:hover{filter:brightness(1.08)}
+.sb-ready-hint{margin-left:auto;font-weight:500;opacity:.8;font-size:12px}
+.sb-vb-race{display:block;margin-top:8px;font-size:12.5px;color:var(--acc)}
+.sb-hi.flash{animation:sbflash 1.2s ease}
+@keyframes sbflash{0%,100%{box-shadow:none}30%{box-shadow:0 0 0 2px var(--acc)}}
+.sb-hi-edit .lbl{margin-top:8px}
