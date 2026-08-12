@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from . import recency
+from . import activity, recency
 from .models import (ACTIVE, DERIVED, HIGH, LOW, MEDIUM, UNKNOWN, Evidence,
                      derived_evidence)
 
@@ -143,8 +143,11 @@ def _duration_per_week(log: list, today: date) -> float | None:
 
 
 def all(raw: dict, athlete_key: str, today: date, base_evidence: list) -> list:
-    """Alle Fase-A-derivaties. `base_evidence` levert provenance-ankers (bv. zones)."""
-    log = raw.get("training_log") or []
+    """Alle Fase-A-derivaties. `base_evidence` levert provenance-ankers (bv. zones).
+
+    ALLE running-load-metrics draaien op de RUN-ONLY dataset (`activity.running_log`):
+    fietsen/wandelen/etc. tellen nooit mee als hardloopkilometers/-frequentie."""
+    log = activity.running_log(raw.get("training_log") or [])   # ← run-only bron
     out: list = []
     prov_log = ["fs.training_log"]
 

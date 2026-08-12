@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from . import activity
 from . import zones as _zones
 from .models import (ACTIVE, DERIVED, HIGH, LOW, MEDIUM, RECURRING, UNKNOWN,
                      derived_evidence)
@@ -43,6 +44,8 @@ def _structural_over_zone(raw: dict, evidence, athlete_key: str, today: date):
     over, considered = 0, 0
     dates = []
     for e in raw.get("training_log") or []:
+        if not activity.is_running_activity(e):
+            continue                                 # nooit fiets-HR/-pace tegen running-zones
         try:
             d = date.fromisoformat(str(e.get("date"))[:10])
         except Exception:

@@ -341,3 +341,91 @@ def test_45_refresh_geen_duplicate_same_source(fs_stub):
 def test_46_geen_comment_fanout(fs_stub):
     B_sources.gather("A", TODAY)
     assert "FANOUT" not in fs_stub.calls
+
+
+# ══ RUN-ONLY SEMANTICS (blocking audit) ════════════════════════════════════
+def act(days, km, atype, name="Training", desc="", pace=None, planned=None,
+        completed=True, wk=None, felt=2, effort=5, is_race=False):
+    return {"date": d(days), "workout_key": wk or f"{atype}{days}", "completed": completed,
+            "actual_km": km, "planned_km": planned, "actual_min": km * 4,
+            "felt": felt, "effort": effort, "activity_type": atype, "name": name,
+            "description": desc, "pace": pace, "hr_avg": None, "is_race": is_race,
+            "post_notes": ""}
+
+def test_47_run_plus_cycling_km_is_run_only():
+    log = []
+    for i in range(4):
+        log.append(act(i * 7, 50, "Hardlopen", wk=f"run{i}"))
+        log.append(act(i * 7 + 1, 100, "Fiets", wk=f"bike{i}"))
+    km = _key(build(raw_base(training_log=log)), "load.km_per_week")
+    assert km.value == 50.0     # 100 km fiets/wk telt NIET mee
+
+def test_48_alleen_cycling_geen_running_load():
+    log = [act(i * 3, 40, "Fiets", wk=f"b{i}") for i in range(12)]
+    st = build(raw_base(training_log=log))
+    assert _key(st, "load.km_per_week") is None and _key(st, "load.runs_per_week") is None
+
+def test_49_wandelen_telt_niet():
+    log = [act(i * 3, 8, "Wandelen", wk=f"w{i}") for i in range(10)]
+    assert _key(build(raw_base(training_log=log)), "load.km_per_week") is None
+
+def test_50_strength_hyrox_met_distance_telt_niet():
+    log = [act(i * 3, 5, "Krachttraining", wk=f"k{i}") for i in range(6)] + \
+          [act(i * 3 + 1, 6, "HYROX", wk=f"h{i}") for i in range(6)]
+    assert _key(build(raw_base(training_log=log)), "load.km_per_week") is None
+
+def test_51_trend_alleen_op_running():
+    # running stabiel, cycling stijgt fors → trend moet stabiel blijven (niet 'opbouwend')
+    log = [act(i * 7, 10, "Hardlopen", wk=f"r{i}") for i in range(8)]  # 8 wkn stabiel lopen
+    log += [act(i * 3, 120, "Fiets", wk=f"b{i}") for i in range(4)]    # recent veel fietsen
+    assert _key(build(raw_base(training_log=log)), "load.trend").value == "stabiel"
+
+def test_52_running_interruption_blijft_bij_cycling():
+    # 4+ weken geen run, wel veel fietsen → running interruption blijft bestaan
+    log = [act(21 + i * 2, 12, "Hardlopen", wk=f"r{i}") for i in range(8)] + \
+          [act(i, 60, "Fiets", wk=f"b{i}") for i in range(0, 20, 2)]
+    assert _key(build(raw_base(training_log=log)), "load.interruption") is not None
+
+def test_53_return_pas_bij_echte_run():
+    log = [act(i, 10, "Hardlopen", wk=f"r{i}") for i in range(0, 18, 2)] + \
+          [act(60, 10, "Hardlopen", wk="old")] + \
+          [act(40 + i, 50, "Fiets", wk=f"b{i}") for i in range(6)]
+    assert _key(build(raw_base(training_log=log)), "load.trend").value == "hervat"
+
+def test_54_complaint_plus_cycling_up_stable_running_geen_relation():
+    log = [act(i * 3, 10, "Hardlopen", wk=f"r{i}") for i in range(8)] + \
+          [act(i * 3, 120, "Fiets", wk=f"b{i}") for i in range(4)]
+    st = build(raw_base(training_log=log,
+                        notes=[{"datum": d(3), "tekst": "pijn aan kuit"},
+                               {"datum": d(15), "tekst": "kuit zeurt weer"}]))
+    assert _key(st, "load.possible_relation") is None     # running load steeg niet
+
+def test_55_complaint_plus_echte_running_increase_relation():
+    log = [act(i, 12, "Hardlopen", wk=f"r{i}") for i in range(0, 28, 2)] + \
+          [act(28 + i, 4, "Hardlopen", wk=f"o{i}") for i in range(0, 28, 3)]
+    st = build(raw_base(training_log=log,
+                        notes=[{"datum": d(3), "tekst": "pijn aan kuit"},
+                               {"datum": d(15), "tekst": "kuit zeurt weer"}]))
+    assert _key(st, "load.possible_relation") is not None
+
+def test_56_cycling_nooit_structural_over_zone():
+    log = [act(i * 3, 30, "Fiets", desc="rustige duurrit Z2", pace="5:00", wk=f"b{i}")
+           for i in range(5)]
+    assert _key(build(raw_base(training_log=log, zones=ZONES_TEMPO)), "zones.structural_over") is None
+
+def test_57_cycling_vervangt_geen_gemiste_run_compliance():
+    # geplande run gemist (niet voltooid) + wél gefietst → running compliance blijft laag
+    log = [act(i * 3, 0, "Hardlopen", planned=10, completed=False, wk=f"r{i}") for i in range(4)] + \
+          [act(i * 3 + 1, 40, "Fiets", wk=f"b{i}") for i in range(4)]
+    comp = _key(build(raw_base(training_log=log)), "training.compliance")
+    assert comp is not None and comp.value == 0
+
+def test_58_classifier_boundary_cases():
+    from brain import activity as A
+    assert A.is_running_activity({"activity_type": "Hardlopen"})
+    assert A.is_running_activity({"activity_type": "Trail Run"})
+    assert A.is_running_activity({"activity_type": ""})          # onbekend → run (default)
+    assert not A.is_running_activity({"activity_type": "Fiets"})
+    assert not A.is_running_activity({"activity_type": "Wandelen"})
+    assert not A.is_running_activity({"activity_type": "Krachttraining"})
+    assert A.run_km({"activity_type": "Fiets", "actual_km": 100}) == 0.0
