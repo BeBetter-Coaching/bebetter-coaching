@@ -13,7 +13,10 @@ from . import zones as _zones
 from .models import (ACTIVE, DERIVED, HIGH, LOW, MEDIUM, RECURRING, UNKNOWN,
                      derived_evidence)
 
-_LOAD_UP = {"opbouwend", "hervat"}
+# Alleen een ECHTE volumetoename telt als "load↑". Een HERVATTING na een
+# onderbreking is géén goed-verdragen belastingtoename — die loopt via
+# capacity.handle_carefully, niet via well_tolerated/possible_relation.
+_LOAD_UP = {"opbouwend"}
 _EASY_HINTS = ("duur", "rustig", "herstel", "easy", "recovery", "z1", "z2", "zone 1", "zone 2")
 
 

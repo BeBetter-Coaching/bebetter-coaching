@@ -17,7 +17,7 @@ from . import recency
 from . import sources as _sources
 from . import zones as _zones
 from .models import (ACTIVE, ATHLETE_REPORTED, ATTENTION, COACH_REPORTED, CONFLICT,
-                     GOOD, HISTORICAL, INSUFFICIENT_DATA, LOW, MEDIUM, RECENT,
+                     GOOD, HIGH, HISTORICAL, INSUFFICIENT_DATA, LOW, MEDIUM, RECENT,
                      RECURRING, RESOLVED, STABLE, STALE, SCHEMA_VERSION, AthleteState,
                      Evidence)
 
@@ -133,9 +133,15 @@ def _good_is_good(evidence: list, health: list, gaps: list) -> str:
     if active_complaint or neg_recovery or conflict:
         return ATTENTION
 
-    well_tolerated = any(e.key == "load.well_tolerated" for e in evidence)
+    # GOOD is een POSITIEVE claim: alleen bij een bevestigd goed-verdragen patroon
+    # (well_tolerated met subjectieve onderbouwing = strength MEDIUM+) én geen
+    # trainingsonderbreking. Anders STABLE — rustig, maar zonder te veel te beweren.
+    well = next((e for e in evidence if e.key == "load.well_tolerated"), None)
+    interruption = any(e.key == "load.interruption" for e in evidence)
     if has_load:
-        return GOOD if well_tolerated else STABLE
+        if well and well.strength in (HIGH, MEDIUM) and not interruption:
+            return GOOD
+        return STABLE
     return INSUFFICIENT_DATA
 
 
