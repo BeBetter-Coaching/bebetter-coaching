@@ -2370,12 +2370,22 @@ function sbVorigBlokHtml(vb) {
 // Bepaalt overal (banner-tekst, aantal, klik-target, plan-gate) dezelfde unresolved-
 // set uit config + kritiek-acks + coach-bevestigingen. Geen backend-snapshot of
 // per-onderdeel eigen logica meer.
+// Normaliseer de herijking-state-vorm. Cruciaal voor drafts van vóór een veld-
+// introductie (bv. herstelde draft zonder `resolved`): zonder dit lazen render en
+// klik-handlers een undefined map → TypeError → knop 'doet niets'. Eén plek, altijd.
+function sbEnsureVerleng() {
+  if (!sbState) return;
+  if (!sbState.acks || typeof sbState.acks !== "object") sbState.acks = {};
+  if (!sbState.resolved || typeof sbState.resolved !== "object") sbState.resolved = {};
+  if (typeof sbState.allesKlopt !== "boolean") sbState.allesKlopt = false;
+}
 function sbItemResolved(it, i) {
-  if (it.kritiek) return !!sbState.acks[i];                 // kritiek: expliciete erkenning
+  const acks = sbState.acks || {}, resolved = sbState.resolved || {};
+  if (it.kritiek) return !!acks[i];                        // kritiek: expliciete erkenning
   if (it.status !== "controleren") return true;            // geldig/veranderd/info = geen actie
   if (it.sleutel === "doel")                               // waarde-vereist: leeg → weer open (case 6)
-    return !!((sbState.config.doel || "").trim());
-  return !!sbState.allesKlopt || !!(sbState.resolved && sbState.resolved[i]);   // bevestigd/gecorrigeerd
+    return !!(((sbState.config || {}).doel || "").trim());
+  return !!sbState.allesKlopt || !!resolved[i];            // bevestigd/gecorrigeerd
 }
 function sbUnresolved() {
   const items = sbState.herijking || [], out = [];
@@ -2447,6 +2457,7 @@ function sbHerijkItemHtml(it, idx) {
 }
 
 function sbRenderHerijking() {
+  sbEnsureVerleng();                        // state-vorm normaliseren vóór render/klik (bron-fix)
   const c = sbState.config, vb = sbState.vorig_blok || {}, items = sbState.herijking || [];
   const groepen = SB_HERIJK_GROEP.map(([st, titel, sub]) => {
     const list = items.map((it, i) => [it, i]).filter(([it]) => it.status === st);
@@ -2479,10 +2490,10 @@ function sbRenderHerijking() {
   $("#vl-start").addEventListener("input", sbVlPeriode);
   $("#vl-weken").addEventListener("input", sbVlPeriode);
   $("#sb-werk").querySelectorAll("[data-ack]").forEach(b => b.addEventListener("click", () => {
-    const i = +b.dataset.ack; sbState.acks[i] = !sbState.acks[i]; sbDraftSave(); sbRenderHerijking();
+    sbEnsureVerleng(); const i = +b.dataset.ack; sbState.acks[i] = !sbState.acks[i]; sbDraftSave(); sbRenderHerijking();
   }));
   $("#sb-werk").querySelectorAll("[data-confirm]").forEach(b => b.addEventListener("click", () => {
-    const i = +b.dataset.confirm; sbState.resolved[i] = !sbState.resolved[i]; sbDraftSave(); sbRenderHerijking();
+    sbEnsureVerleng(); const i = +b.dataset.confirm; sbState.resolved[i] = !sbState.resolved[i]; sbDraftSave(); sbRenderHerijking();
   }));
   $("#sb-werk").querySelectorAll("[data-corr]").forEach(b => b.addEventListener("click", () => sbHerijkCorrect(+b.dataset.corr, b.dataset.sleutel)));
   sbWireFoot();
@@ -2537,6 +2548,7 @@ function sbVlGate() {
 }
 
 function sbHerijkCorrect(idx, sleutel) {
+  sbEnsureVerleng();
   const box = $("#sb-hi-edit-" + idx); if (!box) return;
   if (!box.hidden) { box.hidden = true; box.innerHTML = ""; return; }
   const c = sbState.config;
