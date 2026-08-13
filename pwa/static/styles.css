@@ -912,8 +912,11 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
    Alleen mobiel (max-width:899px) → desktop master-detail volledig ongemoeid. */
 @media(max-width:899px){
   body.kb-open .fb-focus{overflow:hidden}                    /* niet de hele focus scrollt */
+  /* thread = eigen scroller; iets meer bodemruimte + scroll-padding zodat de laatste
+     chatballon volledig vrijkomt van de composer met een kleine comfortabele marge
+     (was 12px → laatste bericht viel nét weg achter de composerzone). */
   body.kb-open .fbf-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;
-    -webkit-overflow-scrolling:touch;padding:12px 15px}      /* thread = eigen scroller */
+    -webkit-overflow-scrolling:touch;padding:12px 15px 18px;scroll-padding-bottom:18px}
   body.kb-open .fb-dock{position:static;left:auto;right:auto;flex:0 0 auto;
     padding-bottom:calc(8px + env(safe-area-inset-bottom))}  /* composer in-flow, geen dode ruimte */
   /* compacte, begrensde compose-box; daarboven scrollt de textarea intern */
