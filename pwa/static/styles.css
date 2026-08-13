@@ -881,10 +881,6 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
    max-height op stabiele vh (layout-viewport, verandert niet tijdens keyboardanimatie
    → geen jitter); daarboven scrollt de textarea intern. */
 body.kb-open .fb-dock-sec{display:none}
-/* Keyboard open op mobiel: compactere compose-box zodat er méér thread zichtbaar
-   blijft boven het toetsenbord (22vh gaf te weinig conversatieruimte). Boven deze
-   hoogte scrollt de textarea intern; min-height houdt 'm bruikbaar. Alleen kb-open. */
-body.kb-open .fb-dock textarea{min-height:46px;max-height:15vh}
 
 /* Click-through defense-in-depth: zolang de mobiele focus open is, is de
    achterliggende queue-kolom niet interactief (naast het `inert`-attribuut). */
@@ -907,20 +903,21 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
   .fb-dock{padding-bottom:max(calc(10px + env(safe-area-inset-bottom)), 52px)}
 }
 
-/* ── Composer mode (mobiel, keyboard open) ───────────────────────────────────
-   GEEN keyboardhoogte-berekening. De focus-view wordt één normale scroll-flow:
-   .fb-focus scrollt, de dock staat in-flow direct onder de tekst met ruime
-   bodemmarge zodat Safari zelf het gefocuste #fb-ta boven het toetsenbord kan
-   scrollen. Shell blijft full-screen/stabiel; niets volgt de keyboardgeometrie.
+/* ── Composer mode (mobiel, keyboard open) — echte viewport-geometrie ─────────
+   De focus-kolom wordt via JS op visualViewport.height gezet (de zichtbare hoogte
+   BOVEN het toetsenbord). Binnen die hoogte is het een normale flex-kolom: header
+   vast, thread (flex:1) met EIGEN scroll, composer in-flow eronder. Zo krijgt de
+   thread de resterende ruimte, blijft hij volledig scrollbaar en overlapt de
+   composer 'm nooit. GEEN vaste vh-clearance meer (die kende de keyboardhoogte niet).
    Alleen mobiel (max-width:899px) → desktop master-detail volledig ongemoeid. */
 @media(max-width:899px){
-  body.kb-open .fb-focus{overflow-y:auto;-webkit-overflow-scrolling:touch}
-  body.kb-open .fbf-scroll{overflow:visible;flex:0 0 auto;padding-bottom:14px}
-  body.kb-open .fb-dock{position:static;left:auto;right:auto;
-    /* keyboard-clearance iets krapper (was 42vh) → minder dode ruimte onder de
-       composer, composer blijft boven het toetsenbord. */
-    padding-bottom:calc(38vh + env(safe-area-inset-bottom))}
-  /* Genereer/Versturen: ruime touch-targets, direct onder de editor */
+  body.kb-open .fb-focus{overflow:hidden}                    /* niet de hele focus scrollt */
+  body.kb-open .fbf-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;
+    -webkit-overflow-scrolling:touch;padding:12px 15px}      /* thread = eigen scroller */
+  body.kb-open .fb-dock{position:static;left:auto;right:auto;flex:0 0 auto;
+    padding-bottom:calc(8px + env(safe-area-inset-bottom))}  /* composer in-flow, geen dode ruimte */
+  /* compacte, begrensde compose-box; daarboven scrollt de textarea intern */
+  body.kb-open .fb-dock textarea{min-height:46px;max-height:110px}
   body.kb-open .fb-dock-row .btn{min-height:44px}
 }
 
@@ -944,6 +941,7 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
   /* Begrens de textarea op desktop zodat een lang concept de thread-viewport niet
      opeet; daarboven scrollt de textarea intern. Houdt de conversatie bruikbaar. */
   .fb-dock textarea{max-height:200px}
+  body.kb-open .fb-dock textarea{max-height:15vh}   /* desktop-focus ongewijzigd t.o.v. PASS-staat */
   body.kb-open .fb-dock-sec{display:flex}   /* geen keyboard-collapse op desktop */
 }
 

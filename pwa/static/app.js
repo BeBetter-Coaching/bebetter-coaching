@@ -1955,7 +1955,7 @@ function fbClose() {
   const col = $("#fb-focus-col");
   if (col) { col.classList.remove("on"); col.setAttribute("aria-hidden", "true"); }
   fbLockQueue(false);                                 // queue weer interactief
-  document.body.classList.remove("kb-open");          // composer mode uit
+  fbKbClose();                                        // composer mode uit + VV-geometrie resetten
   fbLog("focus_close");
   FB.selId = null; renderQueue();
   if (isDesktop()) renderFocusEmpty();
@@ -1999,8 +1999,8 @@ function fbBindDock(id) {
     // kb-open = simpele UI-state (composer mode). GEEN keyboardhoogte-berekening:
     // in composer mode wordt de focus-view een normale scroll-flow en brengt Safari
     // zelf het gefocuste textarea boven het toetsenbord (zie styles.css).
-    ta.addEventListener("focus", () => { document.body.classList.add("kb-open"); fbLog("keyboard_open", { via: "focus" }); });
-    ta.addEventListener("blur", () => { document.body.classList.remove("kb-open"); fbLog("keyboard_close", { via: "blur" }); });
+    ta.addEventListener("focus", () => { fbKbOpen(); fbLog("keyboard_open", { via: "focus" }); });
+    ta.addEventListener("blur", () => { fbKbClose(); fbLog("keyboard_close", { via: "blur" }); });
     fbGrow(ta);
   }
   // Primaire acties (Genereer/Versturen): bruikbaar met OPEN keyboard. Op iOS
@@ -2026,22 +2026,58 @@ function fbBindPrimary(btn, handler) {
 // keyboardanimatie.
 function fbGrow(ta) {
   if (!ta) return;
-  // Desktop: de dock groeit IN-FLOW, dus het scroll-gebied krimpt onderaan. Houd de
-  // onderkant (laatste bericht) in beeld als de coach daar al keek — maar yank hem
-  // NIET naar beneden als hij omhoog scrolde om de context te lezen. Mobiel pad
-  // (kb-open composer mode) blijft ongemoeid: daar doen we niets.
-  const sc = window.innerWidth >= 900 ? $(".fbf-scroll") : null;
+  // Actieve thread-scroller: desktop = .fbf-scroll; mobiel keyboard-open óók
+  // .fbf-scroll (die is dan de eigen thread-scroller, zie CSS). Houd de onderkant
+  // vast als de coach daar al keek — maar yank hem NIET naar beneden als hij omhoog
+  // scrolde om context te lezen.
+  const useScroll = isDesktop() || document.body.classList.contains("kb-open");
+  const sc = useScroll ? $(".fbf-scroll") : null;
   const atBottom = sc ? (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40) : false;
   ta.style.height = "auto";
   ta.style.height = (ta.scrollHeight + 2) + "px";     // CSS max-height klemt af (zie styles.css)
   if (sc && atBottom) sc.scrollTop = sc.scrollHeight;
 }
-// Desktop: toon bij openen de onderkant van de thread (laatste bericht + composer),
-// zodat de coach meteen ziet waarop hij reageert; context/plan blijft omhoog scrollbaar.
-// Mobiel niet forceren (bewezen full-screen flow + kb-open composer mode ongemoeid).
+// Desktop: toon bij openen de onderkant van de thread (laatste bericht + composer);
+// context/plan blijft omhoog scrollbaar. Mobiel keyboard-dicht niet forceren.
 function fbScrollThreadBottom() {
-  if (window.innerWidth < 900) return;
+  if (!isDesktop()) return;
   const sc = $(".fbf-scroll"); if (sc) sc.scrollTop = sc.scrollHeight;
+}
+
+// ── Mobiele keyboard-open layout via de ECHTE zichtbare viewport ─────────────
+// Root-fix iPhone-chat: bij open keyboard weet 100dvh de toetsenbordhoogte NIET, dus
+// de composer viel in de onzichtbare onderhelft en de thread had geen eigen scroll.
+// Nu zetten we de focus-kolom op visualViewport.height (de zichtbare hoogte boven het
+// toetsenbord). Binnen die hoogte is het een normale flex-kolom (CSS): header vast,
+// thread flex:1 met EIGEN scroll, composer in-flow eronder. Geen vaste vh-clearance.
+// Alleen mobiel; desktop gebruikt geen keyboardgeometrie.
+let _fbVV = null;
+function fbApplyVV() {
+  const vv = window.visualViewport, col = $("#fb-focus-col");
+  if (!vv || !col) return;
+  col.style.height = Math.round(vv.height) + "px";
+  col.style.top = Math.round(vv.offsetTop) + "px";
+}
+function fbKbOpen() {
+  document.body.classList.add("kb-open");
+  if (isDesktop() || !window.visualViewport) return;   // desktop: geen VV-geometrie
+  if (!_fbVV) {
+    _fbVV = () => requestAnimationFrame(fbApplyVV);
+    window.visualViewport.addEventListener("resize", _fbVV);
+    window.visualViewport.addEventListener("scroll", _fbVV);
+  }
+  fbApplyVV();
+  requestAnimationFrame(() => { const sc = $(".fbf-scroll"); if (sc) sc.scrollTop = sc.scrollHeight; });
+}
+function fbKbClose() {
+  document.body.classList.remove("kb-open");
+  const col = $("#fb-focus-col");
+  if (col) { col.style.height = ""; col.style.top = ""; }   // terug naar CSS (100dvh / desktop)
+  if (_fbVV && window.visualViewport) {
+    window.visualViewport.removeEventListener("resize", _fbVV);
+    window.visualViewport.removeEventListener("scroll", _fbVV);
+    _fbVV = null;
+  }
 }
 function renderFocusSkeleton(id) {
   const it = FB.items.find(i => i.id === id) || {};
