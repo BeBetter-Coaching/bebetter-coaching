@@ -550,12 +550,47 @@ _NONRUN_SYSTEM = """Je schrijft concept-feedback namens coach Jip aan zijn atlet
 BELANGRIJK — dit is NADRUKKELIJK GEEN hardlooptraining. Pas GEEN hardloopspecifieke logica toe:
 - geen tempo-/pace-zones, geen hartslagzone-oordeel, geen "je liep…", geen afstandsafwijking, geen easy/tempo/interval/progressive-run-interpretatie;
 - verzin geen hardloop-trainingsintentie.
-Gebruik UITSLUITEND de feitelijke, aangeleverde gegevens: het type training, de titel/omschrijving, eventuele oefeningen/sets/opzet, de uitgevoerd-status, gevoel/RPE, de notities van de atleet en relevante context. Bij weinig data: reageer kort en menselijk op wat er wél is, verzin niets. Ruwe getallen (zoals een gemiddelde hartslag) mag je feitelijk noemen, maar hang er geen zone-oordeel aan."""
+Gebruik UITSLUITEND de feitelijke, aangeleverde gegevens: het type training, de titel/omschrijving, eventuele oefeningen/sets/opzet, de uitgevoerd-status, gevoel/RPE, de notities van de atleet en relevante context. Bij weinig data: reageer kort en menselijk op wat er wél is, verzin niets. Ruwe getallen (zoals een gemiddelde hartslag) mag je feitelijk noemen, maar hang er geen zone-oordeel aan.
+
+GEBRUIK DE BESCHIKBARE DATA (belangrijk): als er hierboven gemeten gegevens staan (afstand, duur, hartslag, tempo/snelheid, vermogen), gebruik die dan concreet als ze relevant zijn. Vraagt de atleet of iets in de data terug te zien is en staan die gegevens er (zoals hartslag), verwijs er dan concreet naar. Zeg NOOIT "dat hangt af van wat ik precies zie", "ik kan dat niet beoordelen" of vergelijkbare vage meta-zinnen wanneer de gegevens hierboven staan. Subjectieve zwaarte mag je serieus meewegen en feitelijk naast de data leggen (bijv. een relatief hoge hartslag), maar zonder harde causale conclusie ("dus je was overtraind") en zonder te overclaimen."""
 
 _TYPE_LABEL_NL = {
     "strength": "krachttraining", "bike": "fietstraining", "swim": "zwemtraining",
     "cross_training": "cross-training", "other": "training", "unknown": "training",
 }
+
+
+def _format_nonrun_metrics(activity: dict) -> str:
+    """Sport-NEUTRALE feiten voor een niet-hardlooptraining: afstand, duur, hartslag,
+    tempo/snelheid, vermogen. GEEN hardloop-pace-zones, geen zone-oordeel — een
+    hartslag/afstand/duur is sportonafhankelijk en mag gewoon benoemd worden."""
+    if not isinstance(activity, dict):
+        return ""
+    lines = []
+    dist, dplan = activity.get("amount"), activity.get("planned_amount")
+    if dist or dplan:
+        unit = activity.get("amount_type", "km")
+        stuk = f"Afstand: uitgevoerd {round(dist, 2) if dist else '—'} {unit}"
+        if dplan:
+            stuk += f" (gepland {dplan} {unit})"
+        lines.append(stuk)
+    dur, dplan_t = activity.get("duration"), activity.get("planned_duration")
+    if dur or dplan_t:
+        stuk = f"Duur: {_seconds_to_min(dur)} min"
+        if dplan_t:
+            stuk += f" (gepland {_seconds_to_min(dplan_t)} min)"
+        lines.append(stuk)
+    hr, hr_max = activity.get("hr_avg"), activity.get("hr_max")
+    if hr:
+        lines.append(f"Gem. hartslag: {hr} bpm (max {hr_max} bpm)" if hr_max else f"Gem. hartslag: {hr} bpm")
+    pace = activity.get("pace_display")
+    if pace:
+        unit = activity.get("pace_display_type", "")
+        lines.append(f"Gem. tempo/snelheid: {pace} {unit}".strip())
+    power = activity.get("power_avg")
+    if power:
+        lines.append(f"Gem. vermogen: {power} W")
+    return "\n".join(lines)
 
 
 def _build_nonrun_context(workout_data: dict) -> tuple[str, str]:
@@ -565,6 +600,10 @@ def _build_nonrun_context(workout_data: dict) -> tuple[str, str]:
     type_label = _TYPE_LABEL_NL.get(wt, "training")
     details = workout_data.get("details") or {}
     plan_description = (details.get("description") or "").strip()
+    # Sport-neutrale feiten (afstand/duur/HF/tempo/vermogen) — zodat een niet-run
+    # training niet zonder data bij de AI aankomt en de coach niet vaag hoeft te doen.
+    _acts = details.get("Activities") or []
+    metrics_text = _format_nonrun_metrics(_acts[0]) if _acts else ""
 
     felt = workout_data.get("felt")
     effort = workout_data.get("effort")
@@ -594,11 +633,13 @@ def _build_nonrun_context(workout_data: dict) -> tuple[str, str]:
     brein = (workout_data.get("brein_context") or "").strip()
     brein_section = f"\n\n{brein}" if brein else ""
 
+    metrics_section = f"\n\nGemeten gegevens (feitelijk, sportneutraal — geen hardloop-pace-zones):\n{metrics_text}" if metrics_text else ""
+
     context = f"""Type training: {type_label} (workout_type = {wt})
 Training: {workout_data.get('workout_name') or type_label}
 
 Opzet/omschrijving (indien aanwezig):
-{plan_description or 'Geen beschrijving.'}{profiel_section}{brein_section}
+{plan_description or 'Geen beschrijving.'}{metrics_section}{profiel_section}{brein_section}
 
 Wat {first_name} zelf schrijft/zegt:
 {athlete_input}"""

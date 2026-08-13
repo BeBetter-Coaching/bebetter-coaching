@@ -936,6 +936,9 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
      dan overbodig → terug naar een normale bodemmarge. */
   .fb-dock{position:static;background:var(--card);flex:0 0 auto}
   .fbf-scroll{padding-bottom:16px;scroll-padding-bottom:24px}
+  /* Begrens de textarea op desktop zodat een lang concept de thread-viewport niet
+     opeet; daarboven scrollt de textarea intern. Houdt de conversatie bruikbaar. */
+  .fb-dock textarea{max-height:200px}
   body.kb-open .fb-dock-sec{display:flex}   /* geen keyboard-collapse op desktop */
 }
 

@@ -2026,8 +2026,22 @@ function fbBindPrimary(btn, handler) {
 // keyboardanimatie.
 function fbGrow(ta) {
   if (!ta) return;
+  // Desktop: de dock groeit IN-FLOW, dus het scroll-gebied krimpt onderaan. Houd de
+  // onderkant (laatste bericht) in beeld als de coach daar al keek — maar yank hem
+  // NIET naar beneden als hij omhoog scrolde om de context te lezen. Mobiel pad
+  // (kb-open composer mode) blijft ongemoeid: daar doen we niets.
+  const sc = window.innerWidth >= 900 ? $(".fbf-scroll") : null;
+  const atBottom = sc ? (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40) : false;
   ta.style.height = "auto";
   ta.style.height = (ta.scrollHeight + 2) + "px";     // CSS max-height klemt af (zie styles.css)
+  if (sc && atBottom) sc.scrollTop = sc.scrollHeight;
+}
+// Desktop: toon bij openen de onderkant van de thread (laatste bericht + composer),
+// zodat de coach meteen ziet waarop hij reageert; context/plan blijft omhoog scrollbaar.
+// Mobiel niet forceren (bewezen full-screen flow + kb-open composer mode ongemoeid).
+function fbScrollThreadBottom() {
+  if (window.innerWidth < 900) return;
+  const sc = $(".fbf-scroll"); if (sc) sc.scrollTop = sc.scrollHeight;
 }
 function renderFocusSkeleton(id) {
   const it = FB.items.find(i => i.id === id) || {};
@@ -2046,6 +2060,7 @@ function renderFocus(d) {
     + `<div class="fbf-scroll">${fbCtxHtml(d)}${fbPaHtml(d)}${fbThreadHtml(d)}</div>`
     + fbDockHtml(d.id);
   fbBindDock(d.id);
+  fbScrollThreadBottom();                              // desktop: onderkant meteen in beeld
 }
 // Recente context — pas in fase 4 gevuld; informatief (cyaan), amber zéér terughoudend.
 function fbCtxHtml(d) {

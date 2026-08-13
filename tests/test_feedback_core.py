@@ -19,6 +19,54 @@ import feedback_core as FC
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# Blocker 1 — niet-run context moet gemeten data bevatten (geen vage AI)
+# ════════════════════════════════════════════════════════════════════════════
+class TestNonRunContextData:
+    def _wd(self, **over):
+        wd = {"athlete_name": "Test", "athlete_first_name": "Test", "athlete_key": "A",
+              "workout_key": "W", "workout_name": "MTB", "workout_date": "2026-08-10",
+              "workout_type": "bike", "post_notes": "Voelde enorm zwaar. Terug te zien in de data?",
+              "details": {"description": "Duurrit", "Activities": [
+                  {"amount": 15.3, "planned_amount": 15.0, "duration": 2706,
+                   "pace_display": "20.3", "pace_display_type": "km/u", "hr_avg": 123, "hr_max": 155}]}}
+        wd.update(over)
+        return wd
+
+    def test_metrics_in_context(self):
+        import ai_feedback
+        ctx, _ = ai_feedback._build_nonrun_context(self._wd())
+        assert "123" in ctx and "155" in ctx          # hartslag
+        assert "15.3" in ctx                            # afstand
+        assert "45:" in ctx                             # duur
+        assert "20.3" in ctx                            # tempo/snelheid
+
+    def test_geen_running_zone_classificatie(self):
+        import ai_feedback
+        ctx, _ = ai_feedback._build_nonrun_context(self._wd())
+        # geen hardloop-zone-INDELING (Z1..Z5 / "Zone 3") op een fietstraining
+        for z in ("Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5", "BEREKENDE ZONE"):
+            assert z not in ctx
+
+    def test_systeemprompt_verbiedt_vage_hedge(self):
+        import ai_feedback
+        assert "hangt af van wat ik" in ai_feedback._NONRUN_SYSTEM
+        assert "gebruik die dan concreet" in ai_feedback._NONRUN_SYSTEM.lower()
+
+    def test_geen_activities_geen_crash(self):
+        import ai_feedback
+        wd = self._wd(details={"description": "x", "Activities": []})
+        ctx, _ = ai_feedback._build_nonrun_context(wd)
+        assert "Gemeten gegevens" not in ctx           # geen lege metrics-sectie
+        assert isinstance(ctx, str)
+
+    def test_metrics_formatter_partial(self):
+        import ai_feedback
+        # alleen HR aanwezig → alleen die regel, geen crash
+        out = ai_feedback._format_nonrun_metrics({"hr_avg": 140})
+        assert "140 bpm" in out and "Afstand" not in out
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # Fase 2 — Masterbrein feedback-gate (legacy/shadow/v2)
 # ════════════════════════════════════════════════════════════════════════════
 class TestFeedbackBrainGate:
