@@ -14,6 +14,24 @@ bestaande blok, geen ongewenste overlap, oude planning/doelrace intact, resultaa
 - Kern-coachloop `Home → Feedback → Schema` is compleet voor **Nieuw én Verlengen**. Zie
   [[schema-workbench-slice1]], [[bebetter-masterbrein-context]], [[feedback-frozen-quality-reference]].
 
+## Status — FEEDBACK + MASTERBREIN V2 LOCKED (13 aug 2026)
+**FEEDBACK + MASTERBREIN V2 = PRODUCTION ACTIVE + PRODUCTION PROVEN + LOCKED.**
+Feedback consumeert zijn atleet-intelligentie nu uit Masterbrein V2 via de `for_feedback`-projectie
+(`pwa/brain/adapter.feedback_context_block`). Live geactiveerd met `BEBETTER_FEEDBACK_BRAIN=v2` op Render;
+finale production-smoke-test geslaagd.
+- **Feedback = tweede production-consumer van Masterbrein V2.** Schema Nieuw/Verlengen blijven de **eerste**
+  production-consumer (zie sectie hieronder).
+- **Live acceptance bevestigd (alle PASS):** AI-output · desktop · iPhone (keyboard open↔dicht, in-flow composer) ·
+  run-only context · non-run framing · deterministische zoneclassificatie vóór AI · `<10%` deviation lekt niet
+  meer naar de AI · queue/detail athlete-reaction consistency · source-health / last-known-good · V2-context live
+  actief · geen errors in smoke-test.
+- **DO NOT TOUCH:** AI-feedbacklogica · Feedback-flow · Masterbrein-kernel · `for_feedback` · Schema · Home ·
+  FinalSurge write-paden · de bewezen mobiele keyboard-geometrie/in-flow composer · send/skip/draft-semantiek.
+- **Rollback beschikbaar (voorlopig behouden):** `BEBETTER_FEEDBACK_BRAIN=legacy` — geen codeherstel nodig.
+- **Volgende geplande Masterbrein-consumer = Dossier.** Dossier wordt de **human cockpit/view/editor** van
+  Masterbrein — géén tweede intelligence-engine. Home en Teampuls volgen daarna gefaseerd. Geen consumer migreren
+  zonder aparte GO. Zie [[bebetter-masterbrein-context]].
+
 ## Status — MASTERBREIN V2 FASE B LOCKED (13 aug 2026)
 **MASTERBREIN V2 FASE B — SCHEMA NIEUW + VERLENGEN = PRODUCTION ACTIVE + PRODUCTION PROVEN + LOCKED.**
 Schema Nieuw en Verlengen consumeren hun atleet-intelligentie nu uit Masterbrein V2 via de backwards-compatible
@@ -29,9 +47,9 @@ handmatig production-gesmoke-test.
 - **Rollback beschikbaar (voorlopig behouden):** `BEBETTER_SCHEMA_BRAIN=legacy` — geen codeherstel nodig.
 - **DO NOT TOUCH:** feature-gating (`BEBETTER_SCHEMA_BRAIN`), `pwa/brain/adapter.py`, de V2-gate in
   `pwa/athlete_context.build_athlete_context`, en de bewezen brain-kernel. Zie [[bebetter-masterbrein-context]].
-- **Volgende geplande Masterbrein-consumer = Feedback** — NOG NIET gestart. Feedback wordt éérst opnieuw
-  inhoudelijk beoordeeld op basis van echte gebruikstests vóórdat daar code wordt gewijzigd
-  (Feedback blijft tot dan FROZEN). Geen andere consumer (Home/Dossier/Teampuls) migreren zonder aparte GO.
+- **Feedback = inmiddels de tweede production-consumer** (LOCKED, zie sectie hierboven). Volgende geplande
+  Masterbrein-consumer = **Dossier** (human cockpit/view/editor, geen tweede engine); daarna Home + Teampuls
+  gefaseerd. Geen consumer migreren zonder aparte GO.
 
 - **(H2-vervolg) MASTERBREIN V2** breidt daarna uit naar de overige consumers. Bijsturen (DELETE-flow) geparkeerd.
 
