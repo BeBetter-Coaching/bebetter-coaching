@@ -139,6 +139,26 @@ class TestDeviationPromptInjection:
         assert "AFSTANDSAFWIJKING" in ctx
         assert "automatisch negatief" in ctx
 
+    def test_deviation_op_canonieke_activiteit_niet_swap(self, monkeypatch):
+        # regressie: een snellere activiteit (race-swap) mag de AFSTANDSafwijking niet
+        # veranderen — die blijft op de primaire activiteit (== detail()).
+        import ai_feedback, intake_store
+        monkeypatch.setattr(fs_client, "get_athlete_zones", lambda *a, **k: {})
+        monkeypatch.setattr(fs_client, "get_workout_builder", lambda *a, **k: [])
+        monkeypatch.setattr(intake_store, "garmin_context_text", lambda *a, **k: "")
+        # snelste activiteit zou een +20%-afwijking geven als hij gebruikt werd
+        monkeypatch.setattr(fs_client, "get_fastest_activity_on_day",
+                            lambda *a, **k: {"pace_display": "4:00", "planned_amount": 10.0, "amount": 12.0})
+        wd = {"athlete_name": "T", "athlete_first_name": "T", "athlete_key": "A",
+              "workout_key": "W", "workout_name": "Duurloop", "workout_date": "2026-08-10",
+              "post_notes": "x", "workout_type": "run",
+              "details": {"has_structured_workout": False,
+                          "Activities": [{"planned_amount": 12.0, "amount": 12.02,
+                                          "pace_display": "5:30", "hr_avg": 150}]}}
+        ctx, _ = ai_feedback._build_workout_context(wd)
+        # primaire activiteit = 0.2% → ignore; niet de +20% van de snelste activiteit
+        assert "binnen 10%" in ctx and "20%" not in ctx.split("AFSTANDSAFWIJKING", 1)[-1][:200]
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # D — zone-classificatie op exacte grenzen (tempo, seconden/km)

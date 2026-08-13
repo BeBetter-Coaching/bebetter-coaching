@@ -248,11 +248,16 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     # niet. <10% mag NOOIT als feedbackpunt lekken; 10–20% neutraal benoembaar;
     # >=20% benoembaar maar nooit automatisch negatief. Geünificeerd met de centrale
     # band (feedback_core.afwijking == brain.derive-semantiek).
+    # Afstandsafwijking op de CANONIEKE primaire activiteit (dezelfde bron als
+    # feedback_core.detail → coach-zichtbaar), NIET op de eventueel geswapte
+    # snelste-activiteit (die swap is voor race-tempo, niet voor afstand). Zo kan
+    # de prompt nooit een andere afwijking claimen dan de coach in de UI ziet.
     deviation_section = ""
-    if activities:
+    _orig_acts = details.get("Activities") or []
+    if _orig_acts:
         try:
             from feedback_core import afwijking as _afw
-            _act0 = activities[0]
+            _act0 = _orig_acts[0]
             _dev = _afw(_act0.get("planned_amount"), _act0.get("amount"))
         except Exception:
             _dev = {"relevance": "n/a"}
