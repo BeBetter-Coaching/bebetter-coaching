@@ -271,6 +271,100 @@ def _missing(ctx: dict) -> list:
     return [labels[c] for c in _CORE_CATS if c in labels and not ctx.get(c)]
 
 
+# ── Feedback: compacte longitudinale sessiecontext (task projection) ─────────
+FEEDBACK_RELEVANT_SOURCES = {"fs.training_log", "coach_notes", "fs.zones"}
+
+_TREND_NL = {"opbouwend": "opbouwend", "afbouwend/minder": "afbouwend",
+             "stabiel": "stabiel", "hervat": "net hervat"}
+
+
+def feedback_context(state, workout_key: str = "") -> dict:
+    """Deterministische Feedback-sessiecontext uit `for_feedback(state)` — compact,
+    recency/relevance-gefilterd, NOOIT een history-dump. Geeft zowel gestructureerde
+    velden (voor diagnostics/shadow) als een korte prompttekst (voor de AI).
+
+    SOURCE-HEALTH: bij een ontbrekende taak-relevante bron wordt GEEN load/klacht-
+    claim gedaan; de onzekerheid gaat expliciet mee zodat de AI niet vals geruststelt."""
+    proj = projections.for_feedback(state, workout_key)
+    evs = proj.get("evidence") or []
+    gaps = set(proj.get("source_gaps") or [])
+    tl_gap = "fs.training_log" in gaps
+
+    km = _ev(evs, "load.km_per_week")
+    runs = _ev(evs, "load.runs_per_week")
+    trend = _ev(evs, "load.trend")
+    intr = _ev(evs, "load.interruption")
+    comp = _ev(evs, "training.compliance")
+    rpe = _ev(evs, "recovery.rpe_trend")
+    feel = _ev(evs, "recovery.feeling_trend")
+    complaints = [e for e in evs if e.get("key", "").startswith("complaint.")
+                  and not e.get("key", "").startswith("complaint.mention.")
+                  and e.get("status") in (ACTIVE, RECENT, RECURRING)]
+
+    regels: list[str] = []
+    if tl_gap:
+        regels.append("Recente hardloopbelasting: onbekend (trainingslog tijdelijk niet "
+                      "beschikbaar) — doe hier geen aannames over.")
+    elif km is not None:
+        stale = _is_stale(km)
+        kmv = km.get("value")
+        rv = runs.get("value") if runs else None
+        tv = _TREND_NL.get(str((trend or {}).get("value")), (trend or {}).get("value"))
+        stuk = f"Recente hardloopbelasting: ~{kmv} km/week"
+        if rv is not None:
+            stuk += f", {rv} runs/week"
+        if tv:
+            stuk += f" (trend: {tv})"
+        if stale:
+            stuk += " [laatst bekend, mogelijk verouderd]"
+        regels.append(stuk + ".")
+    if intr is not None:
+        regels.append(f"Belangrijk: {intr.get('value')}.")
+    if comp is not None:
+        regels.append(f"Trainingsopvolging recent: ~{comp.get('value')}% van gepland afgemaakt.")
+    subj = []
+    if rpe is not None and rpe.get("value") in ("zwaarder", "lichter"):
+        subj.append(f"inspanning voelt {rpe.get('value')}")
+    if feel is not None and feel.get("value") in ("beter", "slechter"):
+        subj.append(f"gevoel {feel.get('value')}")
+    if subj:
+        regels.append("Subjectieve trend: " + ", ".join(subj) + ".")
+    for c in complaints[:2]:
+        area = (c.get("detail") or {}).get("area") or c.get("value")
+        st = "terugkerend" if c.get("status") == RECURRING else "recent gemeld"
+        regels.append(f"Aandacht: klacht rond {area} ({st}) — houd hier rekening mee, "
+                      f"maar leg geen oorzakelijk verband met deze training.")
+
+    tekst = ""
+    if regels:
+        tekst = ("━━━ WAT BEBETTER AL WEET OVER DEZE ATLEET (achtergrond — verzin niets bij) ━━━\n"
+                 + "\n".join("- " + r for r in regels)
+                 + "\n\nGebruik dit alleen als achtergrond. Vraag NIET naar informatie die hier "
+                   "al staat (zoals recente kilometers of frequentie). Noem alleen wat voor DEZE "
+                   "training relevant is; verzin geen trainingsplan of weekopbouw.")
+
+    return {
+        "workout_key": workout_key,
+        "overall": state.overall,
+        "source_gaps": sorted(gaps & FEEDBACK_RELEVANT_SOURCES),
+        "has_load": km is not None and not tl_gap,
+        "complaint_areas": [(c.get("detail") or {}).get("area") or c.get("value") for c in complaints],
+        "prompt_block": tekst,
+    }
+
+
+def feedback_context_block(user_key: str, workout_key: str = "", today: date | None = None,
+                           gather_fn=None) -> dict:
+    """Impure ingang: build_state (1 gather, snapshot, last-known-good) → Feedback-
+    sessiecontext. Nooit fataal: bij een fout geeft het een lege, veilige context."""
+    try:
+        state, _raw = build_state(user_key, today, gather_fn=gather_fn)
+    except Exception as e:
+        return {"prompt_block": "", "source_gaps": [], "has_load": False,
+                "complaint_areas": [], "error": str(e)[:120]}
+    return feedback_context(state, workout_key)
+
+
 # ── Publieke ingang voor de gate (impure) ────────────────────────────────────
 def build_context(user_key: str, naam: str = "", today: date | None = None,
                   gather_fn=None) -> dict:

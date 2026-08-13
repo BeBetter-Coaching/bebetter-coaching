@@ -435,13 +435,17 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
         if profiel else ""
     )
 
+    # Longitudinale Masterbrein-context (alleen in v2-modus gevuld; anders leeg).
+    brein = (workout_data.get("brein_context") or "").strip()
+    brein_section = f"\n\n{brein}" if brein else ""
+
     context = f"""Training: {workout_name}
 
 WAT WAS DE BEDOELING (workout builder):
 {plan_text}{zones_section}{garmin_section}
 
 Samenvattende data:
-{activity_summary}{deviation_section}{lap_section}{datum_section}{profiel_section}
+{activity_summary}{deviation_section}{lap_section}{datum_section}{profiel_section}{brein_section}
 
 Wat {first_name} zelf schrijft/zegt:
 {athlete_input}"""
@@ -582,11 +586,14 @@ def _build_nonrun_context(workout_data: dict) -> tuple[str, str]:
         f"Gebruik dit alleen voor toon/context, herhaal het niet letterlijk, verzin er niets bij."
         if profiel else ""
     )
+    brein = (workout_data.get("brein_context") or "").strip()
+    brein_section = f"\n\n{brein}" if brein else ""
+
     context = f"""Type training: {type_label} (workout_type = {wt})
 Training: {workout_data.get('workout_name') or type_label}
 
 Opzet/omschrijving (indien aanwezig):
-{plan_description or 'Geen beschrijving.'}{profiel_section}
+{plan_description or 'Geen beschrijving.'}{profiel_section}{brein_section}
 
 Wat {first_name} zelf schrijft/zegt:
 {athlete_input}"""

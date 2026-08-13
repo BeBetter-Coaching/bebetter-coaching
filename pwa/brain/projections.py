@@ -62,11 +62,15 @@ def for_feedback(state, workout_key: str = "") -> dict:
             continue
         if e.key in ("training.compliance", "recovery.rpe_trend", "recovery.feeling_trend",
                      "zones.personal", "load.trend", "load.well_tolerated",
-                     "load.possible_relation", "zones.structural_over"):
+                     "load.possible_relation", "zones.structural_over",
+                     # longitudinale hardloopbelasting — zodat Feedback niet vraagt
+                     # naar km/frequentie die het zelf betrouwbaar weet (run-only)
+                     "load.km_per_week", "load.runs_per_week", "load.interruption"):
             keep.append(e)
     return {
         "task": "feedback", "athlete_key": state.athlete_key, "naam": state.naam,
         "workout_key": workout_key,
+        "overall": state.overall,
         "source_gaps": _task_gaps(state, {"fs.training_log", "coach_notes", "fs.zones"}),
         "evidence": _dump(keep),
     }

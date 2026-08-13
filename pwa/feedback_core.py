@@ -92,14 +92,51 @@ def te_beoordelen(days_back: int = 7) -> dict:
     return {"items": items, "fs": True}
 
 
+# ── Masterbrein V2 feedback-gate (Fase 2) ────────────────────────────────────
+# Eén centrale keuzegrens (server-side env, geen frontend-toggle). Zelfde patroon
+# als de Schema-gate. legacy = huidige Feedback-intelligence; shadow = V2-context
+# wordt gebouwd voor diagnostiek maar NIET in de prompt geïnjecteerd (output blijft
+# legacy); v2 = de longitudinale Masterbrein-context gaat mee de AI-prompt in.
+_FEEDBACK_BRAIN_MODES = ("legacy", "shadow", "v2")
+
+
+def feedback_brain_mode() -> str:
+    m = (os.environ.get("BEBETTER_FEEDBACK_BRAIN") or "legacy").strip().lower()
+    return m if m in _FEEDBACK_BRAIN_MODES else "legacy"
+
+
+def _brein_context(w: dict) -> str:
+    """Longitudinale Masterbrein-sessiecontext voor deze workout. Nooit fataal;
+    legacy → ''; shadow → gebouwd voor diagnostiek maar niet geïnjecteerd; v2 →
+    de prompttekst. Geen extra FinalSurge-fan-out buiten de brain-gather."""
+    mode = feedback_brain_mode()
+    if mode == "legacy":
+        return ""
+    ak = w.get("athlete_key", "")
+    if not ak:
+        return ""
+    try:
+        from brain import adapter as _ad
+        block = _ad.feedback_context_block(ak, w.get("workout_key", ""))
+        w["_brein_diag"] = {k: block.get(k) for k in
+                            ("source_gaps", "has_load", "complaint_areas", "overall")}
+        return (block.get("prompt_block") or "") if mode == "v2" else ""
+    except Exception:
+        return ""
+
+
 def genereer(wid: str) -> str:
     """AI-concept voor de training met dit id (uit de gecachete lijst)."""
     w = _cache.get(wid)
     if not w:
         raise ValueError("Training niet meer in beeld — ververs de lijst en probeer opnieuw.")
     _ensure_details(wid)                                 # lichte queue → details nu alsnog laden
+    w = _cache.get(wid) or w
+    brein = _brein_context(w)                            # Masterbrein-context (gated)
+    if brein:
+        w = {**w, "brein_context": brein}               # kopie: cache niet met prompttekst muteren
     import ai_feedback                                   # lui: pas hier is de key nodig
-    return ai_feedback.generate_feedback(_cache.get(wid) or w)
+    return ai_feedback.generate_feedback(w)
 
 
 def _coach_athlete_key(athlete_key: str):

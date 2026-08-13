@@ -19,6 +19,53 @@ import feedback_core as FC
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# Fase 2 — Masterbrein feedback-gate (legacy/shadow/v2)
+# ════════════════════════════════════════════════════════════════════════════
+class TestFeedbackBrainGate:
+    def test_default_legacy(self, monkeypatch):
+        monkeypatch.delenv("BEBETTER_FEEDBACK_BRAIN", raising=False)
+        assert FC.feedback_brain_mode() == "legacy"
+
+    def test_unknown_falls_back(self, monkeypatch):
+        monkeypatch.setenv("BEBETTER_FEEDBACK_BRAIN", "banaan")
+        assert FC.feedback_brain_mode() == "legacy"
+
+    def _stub_block(self, monkeypatch):
+        from brain import adapter
+        monkeypatch.setattr(adapter, "feedback_context_block",
+                            lambda ak, wk="", today=None: {
+                                "prompt_block": "BREIN: ~30 km/week", "source_gaps": [],
+                                "has_load": True, "complaint_areas": [], "overall": "STABLE"})
+
+    def test_legacy_no_injection(self, monkeypatch):
+        monkeypatch.setenv("BEBETTER_FEEDBACK_BRAIN", "legacy")
+        self._stub_block(monkeypatch)
+        assert FC._brein_context({"athlete_key": "A", "workout_key": "W"}) == ""
+
+    def test_shadow_builds_but_no_injection(self, monkeypatch):
+        monkeypatch.setenv("BEBETTER_FEEDBACK_BRAIN", "shadow")
+        self._stub_block(monkeypatch)
+        w = {"athlete_key": "A", "workout_key": "W"}
+        assert FC._brein_context(w) == ""              # niet geïnjecteerd
+        assert w.get("_brein_diag", {}).get("has_load") is True   # wel gebouwd voor diag
+
+    def test_v2_injects_block(self, monkeypatch):
+        monkeypatch.setenv("BEBETTER_FEEDBACK_BRAIN", "v2")
+        self._stub_block(monkeypatch)
+        assert "BREIN" in FC._brein_context({"athlete_key": "A", "workout_key": "W"})
+
+    def test_v2_failure_is_safe(self, monkeypatch):
+        monkeypatch.setenv("BEBETTER_FEEDBACK_BRAIN", "v2")
+        from brain import adapter
+
+        def _boom(ak, wk="", today=None):
+            raise RuntimeError("brain kapot")
+        monkeypatch.setattr(adapter, "feedback_context_block", _boom)
+        # nooit fataal: lege context, geen crash in de generatie-flow
+        assert FC._brein_context({"athlete_key": "A", "workout_key": "W"}) == ""
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # E — afstandsafwijking: banden + boundary-matrix
 # ════════════════════════════════════════════════════════════════════════════
 class TestAfwijkingBanden:

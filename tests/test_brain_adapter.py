@@ -389,6 +389,43 @@ class TestOutageEndToEnd:
 # ════════════════════════════════════════════════════════════════════════════
 # SEMANTISCHE VERGELIJKING — pure runner gelijk, cross-trainer gecorrigeerd
 # ════════════════════════════════════════════════════════════════════════════
+class TestFeedbackProjection:
+    def test_load_reaches_feedback_projection(self):
+        # obs C: Feedback moet km/runs/interruption uit de projectie kunnen halen
+        _, st = _ctx(_raw(_pure_runner_log()), _health())
+        from brain import projections
+        fb = projections.for_feedback(st)
+        keys = {e["key"] for e in fb["evidence"]}
+        assert "load.km_per_week" in keys and "load.runs_per_week" in keys
+
+    def test_context_block_bevat_km(self):
+        _, st = _ctx(_raw(_pure_runner_log()), _health())
+        block = adapter.feedback_context(st, "")
+        assert block["has_load"] is True
+        assert "km/week" in block["prompt_block"]
+        assert "Vraag NIET" in block["prompt_block"]
+
+    def test_context_block_gap_geen_valse_belasting(self):
+        # obs source-health: bij trainingslog-uitval geen km-claim, wel expliciet onbekend
+        _, st = _ctx(_raw([]), _health(training_log=False))
+        block = adapter.feedback_context(st, "")
+        assert block["has_load"] is False
+        assert "onbekend" in block["prompt_block"].lower()
+        assert "km/week" not in block["prompt_block"]
+
+    def test_context_block_klacht_zonder_causaliteit(self):
+        notes = [{"datum": _d(3), "tekst": "achilles zeurt weer opnieuw"}]
+        _, st = _ctx(_raw(_pure_runner_log(), notes=notes), _health())
+        block = adapter.feedback_context(st, "")
+        assert "achilles" in block["prompt_block"].lower()
+        assert "geen oorzakelijk verband" in block["prompt_block"].lower()
+
+    def test_empty_athlete_safe(self):
+        _, st = _ctx(_raw([]), _health())
+        block = adapter.feedback_context(st, "")
+        assert block["prompt_block"] == "" or isinstance(block["prompt_block"], str)
+
+
 class TestSemanticCompareClassification:
     def test_pure_runner_format_only(self):
         cls = shadow._classify_running(14.0, 14.0, 2.0, 2.0, 14.0, [])
