@@ -13,8 +13,27 @@ bestaande blok, geen ongewenste overlap, oude planning/doelrace intact, resultaa
 - DO NOT TOUCH zonder concrete bug / bewezen performanceprobleem / expliciete nieuwe requirement.
 - Kern-coachloop `Home → Feedback → Schema` is compleet voor **Nieuw én Verlengen**. Zie
   [[schema-workbench-slice1]], [[bebetter-masterbrein-context]], [[feedback-frozen-quality-reference]].
-- **Hoogste prioriteit nu: MASTERBREIN V2** (H2-intelligentielaag). Kwaliteitsronde: eerst volledige
-  technische inventarisatie (geen code) vóór de definitieve architectuur. Bijsturen (DELETE-flow) geparkeerd.
+
+## Status — MASTERBREIN V2 FASE B LOCKED (13 aug 2026)
+**MASTERBREIN V2 FASE B — SCHEMA NIEUW + VERLENGEN = PRODUCTION ACTIVE + PRODUCTION PROVEN + LOCKED.**
+Schema Nieuw en Verlengen consumeren hun atleet-intelligentie nu uit Masterbrein V2 via de backwards-compatible
+`athlete_context`-adapter. Live geactiveerd met `BEBETTER_SCHEMA_BRAIN=v2` op Render (commit `56b55fe`) en
+handmatig production-gesmoke-test.
+- **Live acceptance bevestigd:** Schema Nieuw laadt normaal · Schema Verlengen laadt normaal · cross-training
+  lekt niet als running load (run-only) · coach memory komt correct mee · ontbrekende intake wordt niet met
+  verzonnen data ingevuld · bij ontbrekend doel blijft doel leeg en wordt dat eerlijk gemeld · geen errors.
+- **Shadow-acceptance (GO):** 14 echte atleten live · 0 `UNEXPECTED` · 0 errors · pure runners bleven gelijk ·
+  cross-trainers correct run-only · klacht/interruption-case bleef ATTENTION.
+- **Bekende v1-sportmixbug is weg** in actieve V2-modus: km/week + runs/week zijn uitsluitend hardlopen
+  (via `brain.projections.for_schema`). Geen locked Schema-code, geen FinalSurge write-pad, geen frontend/SW gewijzigd.
+- **Rollback beschikbaar (voorlopig behouden):** `BEBETTER_SCHEMA_BRAIN=legacy` — geen codeherstel nodig.
+- **DO NOT TOUCH:** feature-gating (`BEBETTER_SCHEMA_BRAIN`), `pwa/brain/adapter.py`, de V2-gate in
+  `pwa/athlete_context.build_athlete_context`, en de bewezen brain-kernel. Zie [[bebetter-masterbrein-context]].
+- **Volgende geplande Masterbrein-consumer = Feedback** — NOG NIET gestart. Feedback wordt éérst opnieuw
+  inhoudelijk beoordeeld op basis van echte gebruikstests vóórdat daar code wordt gewijzigd
+  (Feedback blijft tot dan FROZEN). Geen andere consumer (Home/Dossier/Teampuls) migreren zonder aparte GO.
+
+- **(H2-vervolg) MASTERBREIN V2** breidt daarna uit naar de overige consumers. Bijsturen (DELETE-flow) geparkeerd.
 
 ## North Star
 BeBetter groeit van coach-PWA naar een world-class coaching-platform dat FinalSurge/TrainingPeaks kan

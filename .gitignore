@@ -37,5 +37,6 @@ __pycache__/
 *.xls
 .webauthn.json
 .home_snapshot.json
+.brain_snapshot.json
 .home_handled.json
 .feedback_queue.json
