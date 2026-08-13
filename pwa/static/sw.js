@@ -5,7 +5,7 @@
 //   achter (dat gebeurde met de oude cache-first-aanpak).
 // Schrijf-acties (POST/DELETE op /api/…) gaan altijd rechtstreeks naar het netwerk;
 // de app zelf handelt offline af met een wachtrij die verstuurt zodra je online bent.
-const CACHE = "bebetter-shell-v63";
+const CACHE = "bebetter-shell-v64";
 const SHELL = ["/", "/static/styles.css", "/static/app.js",
   "/static/icon-192.png", "/static/logo.png", "/static/team.jpeg", "/manifest.webmanifest"];
 

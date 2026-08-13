@@ -881,7 +881,10 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
    max-height op stabiele vh (layout-viewport, verandert niet tijdens keyboardanimatie
    → geen jitter); daarboven scrollt de textarea intern. */
 body.kb-open .fb-dock-sec{display:none}
-body.kb-open .fb-dock textarea{min-height:50px;max-height:22vh}
+/* Keyboard open op mobiel: compactere compose-box zodat er méér thread zichtbaar
+   blijft boven het toetsenbord (22vh gaf te weinig conversatieruimte). Boven deze
+   hoogte scrollt de textarea intern; min-height houdt 'm bruikbaar. Alleen kb-open. */
+body.kb-open .fb-dock textarea{min-height:46px;max-height:15vh}
 
 /* Click-through defense-in-depth: zolang de mobiele focus open is, is de
    achterliggende queue-kolom niet interactief (naast het `inert`-attribuut). */
@@ -914,7 +917,9 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
   body.kb-open .fb-focus{overflow-y:auto;-webkit-overflow-scrolling:touch}
   body.kb-open .fbf-scroll{overflow:visible;flex:0 0 auto;padding-bottom:14px}
   body.kb-open .fb-dock{position:static;left:auto;right:auto;
-    padding-bottom:calc(42vh + env(safe-area-inset-bottom))}
+    /* keyboard-clearance iets krapper (was 42vh) → minder dode ruimte onder de
+       composer, composer blijft boven het toetsenbord. */
+    padding-bottom:calc(38vh + env(safe-area-inset-bottom))}
   /* Genereer/Versturen: ruime touch-targets, direct onder de editor */
   body.kb-open .fb-dock-row .btn{min-height:44px}
 }
