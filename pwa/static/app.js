@@ -2070,6 +2070,11 @@ function fbKbOpen() {
   requestAnimationFrame(() => { const sc = $(".fbf-scroll"); if (sc) sc.scrollTop = sc.scrollHeight; });
 }
 function fbKbClose() {
+  // Vóór de layout-reset vastleggen of de coach praktisch onderaan zat (kb-open
+  // scroller-state). Alleen dán her-ankeren we straks; scrolde hij omhoog voor
+  // context, dan forceren we niets.
+  const sc = $(".fbf-scroll");
+  const wasBottom = sc ? (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40) : false;
   document.body.classList.remove("kb-open");
   const col = $("#fb-focus-col");
   if (col) { col.style.height = ""; col.style.top = ""; }   // terug naar CSS (100dvh / desktop)
@@ -2078,6 +2083,29 @@ function fbKbClose() {
     window.visualViewport.removeEventListener("scroll", _fbVV);
     _fbVV = null;
   }
+  if (wasBottom && !isDesktop()) fbReanchorBottomAfterClose();
+}
+// Bij keyboard-close wisselt de CSS synchroon terug naar de keyboard-dichte layout
+// (thread-clearance 18px→170px, dock weer absolute), maar iOS animeert het toetsenbord
+// ASYNC weg en de viewport groeit pas daarna terug. Zonder her-anker blijft scrollTop
+// op de oude (kb-open) maxwaarde staan → de laatste ballon valt half achter de composer.
+// Fix: wacht op het uitsettelen van visualViewport (debounce op de laatste resize, geen
+// grote vaste timeout) en lijn dan de onderkant opnieuw uit. Alleen als de coach al
+// onderaan zat (zie fbKbClose).
+function fbReanchorBottomAfterClose() {
+  const anchor = () => { const sc = $(".fbf-scroll"); if (sc) sc.scrollTop = sc.scrollHeight; };
+  const vv = window.visualViewport;
+  if (!vv) { requestAnimationFrame(() => requestAnimationFrame(anchor)); return; }
+  let t = null, done = false;
+  function settle() { clearTimeout(t); t = setTimeout(finish, 90); }   // 90ms ná laatste resize = uitgesetteld
+  function finish() {
+    if (done) return; done = true; clearTimeout(t);
+    vv.removeEventListener("resize", settle);
+    requestAnimationFrame(anchor);
+  }
+  vv.addEventListener("resize", settle);
+  settle();                                   // start ook als er (bijna) geen resize meer volgt
+  setTimeout(finish, 500);                    // absoluut vangnet
 }
 function renderFocusSkeleton(id) {
   const it = FB.items.find(i => i.id === id) || {};
