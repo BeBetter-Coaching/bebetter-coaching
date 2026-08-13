@@ -412,10 +412,61 @@ def _gather(user_key: str) -> dict:
     return raw
 
 
-def build_athlete_context(user_key: str, naam: str = "", today: date | None = None) -> dict:
-    """Publieke ingang: verzamel + assembleer de gestructureerde atleetcontext."""
+# ── Masterbrein V2 feature-gate (Fase B) ─────────────────────────────────────
+# Eén centrale keuzegrens voor de Schema-contextmigratie. Server-side env, geen
+# frontend-toggle, geen verspreide conditionals. Rollback = zet de env terug op
+# 'legacy' (of verwijder 'm) — geen codeherstel van Schema-businesslogica nodig.
+#
+#   legacy  (default): v1-pad ongewijzigd (huidige production).
+#   shadow           : output blijft v1; V2 wordt daarnaast gebouwd + vergeleken
+#                      (diagnostics onder ctx["_shadow"]), production-output verandert niet.
+#   v2               : Schema-context komt via de V2 compatibility-adapter (run-only,
+#                      source-health-aware). GEEN stille fallback naar v1 bij V2-failure.
+_SCHEMA_BRAIN_ENV = "BEBETTER_SCHEMA_BRAIN"
+_SCHEMA_BRAIN_MODES = ("legacy", "shadow", "v2")
+
+
+def schema_brain_mode() -> str:
+    m = (os.environ.get(_SCHEMA_BRAIN_ENV) or "legacy").strip().lower()
+    return m if m in _SCHEMA_BRAIN_MODES else "legacy"
+
+
+def _build_legacy(user_key: str, naam: str, today: date | None) -> dict:
     raw = _gather(user_key)
     if not naam:
         ik = raw.get("intake") or {}
         naam = ik.get("athlete_name") or ik.get("naam") or user_key
     return assemble(user_key, naam, raw, today)
+
+
+def build_athlete_context(user_key: str, naam: str = "", today: date | None = None) -> dict:
+    """Publieke ingang: verzamel + assembleer de gestructureerde atleetcontext.
+
+    Contract (shape van de teruggegeven dict) is identiek in alle modi zodat
+    Schema-consumers ongewijzigd blijven. Alleen de INHOUD kan uit V2 komen."""
+    mode = schema_brain_mode()
+
+    if mode == "v2":
+        # Actieve V2-modus: GEEN stille fallback. Faalt V2, dan faalt de build
+        # zichtbaar (caller levert lege context — nooit de oude sportmix-waarde).
+        try:
+            from brain import adapter as _adapter
+            return _adapter.build_context(user_key, naam, today)
+        except Exception as e:
+            import traceback
+            sys.stderr.write(f"[SCHEMA_BRAIN v2] FAILED for {user_key}: {e}\n")
+            traceback.print_exc()
+            raise
+
+    ctx = _build_legacy(user_key, naam, today)
+
+    if mode == "shadow":
+        # Production-output blijft v1; hang een deterministische V2-diff aan voor
+        # diagnostics. Nooit fataal — shadow mag production niet raken.
+        try:
+            from brain import shadow as _shadow
+            ctx["_shadow"] = _shadow.semantic_compare(user_key, naam, today, v1_ctx=ctx)
+        except Exception as e:
+            ctx["_shadow"] = {"error": str(e)[:160]}
+
+    return ctx
