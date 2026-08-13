@@ -929,7 +929,13 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
     height:calc(100vh - 44px);background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden}
   .fbf-head{padding:14px 16px}
   .fbf-back{display:none}
-  .fb-dock{background:var(--card)}
+  /* Composer IN-FLOW op desktop (niet absoluut): de dock is een flex-kind onderaan
+     de kolom, dus het scroll-gebied reserveert exact de resterende ruimte. Zo kan
+     een lange thread nooit meer achter het typvlak verdwijnen, ongeacht hoe hoog de
+     textarea groeit. De vaste 170px-clearance (voor de absolute mobiele dock) is hier
+     dan overbodig → terug naar een normale bodemmarge. */
+  .fb-dock{position:static;background:var(--card);flex:0 0 auto}
+  .fbf-scroll{padding-bottom:16px;scroll-padding-bottom:24px}
   body.kb-open .fb-dock-sec{display:flex}   /* geen keyboard-collapse op desktop */
 }
 

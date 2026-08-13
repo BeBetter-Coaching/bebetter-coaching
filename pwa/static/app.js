@@ -349,7 +349,7 @@ function cockpitVersen(s) {
     if (!fresh || fresh.pending) return;     // nog niet klaar → skeletons blijven
     const box = $("#home-prio");
     const heeftLijst = box && box.querySelector(".prio-item, .prio-leeg");
-    if (!heeftLijst) { vulCockpit(fresh); return; }   // eerste build → direct tonen
+    if (!heeftLijst) { vulCockpit(fresh, true); return; }   // eerste build → direct tonen (autoritatief)
     cockpitDiffToon(fresh);                            // actieve lijst → NIET verspringen
   }).catch(() => { markVersen(false); if (note) note.dataset.busy = ""; prioTekenStatus(); });
 }
@@ -387,7 +387,7 @@ function cockpitToepassen() {
   prioHerstelUk = prioOpenUk;                // heropen de rij die openstond na de rebuild
   const snap = pendingSnap; pendingSnap = null;
   cockpitNieuwBalkWeg();
-  vulCockpit(snap);
+  vulCockpit(snap, true);                     // toegepaste verse snapshot = autoritatief
   requestAnimationFrame(() => { if (sc) sc.scrollTo({ top: y }); });   // geen scrollsprong (#12)
 }
 function markVersen(on) {
@@ -395,8 +395,13 @@ function markVersen(on) {
   if (on) n.innerHTML = `<span class="versen">bijwerken…</span>`;
 }
 
-// Vult hero-status + feedbackbalk + prioriteitlijst + info-strip met echte cockpit-data
-function vulCockpit(s) {
+// Vult hero-status + feedbackbalk + prioriteitlijst + info-strip met echte cockpit-data.
+// `fresh` = de data komt van een AUTORITATIEVE server-refresh (refresh=1) → de
+// optimistische feedback-delta is dan verrekend en wordt gereset. Bij een cachede
+// eerste-paint (fresh=false) passen we de delta toe zodat een net verstuurde/
+// overgeslagen Feedback-actie meteen in de Home-balk klopt (cross-module invalidatie
+// zonder Home te herbouwen; de refresh reconcilieert daarna).
+function vulCockpit(s, fresh) {
   if (!s || !s.fs) {
     const p = $("#home-prio"); if (p) p.innerHTML = '<p class="muted klein">FinalSurge niet gekoppeld.</p>';
     const fb = $("#home-fb"); if (fb) fb.remove();
@@ -418,7 +423,13 @@ function vulCockpit(s) {
   // ── Feedback: dagelijkse kern als voortgangsbalk ──
   const fb = $("#home-fb");
   if (fb) {
-    const w = fbs.wachten || 0, pct = fbs.pct != null ? fbs.pct : 100;
+    if (fresh) homeFbDelta = { wachten: 0, gepost: 0 };     // server is bijgewerkt → delta verrekend
+    const w = Math.max(0, (fbs.wachten || 0) + homeFbDelta.wachten);
+    const gepost = Math.max(0, (fbs.gepost || 0) + homeFbDelta.gepost);
+    // pct opnieuw afleiden uit de (evt. optimistisch bijgestelde) getallen zodat de
+    // balk intern consistent blijft; val terug op de serverwaarde als er geen basis is.
+    const totaal = w + gepost;
+    const pct = totaal ? Math.round(gepost / totaal * 100) : (fbs.pct != null ? fbs.pct : 100);
     fb.classList.remove("skel-strip");
     fb.classList.toggle("done", w === 0);
     fb.innerHTML = `
@@ -428,7 +439,7 @@ function vulCockpit(s) {
         <span class="fb-strip-pct">${pct}%</span>
       </div>
       <div class="mt-bar"><i style="width:${pct}%"></i></div>
-      <span class="fb-strip-sub">${fbs.gepost || 0} vandaag gepost · ${pct}% afgerond</span>`;
+      <span class="fb-strip-sub">${gepost} vandaag gepost · ${pct}% afgerond</span>`;
   }
 
   // ── Prioriteit vandaag: gegroepeerd per atleet (wie → waarom → actie) ──
@@ -473,6 +484,14 @@ let prioSwipeEl = null;     // welke rij toont swipe-acties (max één)
 let prioHerstelUk = null;   // heropen deze rij na een lijst-herbouw (deeplink-terugkeer)
 let homeScroll = 0;         // bewaarde scrollpositie van Home (state bij terugkeer)
 let homeTel = { actie: 0, aandacht: 0, rustig: 0 };   // live team-status (één bron)
+// Optimistische correctie op de Home-feedbackbalk na een Feedback-actie (send/skip),
+// tot een autoritatieve server-refresh de echte stand levert. Zo klopt "wachten op
+// feedback" meteen bij terugkeer naar Home, zonder Home te herbouwen of de
+// server-snapshot te muteren.
+let homeFbDelta = { wachten: 0, gepost: 0 };
+function homeFbBijwerken(dWachten, dGepost) {
+  homeFbDelta.wachten += dWachten; homeFbDelta.gepost += (dGepost || 0);
+}
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // Hero-status + note uit één bron tekenen → een afgehandelde rij werkt de tellers
@@ -2096,6 +2115,7 @@ async function fbSend(id) {
   fbLog("send_success", { target: id, send_duration_ms: dur });
   FB.sentSet.add(id); fbDraftClear(id);              // pas ná server-ok
   FB.gepost = (FB.gepost || 0) + 1;
+  homeFbBijwerken(-1, +1);                            // Home-balk: één minder wachtend, één meer gepost
   const idx = FB.items.findIndex(i => i.id === id);
   if (idx >= 0) FB.items.splice(idx, 1);
   renderQueue(); fbUpdateInfo(); haptic(15);
@@ -2113,7 +2133,7 @@ function fbSkip(id) {                                 // optimistic; POST volgt 
     async () => {                                     // venster voorbij → nu pas overslaan
       const r = await jpost("/api/feedback/skip", { id }).catch(() => null);
       if (!r || !r.ok) { fbLog("skip_error", { target: id }); herstel(); melding("Overslaan mislukt — teruggezet.", true); }
-      else fbLog("skip_commit", { target: id });
+      else { fbLog("skip_commit", { target: id }); homeFbBijwerken(-1, 0); }  // Home-balk: één minder wachtend
     });
 }
 // Eén toast met gegarandeerd precies één afloop: Ongedaan óf commit (nooit beide).
