@@ -41,6 +41,7 @@ VERZIN GEEN CONTEXT (niet onderhandelbaar):
 - Noem ALLEEN feiten die letterlijk in de aangeleverde data of in de woorden van de atleet staan
 - Verzin NOOIT een verhaal eromheen: geen "herstelperiode", "vakantie", "eerste prikkel na rust", "opbouw na je blessure", "drukke week" of vergelijkbare aannames, tenzij de atleet of de plandata dat expliciet zegt
 - Een training die "herstelloop" heet betekent NIET dat de atleet uit een herstelperiode komt; het is gewoon het type training
+- Doe GEEN uitspraken over de plek van deze training in een groter plan: zeg NOOIT "dit is je deloadweek", "je bouwt deze week af", "dit was bewust een herstelweek", "je zit in een opbouwfase" of "volgende week staat X gepland", TENZIJ dat letterlijk uit de aangeleverde plandata blijkt. Je ziet één training, geen weekplanning. Bij onvoldoende bewijs: niet noemen
 - Twijfel je of iets klopt: laat het weg. Een kort feitelijk bericht is altijd beter dan een verzonnen verhaal
 
 GEEN VOORUITBLIK (niet onderhandelbaar):
@@ -243,6 +244,36 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     laps = activities[0].get("Laps", []) if activities else []
     lap_summary = _format_laps(laps)
 
+    # DETERMINISTISCHE AFSTANDSAFWIJKING (vóór AI) — de app bepaalt de band, de AI
+    # niet. <10% mag NOOIT als feedbackpunt lekken; 10–20% neutraal benoembaar;
+    # >=20% benoembaar maar nooit automatisch negatief. Geünificeerd met de centrale
+    # band (feedback_core.afwijking == brain.derive-semantiek).
+    deviation_section = ""
+    if activities:
+        try:
+            from feedback_core import afwijking as _afw
+            _act0 = activities[0]
+            _dev = _afw(_act0.get("planned_amount"), _act0.get("amount"))
+        except Exception:
+            _dev = {"relevance": "n/a"}
+        rel = _dev.get("relevance")
+        if rel == "ignore":
+            deviation_section = (
+                "\n\nAFSTANDSAFWIJKING (door de app bepaald — LEIDEND): de uitgevoerde "
+                "afstand ligt binnen 10% van de geplande afstand. Dat is normaal en NIET "
+                "de moeite van het benoemen waard. Schrijf hier NIETS over; maak er geen "
+                "punt van dat het net iets meer of minder was.")
+        elif rel == "notable":
+            deviation_section = (
+                f"\n\nAFSTANDSAFWIJKING (door de app bepaald — LEIDEND): de afstand wijkt "
+                f"{_dev['pct']:+.0f}% af van gepland. Je mág dit kort en neutraal benoemen, "
+                f"maar maak er GEEN probleem van als gevoel, RPE en uitvoering goed zijn.")
+        elif rel == "clear":
+            deviation_section = (
+                f"\n\nAFSTANDSAFWIJKING (door de app bepaald — LEIDEND): de afstand wijkt "
+                f"{_dev['pct']:+.0f}% af van gepland. Dit mag je benoemen, maar beoordeel het "
+                f"NIET automatisch negatief; weeg wat de atleet schrijft en de context mee.")
+
     builder_steps_text = ""
     if details.get("has_structured_workout") and workout_key and athlete_key:
         try:
@@ -410,7 +441,7 @@ WAT WAS DE BEDOELING (workout builder):
 {plan_text}{zones_section}{garmin_section}
 
 Samenvattende data:
-{activity_summary}{lap_section}{datum_section}{profiel_section}
+{activity_summary}{deviation_section}{lap_section}{datum_section}{profiel_section}
 
 Wat {first_name} zelf schrijft/zegt:
 {athlete_input}"""

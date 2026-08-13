@@ -400,12 +400,30 @@ def _queue_persist(snap: dict) -> tuple[bool, str]:
     return bool(ok), err or ""
 
 
+def _atleet_berichten(w: dict) -> list[str]:
+    """Canonieke atleet-berichten — ÉÉN bron, dezelfde die `detail()` via `_gesprek`
+    toont: de thread (post_notes + atleet-comments, chronologisch). Zo kan de queue
+    nooit 'reactie' zeggen terwijl detail 'geen bericht van de atleet' toont (F/G).
+
+    Fallback op post_notes/athlete_comments alleen als er (nog) geen thread is
+    opgebouwd (oudere/lichte records) — dan is dát de canonieke bron."""
+    uit = [(m.get("tekst") or "").strip() for m in (w.get("thread") or [])
+           if m.get("van") == "atleet" and (m.get("tekst") or "").strip()]
+    if uit:
+        return uit
+    fallback = []
+    if (w.get("post_notes") or "").strip():
+        fallback.append(w["post_notes"].strip())
+    fallback += _reacties(w)
+    return fallback
+
+
 def _categorie(w: dict) -> tuple[str, str]:
-    """Uitlegbare categorie + preview uit ECHTE data (geen score)."""
-    post = (w.get("post_notes") or "").strip()
-    reacties = _reacties(w)
-    if post or reacties:
-        return "reactie", (post or (reacties[0] if reacties else ""))[:90]
+    """Uitlegbare categorie + preview uit ECHTE data (geen score). 'reactie' wordt
+    afgeleid uit dezelfde canonieke atleet-berichten die detail toont (invariant)."""
+    berichten = _atleet_berichten(w)
+    if berichten:
+        return "reactie", berichten[0][:90]
     if w.get("felt") or w.get("effort"):
         fo = _felt_obj(w.get("felt"))
         return "gevoel", (f"Gevoel: {fo['label']}" if fo else "Gevoel/RPE")
@@ -622,26 +640,29 @@ def _upgrade_workout_type(w: dict) -> None:
 
 
 def afwijking(planned_km, actual_km) -> dict:
-    """Afstandsafwijking, deterministisch vóór AI. Banden (LOCKED):
-    <10 ignore · 10–15 mention_neutral · 15–20 mention_if_context · >20 mention_contextual.
-    Geen geplande afstand → n/a. Nooit automatisch negatief (dat bepaalt de AI/context)."""
+    """Afstandsafwijking, deterministisch vóór AI. Eén centrale band (geünificeerd
+    met `brain.derive.distance_deviation`, productbeslissing 13 aug 2026):
+      <10%   → ignore   (NIET benoemen)
+      10–20% → notable  (benoembaar; niet problematiseren bij goede RPE/gevoel/training)
+      >=20%  → clear     (benoembaar; NOOIT automatisch negatief)
+    Geen geplande afstand → n/a. Het oordeel (goed/slecht) bepaalt de AI/context, nooit deze functie.
+    `relevance` blijft 'ignore'/'n/a' voor de UI-chip-gate; 'notable'/'clear' tonen de chip."""
     try:
         p, a = float(planned_km or 0), float(actual_km or 0)
     except (TypeError, ValueError):
-        return {"pct": None, "relevance": "n/a"}
+        return {"pct": None, "relevance": "n/a", "report": False}
     if not p or not a:
-        return {"pct": None, "relevance": "n/a"}
+        return {"pct": None, "relevance": "n/a", "report": False}
     pct = round((a - p) / p * 100, 1)
     m = abs(pct)
     if m < 10:
         rel = "ignore"
-    elif m <= 15:
-        rel = "mention_neutral"
-    elif m <= 20:
-        rel = "mention_if_context"
+    elif m < 20:
+        rel = "notable"
     else:
-        rel = "mention_contextual"
-    return {"pct": pct, "relevance": rel}
+        rel = "clear"
+    return {"pct": pct, "relevance": rel, "report": rel != "ignore",
+            "direction": "over" if pct > 0 else "under"}
 
 
 def _actual_zone(act: dict, zone_type: str, zones: list) -> dict | None:
