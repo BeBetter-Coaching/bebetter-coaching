@@ -892,34 +892,33 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
    (op desktop blijft het wél; zie desktop-blok) → hier verborgen. Reuse fbSkip.
    Tijdens kb-open blijft de hele rij verborgen (composer = alleen Gen/Send). */
 @media(max-width:899px){
+  /* Mobiel, BEIDE keyboard-staten: composer IN-FLOW (flex-kind), zodat hij de thread
+     NOOIT overlapt — header → thread(flex:1, eigen scroll) → composer(flex:0). De oude
+     keyboard-dichte layout gebruikte position:absolute dock + vaste 170px-clearance,
+     maar de echte composer (textarea 78px + 2 knoprijen + safe-area) is > 170px, dus
+     de laatste ballon viel er fysiek achter — onafhankelijk van scrollTop. In-flow lost
+     dit structureel op. .fb-focus-col-hoogte = 100dvh (keyboard dicht) of
+     visualViewport.height (keyboard open, via JS) → composer zit in beide net boven de
+     onderrand; safe-area-padding tilt de knoppen boven de home-indicator. */
+  .fb-focus{overflow:hidden}
+  .fbf-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:14px 15px 18px;scroll-padding-bottom:18px}
+  .fb-dock{position:static;left:auto;right:auto;flex:0 0 auto;
+    padding-bottom:max(calc(10px + env(safe-area-inset-bottom)), 52px)}
   .fb-dock-sec .btn{min-height:44px}
   .fb-dock-sec #fb-copy{display:none}   /* Kopiëren niet in de mobiele composer-actiezone */
   .fb-dock-sec #fb-skip{flex:1}          /* Overslaan = volledige breedte */
-  /* Til de laatste dockrij (Overslaan) boven de iOS-onderchrome (Safari-onderbalk /
-     home-indicator). De dock is bottom:0 van 100dvh; die onderrand loopt op iPhone
-     achter de balk, waardoor de Overslaan-rij onzichtbaar wordt. Positionering blijft
-     ongewijzigd — alleen genoeg bodemruimte zodat de rij bovenuit komt. Tijdens
-     kb-open wint de composer-regel (hogere specificiteit) → daar verandert niets. */
-  .fb-dock{padding-bottom:max(calc(10px + env(safe-area-inset-bottom)), 52px)}
 }
 
-/* ── Composer mode (mobiel, keyboard open) — echte viewport-geometrie ─────────
-   De focus-kolom wordt via JS op visualViewport.height gezet (de zichtbare hoogte
-   BOVEN het toetsenbord). Binnen die hoogte is het een normale flex-kolom: header
-   vast, thread (flex:1) met EIGEN scroll, composer in-flow eronder. Zo krijgt de
-   thread de resterende ruimte, blijft hij volledig scrollbaar en overlapt de
-   composer 'm nooit. GEEN vaste vh-clearance meer (die kende de keyboardhoogte niet).
-   Alleen mobiel (max-width:899px) → desktop master-detail volledig ongemoeid. */
+/* ── Keyboard OPEN (mobiel) — alleen de VERSCHILLEN t.o.v. keyboard-dicht ──────
+   De in-flow flex-structuur (header → thread flex:1 eigen scroll → composer in-flow)
+   komt uit het mobiele basisblok hierboven en geldt dus in BEIDE staten. JS zet de
+   focus-kolom bij open toetsenbord op visualViewport.height (zichtbare hoogte boven
+   het toetsenbord). Hier alleen de state-verschillen: krappere dock-bodem (het
+   toetsenbord dekt de safe-area al) en een begrensde compose-box. De secundaire
+   actierij wordt elders verborgen (body.kb-open .fb-dock-sec). */
 @media(max-width:899px){
-  body.kb-open .fb-focus{overflow:hidden}                    /* niet de hele focus scrollt */
-  /* thread = eigen scroller; iets meer bodemruimte + scroll-padding zodat de laatste
-     chatballon volledig vrijkomt van de composer met een kleine comfortabele marge
-     (was 12px → laatste bericht viel nét weg achter de composerzone). */
-  body.kb-open .fbf-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;
-    -webkit-overflow-scrolling:touch;padding:12px 15px 18px;scroll-padding-bottom:18px}
-  body.kb-open .fb-dock{position:static;left:auto;right:auto;flex:0 0 auto;
-    padding-bottom:calc(8px + env(safe-area-inset-bottom))}  /* composer in-flow, geen dode ruimte */
-  /* compacte, begrensde compose-box; daarboven scrollt de textarea intern */
+  body.kb-open .fb-dock{padding-bottom:calc(8px + env(safe-area-inset-bottom))}
   body.kb-open .fb-dock textarea{min-height:46px;max-height:110px}
   body.kb-open .fb-dock-row .btn{min-height:44px}
 }
