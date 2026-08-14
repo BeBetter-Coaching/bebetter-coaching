@@ -167,6 +167,20 @@ def plaats(wid: str, tekst: str) -> bool:
         raise ValueError("Geen FinalSurge-koppeling voor deze training.")
     FS.post_comment(workout_key=wk, user_key=ak, comment=tekst,
                     coach_athlete_key=_coach_athlete_key(ak))
+
+    # Dossier Fase A — additieve, NIET-FATALE history-hook ná de (locked) send.
+    # De reactie is op dit punt al succesvol geplaatst; history-capture komt daarna
+    # en mag de send/skip/draft/queue/AI NOOIT raken. Gefaald = stil gediagnosticeerd,
+    # geen user-facing failure. Gated via BEBETTER_DOSSIER_HISTORY (default off).
+    try:
+        from brain import history as _history
+        if _history.enabled():
+            _history.capture_feedback(
+                athlete_key=ak, workout_key=wk,
+                workout_date=str(w.get("workout_date") or w.get("date") or ""),
+                athlete_messages=_atleet_berichten(w), coach_text=tekst)
+    except Exception:
+        pass
     return True
 
 

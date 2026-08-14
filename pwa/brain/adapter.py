@@ -82,6 +82,17 @@ def build_state(user_key: str, today: date | None = None, gather_fn=None):
         _snapshot.save_snapshot(state)               # best-effort, nooit fataal
     except Exception:
         pass
+
+    # Dossier Fase A — history-capture (gated, shadow, NIET-FATAAL). Default OFF:
+    # verandert niets aan Schema/Feedback. In shadow leidt dit events af uit de
+    # snapshot-diff (prev → state) en schrijft ze naar de geïsoleerde history-store;
+    # geen enkele consumer leest die in Fase A. Een fout hier mag de build nooit raken.
+    try:
+        from . import history as _history
+        if _history.enabled():
+            _history.capture(prev, state, today)
+    except Exception:
+        pass
     return state, raw
 
 

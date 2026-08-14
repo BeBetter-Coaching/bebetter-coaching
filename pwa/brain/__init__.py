@@ -6,8 +6,9 @@ state(+good-is-good) → projections. AI blijft buiten dit pakket.
 """
 from __future__ import annotations
 
-from . import (complaints, contradictions, derive, models, patterns, projections,
-               recency, shadow, snapshot, sources, state, zones)
+from . import (complaints, contradictions, derive, events, history, history_store,
+               models, patterns, projections, recency, shadow, snapshot, sources,
+               state, zones)
 from .models import (AthleteState, Evidence, SourceHealth, SCHEMA_VERSION,
                      ACTIVE, RECENT, RECURRING, RESOLVED, HISTORICAL, STALE, CONFLICT,
                      GOOD, STABLE, ATTENTION, INSUFFICIENT_DATA,
@@ -20,4 +21,5 @@ __all__ = [
     "AthleteState", "Evidence", "SourceHealth", "SCHEMA_VERSION",
     "projections", "snapshot", "shadow", "sources", "state", "derive",
     "patterns", "complaints", "contradictions", "zones", "recency", "models",
+    "events", "history", "history_store",
 ]
