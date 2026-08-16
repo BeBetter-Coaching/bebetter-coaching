@@ -25,11 +25,41 @@ from datetime import date
 
 import intake_store
 
+import re
+
 from .events import HistoryEvent
 
-_REMOTE = "athlete_history.json"
+_DEFAULT_REMOTE = "athlete_history.json"
+
+
+def _resolve_remote() -> str:
+    """Doelbestand voor de history-store (in de gedeelde GitHub data-repo).
+
+    ISOLATIE-INVARIANT: `intake_store._save_json` schrijft naar
+    `BeBetter-Coaching/bebetter-data` op de DEFAULT branch, zonder branch-param —
+    isolatie loopt dus UITSLUITEND via de BESTANDSNAAM, niet via git-branch of
+    Render-service. Een shadow/test-service MOET daarom naar een apart bestand
+    schrijven (bv. `athlete_history.shadow.json`) zodat het de productie-history
+    (`athlete_history.json`, die Fase B later leest) onmogelijk kan vervuilen.
+
+    Override via env `BEBETTER_DOSSIER_HISTORY_FILE`. De waarde MOET beginnen met
+    `athlete_history` en eindigen op `.json`. Die prefix-eis is de veiligheidsgrens:
+    de override kan zo NOOIT een andere productie-store (notes.json, intakes.json,
+    brain_snapshot.json, …) targeten of via path-traversal ontsnappen — alleen een
+    history-variant zoals `athlete_history.shadow.json`.
+    """
+    raw = (os.environ.get("BEBETTER_DOSSIER_HISTORY_FILE") or "").strip()
+    if not raw:
+        return _DEFAULT_REMOTE
+    name = os.path.basename(raw)                       # strip elk pad (anti-traversal)
+    if name != raw or not re.fullmatch(r"athlete_history[A-Za-z0-9._-]*\.json", name):
+        return _DEFAULT_REMOTE                         # ongeldig/ontsnappend → veilige default
+    return name
+
+
+_REMOTE = _resolve_remote()
 _LOCAL = os.path.join(os.path.dirname(os.path.abspath(intake_store.__file__)),
-                      ".athlete_history.json")
+                      "." + _REMOTE)
 
 STORE_SCHEMA_VERSION = 1
 
@@ -192,6 +222,7 @@ def storage_health() -> dict:
     n_ath = len(ev)
     return {
         "athletes": n_ath, "total_events": total, "max_events_one_athlete": max_one,
+        "remote_file": _REMOTE, "is_shadow_file": _REMOTE != _DEFAULT_REMOTE,
         "cloud_backed": intake_store.is_cloud_backed(),
         "shard_recommended": (n_ath > SHARD_THRESHOLD_ATHLETES
                               or max_one > SHARD_THRESHOLD_EVENTS

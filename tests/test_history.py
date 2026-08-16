@@ -310,6 +310,41 @@ def test_capture_feedback_dedupes_same_workout(store):
     assert r2["written"] == 0                          # één event, geen duplicaat
 
 
+# ── Store-isolatie (shadow-service mag productie-history niet vervuilen) ──────
+def test_resolve_remote_default_and_override(monkeypatch):
+    monkeypatch.delenv("BEBETTER_DOSSIER_HISTORY_FILE", raising=False)
+    assert HS._resolve_remote() == "athlete_history.json"
+    monkeypatch.setenv("BEBETTER_DOSSIER_HISTORY_FILE", "athlete_history.shadow.json")
+    assert HS._resolve_remote() == "athlete_history.shadow.json"
+
+
+def test_resolve_remote_rejects_traversal_and_junk(monkeypatch):
+    # o.a.: andere productie-stores, path-traversal, ontbrekende extensie, spaties
+    for bad in ("../secrets.json", "notes.json", "intakes.json", "brain_snapshot.json",
+                "notes.json/../x", "athlete_history", "a b.json", ""):
+        monkeypatch.setenv("BEBETTER_DOSSIER_HISTORY_FILE", bad)
+        assert HS._resolve_remote() == "athlete_history.json"   # veilige default
+    # geldige history-varianten worden wél geaccepteerd
+    for ok in ("athlete_history.shadow.json", "athlete_history_test.json"):
+        monkeypatch.setenv("BEBETTER_DOSSIER_HISTORY_FILE", ok)
+        assert HS._resolve_remote() == ok
+
+
+def test_shadow_file_does_not_touch_production_file(tmp_path, monkeypatch):
+    """Bewijs: schrijven naar de shadow-store raakt het productiebestand niet."""
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    prod_local = tmp_path / ".athlete_history.json"
+    shadow_local = tmp_path / ".athlete_history.shadow.json"
+    monkeypatch.setattr(HS, "_REMOTE", "athlete_history.shadow.json")
+    monkeypatch.setattr(HS, "_LOCAL", str(shadow_local))
+    monkeypatch.setenv("BEBETTER_DOSSIER_HISTORY", "shadow")
+    HS.append_event("a", E.HistoryEvent(athlete_key="a", event_type=E.COMPLAINT_STARTED,
+                                        domain="health", entity="kuit", effective_at="2026-08-01"))
+    assert shadow_local.exists()                       # shadow-bestand beschreven
+    assert not prod_local.exists()                     # productiebestand ongemoeid
+    assert HS.storage_health()["is_shadow_file"] is True
+
+
 def test_capture_feedback_off_is_noop(store, monkeypatch):
     monkeypatch.setenv("BEBETTER_DOSSIER_HISTORY", "off")
     res = history.capture_feedback("ath1", "wk1", "2026-08-13",
