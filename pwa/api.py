@@ -175,6 +175,36 @@ def healthz():
     return {"ok": True}
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# TIJDELIJK — Dossier Fase A shadow-acceptance (READ-ONLY). VERWIJDEREN VÓÓR LOCK.
+# ══════════════════════════════════════════════════════════════════════════════
+# Bestaat alleen om de live shadow-history te kunnen inzien nu Render Free geen
+# shell heeft. DRIE sloten:
+#   (1) coach-login (de _login-middleware — dit pad is niet publiek);
+#   (2) alleen actief in shadow-modus (BEBETTER_DOSSIER_HISTORY=shadow);
+#   (3) aparte tijdelijke secret BEBETTER_DOSSIER_DEBUG_TOKEN moet gezet zijn én matchen.
+# Geeft UITSLUITEND storage_health() + de inhoud van athlete_history.shadow.json.
+# Extra veiligheidsslot: weigert als het doelbestand NIET de shadow-file is, zodat
+# het nooit een productie-history-bestand kan teruggeven. Geen writes, geen
+# mutaties, geen andere stores.
+@app.get("/api/_debug/dossier_history")
+def _debug_dossier_history(request: Request):
+    from brain import history as _dh, history_store as _dhs
+    if _dh.mode() != "shadow":
+        return JSONResponse({"ok": False, "err": "unavailable"}, status_code=404)
+    secret = (os.environ.get("BEBETTER_DOSSIER_DEBUG_TOKEN") or "").strip()
+    if not secret:
+        return JSONResponse({"ok": False, "err": "unavailable"}, status_code=404)
+    provided = (request.query_params.get("token")
+                or request.headers.get("x-debug-token") or "").strip()
+    if not (provided and hmac.compare_digest(provided, secret)):
+        return JSONResponse({"ok": False, "err": "forbidden"}, status_code=403)
+    health = _dhs.storage_health()
+    if not health.get("is_shadow_file"):
+        return JSONResponse({"ok": False, "err": "not shadow file"}, status_code=409)
+    return {"ok": True, "storage_health": health, "history": _dhs._load_all()}
+
+
 # ── Inlog-API (eigen scherm; zet/leest de sessie-cookie) ────────────────────
 class Login(BaseModel):
     wie: str = ""
