@@ -171,8 +171,34 @@ function toonView(view) {
   haptic(6);
   if (view === "home") renderHome();
   if (laders[view] && !geladen[view]) { geladen[view] = true; laders[view](); }
+  pushRoute(view);
 }
 $$("[data-open-view]").forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+
+// ── Deep-link routing: view + geselecteerde atleet overleven een refresh (#C) ─
+// De PWA had géén URL-state; elke refresh viel terug op Home + de volledige lijst.
+// We schrijven nu een lichte hash (#view of #atleten/<id>) en herstellen die bij
+// laden en bij terug/vooruit. Expliciete URL wint; onbekende atleet valt netjes
+// terug (openDossier toont dan 'kon niet laden'), onbekende view → Home.
+let _routing = false;                                   // onderdruk hash-schrijven tijdens toepassen
+function pushRoute(view, ident) {
+  if (_routing) return;
+  const h = "#" + (ident ? `${view}/${encodeURIComponent(ident)}` : view);
+  if (location.hash !== h) { try { history.pushState(null, "", h); } catch {} }
+}
+function applyRoute() {
+  const raw = decodeURIComponent((location.hash || "").replace(/^#/, ""));
+  const slash = raw.indexOf("/");
+  const view = slash === -1 ? raw : raw.slice(0, slash);
+  const ident = slash === -1 ? "" : raw.slice(slash + 1);
+  _routing = true;
+  try {
+    if (view && document.querySelector(`.view[data-view="${view}"]`)) toonView(view);
+    else toonView("home");
+    if (view === "atleten" && ident) openDossier(ident);   // synchrone prefix draait nog binnen de guard
+  } finally { _routing = false; }
+}
+window.addEventListener("popstate", applyRoute);
 
 // Begroeting + datum voor de home-hero (zelfde toon als de Streamlit-home)
 function groetInfo() {
@@ -1406,6 +1432,7 @@ $("#a-refresh").addEventListener("click", () => { geladen.atleten = true; laadDo
 
 async function openDossier(ident) {
   dossierSel = ident;
+  pushRoute("atleten", ident);              // deep-link: refresh houdt deze atleet open (#C)
   const wrap = $("#d-detail");
   if (isDesktop()) { markSel(ident); }      // laptop: lijst blijft, rij licht op
   else { $(".md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }  // telefoon: meteen 'in' de klant
@@ -1519,7 +1546,7 @@ function tekenAtleet(d) {
 
   bindAccordions(wrap);
   $("#scroller").scrollTo({ top: 0 });
-  $("#d-terug").addEventListener("click", () => tekenDossierLijst($("#d-zoek").value));
+  $("#d-terug").addEventListener("click", () => { dossierSel = null; pushRoute("atleten"); tekenDossierLijst($("#d-zoek").value); });
 
   const doeKoppel = async (userKey) => {
     if (!userKey) return melding("Kies eerst een atleet.", true);
@@ -3690,4 +3717,20 @@ if ("serviceWorker" in navigator) {
 }
 toonOffline();
 if (navigator.onLine) flush();
-renderHome();
+
+// Verse gegevens zonder polling: keert de coach ná >30s terug naar de tab, dan
+// laten we de lui-geladen lijsten (atleten/schema) hervalideren zodat een nieuwe
+// intake niet minutenlang stale blijft. Nooit tijdens een open dossier/workbench,
+// dus geen contextverlies. (#D)
+let _laatstZichtbaar = Date.now();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  const weg = Date.now() - _laatstZichtbaar; _laatstZichtbaar = Date.now();
+  if (weg < 30000) return;                              // korte tab-switch: laat staan
+  geladen.atleten = false; geladen.schema = false;      // eerstvolgende opening haalt vers op
+  if (huidigeView === "atleten" && !dossierSel) { geladen.atleten = true; laadDossierLijst(); }
+  const sbLijst = $("#sb-lijst");
+  if (huidigeView === "schema" && sbLijst && sbLijst.offsetParent !== null) { geladen.schema = true; laadSchema(); }
+});
+
+applyRoute();                                           // herstel view/atleet uit de URL (#C), val terug op Home
