@@ -25,6 +25,21 @@ class TestRefreshRetention:
         assert "applyRoute();" in staart
 
 
+class TestSchemaSelector:
+    """G — hybride atletenselector (tegels/grid + zoek/filter + selected state)."""
+
+    def test_selector_mechaniek_aanwezig(self):
+        assert "function tekenSchemaGrid" in _APP and "_schemaKaart" in _APP
+        assert 'id="sb-zoek-in"' in _APP                # zoekbalk
+        assert 'id="sb-chips"' in _APP                  # groep-filter
+        assert 'class="sb-tile' in _APP                 # compacte tegel
+
+    def test_grid_desktop_2_dan_3_kolommen(self):
+        css = open(os.path.join(_ROOT, "pwa", "static", "styles.css")).read()
+        assert "repeat(2,1fr)" in css and "repeat(3,1fr)" in css   # 2 default, 3 pas bij ruimte
+        assert ".sb-tile.sel" in css                    # duidelijke selected state
+
+
 class TestIntakeFreshness:
     def test_revalidatie_op_focus(self):
         assert "visibilitychange" in _APP

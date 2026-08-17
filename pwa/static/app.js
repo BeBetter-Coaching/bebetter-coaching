@@ -2359,6 +2359,8 @@ function fbLockQueue(on) {
 // SCHEMA BOUWEN — opgeslagen intake → AI-plan → CSV-download voor FinalSurge
 // ════════════════════════════════════════════════════════════════════════════
 let schemaAtleten = [];
+let schemaFilterGroep = "";     // "" = alle groepen
+let schemaSelKey = "";          // laatst gekozen atleet (selected state)
 async function laadSchema() {
   const box = $("#sb-lijst"), info = $("#sb-info");
   $("#sb-werk").hidden = true; box.hidden = false;
@@ -2366,6 +2368,7 @@ async function laadSchema() {
   const r = await api("/api/schema/atleten").catch(() => null);
   if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
   schemaAtleten = r.atleten || [];
+  schemaFilterGroep = "";
   info.textContent = r.ai
     ? "Kies een atleet. De AI maakt een conceptplan waar je over spart; een bestaande intake wordt slim voorgevuld."
     : "AI-sleutel nog niet ingesteld.";
@@ -2373,35 +2376,55 @@ async function laadSchema() {
     box.innerHTML = `<div class="leeg">${ic("brain")}<p>Geen atleten gevonden.<br>Controleer de FinalSurge-koppeling.</p></div>`;
     return;
   }
-  box.innerHTML = "";
-  // Gegroepeerd per coachgroep in centrale FinalSurge-volgorde (server), binnen
-  // groep alfabetisch. 'Los trainingsschema' hoort hier gewoon bij.
+  // Groepen in server-volgorde (centrale FinalSurge-volgorde). 'Los schema' hoort erbij.
   const groepen = [];
-  const perGroep = {};
-  schemaAtleten.forEach(a => {
-    const g = a.groep || "Overig";
-    if (!perGroep[g]) { perGroep[g] = []; groepen.push(g); }
-    perGroep[g].push(a);
+  schemaAtleten.forEach(a => { const g = a.groep || "Overig"; if (!groepen.includes(g)) groepen.push(g); });
+  const zoekSvg = `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`;
+  const chips = groepen.length > 1
+    ? `<div class="chips" id="sb-chips"><button class="chip on" data-g="">Alle</button>` +
+      groepen.map(g => `<button class="chip" data-g="${esc(g)}">${esc(g)}</button>`).join("") + `</div>`
+    : "";
+  box.innerHTML = `<div class="search sb-zoek">${zoekSvg}<input id="sb-zoek-in" placeholder="Zoek atleet" autocomplete="off"></div>
+    ${chips}<div id="sb-grid"></div>`;
+  const inp = $("#sb-zoek-in");
+  inp.addEventListener("input", () => tekenSchemaGrid(inp.value));
+  $("#sb-chips")?.addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    schemaFilterGroep = b.dataset.g || "";
+    $$("#sb-chips .chip").forEach(c => c.classList.toggle("on", c === b));
+    tekenSchemaGrid(inp.value);
   });
-  groepen.forEach(g => {
-    const h = document.createElement("p"); h.className = "sec-label"; h.textContent = g;
-    box.appendChild(h);
-    perGroep[g].forEach(a => {
-      const el = document.createElement("button");
-      el.className = "listcard";
-      const sub = a.doel ? esc(a.doel) : "nieuw schema";   // intake = prefill-hint, geen voorwaarde
-      const meta = a.heeft_intake
-        ? `${a.weken ? a.weken + " weken" : ""}${a.trainingsdagen ? " · " + esc(a.trainingsdagen) : ""}`
-        : "nog geen intake — je vult de config in";
-      el.innerHTML = `<span class="avatar">${initialen(a.naam)}</span>
-        <span class="lc-body"><span class="lc-title">${esc(a.naam)}</span>
-          <span class="lc-sub">${sub}</span>
-          <span class="lc-meta">${meta}</span>
-        </span>${ic("chevron")}`;
-      el.addEventListener("click", () => schemaWerk(a));
-      box.appendChild(el);
-    });
-  });
+  tekenSchemaGrid("");
+}
+function _schemaKaart(a) {
+  // Naam prominent; alleen betrouwbare secundaire info (groep + doel als er intake
+  // is, anders 'nog geen intake'). Terughoudende badge: alleen 'nieuw' zonder intake.
+  const doel = a.doel ? esc(a.doel) : "";
+  const sub = a.heeft_intake ? (doel || "intake bekend") : "nog geen intake";
+  const badge = a.heeft_intake ? "" : `<span class="sb-badge">nieuw</span>`;
+  return `<button class="sb-tile${a.key === schemaSelKey ? " sel" : ""}" data-key="${esc(a.key)}">
+    <span class="avatar sm">${initialen(a.naam)}</span>
+    <span class="sb-b"><span class="sb-nm">${esc(a.naam)}${badge}</span>
+      <span class="sb-sub">${sub}</span></span>${ic("chevron")}</button>`;
+}
+function tekenSchemaGrid(filter) {
+  const grid = $("#sb-grid"); if (!grid) return;
+  const f = (filter || "").trim().toLowerCase();
+  const rijen = schemaAtleten.filter(a =>
+    (!schemaFilterGroep || (a.groep || "Overig") === schemaFilterGroep) &&
+    (!f || (a.naam || "").toLowerCase().includes(f)));
+  if (!rijen.length) {
+    grid.innerHTML = `<div class="sb-leeg">Geen atleet gevonden${f ? ` voor “${esc(filter)}”` : ""}.</div>`;
+    return;
+  }
+  const groepen = [], perGroep = {};
+  rijen.forEach(a => { const g = a.groep || "Overig"; if (!perGroep[g]) { perGroep[g] = []; groepen.push(g); } perGroep[g].push(a); });
+  grid.innerHTML = groepen.map(g =>
+    `<p class="sec-label">${esc(g)}</p><div class="sb-grid">${perGroep[g].map(_schemaKaart).join("")}</div>`).join("");
+  grid.querySelectorAll(".sb-tile").forEach(el => el.addEventListener("click", () => {
+    const a = schemaAtleten.find(x => x.key === el.dataset.key);
+    if (a) { schemaSelKey = a.key; schemaWerk(a); }
+  }));
 }
 
 // ── Schema workbench (Slice 1): canonieke rows → week-preview → open/edit ─────
