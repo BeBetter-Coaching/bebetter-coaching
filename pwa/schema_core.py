@@ -421,13 +421,26 @@ def _actuele_context(key: str, intake: dict) -> str:
 
 
 def bekende_context(key: str) -> dict:
-    """'Bekende atleetcontext' voor de UI + traceability (booleans/tellingen)."""
+    """'Bekende atleetcontext' voor de UI + traceability (booleans/tellingen).
+
+    Onderscheidt expliciet 'niets bekend' (ui_sections met lege categorieën →
+    per sectie 'onbekend') van een BRONFOUT (de centrale contextbuild faalde).
+    Bij een bronfout tonen we source-health i.p.v. een misleidend leeg panel —
+    zodat een atleet met aantoonbaar rijke intake nooit als 'Nog niets bekend'
+    verschijnt door een transiënte fout in de centrale laag."""
     try:
         import athlete_context as AC
         ctx = AC.build_athlete_context(key)
         return {"secties": AC.ui_sections(ctx), "used": AC.used_summary(ctx)}
     except Exception as e:
-        return {"secties": [], "used": {}, "err": str(e)}
+        import sys
+        sys.stderr.write(f"[bekende_context] build faalde voor {key}: {e}\n")
+        return {"secties": [{"titel": "Context tijdelijk niet beschikbaar",
+                             "regels": ["De centrale atleetcontext kon nu niet worden "
+                                        "opgebouwd (bronfout) — dit betekent NIET dat er "
+                                        "niets bekend is. Probeer zo opnieuw."],
+                             "onbekend": False, "source_error": True}],
+                "used": {}, "err": str(e)[:200]}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

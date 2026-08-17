@@ -110,18 +110,26 @@ def to_legacy_context(state, raw: dict, today: date | None = None) -> dict:
     gaps = set(proj.get("source_gaps") or [])
     ik = raw.get("intake") or {}
 
+    # Intake-KENNIS komt nu uit typed evidence (één centrale waarheid), niet meer
+    # uit een ruwe intake-passthrough. `ik` blijft alleen voor pure UI/FS-velden
+    # (zones/zone_type/kalender) en de al-getypeerde doel/recovery-bron.
+    _iev = {e.get("key"): e for e in evs}
+    def _v(key):
+        e = _iev.get(key)
+        return e.get("value") if e else None
+
     tl_gap = "fs.training_log" in gaps
     intake_gap = "intake" in gaps
 
-    # ── A. PROFILE (structureel — passthrough, identiek aan v1) ──────────────
+    # ── A. PROFILE (structureel — kennis uit evidence; zones/zone_type zijn FS/UI) ─
     profile = _compact({
         "doel": ik.get("doel"),
-        "trainingsdagen": ik.get("trainingsdagen"),
+        "trainingsdagen": _v("training_response.available_days"),
         "zones": ik.get("zones"),
         "zone_type": ik.get("zone_type"),
-        "loopervaring": ik.get("loopervaring"),
-        "voorkeur_leuk": ik.get("leuk"),
-        "voorkeur_niet_leuk": ik.get("niet_leuk"),
+        "loopervaring": _v("profile.experience"),
+        "voorkeur_leuk": _v("profile.preference_likes"),
+        "voorkeur_niet_leuk": _v("profile.preference_dislikes"),
     })
 
     # ── B. TRAINING HISTORY — RUN-ONLY uit V2 load.* evidence ────────────────
@@ -144,14 +152,18 @@ def to_legacy_context(state, raw: dict, today: date | None = None) -> dict:
             onderbreking = f"on hold sinds {on_hold.get('since')}: {on_hold.get('reden')}"
 
     training = _compact({
-        "huidig_volume_intake": ik.get("huidig_volume"),
+        "huidig_volume_intake": _v("load.volume_intake"),
         "km_per_week": km,
         "runs_per_week": runs,
         "trend": trend,
         "onderbreking": onderbreking,
-        "eerdere_schema_ervaring": ik.get("eerdere_schemas"),
-        "reageerde_goed_op": ik.get("wat_werkte"),
-        "reageerde_slecht_op": ik.get("wat_niet_werkte"),
+        "referentie_prestatie": _v("load.reference_performance"),
+        "langste_recent": _v("load.longest_recent"),
+        "tijd_per_sessie": _v("training_response.time_per_session"),
+        "kwaliteitservaring": _v("training_response.quality_experience"),
+        "eerdere_schema_ervaring": _v("training_response.schema_history"),
+        "reageerde_goed_op": _v("training_response.responds_well"),
+        "reageerde_slecht_op": _v("training_response.responds_poorly"),
         # SOURCE-HEALTH: geen stille "stabiel" bij bronuitval
         "databron_onzeker": ("recente trainingslog niet beschikbaar — belastbaarheid "
                              "onzeker, bouw conservatief op" if tl_gap else None),
@@ -176,7 +188,7 @@ def to_legacy_context(state, raw: dict, today: date | None = None) -> dict:
     health = _compact({
         "actuele_klachten": actuele or None,
         "terugkerend": terugkerend or None,
-        "blessurehistorie": ik.get("blessurehistorie"),
+        "blessurehistorie": _v("health.injury_history"),
     })
 
     # ── E. FEEDBACK — belastingsignaal uit V2; coach-notities verbatim ───────
@@ -196,16 +208,16 @@ def to_legacy_context(state, raw: dict, today: date | None = None) -> dict:
     goals = _compact({
         "doel": ik.get("doel"),
         "wedstrijddatum": ik.get("wedstrijddatum") or ik.get("wedstrijddatum_tekst"),
-        "race_prioriteit": ik.get("race_prioriteit"),
-        "tussenraces": ik.get("tussenraces"),
+        "race_prioriteit": _v("goal.race_priority"),
+        "tussenraces": _v("goal.intermediate_races"),
         "kalender_labels": [f"{l.get('start_date','')}: {l.get('name','')}" for l in labels][:6] or None,
     })
 
-    # ── G. COACH KNOWLEDGE (passthrough) ─────────────────────────────────────
+    # ── G. COACH KNOWLEDGE (coach_memory = passthrough profiel; intake-notitie uit evidence) ─
     profiel = (raw.get("profiel") or "").strip()
     coach = _compact({
         "coach_memory": profiel or None,
-        "coach_notitie_intake": ik.get("coach_notitie"),
+        "coach_notitie_intake": _v("coach.intake_note"),
     })
 
     ctx = {
