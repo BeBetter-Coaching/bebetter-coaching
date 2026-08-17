@@ -16,6 +16,7 @@ Zo blijft het laden van deze module (en dus de app-boot) veilig, ook zonder key.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 from collections import defaultdict
@@ -76,6 +77,7 @@ def coachbare_atleten() -> list[dict]:
                 "weken": ik.get("weken", ""),
                 "trainingsdagen": ik.get("trainingsdagen", ""),
                 "heeft_intake": bool(ik),        # alleen een hint; geen filter
+                "intake_stamp": _intake_stamp(ik),   # draft-invalidatie bij gewijzigde intake
             })
     return out
 
@@ -236,6 +238,22 @@ def _nieuwste_intake(key: str) -> dict:
     return dict(rec) if isinstance(rec, dict) else {}
 
 
+def _intake_stamp(ik: dict | None) -> str:
+    """Vingerafdruk van de canonieke intake-velden die de Schema-config voeden.
+
+    Verandert zodra de gekoppelde intake wijzigt (bv. na koppelen aan een user_key).
+    Een schema-draft draagt de stamp waarop hij gebouwd is; wijkt die af van de
+    huidige canonieke stamp, dan weet de workbench dat zijn config-prefill stale is
+    en herlaadt hij de canonieke waarheid. Geen tweede store, geen nieuwe identity."""
+    if not ik:
+        return ""
+    velden = ("doel", "trainingsdagen", "huidig_volume", "tijd_per_training",
+              "wedstrijddatum", "schema_einddatum", "weken", "referentie_prestatie",
+              "blessurehistorie", "andere_sporten", "zones", "gekoppeld_op", "updated_at")
+    ruw = "|".join(str(ik.get(f, "")) for f in velden)
+    return hashlib.sha1(ruw.encode("utf-8")).hexdigest()[:12]
+
+
 def _default_start() -> str:
     """Eerstvolgende maandag (zelfde default als de Streamlit-bouwer)."""
     v = date.today()
@@ -362,7 +380,8 @@ def config_prefill(key: str) -> dict:
         "andere_sporten": base.get("andere_sporten", ""), "op_tijd": base.get("op_tijd", False),
         "_context": "",   # zware actuele context — pas bij plan-generatie gevuld
     }
-    return {"config": config, "context": context_config(config), "afspraken": afspraken(config)}
+    return {"config": config, "context": context_config(config), "afspraken": afspraken(config),
+            "intake_stamp": _intake_stamp(base)}
 
 
 def _intake_from_config(key: str, config: dict) -> dict:

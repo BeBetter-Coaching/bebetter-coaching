@@ -196,6 +196,7 @@ function applyRoute() {
     if (view && document.querySelector(`.view[data-view="${view}"]`)) toonView(view);
     else toonView("home");
     if (view === "atleten" && ident) openDossier(ident);   // synchrone prefix draait nog binnen de guard
+    else if (view === "schema") { if (ident) openSchemaAthlete(ident); else { schemaOpenPending = ""; sbToonLijst(); } }
   } finally { _routing = false; }
 }
 window.addEventListener("popstate", applyRoute);
@@ -2496,6 +2497,7 @@ function fbLockQueue(on) {
 let schemaAtleten = [];
 let schemaSelKey = "";          // laatst gekozen atleet (selected state)
 let schemaPicker = null;
+let schemaOpenPending = "";     // athlete uit de route die geopend moet worden zodra de roster er is
 async function laadSchema() {
   const box = $("#sb-lijst"), info = $("#sb-info");
   $("#sb-werk").hidden = true; box.hidden = false;
@@ -2524,6 +2526,7 @@ async function laadSchema() {
     secondary: a => (a.heeft_intake && a.doel) ? esc(a.doel) : "",
     onActivate: a => { schemaSelKey = a.key; schemaWerk(a); },
   });
+  if (schemaOpenPending) openSchemaAthlete(schemaOpenPending);   // deep-link/refresh: heropen de athlete-workbench
 }
 
 // ── Schema workbench (Slice 1): canonieke rows → week-preview → open/edit ─────
@@ -2581,10 +2584,16 @@ function sbDebouncedSave() { clearTimeout(_sbSaveT); _sbSaveT = setTimeout(sbDra
 // (na Bouw schema) de workbench-rows. Re-entry/reload herstelt exact de juiste fase.
 function schemaWerk(a, mode) {
   mode = mode || "nieuw";
+  pushRoute("schema", a.key);            // deep-link: refresh/terug houdt deze athlete-workbench (#coherentie)
   $("#sb-lijst").hidden = true;
   $("#sb-werk").hidden = false;
   const draft = sbDraftLoad(a.key, mode);
-  if (draft && draft.stage) {
+  // Coherentie: een CONFIG-draft is alleen geldig zolang de canonieke intake niet
+  // wijzigde. Na (her)koppelen verandert a.intake_stamp → een oude/lege config-draft
+  // is dan stale → verse canonieke prefill i.p.v. lege velden. Gevorderde stages
+  // (plan/workbench) dragen echt coachwerk en blijven behouden.
+  const configStale = draft && draft.stage === "config" && (draft.intake_stamp || "") !== (a.intake_stamp || "");
+  if (draft && draft.stage && !configStale) {
     sbState = draft; sbState.naam = a.naam; sbState.mode = mode;
     // 'publish' is een live check → val terug op de workbench (rows intact); coach opent preview opnieuw.
     if ((sbState.stage === "workbench" || sbState.stage === "publish") && sbState.weken && sbState.weken.length) {
@@ -2619,7 +2628,15 @@ function sbWireModeBar() {
   }));
 }
 
-function sbBackToList() { sbState = null; laadSchema(); }
+function sbBackToList() { sbState = null; pushRoute("schema"); laadSchema(); }
+function sbToonLijst() { $("#sb-werk").hidden = true; $("#sb-lijst").hidden = false; }
+// Deep-link: open (of markeer voor openen zodra de roster geladen is) een athlete-
+// workbench uit de route. Hergebruikt de bestaande hash-routing (geen nieuwe laag).
+function openSchemaAthlete(ident) {
+  const a = (schemaAtleten || []).find(x => x.key === ident);
+  if (a) { schemaOpenPending = ""; schemaWerk(a); }
+  else { schemaOpenPending = ident; }
+}
 
 // ── Fase 1 — schema-instellingen (modus NIEUW), slimme prefill ───────────────
 async function sbStartConfig(a) {
@@ -2631,7 +2648,8 @@ async function sbStartConfig(a) {
   const r = await api("/api/schema/config?key=" + encodeURIComponent(a.key)).catch(() => null);
   if (!r || !r.ok) { const l = $("#sb-cfg-load"); if (l) l.textContent = "Kon instellingen niet laden."; return; }
   sbState = { key: a.key, naam: a.naam, mode: "nieuw", stage: "config", config: r.config || {},
-    context: r.context || {}, plan: "", planEdited: false, prevPlan: null, chat: [] };
+    context: r.context || {}, plan: "", planEdited: false, prevPlan: null, chat: [],
+    intake_stamp: r.intake_stamp || (a.intake_stamp || "") };   // canonieke-intake-versie van deze prefill
   sbState.config.mode = "nieuw";
   sbDraftSave();
   sbRenderConfig();
