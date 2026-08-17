@@ -12,6 +12,7 @@ from datetime import date, datetime
 from . import complaints as _complaints
 from . import contradictions as _contradictions
 from . import derive as _derive
+from . import intake_evidence as _intake_evidence
 from . import patterns as _patterns
 from . import recency
 from . import sources as _sources
@@ -83,6 +84,11 @@ def _base_evidence(raw: dict, athlete_key: str, today: date) -> list:
                                 observed_at=str(bel.get("_stand_datum") or "")[:10],
                                 athlete_key=athlete_key,
                                 detail={"signalen": (bel.get("signalen") or [])[:3]}))
+
+    # Rijke intake-kennis als typed evidence (verbatim, ATHLETE_REPORTED) — één
+    # centrale waarheid i.p.v. ruwe passthrough in de adapter. Levert alleen keys
+    # die hierboven/complaints nog niet leverden (geen dubbele evidence).
+    out += _intake_evidence.intake_evidence(raw, athlete_key, today)
     return out
 
 
@@ -115,7 +121,11 @@ def _good_is_good(evidence: list, health: list, gaps: list) -> str:
     hm = _health_map(health)
     # taak-relevante kernbron voor 'load stabiel' = training_log (of last-known-good)
     tl = hm.get("fs.training_log")
-    has_load = any(e.domain == "load" and e.key.startswith("load.") for e in evidence)
+    # 'has_load' = ECHTE belastbaarheid (afgeleid uit trainingslog/belasting), NIET
+    # de door de atleet zelf gemelde intake-volume/referenties. Anders zou een
+    # rijke intake de source-health-gate omzeilen (nooit GOOD/STABLE zonder bron).
+    has_load = any(e.domain == "load" and e.key.startswith("load.")
+                   and e.source != "intake" for e in evidence)
     tl_ok = bool(tl and tl.available) or has_load
     if not tl_ok:
         return INSUFFICIENT_DATA

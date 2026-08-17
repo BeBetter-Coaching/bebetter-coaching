@@ -34,8 +34,15 @@ def for_schema(state) -> dict:
             continue                                  # geen losse observatie-dump
         if _is_complaint_group(e) and e.status in (RESOLVED, HISTORICAL):
             continue                                  # planning kijkt naar actief/recurring
+        # planning-relevante intake-kennis: profielvoorkeuren/ervaring, blessure-
+        # HISTORIE (verleden, geen actuele klacht) en coach-planning-context.
+        planning_intake = (
+            e.domain == "profile"
+            or e.key == "health.injury_history"
+            or e.key in ("coach.memory", "coach.intake_note")
+        )
         if e.domain in ("load", "training_response", "goal", "zones", "recovery") \
-                or (_is_complaint_group(e)):
+                or _is_complaint_group(e) or planning_intake:
             keep.append(e)
     return {
         "task": "schema", "athlete_key": state.athlete_key, "naam": state.naam,
