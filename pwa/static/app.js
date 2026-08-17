@@ -2397,14 +2397,13 @@ async function laadSchema() {
   tekenSchemaGrid("");
 }
 function _schemaKaart(a) {
-  // Naam prominent; alleen betrouwbare secundaire info (groep + doel als er intake
-  // is, anders 'nog geen intake'). Terughoudende badge: alleen 'nieuw' zonder intake.
+  // Naam dominant; secundaire status subtiel. Geen badge: 'nieuw' zou exact 'nog
+  // geen intake' dupliceren — de subregel draagt de status al, dus badge weg.
   const doel = a.doel ? esc(a.doel) : "";
   const sub = a.heeft_intake ? (doel || "intake bekend") : "nog geen intake";
-  const badge = a.heeft_intake ? "" : `<span class="sb-badge">nieuw</span>`;
   return `<button class="sb-tile${a.key === schemaSelKey ? " sel" : ""}" data-key="${esc(a.key)}">
     <span class="avatar sm">${initialen(a.naam)}</span>
-    <span class="sb-b"><span class="sb-nm">${esc(a.naam)}${badge}</span>
+    <span class="sb-b"><span class="sb-nm">${esc(a.naam)}</span>
       <span class="sb-sub">${sub}</span></span>${ic("chevron")}</button>`;
 }
 function tekenSchemaGrid(filter) {
