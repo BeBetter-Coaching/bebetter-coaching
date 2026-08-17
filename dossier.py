@@ -445,6 +445,7 @@ def render_dossier(athlete: dict, intake: dict | None, on_hold_info: dict | None
         if intake:
             _velden = [
                 ("Doel", intake.get("doel")),
+                ("E-mail", intake.get("email")),
                 ("Motivatie", intake.get("motivatie")),
                 ("Wedstrijd", intake.get("wedstrijddatum_tekst")),
                 ("Referentieprestatie", intake.get("referentie_prestatie")),

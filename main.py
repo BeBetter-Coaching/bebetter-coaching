@@ -24,6 +24,7 @@ import rompslomp_client
 import base64
 import html as _html_mod
 import io
+import time
 import pandas as pd
 import json
 import os
@@ -204,18 +205,33 @@ def _check_password() -> bool:
     return False
 
 
+# Overgeslagen-workouts is een GEDEELDE bron tussen de PWA en Streamlit
+# (skipped.json). Streamlit hield deze vroeger één keer per sessie in
+# session_state en ververste nooit — een skip in de PWA bleef dan in een lopende
+# Streamlit-sessie zichtbaar als openstaand. We geven de cache nu een korte TTL:
+# cross-app blijft de skip-status hooguit ~30s stale, zónder per Streamlit-rerun
+# GitHub te raken.
+_SKIPPED_TTL_S = 30
+
 def _load_skipped() -> dict:
-    """Overgeslagen workout_keys met timestamp — gedeeld tussen beide coaches."""
-    if "_skipped_cache" not in st.session_state:
+    """Overgeslagen workout_keys met timestamp — gedeeld tussen PWA en Streamlit.
+
+    Korte TTL zodat een skip in de PWA binnen ~30s ook in Streamlit landt (en
+    andersom), zonder elke rerun de GitHub-store te lezen."""
+    now = time.monotonic()
+    ts = st.session_state.get("_skipped_cache_ts", 0.0)
+    if "_skipped_cache" not in st.session_state or (now - ts) > _SKIPPED_TTL_S:
         try:
             st.session_state["_skipped_cache"] = intake_store.load_skipped()
         except Exception:
-            st.session_state["_skipped_cache"] = {}
+            st.session_state.setdefault("_skipped_cache", {})
+        st.session_state["_skipped_cache_ts"] = now
     return st.session_state["_skipped_cache"]
 
 def _save_skipped(skipped: dict):
     """Sla overgeslagen workouts op (cache + GitHub write-through)."""
     st.session_state["_skipped_cache"] = skipped
+    st.session_state["_skipped_cache_ts"] = time.monotonic()
     try:
         intake_store.save_skipped(skipped)
     except Exception:

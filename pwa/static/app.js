@@ -19,8 +19,8 @@ const api = (u, opt = {}) => fetch(u, { ...opt, headers: authHeaders(opt.headers
   if (r.status === 401) { toonLogin(); throw new Error("auth"); }   // sessie verlopen → inlogscherm
   return r.json();
 });
-const jpost = (u, body, method = "POST") => api(u, {
-  method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+const jpost = (u, body, method = "POST", keepalive = false) => api(u, {
+  method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive,
 });
 const haptic = ms => navigator.vibrate?.(ms);
 const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
@@ -171,8 +171,34 @@ function toonView(view) {
   haptic(6);
   if (view === "home") renderHome();
   if (laders[view] && !geladen[view]) { geladen[view] = true; laders[view](); }
+  pushRoute(view);
 }
 $$("[data-open-view]").forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+
+// ── Deep-link routing: view + geselecteerde atleet overleven een refresh (#C) ─
+// De PWA had géén URL-state; elke refresh viel terug op Home + de volledige lijst.
+// We schrijven nu een lichte hash (#view of #atleten/<id>) en herstellen die bij
+// laden en bij terug/vooruit. Expliciete URL wint; onbekende atleet valt netjes
+// terug (openDossier toont dan 'kon niet laden'), onbekende view → Home.
+let _routing = false;                                   // onderdruk hash-schrijven tijdens toepassen
+function pushRoute(view, ident) {
+  if (_routing) return;
+  const h = "#" + (ident ? `${view}/${encodeURIComponent(ident)}` : view);
+  if (location.hash !== h) { try { history.pushState(null, "", h); } catch {} }
+}
+function applyRoute() {
+  const raw = decodeURIComponent((location.hash || "").replace(/^#/, ""));
+  const slash = raw.indexOf("/");
+  const view = slash === -1 ? raw : raw.slice(0, slash);
+  const ident = slash === -1 ? "" : raw.slice(slash + 1);
+  _routing = true;
+  try {
+    if (view && document.querySelector(`.view[data-view="${view}"]`)) toonView(view);
+    else toonView("home");
+    if (view === "atleten" && ident) openDossier(ident);   // synchrone prefix draait nog binnen de guard
+  } finally { _routing = false; }
+}
+window.addEventListener("popstate", applyRoute);
 
 // Begroeting + datum voor de home-hero (zelfde toon als de Streamlit-home)
 function groetInfo() {
@@ -1348,67 +1374,200 @@ function toonDetailLeeg() {
   w.innerHTML = `<div class="leeg md-leeg">${ic("users")}<p>Kies links een atleet om het dossier te openen.</p></div>`;
 }
 // Gekozen rij oplichten zonder de lijst opnieuw te tekenen
-function markSel(key) {
-  $$("#d-lijst .listcard").forEach(el => el.classList.toggle("sel", el.dataset.key === key));
+// ════════════════════════════════════════════════════════════════════════════
+// GEDEELDE ATHLETE PICKER — één selectie-primitive (Schema, Intake-koppel, Atleten)
+// Genormaliseerd view-model, canonieke groepsvolgorde + alfabetisch binnen groep,
+// zoeken ALTIJD over alle groepen (nooit stil beperkt door een chip), keyboard
+// (↑↓/Enter/Esc), navigate- vs confirm-modus. Geen intelligence, geen tweede
+// waarheid, geen nieuwe identity: 'key' = FinalSurge user_key (of tijdelijk
+// 'nieuw:naam' pre-link). Task-context bepaalt alleen de secundaire regel.
+// ════════════════════════════════════════════════════════════════════════════
+function renderPicker(cfg) {
+  const mount = cfg.mount; if (!mount) return null;
+  const _css = s => (window.CSS && CSS.escape) ? CSS.escape(String(s)) : String(s);
+  const mode = cfg.mode || "navigate";          // 'navigate' | 'confirm'
+  const withChips = cfg.chips !== false;
+  let selKey = cfg.selectedKey || "";
+  let groepFilter = "";                          // actieve chip ("" = alle)
+  let focusKey = "";                             // keyboard-focus
+
+  const zoekSvg = `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`;
+  const eigenSearch = !cfg.searchEl;
+  mount.innerHTML =
+    (eigenSearch ? `<div class="search pk-zoek">${zoekSvg}<input class="pk-in" placeholder="${esc(cfg.placeholder || "Zoek atleet")}" autocomplete="off"></div>` : "") +
+    (withChips ? `<div class="chips pk-chips"></div>` : "") +
+    `<div class="pk-roster" role="listbox"></div>`;
+  const inEl = cfg.searchEl || mount.querySelector(".pk-in");
+  const chipsEl = withChips ? mount.querySelector(".pk-chips") : null;
+  const rosterEl = mount.querySelector(".pk-roster");
+  const items = () => cfg.items || [];
+
+  // Canonieke groepsvolgorde: bekende groepen eerst (in doorgegeven volgorde),
+  // onbekende erachter op alfabet; 'Zonder groep' hoort apart (buiten deze lijst).
+  function groepenInVolgorde(list) {
+    const aanwezig = [...new Set(list.map(a => (a.groep || "").trim()).filter(Boolean))];
+    const canon = (cfg.groupOrder || []).filter(g => aanwezig.includes(g));
+    aanwezig.filter(g => !canon.includes(g)).sort((a, b) => a.localeCompare(b, "nl", { numeric: true })).forEach(g => canon.push(g));
+    return canon;
+  }
+  function bouwChips() {
+    if (!chipsEl) return;
+    const groepen = groepenInVolgorde(items());
+    chipsEl.innerHTML = `<button class="chip${groepFilter === "" ? " on" : ""}" data-g="">Alle</button>` +
+      groepen.map(g => `<button class="chip${groepFilter === g ? " on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
+  }
+  chipsEl?.addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    groepFilter = b.dataset.g || "";
+    chipsEl.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b));
+    teken();
+  });
+
+  function gefilterd() {
+    const f = (inEl && inEl.value || "").trim().toLowerCase();
+    // Regel: zoeken gaat ALTIJD over alle groepen. De chip beperkt alleen als er
+    // niet gezocht wordt — zo wordt een zoekopdracht nooit stil ingeperkt.
+    return items().filter(a =>
+      (f ? true : (!groepFilter || (a.groep || "").trim() === groepFilter)) &&
+      (!f || (a.naam || "").toLowerCase().includes(f)));
+  }
+  const opNaam = arr => arr.slice().sort((x, y) => (x.naam || "").localeCompare(y.naam || "", "nl"));
+  function rij(a) {
+    const sub = cfg.secondary ? (cfg.secondary(a) || "") : "";
+    return `<button class="pk-row${a.key === selKey ? " sel" : ""}" data-k="${esc(a.key)}" role="option" aria-selected="${a.key === selKey}">
+      <span class="pk-av">${initialen(a.naam)}</span>
+      <span class="pk-b"><span class="pk-nm">${esc(a.naam)}</span>${sub ? `<span class="pk-sub">${sub}</span>` : ""}</span>
+      ${mode === "navigate" ? `<svg class="pk-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>` : ""}
+    </button>`;
+  }
+  function teken() {
+    const list = gefilterd();
+    if (!list.length) { rosterEl.innerHTML = `<div class="pk-leeg">${esc(cfg.emptyText || "Geen atleet gevonden.")}</div>`; return; }
+    const perGroep = {}, losse = [];
+    list.forEach(a => { const g = (a.groep || "").trim(); if (g) { (perGroep[g] = perGroep[g] || []).push(a); } else losse.push(a); });
+    let html = "";
+    groepenInVolgorde(list).forEach(g => { html += `<p class="pk-ghead">${esc(g)}</p>` + opNaam(perGroep[g]).map(rij).join(""); });
+    if (losse.length) html += `<p class="pk-ghead">Zonder groep</p>` + opNaam(losse).map(rij).join("");
+    rosterEl.innerHTML = html;
+    rosterEl.querySelectorAll(".pk-row").forEach(el => el.addEventListener("click", () => kies(el.dataset.k, true)));
+    if (focusKey) rosterEl.querySelector(`.pk-row[data-k="${_css(focusKey)}"]`)?.classList.add("foc");
+  }
+  function kies(key, activated) {
+    const a = items().find(x => x.key === key); if (!a) return;
+    selKey = key; focusKey = key;
+    if (mode === "navigate") { if (activated && cfg.onActivate) cfg.onActivate(a); }
+    else { teken(); if (cfg.onSelect) cfg.onSelect(a); }
+  }
+  function beweeg(delta) {
+    const keys = [...rosterEl.querySelectorAll(".pk-row")].map(el => el.dataset.k);
+    if (!keys.length) return;
+    let i = keys.indexOf(focusKey); i = i < 0 ? 0 : Math.min(keys.length - 1, Math.max(0, i + delta));
+    focusKey = keys[i];
+    rosterEl.querySelectorAll(".pk-row").forEach(el => el.classList.toggle("foc", el.dataset.k === focusKey));
+    rosterEl.querySelector(`.pk-row[data-k="${_css(focusKey)}"]`)?.scrollIntoView({ block: "nearest" });
+  }
+  const onKey = e => {
+    if (e.key === "ArrowDown") { e.preventDefault(); beweeg(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); beweeg(-1); }
+    else if (e.key === "Enter") { if (focusKey) { e.preventDefault(); kies(focusKey, true); } }
+    else if (e.key === "Escape") { if (inEl && inEl.value) { inEl.value = ""; teken(); } else if (cfg.onEscape) cfg.onEscape(); }
+  };
+  inEl?.addEventListener("input", teken);
+  inEl?.addEventListener("keydown", onKey);
+
+  bouwChips(); teken();
+  if (cfg.autofocus && inEl) setTimeout(() => inEl.focus(), 40);
+  return {
+    setItems(newItems) { cfg.items = newItems; bouwChips(); teken(); },
+    getSelected() { return items().find(x => x.key === selKey) || null; },
+    setSelected(k) { selKey = k; focusKey = k; teken(); },
+    focusSearch() { inEl && inEl.focus(); },
+    herteken: teken,
+  };
 }
 
-async function laadDossierLijst() {
-  const box = $("#d-lijst");
-  skeleton(box, 6);
-  let data;
-  try { data = await api("/api/atleten"); }
-  catch { box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
-  dossierCache = data.atleten || [];
-  fsActief = !!data.fs;
-  tekenDossierLijst($("#d-zoek").value || "");
+let dossierPicker = null;
+let dossierGroepVolgorde = [];           // canonieke groepsvolgorde (voor koppel-picker)
+// Gedeelde picker in een modal (desktop) / bottom-sheet (mobiel). Confirm-modus:
+// selecteren markeert alleen; de write gebeurt pas op de bevestigknop.
+function openAthletePickerOverlay(opts) {
+  const ov = document.createElement("div");
+  ov.className = "pk-overlay";
+  ov.innerHTML = `<div class="pk-modal" role="dialog" aria-modal="true">
+      <div class="pk-modal-h"><b>${esc(opts.title || "Kies atleet")}</b><button class="pk-x" aria-label="Sluiten">✕</button></div>
+      <div class="pk-modal-body"></div>
+      <div class="pk-modal-foot"><button class="btn ghost pk-cancel">Annuleren</button><button class="btn primary pk-confirm" disabled>${esc(opts.confirmLabel || "Kies")}</button></div>
+    </div>`;
+  document.body.appendChild(ov);
+  const confirmBtn = ov.querySelector(".pk-confirm");
+  const sluit = () => { ov.remove(); document.removeEventListener("keydown", onEsc); };
+  const onEsc = e => { if (e.key === "Escape") sluit(); };
+  document.addEventListener("keydown", onEsc);
+  ov.addEventListener("click", e => { if (e.target === ov) sluit(); });     // backdrop = annuleren (geen write)
+  ov.querySelector(".pk-x").onclick = sluit;
+  ov.querySelector(".pk-cancel").onclick = sluit;
+  const picker = renderPicker({
+    mount: ov.querySelector(".pk-modal-body"), items: opts.items, groupOrder: opts.groupOrder || [],
+    mode: "confirm", autofocus: true, placeholder: opts.placeholder || "Zoek atleet", emptyText: "Geen atleet gevonden.",
+    secondary: a => a.groep ? esc(a.groep) : "", onSelect: a => { confirmBtn.disabled = !a; }, onEscape: sluit,
+  });
+  confirmBtn.onclick = () => { const a = picker.getSelected(); if (!a) return; sluit(); opts.onConfirm(a); };
 }
-
-function tekenDossierLijst(filter) {
-  const box = $("#d-lijst");
-  box.hidden = false;
+function _dossierSecundair(a) {          // task-relevante info: intake + notities/docs
+  const bits = [];
+  if (a.heeft_intake) bits.push("intake");
+  if (a.n_notities) bits.push(a.n_notities + " notitie(s)");
+  if (a.n_documenten) bits.push(a.n_documenten + " document(en)");
+  return bits.join(" · ");
+}
+function toonDossierLijstView() {        // alleen tonen/verbergen (master-detail)
+  $("#d-lijst").hidden = false;
   if (isDesktop()) { if (!dossierSel) toonDetailLeeg(); }   // detail blijft staan naast de lijst
   else { $(".md-list").hidden = false; $("#d-detail").hidden = true; }  // telefoon: terug naar de lijst
-  const f = (filter || "").trim().toLowerCase();
-  const rijen = dossierCache.filter(a => !f || (a.naam || "").toLowerCase().includes(f));
-  if (!rijen.length) {
-    box.innerHTML = `<div class="leeg">${ic("users")}<p>${dossierCache.length
-      ? "Geen atleet gevonden." : (fsActief ? "Geen atleten." : "Nog geen atleten.<br>Koppel FinalSurge (FS_TOKEN) voor de volledige lijst.")}</p></div>`;
-    return;
-  }
-  box.innerHTML = "";
-  rijen.forEach(a => {
-    const el = document.createElement("button");
-    el.className = "listcard";
-    el.dataset.key = a.id;
-    if (a.id === dossierSel) el.classList.add("sel");
-    const meta = [
-      a.n_notities ? a.n_notities + " notitie(s)" : "",
-      a.n_documenten ? a.n_documenten + " document(en)" : "",
-    ].filter(Boolean).join(" · ");
-    el.innerHTML = `
-      <span class="avatar">${initialen(a.naam)}</span>
-      <span class="lc-body">
-        <span class="lc-title">${esc(a.naam)}${a.heeft_intake ? ' <span class="tag">intake</span>' : ""}</span>
-        <span class="lc-sub">${a.groep ? esc(a.groep) : "—"}</span>
-        ${meta ? `<span class="lc-meta">${meta}</span>` : ""}
-      </span>${ic("chevron")}`;
-    el.addEventListener("click", () => openDossier(a.id));
-    box.appendChild(el);
-  });
 }
+async function laadDossierLijst() {
+  const box = $("#d-lijst");
+  if (!dossierPicker) skeleton(box, 6);
+  let data;
+  try { data = await api("/api/atleten"); }
+  catch { if (!dossierPicker) box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  dossierCache = data.atleten || [];
+  dossierGroepVolgorde = data.groep_volgorde || [];
+  fsActief = !!data.fs;
+  const items = dossierCache.map(a => ({ ...a, key: a.id }));   // identity: id = user_key of store_key
+  if (!items.length && !dossierPicker) {
+    box.innerHTML = `<div class="leeg">${ic("users")}<p>${fsActief
+      ? "Geen atleten." : "Nog geen atleten.<br>Koppel FinalSurge (FS_TOKEN) voor de volledige lijst."}</p></div>`;
+    toonDossierLijstView(); return;
+  }
+  // Gedeelde Athlete Picker: group-first (canonieke volgorde), 'Zonder groep'
+  // onderaan, zoeken over alle groepen. Eén keer bouwen (externe #d-zoek); daarna
+  // setItems bij refresh — zo stapelen we geen listeners op de zoekinput.
+  if (dossierPicker) { dossierPicker.setItems(items); }
+  else {
+    dossierPicker = renderPicker({
+      mount: box, searchEl: $("#d-zoek"), items, groupOrder: data.groep_volgorde || [],
+      selectedKey: dossierSel || "", mode: "navigate", emptyText: "Geen atleet gevonden.",
+      secondary: _dossierSecundair, onActivate: a => openDossier(a.key),
+    });
+  }
+  toonDossierLijstView();
+}
+function tekenDossierLijst() { toonDossierLijstView(); dossierPicker && dossierPicker.herteken(); }
 function initialen(naam) {
   const p = (naam || "?").trim().split(/\s+/);
   return ((p[0]?.[0] || "") + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase() || "?";
 }
 
-$("#d-zoek").addEventListener("input", e => tekenDossierLijst(e.target.value));
+// (zoeken wordt door de gedeelde picker aan #d-zoek gebonden)
 $("#a-refresh").addEventListener("click", () => { geladen.atleten = true; laadDossierLijst(); });
 
 async function openDossier(ident) {
   dossierSel = ident;
+  dossierPicker && dossierPicker.setSelected(ident);   // rij licht op (desktop + mobiel)
+  pushRoute("atleten", ident);              // deep-link: refresh houdt deze atleet open (#C)
   const wrap = $("#d-detail");
-  if (isDesktop()) { markSel(ident); }      // laptop: lijst blijft, rij licht op
-  else { $(".md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }  // telefoon: meteen 'in' de klant
+  if (!isDesktop()) { $(".md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }  // telefoon: meteen 'in' de klant
   wrap.hidden = false;
   wrap.innerHTML = '<p class="muted center">Laden…</p>';
   const d = await api(`/api/atleten/${encodeURIComponent(ident)}`).catch(() => null);
@@ -1443,6 +1602,30 @@ function tekenAtleet(d) {
   const prof = dos ? dos.profiel : { tekst: "", bijgewerkt: "" };
   const nDocs = dos ? dos.documenten.length : 0;
 
+  // Losse intake ('nieuw:…') koppelen aan een FinalSurge-account, zodat Schema en
+  // het Masterbrein hem gaan gebruiken (die zoeken op user_key). Non-destructief.
+  const isNieuw = !!(dos && dos.nieuw);
+  const nieuwKey = dos ? dos.key : "";
+  const fsKandidaten = dossierCache.filter(a => a.user_key);   // alleen echte FS-accounts
+  const koppelHtml = isNieuw ? `
+    <section class="panel open-static">
+      <h3 class="panel-h">${ic("file")} Koppel intake aan FinalSurge</h3>
+      <p class="hint">Deze intake staat nog los opgeslagen. Koppel hem aan het FinalSurge-account — daarna gebruikt Schema (en het Masterbrein) hem automatisch.</p>
+      ${d.user_key
+      ? `<button class="btn primary" id="kp-direct">Koppel aan dit account (${esc(d.naam)})</button>`
+      : `<button class="btn primary" id="kp-open">Kies FinalSurge-atleet&hellip;</button>`}
+    </section>` : "";
+  const _redenLabel = r => r === "vervangen_bij_koppelen" ? "vervangen bij koppelen"
+    : r === "opnieuw_overgenomen" ? "opnieuw overgenomen" : (r || "");
+  const historieRijen = (dos && dos.historie && dos.historie.length) ? dos.historie.map(h => `
+    <div class="doc"><span class="doc-d">${esc(h.bijgewerkt || h.gearchiveerd || "")}</span>
+      <span>${esc(h.doel || "—")}${h.reden ? ` <span class="muted klein">(${esc(_redenLabel(h.reden))})</span>` : ""}</span></div>`).join("") : "";
+  const historieHtml = historieRijen ? `
+    <section class="panel">
+      <button class="acc-toggle" data-target="d-hist">${ic("file")} Eerdere intakes (${dos.historie.length})</button>
+      <div id="d-hist" class="collapse">${historieRijen}</div>
+    </section>` : "";
+
   wrap.innerHTML = `
     <button class="btn ghost back" id="d-terug">${ic("back")} Alle atleten</button>
     <div class="d-head"><span class="avatar big">${initialen(d.naam)}</span>
@@ -1460,6 +1643,9 @@ function tekenAtleet(d) {
     ${velden ? `<section class="panel open-static">
       <h3 class="panel-h">${ic("file")} Intake &amp; doel</h3>${velden}
     </section>` : ""}
+
+    ${koppelHtml}
+    ${historieHtml}
 
     <section class="panel open-static">
       <h3 class="panel-h">${ic("note")} Coach-notities <span class="muted klein">(gedeeld Jip &amp; Remco)</span></h3>
@@ -1489,7 +1675,24 @@ function tekenAtleet(d) {
 
   bindAccordions(wrap);
   $("#scroller").scrollTo({ top: 0 });
-  $("#d-terug").addEventListener("click", () => tekenDossierLijst($("#d-zoek").value));
+  $("#d-terug").addEventListener("click", () => { dossierSel = null; pushRoute("atleten"); dossierPicker && dossierPicker.setSelected(""); toonDossierLijstView(); });
+
+  const doeKoppel = async (userKey) => {
+    if (!userKey) return melding("Kies eerst een atleet.", true);
+    const r = await jpost("/api/intake/koppel", { nieuw_key: nieuwKey, user_key: userKey }).catch(() => null);
+    if (!r || !r.ok) return melding(r?.err || "Koppelen mislukt.", true);
+    melding(`Intake gekoppeld aan ${r.naam || "atleet"}.`);
+    vervalDossierLijst();
+    openDossier(userKey);                 // spring naar het gekoppelde FinalSurge-account
+  };
+  $("#kp-direct")?.addEventListener("click", () => doeKoppel(d.user_key));
+  $("#kp-open")?.addEventListener("click", () => openAthletePickerOverlay({
+    title: `Koppel "${esc(d.naam)}" aan FinalSurge`,
+    items: fsKandidaten.map(a => ({ key: a.user_key, naam: a.naam, groep: a.groep })),
+    groupOrder: dossierGroepVolgorde,
+    confirmLabel: "Koppel",
+    onConfirm: a => doeKoppel(a.key),          // write pas na expliciete bevestiging
+  }));
 
   $("#nt-add").addEventListener("click", async () => {
     const tekst = $("#nt-tekst").value.trim();
@@ -2200,6 +2403,7 @@ async function fbSend(id) {
   renderQueue(); fbUpdateInfo(); haptic(15);
   focusNextAfterAction(FB.items[idx] || FB.items[idx - 1] || null);
 }
+let fbPendingSkip = null;                            // actieve, nog-niet-gecommitte skip (voor flush bij verlaten)
 function fbSkip(id) {                                 // optimistic; POST volgt ná het undo-venster
   const idx = FB.items.findIndex(i => i.id === id); if (idx < 0) return;
   const item = FB.items[idx];
@@ -2207,14 +2411,30 @@ function fbSkip(id) {                                 // optimistic; POST volgt 
   renderQueue(); fbUpdateInfo(); haptic(10); fbLog("skip_optimistic", { target: id });
   focusNextAfterAction(FB.items[idx] || FB.items[idx - 1] || null);
   const herstel = () => { FB.skipSet.delete(id); FB.items.splice(Math.min(idx, FB.items.length), 0, item); renderQueue(); fbUpdateInfo(); };
+  let settled = false;
+  const entry = {};
+  const commit = async (keepalive = false) => {      // idempotent: hooguit één POST, ook als toast + flush samenvallen
+    if (settled) return; settled = true;
+    if (fbPendingSkip === entry) fbPendingSkip = null;
+    const r = await jpost("/api/feedback/skip", { id }, "POST", keepalive).catch(() => null);
+    if (!r || !r.ok) {
+      fbLog("skip_error", { target: id });
+      if (!keepalive) { herstel(); melding("Overslaan mislukt — teruggezet.", true); }  // bij unload niet terugrollen: pagina gaat weg
+    } else { fbLog("skip_commit", { target: id }); homeFbBijwerken(-1, 0); }  // Home-balk: één minder wachtend
+  };
+  const undo = () => { if (settled) return; settled = true; if (fbPendingSkip === entry) fbPendingSkip = null; fbLog("skip_undo", { target: id }); herstel(); };
+  entry.commit = () => commit(true);
+  fbPendingSkip = entry;
   fbToast(`Training van ${item.voornaam || item.naam} overgeslagen`,
-    () => { fbLog("skip_undo", { target: id }); herstel(); },   // Ongedaan → exacte plek terug, geen backend-call
-    async () => {                                     // venster voorbij → nu pas overslaan
-      const r = await jpost("/api/feedback/skip", { id }).catch(() => null);
-      if (!r || !r.ok) { fbLog("skip_error", { target: id }); herstel(); melding("Overslaan mislukt — teruggezet.", true); }
-      else { fbLog("skip_commit", { target: id }); homeFbBijwerken(-1, 0); }  // Home-balk: één minder wachtend
-    });
+    undo,                                             // Ongedaan → exacte plek terug, geen backend-call
+    () => commit(false));                             // venster voorbij → nu pas overslaan
 }
+// Verlaat de coach de app binnen het 5s-undo-venster, dan ging de skip vroeger
+// verloren (nooit gepost) → in Streamlit bleef de training openstaan. Flush een
+// hangende skip met keepalive zodat hij de unload overleeft en cross-app klopt.
+function fbFlushPendingSkip() { if (fbPendingSkip) fbPendingSkip.commit(); }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") fbFlushPendingSkip(); });
+window.addEventListener("pagehide", fbFlushPendingSkip);
 // Eén toast met gegarandeerd precies één afloop: Ongedaan óf commit (nooit beide).
 function fbToast(txt, onUndo, onCommit, ms = 5000) {
   let t = $("#prio-toast");
@@ -2274,6 +2494,8 @@ function fbLockQueue(on) {
 // SCHEMA BOUWEN — opgeslagen intake → AI-plan → CSV-download voor FinalSurge
 // ════════════════════════════════════════════════════════════════════════════
 let schemaAtleten = [];
+let schemaSelKey = "";          // laatst gekozen atleet (selected state)
+let schemaPicker = null;
 async function laadSchema() {
   const box = $("#sb-lijst"), info = $("#sb-info");
   $("#sb-werk").hidden = true; box.hidden = false;
@@ -2288,34 +2510,19 @@ async function laadSchema() {
     box.innerHTML = `<div class="leeg">${ic("brain")}<p>Geen atleten gevonden.<br>Controleer de FinalSurge-koppeling.</p></div>`;
     return;
   }
-  box.innerHTML = "";
-  // Gegroepeerd per coachgroep in centrale FinalSurge-volgorde (server), binnen
-  // groep alfabetisch. 'Los trainingsschema' hoort hier gewoon bij.
-  const groepen = [];
-  const perGroep = {};
-  schemaAtleten.forEach(a => {
-    const g = a.groep || "Overig";
-    if (!perGroep[g]) { perGroep[g] = []; groepen.push(g); }
-    perGroep[g].push(a);
-  });
-  groepen.forEach(g => {
-    const h = document.createElement("p"); h.className = "sec-label"; h.textContent = g;
-    box.appendChild(h);
-    perGroep[g].forEach(a => {
-      const el = document.createElement("button");
-      el.className = "listcard";
-      const sub = a.doel ? esc(a.doel) : "nieuw schema";   // intake = prefill-hint, geen voorwaarde
-      const meta = a.heeft_intake
-        ? `${a.weken ? a.weken + " weken" : ""}${a.trainingsdagen ? " · " + esc(a.trainingsdagen) : ""}`
-        : "nog geen intake — je vult de config in";
-      el.innerHTML = `<span class="avatar">${initialen(a.naam)}</span>
-        <span class="lc-body"><span class="lc-title">${esc(a.naam)}</span>
-          <span class="lc-sub">${sub}</span>
-          <span class="lc-meta">${meta}</span>
-        </span>${ic("chevron")}`;
-      el.addEventListener("click", () => schemaWerk(a));
-      box.appendChild(el);
-    });
+  // Gedeelde Athlete Picker (navigate): kiezen opent direct de workbench.
+  // Secundair = doel waar betrouwbaar (groep is de sectiekop). Canonieke groeps-
+  // volgorde uit de server; zoeken over alle groepen; alfabetisch binnen groep.
+  schemaPicker = renderPicker({
+    mount: box,
+    items: schemaAtleten,
+    groupOrder: r.groep_volgorde || [],
+    selectedKey: schemaSelKey,
+    mode: "navigate",
+    placeholder: "Zoek atleet",
+    emptyText: "Geen atleet gevonden.",
+    secondary: a => (a.heeft_intake && a.doel) ? esc(a.doel) : "",
+    onActivate: a => { schemaSelKey = a.key; schemaWerk(a); },
   });
 }
 
@@ -3632,4 +3839,20 @@ if ("serviceWorker" in navigator) {
 }
 toonOffline();
 if (navigator.onLine) flush();
-renderHome();
+
+// Verse gegevens zonder polling: keert de coach ná >30s terug naar de tab, dan
+// laten we de lui-geladen lijsten (atleten/schema) hervalideren zodat een nieuwe
+// intake niet minutenlang stale blijft. Nooit tijdens een open dossier/workbench,
+// dus geen contextverlies. (#D)
+let _laatstZichtbaar = Date.now();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  const weg = Date.now() - _laatstZichtbaar; _laatstZichtbaar = Date.now();
+  if (weg < 30000) return;                              // korte tab-switch: laat staan
+  geladen.atleten = false; geladen.schema = false;      // eerstvolgende opening haalt vers op
+  if (huidigeView === "atleten" && !dossierSel) { geladen.atleten = true; laadDossierLijst(); }
+  const sbLijst = $("#sb-lijst");
+  if (huidigeView === "schema" && sbLijst && sbLijst.offsetParent !== null) { geladen.schema = true; laadSchema(); }
+});
+
+applyRoute();                                           // herstel view/atleet uit de URL (#C), val terug op Home

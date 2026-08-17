@@ -28,6 +28,7 @@ import intake_store  # noqa: E402
 # 1-op-1 herkenbaar is.
 _INTAKE_VELDEN = [
     ("Doel", "doel"),
+    ("E-mail", "email"),
     ("Motivatie", "motivatie"),
     ("Wedstrijd", "wedstrijddatum_tekst"),
     ("Referentieprestatie", "referentie_prestatie"),
@@ -118,8 +119,12 @@ def get_dossier(key: str) -> dict | None:
         prof = intake_store.load_profielen().get(key, {}) or {}
     except Exception:
         prof = {}
+    try:
+        archief = intake_store.load_intake_archief().get(key, []) or []
+    except Exception:
+        archief = []
 
-    if ik is None and not notes and not docs and not prof.get("profiel"):
+    if ik is None and not notes and not docs and not prof.get("profiel") and not archief:
         return None
     ik = ik or {}
 
@@ -129,12 +134,21 @@ def get_dossier(key: str) -> dict | None:
         if ik.get(k)
     ]
 
+    # Non-destructieve intake-history: compacte projectie (geen volledige PII-dump).
+    historie = [{
+        "doel": (h.get("doel", "") or "")[:120],
+        "bijgewerkt": intake_store._intake_ts(h) or h.get("gekoppeld_op", ""),
+        "gearchiveerd": (h.get("_gearchiveerd", "") or "")[:10],
+        "reden": h.get("_archief_reden", ""),
+    } for h in archief]
+
     return {
         "key": key,
         "naam": _naam(key, ik),
         "nieuw": key.startswith("nieuw:"),
         "bijgewerkt": ik.get("updated_at", ""),
         "velden": velden,
+        "historie": historie,
         "notities": notes,
         "documenten": docs,
         "profiel": {
