@@ -19,8 +19,8 @@ const api = (u, opt = {}) => fetch(u, { ...opt, headers: authHeaders(opt.headers
   if (r.status === 401) { toonLogin(); throw new Error("auth"); }   // sessie verlopen → inlogscherm
   return r.json();
 });
-const jpost = (u, body, method = "POST") => api(u, {
-  method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+const jpost = (u, body, method = "POST", keepalive = false) => api(u, {
+  method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive,
 });
 const haptic = ms => navigator.vibrate?.(ms);
 const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
@@ -1443,6 +1443,33 @@ function tekenAtleet(d) {
   const prof = dos ? dos.profiel : { tekst: "", bijgewerkt: "" };
   const nDocs = dos ? dos.documenten.length : 0;
 
+  // Losse intake ('nieuw:…') koppelen aan een FinalSurge-account, zodat Schema en
+  // het Masterbrein hem gaan gebruiken (die zoeken op user_key). Non-destructief.
+  const isNieuw = !!(dos && dos.nieuw);
+  const nieuwKey = dos ? dos.key : "";
+  const fsKandidaten = dossierCache.filter(a => a.user_key);   // alleen echte FS-accounts
+  const koppelHtml = isNieuw ? `
+    <section class="panel open-static">
+      <h3 class="panel-h">${ic("file")} Koppel intake aan FinalSurge</h3>
+      <p class="hint">Deze intake staat nog los opgeslagen. Koppel hem aan het FinalSurge-account — daarna gebruikt Schema (en het Masterbrein) hem automatisch.</p>
+      ${d.user_key
+      ? `<button class="btn primary" id="kp-direct">Koppel aan dit account (${esc(d.naam)})</button>`
+      : `<div class="row">
+           <select id="kp-sel">${fsKandidaten.map(a => `<option value="${esc(a.user_key)}">${esc(a.naam)}${a.groep ? " · " + esc(a.groep) : ""}</option>`).join("")}</select>
+           <button class="btn primary" id="kp-do">Koppel &rarr;</button>
+         </div>`}
+    </section>` : "";
+  const _redenLabel = r => r === "vervangen_bij_koppelen" ? "vervangen bij koppelen"
+    : r === "opnieuw_overgenomen" ? "opnieuw overgenomen" : (r || "");
+  const historieRijen = (dos && dos.historie && dos.historie.length) ? dos.historie.map(h => `
+    <div class="doc"><span class="doc-d">${esc(h.bijgewerkt || h.gearchiveerd || "")}</span>
+      <span>${esc(h.doel || "—")}${h.reden ? ` <span class="muted klein">(${esc(_redenLabel(h.reden))})</span>` : ""}</span></div>`).join("") : "";
+  const historieHtml = historieRijen ? `
+    <section class="panel">
+      <button class="acc-toggle" data-target="d-hist">${ic("file")} Eerdere intakes (${dos.historie.length})</button>
+      <div id="d-hist" class="collapse">${historieRijen}</div>
+    </section>` : "";
+
   wrap.innerHTML = `
     <button class="btn ghost back" id="d-terug">${ic("back")} Alle atleten</button>
     <div class="d-head"><span class="avatar big">${initialen(d.naam)}</span>
@@ -1460,6 +1487,9 @@ function tekenAtleet(d) {
     ${velden ? `<section class="panel open-static">
       <h3 class="panel-h">${ic("file")} Intake &amp; doel</h3>${velden}
     </section>` : ""}
+
+    ${koppelHtml}
+    ${historieHtml}
 
     <section class="panel open-static">
       <h3 class="panel-h">${ic("note")} Coach-notities <span class="muted klein">(gedeeld Jip &amp; Remco)</span></h3>
@@ -1490,6 +1520,17 @@ function tekenAtleet(d) {
   bindAccordions(wrap);
   $("#scroller").scrollTo({ top: 0 });
   $("#d-terug").addEventListener("click", () => tekenDossierLijst($("#d-zoek").value));
+
+  const doeKoppel = async (userKey) => {
+    if (!userKey) return melding("Kies eerst een atleet.", true);
+    const r = await jpost("/api/intake/koppel", { nieuw_key: nieuwKey, user_key: userKey }).catch(() => null);
+    if (!r || !r.ok) return melding(r?.err || "Koppelen mislukt.", true);
+    melding(`Intake gekoppeld aan ${r.naam || "atleet"}.`);
+    vervalDossierLijst();
+    openDossier(userKey);                 // spring naar het gekoppelde FinalSurge-account
+  };
+  $("#kp-direct")?.addEventListener("click", () => doeKoppel(d.user_key));
+  $("#kp-do")?.addEventListener("click", () => doeKoppel($("#kp-sel")?.value));
 
   $("#nt-add").addEventListener("click", async () => {
     const tekst = $("#nt-tekst").value.trim();
@@ -2200,6 +2241,7 @@ async function fbSend(id) {
   renderQueue(); fbUpdateInfo(); haptic(15);
   focusNextAfterAction(FB.items[idx] || FB.items[idx - 1] || null);
 }
+let fbPendingSkip = null;                            // actieve, nog-niet-gecommitte skip (voor flush bij verlaten)
 function fbSkip(id) {                                 // optimistic; POST volgt ná het undo-venster
   const idx = FB.items.findIndex(i => i.id === id); if (idx < 0) return;
   const item = FB.items[idx];
@@ -2207,14 +2249,30 @@ function fbSkip(id) {                                 // optimistic; POST volgt 
   renderQueue(); fbUpdateInfo(); haptic(10); fbLog("skip_optimistic", { target: id });
   focusNextAfterAction(FB.items[idx] || FB.items[idx - 1] || null);
   const herstel = () => { FB.skipSet.delete(id); FB.items.splice(Math.min(idx, FB.items.length), 0, item); renderQueue(); fbUpdateInfo(); };
+  let settled = false;
+  const entry = {};
+  const commit = async (keepalive = false) => {      // idempotent: hooguit één POST, ook als toast + flush samenvallen
+    if (settled) return; settled = true;
+    if (fbPendingSkip === entry) fbPendingSkip = null;
+    const r = await jpost("/api/feedback/skip", { id }, "POST", keepalive).catch(() => null);
+    if (!r || !r.ok) {
+      fbLog("skip_error", { target: id });
+      if (!keepalive) { herstel(); melding("Overslaan mislukt — teruggezet.", true); }  // bij unload niet terugrollen: pagina gaat weg
+    } else { fbLog("skip_commit", { target: id }); homeFbBijwerken(-1, 0); }  // Home-balk: één minder wachtend
+  };
+  const undo = () => { if (settled) return; settled = true; if (fbPendingSkip === entry) fbPendingSkip = null; fbLog("skip_undo", { target: id }); herstel(); };
+  entry.commit = () => commit(true);
+  fbPendingSkip = entry;
   fbToast(`Training van ${item.voornaam || item.naam} overgeslagen`,
-    () => { fbLog("skip_undo", { target: id }); herstel(); },   // Ongedaan → exacte plek terug, geen backend-call
-    async () => {                                     // venster voorbij → nu pas overslaan
-      const r = await jpost("/api/feedback/skip", { id }).catch(() => null);
-      if (!r || !r.ok) { fbLog("skip_error", { target: id }); herstel(); melding("Overslaan mislukt — teruggezet.", true); }
-      else { fbLog("skip_commit", { target: id }); homeFbBijwerken(-1, 0); }  // Home-balk: één minder wachtend
-    });
+    undo,                                             // Ongedaan → exacte plek terug, geen backend-call
+    () => commit(false));                             // venster voorbij → nu pas overslaan
 }
+// Verlaat de coach de app binnen het 5s-undo-venster, dan ging de skip vroeger
+// verloren (nooit gepost) → in Streamlit bleef de training openstaan. Flush een
+// hangende skip met keepalive zodat hij de unload overleeft en cross-app klopt.
+function fbFlushPendingSkip() { if (fbPendingSkip) fbPendingSkip.commit(); }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") fbFlushPendingSkip(); });
+window.addEventListener("pagehide", fbFlushPendingSkip);
 // Eén toast met gegarandeerd precies één afloop: Ongedaan óf commit (nooit beide).
 function fbToast(txt, onUndo, onCommit, ms = 5000) {
   let t = $("#prio-toast");

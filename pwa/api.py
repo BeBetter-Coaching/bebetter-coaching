@@ -746,6 +746,19 @@ def intake_inbox_del(iid: str):
     return {"ok": ok, "err": err}
 
 
+class IntakeKoppel(BaseModel):
+    nieuw_key: str = ""
+    user_key: str = ""
+
+
+@app.post("/api/intake/koppel")
+def intake_koppel(body: IntakeKoppel):
+    """Koppel een losse intake ('nieuw:naam') aan een FinalSurge-account, zodat
+    Schema/Masterbrein hem gaan gebruiken. Non-destructief (zie intake_core)."""
+    ok, err, naam = intake.link_intake(body.nieuw_key, body.user_key)
+    return {"ok": ok, "err": err, "naam": naam}
+
+
 # ── API: intake (publiek, ZONDER login — token beschermt) ────────────────────
 @app.get("/api/intake/public/check")
 def intake_public_check(token: str = "", resume: str = ""):

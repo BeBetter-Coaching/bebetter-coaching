@@ -175,12 +175,51 @@ def inbox_take(iid: str) -> tuple[bool, str, str]:
     key = "nieuw:" + naam.lower().replace(" ", "_")
     velden = {k: v for k, v in sub.items() if k not in ("status", "ingezonden")}
     intakes = intake_store.load_intakes()
+    # Bestond er al een losse intake onder deze naam? Niet stil overschrijven.
+    if intakes.get(key):
+        intake_store.archiveer_intake(key, intakes.get(key), reden="opnieuw_overgenomen")
     intakes[key] = {"athlete_name": naam, **velden, "updated_at": date.today().isoformat()}
     ok, err = intake_store.save_intakes(intakes)
     if not ok:
         return False, err, naam
     inbox[iid]["status"] = "verwerkt"
     intake_store.save_intake_inbox(inbox)
+    return True, "", naam
+
+
+def link_intake(nieuw_key: str, user_key: str) -> tuple[bool, str, str]:
+    """Koppel een losse intake ('nieuw:naam') aan een FinalSurge-user_key.
+
+    Dit is de PWA-tegenhanger van de Streamlit-koppelstap. Pas ná koppelen zien
+    Schema én Masterbrein de intake — die zoeken op user_key, niet op 'nieuw:naam'.
+    Non-destructief: een bestaande intake op de doel-key wordt eerst gearchiveerd,
+    zodat niets stil verdwijnt. 'current' wordt de zojuist gekoppelde intake.
+    Geeft (ok, err, naam) terug.
+    """
+    nieuw_key = (nieuw_key or "").strip()
+    user_key = (user_key or "").strip()
+    if not nieuw_key.startswith("nieuw:"):
+        return False, "Alleen een losse intake kan gekoppeld worden.", ""
+    if not user_key or user_key.startswith("nieuw:"):
+        return False, "Kies een geldig FinalSurge-account.", ""
+    intakes = intake_store.load_intakes()
+    bron = intakes.get(nieuw_key)
+    if not bron:
+        return False, "Intake niet gevonden.", ""
+    naam = (bron.get("athlete_name") or "").strip()
+    # bestaande intake op de doel-key niet stil overschrijven → eerst archiveren
+    if intakes.get(user_key):
+        intake_store.archiveer_intake(user_key, intakes.get(user_key),
+                                      reden="vervangen_bij_koppelen")
+    intakes[user_key] = {
+        **bron,
+        "gekoppeld_op": date.today().isoformat(),
+        "updated_at": bron.get("updated_at") or date.today().isoformat(),
+    }
+    intakes.pop(nieuw_key, None)
+    ok, err = intake_store.save_intakes(intakes)
+    if not ok:
+        return False, err, naam
     return True, "", naam
 
 

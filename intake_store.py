@@ -278,6 +278,43 @@ def save_intakes(intakes: dict) -> tuple[bool, str]:
     return _save_json("intakes.json", _INTAKES_LOCAL, intakes, "Update intakes via app")
 
 
+# Non-destructieve intake-history: een intake die vervangen wordt (opnieuw
+# overgenomen of bij koppelen) verdwijnt niet stil, maar schuift naar het archief
+# onder dezelfde athlete_key (nieuwste eerst). 'current' = het record in
+# intakes.json; het archief is puur history (Dossier/coach-overzicht).
+_INTAKE_ARCHIEF_LOCAL = os.path.join(_BASE_DIR, ".intakes_archief.json")
+
+
+def load_intake_archief() -> dict:
+    """Gearchiveerde (vervangen) intakes: athlete_key → lijst, nieuwste eerst."""
+    return _load_json("intakes_archief.json", _INTAKE_ARCHIEF_LOCAL)
+
+
+def save_intake_archief(data: dict) -> tuple[bool, str]:
+    return _save_json("intakes_archief.json", _INTAKE_ARCHIEF_LOCAL, data,
+                      "Update intake-archief via app")
+
+
+def archiveer_intake(athlete_key: str, record: dict | None, reden: str = "") -> None:
+    """Bewaar een intake-record dat vervangen wordt (non-destructief).
+
+    Faalt nooit hard: archivering mag een overname/koppeling nooit blokkeren.
+    """
+    if not athlete_key or not record:
+        return
+    try:
+        from datetime import datetime as _dt
+        data = load_intake_archief()
+        entry = dict(record)
+        entry["_gearchiveerd"] = _dt.now().isoformat(timespec="seconds")
+        if reden:
+            entry["_archief_reden"] = reden
+        data.setdefault(athlete_key, []).insert(0, entry)
+        save_intake_archief(data)
+    except Exception:
+        pass
+
+
 def _intake_ts(record: dict | None) -> str:
     """Normaliseer het tijdstempel van een intake-record naar YYYY-MM-DD.
 
