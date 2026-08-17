@@ -27,6 +27,18 @@ def _norm(naam: str) -> str:
     return re.sub(r"\s+", " ", (naam or "").strip().lower())
 
 
+def groep_volgorde() -> list[str]:
+    """Canonieke BeBetter-groepsvolgorde (zoals FinalSurge de groepen ordent).
+
+    fs_core.roster() sorteert op naam en verliest die volgorde; get_athletes_by_group
+    behoudt de centrale volgorde. Puur presentatie — geen group-businesslogica."""
+    try:
+        import fs_client as FS
+        return [str(g) for g in FS.get_athletes_by_group().keys()]
+    except Exception:
+        return []
+
+
 def verenigde_roster() -> dict:
     """Alle atleten: FinalSurge-roster verrijkt met store-data (op naam gematcht)."""
     store = dossier_core.list_athletes()
@@ -68,7 +80,8 @@ def verenigde_roster() -> dict:
         })
 
     rijen.sort(key=lambda x: _norm(x["naam"]))
-    return {"atleten": rijen, "fs": fs_core.heeft_token(), "totaal": len(rijen)}
+    return {"atleten": rijen, "fs": fs_core.heeft_token(), "totaal": len(rijen),
+            "groep_volgorde": groep_volgorde()}
 
 
 def _match_store_key(user_key: str, naam: str) -> str | None:

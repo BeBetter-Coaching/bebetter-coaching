@@ -1374,86 +1374,200 @@ function toonDetailLeeg() {
   w.innerHTML = `<div class="leeg md-leeg">${ic("users")}<p>Kies links een atleet om het dossier te openen.</p></div>`;
 }
 // Gekozen rij oplichten zonder de lijst opnieuw te tekenen
-function markSel(key) {
-  $$("#d-lijst .listcard").forEach(el => el.classList.toggle("sel", el.dataset.key === key));
+// ════════════════════════════════════════════════════════════════════════════
+// GEDEELDE ATHLETE PICKER — één selectie-primitive (Schema, Intake-koppel, Atleten)
+// Genormaliseerd view-model, canonieke groepsvolgorde + alfabetisch binnen groep,
+// zoeken ALTIJD over alle groepen (nooit stil beperkt door een chip), keyboard
+// (↑↓/Enter/Esc), navigate- vs confirm-modus. Geen intelligence, geen tweede
+// waarheid, geen nieuwe identity: 'key' = FinalSurge user_key (of tijdelijk
+// 'nieuw:naam' pre-link). Task-context bepaalt alleen de secundaire regel.
+// ════════════════════════════════════════════════════════════════════════════
+function renderPicker(cfg) {
+  const mount = cfg.mount; if (!mount) return null;
+  const _css = s => (window.CSS && CSS.escape) ? CSS.escape(String(s)) : String(s);
+  const mode = cfg.mode || "navigate";          // 'navigate' | 'confirm'
+  const withChips = cfg.chips !== false;
+  let selKey = cfg.selectedKey || "";
+  let groepFilter = "";                          // actieve chip ("" = alle)
+  let focusKey = "";                             // keyboard-focus
+
+  const zoekSvg = `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`;
+  const eigenSearch = !cfg.searchEl;
+  mount.innerHTML =
+    (eigenSearch ? `<div class="search pk-zoek">${zoekSvg}<input class="pk-in" placeholder="${esc(cfg.placeholder || "Zoek atleet")}" autocomplete="off"></div>` : "") +
+    (withChips ? `<div class="chips pk-chips"></div>` : "") +
+    `<div class="pk-roster" role="listbox"></div>`;
+  const inEl = cfg.searchEl || mount.querySelector(".pk-in");
+  const chipsEl = withChips ? mount.querySelector(".pk-chips") : null;
+  const rosterEl = mount.querySelector(".pk-roster");
+  const items = () => cfg.items || [];
+
+  // Canonieke groepsvolgorde: bekende groepen eerst (in doorgegeven volgorde),
+  // onbekende erachter op alfabet; 'Zonder groep' hoort apart (buiten deze lijst).
+  function groepenInVolgorde(list) {
+    const aanwezig = [...new Set(list.map(a => (a.groep || "").trim()).filter(Boolean))];
+    const canon = (cfg.groupOrder || []).filter(g => aanwezig.includes(g));
+    aanwezig.filter(g => !canon.includes(g)).sort((a, b) => a.localeCompare(b, "nl", { numeric: true })).forEach(g => canon.push(g));
+    return canon;
+  }
+  function bouwChips() {
+    if (!chipsEl) return;
+    const groepen = groepenInVolgorde(items());
+    chipsEl.innerHTML = `<button class="chip${groepFilter === "" ? " on" : ""}" data-g="">Alle</button>` +
+      groepen.map(g => `<button class="chip${groepFilter === g ? " on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
+  }
+  chipsEl?.addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    groepFilter = b.dataset.g || "";
+    chipsEl.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b));
+    teken();
+  });
+
+  function gefilterd() {
+    const f = (inEl && inEl.value || "").trim().toLowerCase();
+    // Regel: zoeken gaat ALTIJD over alle groepen. De chip beperkt alleen als er
+    // niet gezocht wordt — zo wordt een zoekopdracht nooit stil ingeperkt.
+    return items().filter(a =>
+      (f ? true : (!groepFilter || (a.groep || "").trim() === groepFilter)) &&
+      (!f || (a.naam || "").toLowerCase().includes(f)));
+  }
+  const opNaam = arr => arr.slice().sort((x, y) => (x.naam || "").localeCompare(y.naam || "", "nl"));
+  function rij(a) {
+    const sub = cfg.secondary ? (cfg.secondary(a) || "") : "";
+    return `<button class="pk-row${a.key === selKey ? " sel" : ""}" data-k="${esc(a.key)}" role="option" aria-selected="${a.key === selKey}">
+      <span class="pk-av">${initialen(a.naam)}</span>
+      <span class="pk-b"><span class="pk-nm">${esc(a.naam)}</span>${sub ? `<span class="pk-sub">${sub}</span>` : ""}</span>
+      ${mode === "navigate" ? `<svg class="pk-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>` : ""}
+    </button>`;
+  }
+  function teken() {
+    const list = gefilterd();
+    if (!list.length) { rosterEl.innerHTML = `<div class="pk-leeg">${esc(cfg.emptyText || "Geen atleet gevonden.")}</div>`; return; }
+    const perGroep = {}, losse = [];
+    list.forEach(a => { const g = (a.groep || "").trim(); if (g) { (perGroep[g] = perGroep[g] || []).push(a); } else losse.push(a); });
+    let html = "";
+    groepenInVolgorde(list).forEach(g => { html += `<p class="pk-ghead">${esc(g)}</p>` + opNaam(perGroep[g]).map(rij).join(""); });
+    if (losse.length) html += `<p class="pk-ghead">Zonder groep</p>` + opNaam(losse).map(rij).join("");
+    rosterEl.innerHTML = html;
+    rosterEl.querySelectorAll(".pk-row").forEach(el => el.addEventListener("click", () => kies(el.dataset.k, true)));
+    if (focusKey) rosterEl.querySelector(`.pk-row[data-k="${_css(focusKey)}"]`)?.classList.add("foc");
+  }
+  function kies(key, activated) {
+    const a = items().find(x => x.key === key); if (!a) return;
+    selKey = key; focusKey = key;
+    if (mode === "navigate") { if (activated && cfg.onActivate) cfg.onActivate(a); }
+    else { teken(); if (cfg.onSelect) cfg.onSelect(a); }
+  }
+  function beweeg(delta) {
+    const keys = [...rosterEl.querySelectorAll(".pk-row")].map(el => el.dataset.k);
+    if (!keys.length) return;
+    let i = keys.indexOf(focusKey); i = i < 0 ? 0 : Math.min(keys.length - 1, Math.max(0, i + delta));
+    focusKey = keys[i];
+    rosterEl.querySelectorAll(".pk-row").forEach(el => el.classList.toggle("foc", el.dataset.k === focusKey));
+    rosterEl.querySelector(`.pk-row[data-k="${_css(focusKey)}"]`)?.scrollIntoView({ block: "nearest" });
+  }
+  const onKey = e => {
+    if (e.key === "ArrowDown") { e.preventDefault(); beweeg(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); beweeg(-1); }
+    else if (e.key === "Enter") { if (focusKey) { e.preventDefault(); kies(focusKey, true); } }
+    else if (e.key === "Escape") { if (inEl && inEl.value) { inEl.value = ""; teken(); } else if (cfg.onEscape) cfg.onEscape(); }
+  };
+  inEl?.addEventListener("input", teken);
+  inEl?.addEventListener("keydown", onKey);
+
+  bouwChips(); teken();
+  if (cfg.autofocus && inEl) setTimeout(() => inEl.focus(), 40);
+  return {
+    setItems(newItems) { cfg.items = newItems; bouwChips(); teken(); },
+    getSelected() { return items().find(x => x.key === selKey) || null; },
+    setSelected(k) { selKey = k; focusKey = k; teken(); },
+    focusSearch() { inEl && inEl.focus(); },
+    herteken: teken,
+  };
 }
 
-async function laadDossierLijst() {
-  const box = $("#d-lijst");
-  skeleton(box, 6);
-  let data;
-  try { data = await api("/api/atleten"); }
-  catch { box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
-  dossierCache = data.atleten || [];
-  fsActief = !!data.fs;
-  tekenDossierLijst($("#d-zoek").value || "");
+let dossierPicker = null;
+let dossierGroepVolgorde = [];           // canonieke groepsvolgorde (voor koppel-picker)
+// Gedeelde picker in een modal (desktop) / bottom-sheet (mobiel). Confirm-modus:
+// selecteren markeert alleen; de write gebeurt pas op de bevestigknop.
+function openAthletePickerOverlay(opts) {
+  const ov = document.createElement("div");
+  ov.className = "pk-overlay";
+  ov.innerHTML = `<div class="pk-modal" role="dialog" aria-modal="true">
+      <div class="pk-modal-h"><b>${esc(opts.title || "Kies atleet")}</b><button class="pk-x" aria-label="Sluiten">✕</button></div>
+      <div class="pk-modal-body"></div>
+      <div class="pk-modal-foot"><button class="btn ghost pk-cancel">Annuleren</button><button class="btn primary pk-confirm" disabled>${esc(opts.confirmLabel || "Kies")}</button></div>
+    </div>`;
+  document.body.appendChild(ov);
+  const confirmBtn = ov.querySelector(".pk-confirm");
+  const sluit = () => { ov.remove(); document.removeEventListener("keydown", onEsc); };
+  const onEsc = e => { if (e.key === "Escape") sluit(); };
+  document.addEventListener("keydown", onEsc);
+  ov.addEventListener("click", e => { if (e.target === ov) sluit(); });     // backdrop = annuleren (geen write)
+  ov.querySelector(".pk-x").onclick = sluit;
+  ov.querySelector(".pk-cancel").onclick = sluit;
+  const picker = renderPicker({
+    mount: ov.querySelector(".pk-modal-body"), items: opts.items, groupOrder: opts.groupOrder || [],
+    mode: "confirm", autofocus: true, placeholder: opts.placeholder || "Zoek atleet", emptyText: "Geen atleet gevonden.",
+    secondary: a => a.groep ? esc(a.groep) : "", onSelect: a => { confirmBtn.disabled = !a; }, onEscape: sluit,
+  });
+  confirmBtn.onclick = () => { const a = picker.getSelected(); if (!a) return; sluit(); opts.onConfirm(a); };
 }
-
-function tekenDossierLijst(filter) {
-  const box = $("#d-lijst");
-  box.hidden = false;
+function _dossierSecundair(a) {          // task-relevante info: intake + notities/docs
+  const bits = [];
+  if (a.heeft_intake) bits.push("intake");
+  if (a.n_notities) bits.push(a.n_notities + " notitie(s)");
+  if (a.n_documenten) bits.push(a.n_documenten + " document(en)");
+  return bits.join(" · ");
+}
+function toonDossierLijstView() {        // alleen tonen/verbergen (master-detail)
+  $("#d-lijst").hidden = false;
   if (isDesktop()) { if (!dossierSel) toonDetailLeeg(); }   // detail blijft staan naast de lijst
   else { $(".md-list").hidden = false; $("#d-detail").hidden = true; }  // telefoon: terug naar de lijst
-  const f = (filter || "").trim().toLowerCase();
-  const rijen = dossierCache.filter(a => !f || (a.naam || "").toLowerCase().includes(f));
-  if (!rijen.length) {
-    box.innerHTML = `<div class="leeg">${ic("users")}<p>${dossierCache.length
-      ? "Geen atleet gevonden." : (fsActief ? "Geen atleten." : "Nog geen atleten.<br>Koppel FinalSurge (FS_TOKEN) voor de volledige lijst.")}</p></div>`;
-    return;
+}
+async function laadDossierLijst() {
+  const box = $("#d-lijst");
+  if (!dossierPicker) skeleton(box, 6);
+  let data;
+  try { data = await api("/api/atleten"); }
+  catch { if (!dossierPicker) box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  dossierCache = data.atleten || [];
+  dossierGroepVolgorde = data.groep_volgorde || [];
+  fsActief = !!data.fs;
+  const items = dossierCache.map(a => ({ ...a, key: a.id }));   // identity: id = user_key of store_key
+  if (!items.length && !dossierPicker) {
+    box.innerHTML = `<div class="leeg">${ic("users")}<p>${fsActief
+      ? "Geen atleten." : "Nog geen atleten.<br>Koppel FinalSurge (FS_TOKEN) voor de volledige lijst."}</p></div>`;
+    toonDossierLijstView(); return;
   }
-  box.innerHTML = "";
-  // Groepeer op bestaande trainingsgroep (presentatie/sortering, geen logica-
-  // wijziging). Binnen elke groep alfabetisch; atleten zonder trainingsgroep
-  // (losse/ongekoppelde intakes) apart onderaan. Zoeken blijft over alles heen.
-  const perGroep = {}, losse = [];
-  rijen.forEach(a => {
-    const g = (a.groep || "").trim();
-    if (g) { if (!perGroep[g]) perGroep[g] = []; perGroep[g].push(a); }
-    else losse.push(a);
-  });
-  const groepen = Object.keys(perGroep).sort((x, y) => x.localeCompare(y, "nl", { numeric: true }));
-  const opNaam = arr => arr.sort((x, y) => (x.naam || "").localeCompare(y.naam || "", "nl"));
-  const sectie = (label, arr) => {
-    if (!arr.length) return;
-    const h = document.createElement("p"); h.className = "sec-label"; h.textContent = label;
-    box.appendChild(h);
-    opNaam(arr).forEach(a => box.appendChild(_dossierKaart(a)));
-  };
-  groepen.forEach(g => sectie(g, perGroep[g]));
-  sectie("Zonder groep", losse);
+  // Gedeelde Athlete Picker: group-first (canonieke volgorde), 'Zonder groep'
+  // onderaan, zoeken over alle groepen. Eén keer bouwen (externe #d-zoek); daarna
+  // setItems bij refresh — zo stapelen we geen listeners op de zoekinput.
+  if (dossierPicker) { dossierPicker.setItems(items); }
+  else {
+    dossierPicker = renderPicker({
+      mount: box, searchEl: $("#d-zoek"), items, groupOrder: data.groep_volgorde || [],
+      selectedKey: dossierSel || "", mode: "navigate", emptyText: "Geen atleet gevonden.",
+      secondary: _dossierSecundair, onActivate: a => openDossier(a.key),
+    });
+  }
+  toonDossierLijstView();
 }
-function _dossierKaart(a) {
-  const el = document.createElement("button");
-  el.className = "listcard";
-  el.dataset.key = a.id;
-  if (a.id === dossierSel) el.classList.add("sel");
-  const meta = [
-    a.n_notities ? a.n_notities + " notitie(s)" : "",
-    a.n_documenten ? a.n_documenten + " document(en)" : "",
-  ].filter(Boolean).join(" · ");
-  el.innerHTML = `
-    <span class="avatar">${initialen(a.naam)}</span>
-    <span class="lc-body">
-      <span class="lc-title">${esc(a.naam)}${a.heeft_intake ? ' <span class="tag">intake</span>' : ""}</span>
-      ${meta ? `<span class="lc-sub">${meta}</span>` : ""}
-    </span>${ic("chevron")}`;
-  el.addEventListener("click", () => openDossier(a.id));
-  return el;
-}
+function tekenDossierLijst() { toonDossierLijstView(); dossierPicker && dossierPicker.herteken(); }
 function initialen(naam) {
   const p = (naam || "?").trim().split(/\s+/);
   return ((p[0]?.[0] || "") + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase() || "?";
 }
 
-$("#d-zoek").addEventListener("input", e => tekenDossierLijst(e.target.value));
+// (zoeken wordt door de gedeelde picker aan #d-zoek gebonden)
 $("#a-refresh").addEventListener("click", () => { geladen.atleten = true; laadDossierLijst(); });
 
 async function openDossier(ident) {
   dossierSel = ident;
+  dossierPicker && dossierPicker.setSelected(ident);   // rij licht op (desktop + mobiel)
   pushRoute("atleten", ident);              // deep-link: refresh houdt deze atleet open (#C)
   const wrap = $("#d-detail");
-  if (isDesktop()) { markSel(ident); }      // laptop: lijst blijft, rij licht op
-  else { $(".md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }  // telefoon: meteen 'in' de klant
+  if (!isDesktop()) { $(".md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }  // telefoon: meteen 'in' de klant
   wrap.hidden = false;
   wrap.innerHTML = '<p class="muted center">Laden…</p>';
   const d = await api(`/api/atleten/${encodeURIComponent(ident)}`).catch(() => null);
@@ -1499,10 +1613,7 @@ function tekenAtleet(d) {
       <p class="hint">Deze intake staat nog los opgeslagen. Koppel hem aan het FinalSurge-account — daarna gebruikt Schema (en het Masterbrein) hem automatisch.</p>
       ${d.user_key
       ? `<button class="btn primary" id="kp-direct">Koppel aan dit account (${esc(d.naam)})</button>`
-      : `<div class="row">
-           <select id="kp-sel">${fsKandidaten.map(a => `<option value="${esc(a.user_key)}">${esc(a.naam)}${a.groep ? " · " + esc(a.groep) : ""}</option>`).join("")}</select>
-           <button class="btn primary" id="kp-do">Koppel &rarr;</button>
-         </div>`}
+      : `<button class="btn primary" id="kp-open">Kies FinalSurge-atleet&hellip;</button>`}
     </section>` : "";
   const _redenLabel = r => r === "vervangen_bij_koppelen" ? "vervangen bij koppelen"
     : r === "opnieuw_overgenomen" ? "opnieuw overgenomen" : (r || "");
@@ -1564,7 +1675,7 @@ function tekenAtleet(d) {
 
   bindAccordions(wrap);
   $("#scroller").scrollTo({ top: 0 });
-  $("#d-terug").addEventListener("click", () => { dossierSel = null; pushRoute("atleten"); tekenDossierLijst($("#d-zoek").value); });
+  $("#d-terug").addEventListener("click", () => { dossierSel = null; pushRoute("atleten"); dossierPicker && dossierPicker.setSelected(""); toonDossierLijstView(); });
 
   const doeKoppel = async (userKey) => {
     if (!userKey) return melding("Kies eerst een atleet.", true);
@@ -1575,7 +1686,13 @@ function tekenAtleet(d) {
     openDossier(userKey);                 // spring naar het gekoppelde FinalSurge-account
   };
   $("#kp-direct")?.addEventListener("click", () => doeKoppel(d.user_key));
-  $("#kp-do")?.addEventListener("click", () => doeKoppel($("#kp-sel")?.value));
+  $("#kp-open")?.addEventListener("click", () => openAthletePickerOverlay({
+    title: `Koppel "${esc(d.naam)}" aan FinalSurge`,
+    items: fsKandidaten.map(a => ({ key: a.user_key, naam: a.naam, groep: a.groep })),
+    groupOrder: dossierGroepVolgorde,
+    confirmLabel: "Koppel",
+    onConfirm: a => doeKoppel(a.key),          // write pas na expliciete bevestiging
+  }));
 
   $("#nt-add").addEventListener("click", async () => {
     const tekst = $("#nt-tekst").value.trim();
@@ -2377,8 +2494,8 @@ function fbLockQueue(on) {
 // SCHEMA BOUWEN — opgeslagen intake → AI-plan → CSV-download voor FinalSurge
 // ════════════════════════════════════════════════════════════════════════════
 let schemaAtleten = [];
-let schemaFilterGroep = "";     // "" = alle groepen
 let schemaSelKey = "";          // laatst gekozen atleet (selected state)
+let schemaPicker = null;
 async function laadSchema() {
   const box = $("#sb-lijst"), info = $("#sb-info");
   $("#sb-werk").hidden = true; box.hidden = false;
@@ -2386,7 +2503,6 @@ async function laadSchema() {
   const r = await api("/api/schema/atleten").catch(() => null);
   if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
   schemaAtleten = r.atleten || [];
-  schemaFilterGroep = "";
   info.textContent = r.ai
     ? "Kies een atleet. De AI maakt een conceptplan waar je over spart; een bestaande intake wordt slim voorgevuld."
     : "AI-sleutel nog niet ingesteld.";
@@ -2394,53 +2510,20 @@ async function laadSchema() {
     box.innerHTML = `<div class="leeg">${ic("brain")}<p>Geen atleten gevonden.<br>Controleer de FinalSurge-koppeling.</p></div>`;
     return;
   }
-  // Groepen in server-volgorde (centrale FinalSurge-volgorde). 'Los schema' hoort erbij.
-  const groepen = [];
-  schemaAtleten.forEach(a => { const g = a.groep || "Overig"; if (!groepen.includes(g)) groepen.push(g); });
-  const zoekSvg = `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`;
-  const chips = groepen.length > 1
-    ? `<div class="chips" id="sb-chips"><button class="chip on" data-g="">Alle</button>` +
-      groepen.map(g => `<button class="chip" data-g="${esc(g)}">${esc(g)}</button>`).join("") + `</div>`
-    : "";
-  box.innerHTML = `<div class="search sb-zoek">${zoekSvg}<input id="sb-zoek-in" placeholder="Zoek atleet" autocomplete="off"></div>
-    ${chips}<div id="sb-grid"></div>`;
-  const inp = $("#sb-zoek-in");
-  inp.addEventListener("input", () => tekenSchemaGrid(inp.value));
-  $("#sb-chips")?.addEventListener("click", e => {
-    const b = e.target.closest(".chip"); if (!b) return;
-    schemaFilterGroep = b.dataset.g || "";
-    $$("#sb-chips .chip").forEach(c => c.classList.toggle("on", c === b));
-    tekenSchemaGrid(inp.value);
+  // Gedeelde Athlete Picker (navigate): kiezen opent direct de workbench.
+  // Secundair = doel waar betrouwbaar (groep is de sectiekop). Canonieke groeps-
+  // volgorde uit de server; zoeken over alle groepen; alfabetisch binnen groep.
+  schemaPicker = renderPicker({
+    mount: box,
+    items: schemaAtleten,
+    groupOrder: r.groep_volgorde || [],
+    selectedKey: schemaSelKey,
+    mode: "navigate",
+    placeholder: "Zoek atleet",
+    emptyText: "Geen atleet gevonden.",
+    secondary: a => (a.heeft_intake && a.doel) ? esc(a.doel) : "",
+    onActivate: a => { schemaSelKey = a.key; schemaWerk(a); },
   });
-  tekenSchemaGrid("");
-}
-function _schemaKaart(a) {
-  // Naam dominant; één compacte secundaire regel met bestaande, betrouwbare info:
-  // groep altijd, doel erbij als er echt een intake-doel is (niets afleiden).
-  const groep = a.groep ? esc(a.groep) : "Overig";
-  const doel = (a.heeft_intake && a.doel) ? " · " + esc(a.doel) : "";
-  return `<button class="sb-tile${a.key === schemaSelKey ? " sel" : ""}" data-key="${esc(a.key)}">
-    <span class="avatar sm">${initialen(a.naam)}</span>
-    <span class="sb-b"><span class="sb-nm">${esc(a.naam)}</span>
-      <span class="sb-sub">${groep}${doel}</span></span>${ic("chevron")}</button>`;
-}
-function tekenSchemaGrid(filter) {
-  const grid = $("#sb-grid"); if (!grid) return;
-  const f = (filter || "").trim().toLowerCase();
-  // Groep staat nu op de kaart (geen sectiekoppen meer) → uniforme, even hoge
-  // tegels in één raster. Server-volgorde (per groep, dan alfabetisch) blijft.
-  const rijen = schemaAtleten.filter(a =>
-    (!schemaFilterGroep || (a.groep || "Overig") === schemaFilterGroep) &&
-    (!f || (a.naam || "").toLowerCase().includes(f)));
-  if (!rijen.length) {
-    grid.innerHTML = `<div class="sb-leeg">Geen atleet gevonden${f ? ` voor “${esc(filter)}”` : ""}.</div>`;
-    return;
-  }
-  grid.innerHTML = `<div class="sb-grid">${rijen.map(_schemaKaart).join("")}</div>`;
-  grid.querySelectorAll(".sb-tile").forEach(el => el.addEventListener("click", () => {
-    const a = schemaAtleten.find(x => x.key === el.dataset.key);
-    if (a) { schemaSelKey = a.key; schemaWerk(a); }
-  }));
 }
 
 // ── Schema workbench (Slice 1): canonieke rows → week-preview → open/edit ─────

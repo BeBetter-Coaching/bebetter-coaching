@@ -25,40 +25,54 @@ class TestRefreshRetention:
         assert "applyRoute();" in staart
 
 
-class TestSchemaSelector:
-    """G — hybride atletenselector (tegels/grid + zoek/filter + selected state)."""
+class TestGedeeldePicker:
+    """Gedeelde BeBetter Athlete Picker — één primitive over 3 surfaces."""
 
-    def test_selector_mechaniek_aanwezig(self):
-        assert "function tekenSchemaGrid" in _APP and "_schemaKaart" in _APP
-        assert 'id="sb-zoek-in"' in _APP                # zoekbalk
-        assert 'id="sb-chips"' in _APP                  # groep-filter
-        assert 'class="sb-tile' in _APP                 # compacte tegel
+    def test_primitive_bestaat_en_wordt_hergebruikt(self):
+        assert "function renderPicker" in _APP
+        # alle drie de surfaces roepen dezelfde primitive aan
+        assert _APP.count("renderPicker(") >= 3          # schema + atleten + koppel-overlay
 
-    def test_grid_desktop_2_dan_3_kolommen(self):
+    def test_zoeken_altijd_over_alle_groepen(self):
+        # Regel 2: een actieve chip mag de zoekopdracht niet stil beperken.
+        fn = _APP[_APP.index("function renderPicker"):_APP.index("function renderPicker") + 4200]
+        gf = fn[fn.index("function gefilterd"):fn.index("function gefilterd") + 320]
+        assert "f ?" in gf and "groepFilter" in gf       # bij zoekterm wordt de chip genegeerd
+
+    def test_canonieke_groepsvolgorde_en_alfabetisch(self):
+        fn = _APP[_APP.index("function renderPicker"):_APP.index("function renderPicker") + 4200]
+        assert "groupOrder" in fn                         # canonieke volgorde uit de server
+        assert 'localeCompare(y.naam' in fn or "opNaam" in fn   # alfabetisch binnen groep
+        assert "Zonder groep" in fn                       # losse atleten apart onderaan
+
+    def test_vaste_gelijke_rijhoogte(self):
         css = open(os.path.join(_ROOT, "pwa", "static", "styles.css")).read()
-        assert "repeat(2,1fr)" in css and "repeat(3,1fr)" in css   # 2 default, 3 pas bij ruimte
-        assert ".sb-tile.sel" in css                    # duidelijke selected state
+        blok = css[css.index(".pk-row{"):css.index(".pk-row{") + 400]
+        assert "height:50px" in blok                      # alle rijen exact even hoog
+        assert ".pk-row.sel" in css                       # duidelijke selected state
 
-    def test_tegels_vaste_gelijke_hoogte(self):
-        css = open(os.path.join(_ROOT, "pwa", "static", "styles.css")).read()
-        blok = css[css.index(".sb-tile{"):css.index(".sb-tile{") + 400]
-        assert "height:48px" in blok                    # exact gelijke hoogte, geen min-height-variatie
+    def test_task_semantiek_schema_navigate_koppel_confirm(self):
+        # Schema = navigate (opent), Intake-koppel = confirm (select → bevestig).
+        assert 'mode: "navigate"' in _APP                 # schema + atleten
+        assert 'mode: "confirm"' in _APP                  # koppel-overlay
+        assert "getSelected()" in _APP                    # confirm leest de selectie
 
-    def test_secundaire_regel_groep_plus_doel(self):
-        # Eén compacte secundaire regel met bestaande info: groep + doel waar aanwezig.
-        kaart = _APP[_APP.index("function _schemaKaart"):_APP.index("function tekenSchemaGrid")]
-        assert "a.groep" in kaart and "a.doel" in kaart and "a.heeft_intake" in kaart
-        assert "sb-badge" not in _APP                    # geen redundante badge meer
+    def test_koppel_write_pas_na_bevestiging(self):
+        # Native dropdown weg; write pas op de bevestigknop (geen accidental write).
+        assert 'id="kp-sel"' not in _APP and 'id="kp-do"' not in _APP   # geen native select meer
+        assert "openAthletePickerOverlay" in _APP
+        ov = _APP[_APP.index("function openAthletePickerOverlay"):_APP.index("function openAthletePickerOverlay") + 1600]
+        assert "onConfirm" in ov and "confirmBtn.onclick" in ov         # write alleen via confirm-knop
 
 
 class TestAtletenGroepering:
-    """Punt 2 — Atleten/Intake-lijst gegroepeerd op bestaande trainingsgroep."""
+    """Atleten-lijst via de picker: group-first + 'Zonder groep', identity = id."""
 
-    def test_groepeert_en_zet_losse_apart(self):
-        fn = _APP[_APP.index("function tekenDossierLijst"):_APP.index("function _dossierKaart")]
-        assert "a.groep" in fn and "perGroep" in fn and "losse" in fn
-        assert "Zonder groep" in fn                      # ongekoppelde atleten apart onderaan
-        assert "localeCompare" in fn                     # alfabetisch binnen groep + op groepsnaam
+    def test_atleten_gebruikt_picker_group_first(self):
+        fn = _APP[_APP.index("async function laadDossierLijst"):_APP.index("async function laadDossierLijst") + 1200]
+        assert "renderPicker(" in fn
+        assert "groep_volgorde" in fn                     # canonieke volgorde
+        assert "a.id" in fn                               # identity = user_key/store_key, geen nieuwe key
 
 
 class TestIntakeFreshness:
