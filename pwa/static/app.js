@@ -1402,25 +1402,43 @@ function tekenDossierLijst(filter) {
     return;
   }
   box.innerHTML = "";
+  // Groepeer op bestaande trainingsgroep (presentatie/sortering, geen logica-
+  // wijziging). Binnen elke groep alfabetisch; atleten zonder trainingsgroep
+  // (losse/ongekoppelde intakes) apart onderaan. Zoeken blijft over alles heen.
+  const perGroep = {}, losse = [];
   rijen.forEach(a => {
-    const el = document.createElement("button");
-    el.className = "listcard";
-    el.dataset.key = a.id;
-    if (a.id === dossierSel) el.classList.add("sel");
-    const meta = [
-      a.n_notities ? a.n_notities + " notitie(s)" : "",
-      a.n_documenten ? a.n_documenten + " document(en)" : "",
-    ].filter(Boolean).join(" · ");
-    el.innerHTML = `
-      <span class="avatar">${initialen(a.naam)}</span>
-      <span class="lc-body">
-        <span class="lc-title">${esc(a.naam)}${a.heeft_intake ? ' <span class="tag">intake</span>' : ""}</span>
-        <span class="lc-sub">${a.groep ? esc(a.groep) : "—"}</span>
-        ${meta ? `<span class="lc-meta">${meta}</span>` : ""}
-      </span>${ic("chevron")}`;
-    el.addEventListener("click", () => openDossier(a.id));
-    box.appendChild(el);
+    const g = (a.groep || "").trim();
+    if (g) { if (!perGroep[g]) perGroep[g] = []; perGroep[g].push(a); }
+    else losse.push(a);
   });
+  const groepen = Object.keys(perGroep).sort((x, y) => x.localeCompare(y, "nl", { numeric: true }));
+  const opNaam = arr => arr.sort((x, y) => (x.naam || "").localeCompare(y.naam || "", "nl"));
+  const sectie = (label, arr) => {
+    if (!arr.length) return;
+    const h = document.createElement("p"); h.className = "sec-label"; h.textContent = label;
+    box.appendChild(h);
+    opNaam(arr).forEach(a => box.appendChild(_dossierKaart(a)));
+  };
+  groepen.forEach(g => sectie(g, perGroep[g]));
+  sectie("Zonder groep", losse);
+}
+function _dossierKaart(a) {
+  const el = document.createElement("button");
+  el.className = "listcard";
+  el.dataset.key = a.id;
+  if (a.id === dossierSel) el.classList.add("sel");
+  const meta = [
+    a.n_notities ? a.n_notities + " notitie(s)" : "",
+    a.n_documenten ? a.n_documenten + " document(en)" : "",
+  ].filter(Boolean).join(" · ");
+  el.innerHTML = `
+    <span class="avatar">${initialen(a.naam)}</span>
+    <span class="lc-body">
+      <span class="lc-title">${esc(a.naam)}${a.heeft_intake ? ' <span class="tag">intake</span>' : ""}</span>
+      ${meta ? `<span class="lc-sub">${meta}</span>` : ""}
+    </span>${ic("chevron")}`;
+  el.addEventListener("click", () => openDossier(a.id));
+  return el;
 }
 function initialen(naam) {
   const p = (naam || "?").trim().split(/\s+/);
@@ -2397,18 +2415,20 @@ async function laadSchema() {
   tekenSchemaGrid("");
 }
 function _schemaKaart(a) {
-  // Naam dominant; secundaire status subtiel. Geen badge: 'nieuw' zou exact 'nog
-  // geen intake' dupliceren — de subregel draagt de status al, dus badge weg.
-  const doel = a.doel ? esc(a.doel) : "";
-  const sub = a.heeft_intake ? (doel || "intake bekend") : "nog geen intake";
+  // Naam dominant; één compacte secundaire regel met bestaande, betrouwbare info:
+  // groep altijd, doel erbij als er echt een intake-doel is (niets afleiden).
+  const groep = a.groep ? esc(a.groep) : "Overig";
+  const doel = (a.heeft_intake && a.doel) ? " · " + esc(a.doel) : "";
   return `<button class="sb-tile${a.key === schemaSelKey ? " sel" : ""}" data-key="${esc(a.key)}">
     <span class="avatar sm">${initialen(a.naam)}</span>
     <span class="sb-b"><span class="sb-nm">${esc(a.naam)}</span>
-      <span class="sb-sub">${sub}</span></span>${ic("chevron")}</button>`;
+      <span class="sb-sub">${groep}${doel}</span></span>${ic("chevron")}</button>`;
 }
 function tekenSchemaGrid(filter) {
   const grid = $("#sb-grid"); if (!grid) return;
   const f = (filter || "").trim().toLowerCase();
+  // Groep staat nu op de kaart (geen sectiekoppen meer) → uniforme, even hoge
+  // tegels in één raster. Server-volgorde (per groep, dan alfabetisch) blijft.
   const rijen = schemaAtleten.filter(a =>
     (!schemaFilterGroep || (a.groep || "Overig") === schemaFilterGroep) &&
     (!f || (a.naam || "").toLowerCase().includes(f)));
@@ -2416,10 +2436,7 @@ function tekenSchemaGrid(filter) {
     grid.innerHTML = `<div class="sb-leeg">Geen atleet gevonden${f ? ` voor “${esc(filter)}”` : ""}.</div>`;
     return;
   }
-  const groepen = [], perGroep = {};
-  rijen.forEach(a => { const g = a.groep || "Overig"; if (!perGroep[g]) { perGroep[g] = []; groepen.push(g); } perGroep[g].push(a); });
-  grid.innerHTML = groepen.map(g =>
-    `<p class="sec-label">${esc(g)}</p><div class="sb-grid">${perGroep[g].map(_schemaKaart).join("")}</div>`).join("");
+  grid.innerHTML = `<div class="sb-grid">${rijen.map(_schemaKaart).join("")}</div>`;
   grid.querySelectorAll(".sb-tile").forEach(el => el.addEventListener("click", () => {
     const a = schemaAtleten.find(x => x.key === el.dataset.key);
     if (a) { schemaSelKey = a.key; schemaWerk(a); }
