@@ -197,6 +197,7 @@ function applyRoute() {
     else toonView("home");
     if (view === "atleten" && ident) openDossier(ident);   // synchrone prefix draait nog binnen de guard
     else if (view === "schema") { if (ident) openSchemaAthlete(ident); else { schemaOpenPending = ""; sbToonLijst(); } }
+    else if (view === "dossier") { if (ident) openDossierCockpit(ident); else { dcOpenPending = ""; dcToonLijst(); } }
   } finally { _routing = false; }
 }
 window.addEventListener("popstate", applyRoute);
@@ -3830,8 +3831,204 @@ function tekenAdmin(d) {
 }
 
 // ── Start ──────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// DOSSIER FASE B — read-only Masterbrein-cockpit (view "dossier")
+// Leeslaag op Masterbrein V2: Z0 statuskop · Z1 aandacht · Z2 recent veranderd ·
+// Z3 dynamische domeinen · Z4 tijdlijn (capture OFF → eerlijke empty) · Z5 lichte
+// provenance + "Waarom?". Strikt read-only; geen writes, geen edits. Zie
+// dossier-fase-b-cockpit-design.md.
+// ════════════════════════════════════════════════════════════════════════════
+let dcPicker = null, dcCache = [], dcSel = "", dcOpenPending = "";
+const dcLog = (ev, data) => { try { console.debug("[dossier]", ev, data || ""); } catch {} };
+
+const _DC_OVERALL = { GOOD: "Goed", STABLE: "Stabiel", ATTENTION: "Aandacht", INSUFFICIENT_DATA: "Te weinig data" };
+const _DC_TRUTH = { ATHLETE_REPORTED: "atleet-gemeld", COACH_REPORTED: "coach-gemeld",
+  DERIVED: "afgeleid", FACT: "feit", AI_INTERPRETATION: "AI-duiding", UNKNOWN: "onbekend" };
+const _DC_KIND_IC = { complaint: "alert", load_signal: "pulse", possible_relation: "pulse",
+  zone_review: "brain", recovery_neg: "clock", conflict: "alert", source_gap: "alert" };
+
+function dcToonLijst() {
+  $("#dc-lijst").hidden = false;
+  if (isDesktop()) { if (!dcSel) $("#dc-detail").hidden = true; }
+  else { $(".view[data-view='dossier'] .md-list").hidden = false; $("#dc-detail").hidden = true; }
+}
+
+async function laadDossierCockpit() {
+  const box = $("#dc-lijst");
+  if (!dcPicker) skeleton(box, 6);
+  let data;
+  try { data = await api("/api/atleten"); }
+  catch { if (!dcPicker) box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  dcCache = data.atleten || [];
+  const items = dcCache.map(a => ({ ...a, key: a.id }));
+  if (!items.length && !dcPicker) {
+    box.innerHTML = `<div class="leeg">${ic("users")}<p>Geen atleten.</p></div>`; dcToonLijst(); return;
+  }
+  if (dcPicker) { dcPicker.setItems(items); }
+  else {
+    dcPicker = renderPicker({
+      mount: box, searchEl: $("#dc-zoek"), items, groupOrder: data.groep_volgorde || [],
+      selectedKey: dcSel || "", mode: "navigate", emptyText: "Geen atleet gevonden.",
+      secondary: a => (a.heeft_intake && a.doel) ? esc(a.doel) : "",
+      onActivate: a => openDossierCockpit(a.key),
+    });
+  }
+  dcToonLijst();
+  if (dcOpenPending) { const p = dcOpenPending; dcOpenPending = ""; openDossierCockpit(p); }
+}
+
+const _dcRefBtn = $("#dc-refresh");
+if (_dcRefBtn) _dcRefBtn.addEventListener("click", () => { geladen.dossier = true; laadDossierCockpit(); });
+
+async function openDossierCockpit(ident) {
+  // roster nog niet geladen? → onthoud en open zodra laadDossierCockpit klaar is
+  if (!dcPicker) { dcOpenPending = ident; if (!geladen.dossier) { geladen.dossier = true; laadDossierCockpit(); } return; }
+  dcSel = ident;
+  dcPicker.setSelected(ident);
+  pushRoute("dossier", ident);
+  const wrap = $("#dc-detail");
+  if (!isDesktop()) { $(".view[data-view='dossier'] .md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }
+  wrap.hidden = false;
+  wrap.innerHTML = '<div class="dc-load"><p class="muted center">Cockpit laden…</p></div>';
+  let r;
+  try { r = await api("/api/cockpit?key=" + encodeURIComponent(ident)); }
+  catch { r = null; }
+  if (!wrap || dcSel !== ident) return;                       // leak guard: andere atleet gekozen
+  if (!r || !r.ok) {
+    // Totale onverwachte fout (na per-stage-isolatie zeldzaam): eerlijk als INTERNE
+    // fout labelen, niet als generieke 'bronfout'. Niets-bekend ≠ waar.
+    wrap.innerHTML = `<div class="dc-err">${ic("alert")}<p>De centrale atleetcontext kon nu niet worden opgebouwd (interne fout — geen bronfout). Dit betekent <b>niet</b> dat er niets bekend is.</p>
+      <button class="btn ghost" onclick="openDossierCockpit('${esc(ident)}')">Opnieuw</button></div>`;
+    return;
+  }
+  dcLog("cockpit_open", { key: ident, overall: r.status && r.status.overall });
+  dcRender(wrap, r);
+}
+
+function dcProv(p) {
+  if (!p) return "";
+  const parts = [];
+  if (p.truth_type) parts.push(_DC_TRUTH[p.truth_type] || p.truth_type);
+  if (p.source) parts.push(p.source);
+  if (p.observed_at) parts.push(p.observed_at);
+  if (p.status) parts.push(String(p.status).toLowerCase());
+  if (p.strength) parts.push(String(p.strength).toLowerCase());
+  return esc(parts.join(" · "));
+}
+
+function dcRender(wrap, vm) {
+  const st = vm.status || {}, rel = st.reliability || {};
+  const relTxt = rel.level === "green" ? "bronnen vers"
+    : rel.core_gap ? "kernbron uitgevallen — oordeel onzeker"
+    : "let op: bron(nen) verouderd of onvolledig";
+  // Z0 — statuskop
+  let h = `<div class="dc-head">
+    <div class="dc-id"><span class="dc-ava">${esc(initialen(vm.naam))}</span>
+      <div><h2>${esc(vm.naam || vm.key)}</h2>${vm.groep ? `<p class="dc-grp">${esc(vm.groep)}</p>` : ""}</div></div>
+    <div class="dc-statuswrap">
+      <span class="dc-badge dc-${(st.overall || "").toLowerCase()}">${esc(_DC_OVERALL[st.overall] || st.overall || "—")}</span>
+      <span class="dc-rel dc-rel-${esc(rel.level || "")}" title="${esc(relTxt)}"><i></i>${esc(relTxt)}</span>
+    </div>
+    <div class="dc-actions"><button class="btn ghost" onclick="dcGoSchema('${esc(vm.key)}')">Naar Schema</button></div>
+  </div>`;
+
+  // Partial-truth diagnostic: één build-stage faalde → alleen dát stuk mist, de rest klopt.
+  const diag = vm.build_diagnostic || [];
+  if (diag.length) {
+    h += `<div class="dc-diag">${ic("alert")}<span>Enkele onderdelen konden niet worden berekend (${esc(diag.map(d => d.stage).join(", "))}). De overige bekende kennis hieronder klopt — dit is een interne fout, <b>geen</b> bronfout.</span></div>`;
+  }
+
+  // Z1 — Aandacht nu
+  const attn = vm.attention || [];
+  h += `<section class="dc-sec dc-attn"><h3>Aandacht nu</h3>`;
+  if (attn.length) {
+    h += `<div class="dc-cards">` + attn.map(c => `
+      <div class="dc-card dc-k-${esc(c.kind)}">
+        <p class="dc-card-t">${ic(_DC_KIND_IC[c.kind] || "alert")}${esc(c.title)}</p>
+        <p class="dc-card-w">${esc(c.why || "")}</p>
+        ${c.prov ? `<p class="dc-prov">${dcProv(c.prov)}</p>` : ""}
+      </div>`).join("") + `</div>`;
+  } else if (st.insufficient) {
+    h += `<p class="dc-calm dc-calm-warn">Te weinig data voor een oordeel — geen betrouwbare actiepunten.</p>`;
+  } else {
+    h += `<p class="dc-calm">Geen actiepunten — geen actieve klacht of signaal bekend${rel.level === "green" ? " (bronnen vers)" : ""}.</p>`;
+  }
+  h += `</section>`;
+
+  // Z2 — Recent veranderd (alleen bij échte recency; anders afwezig)
+  const changes = vm.changes || [];
+  if (changes.length) {
+    h += `<section class="dc-sec dc-changes"><h3>Recent veranderd</h3><ul class="dc-chlist">` +
+      changes.map(c => `<li><span class="dc-ch-t">${esc(c.title)}</span>${c.effective_at ? `<span class="dc-ch-d">${esc(c.effective_at)}</span>` : ""}</li>`).join("") +
+      `</ul></section>`;
+  }
+
+  // Z3 — Domeinkaarten (dynamisch open o.b.v. aandacht)
+  h += `<section class="dc-sec dc-domains">` + (vm.domains || []).map(d => `
+    <details class="dc-dom${d.onbekend ? " leeg" : ""}"${d.open ? " open" : ""}>
+      <summary>${esc(d.titel)}${d.onbekend ? ` <span class="muted klein">— onbekend</span>` : ""}</summary>
+      ${d.onbekend ? "" : `<ul class="dc-reg">` + d.regels.map(r => `
+        <li>
+          <div class="dc-reg-main"><span class="dc-lbl">${esc(r.label)}</span><span class="dc-val">${esc(r.value)}</span></div>
+          <div class="dc-reg-meta">${r.prov ? `<span class="dc-prov">${dcProv(r.prov)}</span>` : ""}
+            ${r.evidence_id ? `<button class="dc-why" data-id="${esc(r.evidence_id)}" data-key="${esc(vm.key)}">Waarom?</button>` : ""}</div>
+        </li>`).join("") + `</ul>`}
+    </details>`).join("") + `</section>`;
+
+  // Z4 — Tijdlijn (capture OFF → eerlijke empty-state)
+  const tl = vm.timeline || {};
+  h += `<section class="dc-sec dc-timeline"><h3>Longitudinale tijdlijn</h3>`;
+  if (tl.empty_reason) {
+    h += `<p class="dc-empty-tl">Er is nog geen longitudinale tijdlijn vastgelegd. BeBetter bouwt de historie op vanaf het moment dat history-capture wordt geactiveerd (vanaf-nu; geen terugwerkende reconstructie). <b>‘Geen events’ betekent hier niet ‘geen historie’</b> — alleen dat er nog niets is vastgelegd.</p>`;
+  } else {
+    h += `<ul class="dc-tl">` + (tl.events || []).map(e => `
+      <li><span class="dc-tl-d">${esc(e.effective_at || e.recorded_at || "")}</span>
+        <span class="dc-tl-t">${esc(e.title || e.event_type)}</span></li>`).join("") + `</ul>`;
+  }
+  h += `</section>`;
+
+  // Z5 — Bronnen & betrouwbaarheid (drill-down)
+  const src = vm.source_health || [];
+  if (src.length) {
+    h += `<details class="dc-sec dc-src"><summary>Bronnen &amp; betrouwbaarheid</summary><ul class="dc-srclist">` +
+      src.map(s => `<li><span class="dc-src-n">${esc(s.source)}</span>
+        <span class="dc-src-s ${s.available ? (s.stale ? "warn" : "ok") : "bad"}">${s.available ? (s.stale ? "verouderd" : "vers") : "uitgevallen"}</span>
+        ${s.error ? `<span class="muted klein">${esc(s.error)}</span>` : ""}</li>`).join("") +
+      `</ul></details>`;
+  }
+
+  wrap.innerHTML = h;
+  wrap.querySelectorAll(".dc-why").forEach(b => b.addEventListener("click", () => dcWaarom(b)));
+}
+
+function dcGoSchema(key) {
+  try { history.pushState(null, "", "#schema/" + encodeURIComponent(key)); } catch {}
+  applyRoute();
+}
+
+async function dcWaarom(btn) {
+  const id = btn.dataset.id, key = btn.dataset.key;
+  if (btn._open) { const n = btn.nextElementSibling; if (n && n.classList.contains("dc-why-box")) n.remove(); btn._open = false; btn.textContent = "Waarom?"; return; }
+  btn.textContent = "Laden…";
+  const r = await api(`/api/cockpit/explain?key=${encodeURIComponent(key)}&id=${encodeURIComponent(id)}`).catch(() => null);
+  btn.textContent = "Verberg";
+  const ex = (r && r.ok && r.explain) || null;
+  const box = document.createElement("div");
+  box.className = "dc-why-box";
+  if (!ex || ex.error) { box.innerHTML = `<p class="muted klein">Onderbouwing niet beschikbaar.</p>`; }
+  else {
+    const chain = (ex.provenance || []).map(p => `<li>${esc(p.key || p.source || "")}${p.observed_at ? ` · ${esc(p.observed_at)}` : ""}${p.truth_type ? ` · ${esc(_DC_TRUTH[p.truth_type] || p.truth_type)}` : ""}</li>`).join("");
+    box.innerHTML = `<p class="klein"><b>${esc(_DC_TRUTH[ex.truth_type] || ex.truth_type || "")}</b>${ex.strength ? ` · ${esc(String(ex.strength).toLowerCase())}` : ""}${ex.observed_at ? ` · ${esc(ex.observed_at)}` : ""}</p>
+      ${ex.sources && ex.sources.length ? `<p class="klein">Bronnen: ${esc(ex.sources.join(", "))}</p>` : ""}
+      ${chain ? `<ul class="dc-why-chain">${chain}</ul>` : ""}`;
+  }
+  btn.insertAdjacentElement("afterend", box);
+  btn._open = true;
+}
+
 laders.strippen = laad;
 laders.atleten = laadDossierLijst;
+laders.dossier = laadDossierCockpit;
 laders.intake = laadIntake;
 laders.documenten = laadDocs;
 laders.feedback = fbEnter;
