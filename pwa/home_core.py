@@ -200,6 +200,28 @@ def _persist(data: dict) -> None:
             pass
 
 
+def invalidate_feedback() -> None:
+    """Invalidatie-seam Feedback → Home — SNAPSHOT-INVALIDATIE, geen afgeleide teller.
+
+    Na een BEVESTIGDE feedback-post/skip markeert dit de Home-snapshot als 'moet
+    revalideren' (`_revalidate`-vlag) in beide lagen (in-memory + durabel). De feedback-
+    TELLINGEN worden hier NOOIT met de hand gemuteerd: ze komen uitsluitend uit de
+    canonieke `_bereken`-sweep. De volgende Home-read ziet de vlag → de client triggert de
+    (bestaande, single-flight) achtergrond-refresh → de tegel convergeert naar exact de
+    sweep-waarde. Zo is er geen tweede teller-truth (geen dubbeltelling/drift, race-veilig)
+    en klopt de telling ook na reload/koude start.
+
+    Idempotent (een vlag, geen som): dubbel aanroepen = zelfde toestand. Is Home nog nooit
+    gebouwd (geen geldige snapshot), dan is er niets te revalideren → no-op. Nooit fataal."""
+    try:
+        snap = _current()
+        if not _valid(snap):
+            return
+        _persist({**snap, "_revalidate": True})
+    except Exception:
+        pass
+
+
 def _apply_handled_overlay(snap: dict) -> dict:
     """Reconcile een (mogelijk verouderde) snapshot met de DUURZAME home_handled-store.
 

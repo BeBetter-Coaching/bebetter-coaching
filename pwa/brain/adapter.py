@@ -26,11 +26,13 @@ from __future__ import annotations
 
 from datetime import date
 
+import intake_store
+
 from . import projections
 from . import snapshot as _snapshot
 from . import sources as _sources
 from . import state as _state
-from .models import (ACTIVE, ATTENTION, RECENT, RECURRING, STALE)
+from .models import (ACTIVE, ATTENTION, RECENT, RECURRING, STALE, SourceHealth)
 
 # Taak-relevante bronnen voor Schema-planning. Een gap hierin moet zichtbaar
 # blijven in de contextrepresentatie (SourceHealth-invariant).
@@ -390,6 +392,83 @@ def feedback_context_block(user_key: str, workout_key: str = "", today: date | N
         return {"prompt_block": "", "source_gaps": [], "has_load": False,
                 "complaint_areas": [], "error": str(e)[:120]}
     return feedback_context(state, workout_key)
+
+
+# ── Schema config-prefill: planning-defaults uit de canonieke Masterbrein-kennis ──
+# Planning-RELEVANTE velden die Masterbrein betrouwbaar kent → bewerkbare form-defaults,
+# zodat het config-formulier dezelfde waarheid toont als het 'Bekende atleetcontext'-panel
+# (één keten: intake → evidence → for_schema → config-default). Contextuele kennis
+# (klachten, leefstijl, coach-observaties) hoort NIET in een formulierveld en zit hier
+# bewust niet in.
+#
+# key = intake-evidence-key (bron), waarde = config-veld. Deze keys worden door
+# `intake_evidence.py` / `state._base_evidence` verbatim uit de intake getypeerd.
+_PLANNING_FIELDS = {
+    "trainingsdagen": "training_response.available_days",
+    "doel": "goal.doel",
+    "huidig_volume": "load.volume_intake",
+    "tijd_per_training": "training_response.time_per_session",
+    "race_prioriteit": "goal.race_priority",
+    "tussenraces": "goal.intermediate_races",
+}
+
+
+def _light_intake_gather(user_key: str):
+    """Alleen de intake-bron (+ SourceHealth), GEEN FS-sweep — identieke leeslogica als
+    `sources.gather`'s intake-blok. De planning-velden zijn allemaal intake-afgeleid, dus
+    dit levert exact dezelfde evidence als een volledige build, maar houdt de config-prefill
+    snel. Faalt de intake-read, dan is de bron `unavailable` → `assemble` carriet last-known-
+    good uit de snapshot (centrale freshness-resolutie)."""
+    raw: dict = {}
+    try:
+        intakes = intake_store.load_intakes() or {}
+        laatste = intake_store.load_laatste_intakes() or {}
+        ik = intake_store.nieuwste_intake(intakes.get(user_key), laatste.get(user_key)) or {}
+        ik = ik if isinstance(ik, dict) else {}
+        raw["intake"], raw["intake_ts"] = ik, (intake_store._intake_ts(ik) if ik else "")
+        health = [SourceHealth(source="intake", available=True, stale=False)]
+    except Exception as e:
+        raw["intake"], raw["intake_ts"] = {}, ""
+        health = [SourceHealth(source="intake", available=False, error=str(e)[:120])]
+    return raw, health
+
+
+def planning_defaults(user_key: str, today: date | None = None) -> dict:
+    """Planning-relevante config-defaults uit de CANONIEKE Schema-projectie.
+
+    Eén keten: intake → typed evidence → AthleteState (`assemble`) → `for_schema` → hier.
+    Er is GEEN parallel raw-intake-leespad: de waarde komt uitsluitend uit `for_schema`.
+    Freshness/live-vs-last-known-good/conflict worden CENTRAAL in Masterbrein opgelost
+    (live intake wordt vers gegather; valt de intake-bron uit, dan carriet `assemble` de
+    last-known-good uit de snapshot). SNEL: lichte intake-only gather, geen FS-sweep, zodat
+    de config-prefill zijn eerste-paint-contract houdt. `unknown blijft unknown` (geen
+    default). De coach kan elk veld overschrijven. Nooit fataal: bij een build-fout leeg."""
+    today = today or date.today()
+    try:
+        raw, health = _light_intake_gather(user_key)
+        try:
+            prev = _snapshot.load_snapshot(user_key)
+        except Exception:
+            prev = None
+        ik = raw.get("intake") or {}
+        naam = ik.get("athlete_name") or ik.get("naam") or user_key
+        state = _state.assemble(user_key, naam, raw, health, today, prev=prev)
+        proj = projections.for_schema(state)
+    except Exception:
+        return {}
+    evs = {}
+    for e in (proj.get("evidence") or []):
+        evs.setdefault(e.get("key"), e)               # eerste (canonieke) evidence per key
+    out = {}
+    for veld, key in _PLANNING_FIELDS.items():
+        e = evs.get(key)
+        if not e:
+            continue
+        val = e.get("value")
+        val = val.strip() if isinstance(val, str) else val
+        if val:
+            out[veld] = val
+    return out
 
 
 # ── Publieke ingang voor de gate (impure) ────────────────────────────────────

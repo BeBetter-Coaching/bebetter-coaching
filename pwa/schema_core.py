@@ -334,10 +334,48 @@ def afspraken(config: dict) -> list:
     return out
 
 
+def _schema_brain_v2() -> bool:
+    """Draait Schema in de actieve Masterbrein-v2-modus (productie)?"""
+    try:
+        import athlete_context as AC
+        return AC.schema_brain_mode() == "v2"
+    except Exception:
+        return False
+
+
+def _brein_planning_defaults(key: str) -> dict:
+    """Planning-relevante defaults uit de CANONIEKE Schema-projectie (`for_schema` via de
+    adapter): intake → typed evidence → AthleteState → for_schema. Freshness/live-vs-
+    last-known-good/conflict worden CENTRAAL in Masterbrein opgelost — Schema leest hier
+    alleen het resultaat. Nooit fataal (bij een build-fout leeg)."""
+    try:
+        from brain import adapter as _ad
+        return _ad.planning_defaults(key) or {}
+    except Exception:
+        return {}
+
+
 def config_prefill(key: str) -> dict:
     """Slimme prefill voor modus NIEUW uit bestaande atleet-/intakecontext + FS-zones.
-    Snel: geen zware sweep (trainingslog volgt pas bij plan-generatie)."""
+    Snel: geen zware sweep (trainingslog volgt pas bij plan-generatie).
+
+    Planning-relevante velden (trainingsdagen, doel, huidig volume, tijd/sessie, race-
+    prioriteit, tussenraces) komen uit ÉÉN keten, GEEN parallelle read-paden:
+      • v2 (productie): uitsluitend uit de canonieke Masterbrein-projectie (`for_schema`);
+        freshness/last-known-good/conflict zijn daar al opgelost. Zo toont de form exact
+        dezelfde waarheid als het 'Bekende atleetcontext'-panel.
+      • legacy/shadow: het bewezen raw-intake-pad (ONgewijzigd) — raw intake blijft daar
+        puur source-ingestion, niet een tweede planning-truth náást v2.
+    De coach kan elk veld overschrijven (dit is enkel de beginwaarde)."""
     base = _nieuwste_intake(key)
+    v2 = _schema_brain_v2()
+    brein = _brein_planning_defaults(key) if v2 else {}
+
+    def _plan(veld: str):
+        """v2 → uitsluitend Masterbrein (`for_schema`); legacy → raw intake (bewezen pad)."""
+        if v2:
+            return brein.get(veld, "")
+        return base.get(veld, "")
     naam_vol = base.get("athlete_name") or base.get("naam")
     voornaam = base.get("naam")
     if not naam_vol or not voornaam:         # atleet zonder intake → identity uit de roster
@@ -367,14 +405,14 @@ def config_prefill(key: str) -> dict:
                                              base.get("schema_einddatum", ""))
     config = {
         "athlete_key": key, "naam": voornaam, "athlete_name": naam_vol,
-        "doel": base.get("doel", ""), "startdatum": start, "weken": str(weken_int),
+        "doel": _plan("doel"), "startdatum": start, "weken": str(weken_int),
         "schema_einddatum": einddatum, "wedstrijddatum": base.get("wedstrijddatum", ""),
-        "trainingsdagen": base.get("trainingsdagen", ""),
-        "huidig_volume": base.get("huidig_volume", ""),
-        "tijd_per_training": base.get("tijd_per_training", ""),
+        "trainingsdagen": _plan("trainingsdagen"),
+        "huidig_volume": _plan("huidig_volume"),
+        "tijd_per_training": _plan("tijd_per_training"),
         "zone_type": "hartslag" if zone_type in ("hartslag", "heart_rate") else "tempo",
-        "zones": zones_text, "race_prioriteit": base.get("race_prioriteit", ""),
-        "tussenraces": base.get("tussenraces", ""), "coach_notitie": base.get("coach_notitie", ""),
+        "zones": zones_text, "race_prioriteit": _plan("race_prioriteit"),
+        "tussenraces": _plan("tussenraces"), "coach_notitie": base.get("coach_notitie", ""),
         "referentie_prestatie": base.get("referentie_prestatie", ""),
         "blessurehistorie": base.get("blessurehistorie", ""),
         "andere_sporten": base.get("andere_sporten", ""), "op_tijd": base.get("op_tijd", False),
