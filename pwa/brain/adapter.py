@@ -229,6 +229,10 @@ def to_legacy_context(state, raw: dict, today: date | None = None) -> dict:
                    "source_gaps": sorted(gaps),
                    "schema_relevant_gaps": sorted(gaps & SCHEMA_RELEVANT_SOURCES),
                    "conflicts": list(state.conflicts)},
+        # Interne build-stage-fouten (partial-truth diagnostic; leeg = alles gebouwd).
+        # GEEN source-gap: dit onderscheidt een interne exception van een bronfout,
+        # zodat de UI het niet misleidend als 'bronfout' toont.
+        "_build_errors": list(getattr(state, "build_errors", []) or []),
     }
     ctx["missing"] = _missing(ctx)
     return ctx

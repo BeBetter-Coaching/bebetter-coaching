@@ -85,10 +85,8 @@ def _base_evidence(raw: dict, athlete_key: str, today: date) -> list:
                                 athlete_key=athlete_key,
                                 detail={"signalen": (bel.get("signalen") or [])[:3]}))
 
-    # Rijke intake-kennis als typed evidence (verbatim, ATHLETE_REPORTED) — één
-    # centrale waarheid i.p.v. ruwe passthrough in de adapter. Levert alleen keys
-    # die hierboven/complaints nog niet leverden (geen dubbele evidence).
-    out += _intake_evidence.intake_evidence(raw, athlete_key, today)
+    # (Rijke intake-kennis als typed evidence draait als EIGEN geïsoleerde stage in
+    #  assemble() — zo wist een fout daar niet de goal/recovery-basis, en vice versa.)
     return out
 
 
@@ -117,7 +115,17 @@ def _carry_last_known_good(evidence: list, health: list, prev, today: date) -> t
     return evidence, gaps
 
 
-def _good_is_good(evidence: list, health: list, gaps: list) -> str:
+# Sub-builders die een KERNCOMPONENT voor het overall-oordeel leveren. Faalt één
+# hiervan, dan mist het oordeel een essentieel stuk → nooit vals GOOD/STABLE.
+_JUDGMENT_CRITICAL_STAGES = ("base_evidence", "complaints", "derive", "last_known_good")
+
+
+def _good_is_good(evidence: list, health: list, gaps: list, errors: list | None = None) -> str:
+    # Een gefaalde kern-stage betekent: oordeel mist een essentieel component →
+    # INSUFFICIENT_DATA (geen vals STABLE/GOOD). Source-gaps blijven via de normale
+    # weg lopen (die degraderen al correct).
+    if any((e.get("stage") in _JUDGMENT_CRITICAL_STAGES) for e in (errors or [])):
+        return INSUFFICIENT_DATA
     hm = _health_map(health)
     # taak-relevante kernbron voor 'load stabiel' = training_log (of last-known-good)
     tl = hm.get("fs.training_log")
@@ -155,29 +163,66 @@ def _good_is_good(evidence: list, health: list, gaps: list) -> str:
     return INSUFFICIENT_DATA
 
 
+def _safe_stage(errors: list, stage: str, fn, fallback):
+    """Voer één build-stage geïsoleerd uit. Een onverwachte exception mag NOOIT de
+    hele AthleteState wissen: hij wordt technisch gelogd (echte traceback) + als
+    diagnostic vastgelegd, en de stage degradeert naar `fallback` zodat alle
+    onafhankelijke evidence/intakefacts behouden blijven (partial truth).
+    NB: dit is GEEN brede stille catch — het is per-stage isolatie mét diagnostic;
+    echte source-failures lopen ONgewijzigd via SourceHealth/source_gaps."""
+    try:
+        return fn()
+    except Exception as e:                               # pragma: no cover — vangnet
+        import sys, traceback
+        sys.stderr.write(f"[brain.assemble] stage '{stage}' faalde voor build: {e}\n")
+        traceback.print_exc()
+        errors.append({"stage": stage, "error": type(e).__name__ + ": " + str(e)[:200]})
+        return fallback
+
+
 def assemble(user_key: str, naam: str, raw: dict, health: list,
              today: date | None = None, prev=None) -> AthleteState:
-    """PUUR: bouw AthleteState uit al-verzamelde raw + health."""
+    """PUUR (op I/O na): bouw AthleteState uit al-verzamelde raw + health.
+
+    Elke sub-builder draait GEÏSOLEERD (`_safe_stage`): faalt er één onverwacht,
+    dan degradeert alleen die slice en blijft de rest (incl. onafhankelijke intake-
+    facts) beschikbaar → partial AthleteState i.p.v. totale uitval. De opgelopen
+    build-fouten staan in `state.build_errors` (diagnostic, transient — niet
+    gepersisteerd)."""
     today = today or date.today()
     hm = _health_map(health)
+    errors: list = []
 
-    evidence = _base_evidence(raw, user_key, today)
-    evidence += _zones.build(raw, hm, user_key, today)
-    evidence += _complaints.build(raw, user_key, today)
-    evidence += _derive.all(raw, user_key, today, evidence)
-    evidence += _patterns.all(evidence, raw, user_key, today)
-    evidence += _contradictions.detect(evidence, raw, user_key, today)
+    evidence = list(_safe_stage(errors, "base_evidence",
+                                lambda: _base_evidence(raw, user_key, today), []))
+    evidence += _safe_stage(errors, "intake_evidence",
+                            lambda: _intake_evidence.intake_evidence(raw, user_key, today), [])
+    evidence += _safe_stage(errors, "zones", lambda: _zones.build(raw, hm, user_key, today), [])
+    evidence += _safe_stage(errors, "complaints", lambda: _complaints.build(raw, user_key, today), [])
+    evidence += _safe_stage(errors, "derive", lambda: _derive.all(raw, user_key, today, evidence), [])
+    evidence += _safe_stage(errors, "patterns", lambda: _patterns.all(evidence, raw, user_key, today), [])
+    evidence += _safe_stage(errors, "contradictions",
+                            lambda: _contradictions.detect(evidence, raw, user_key, today), [])
 
-    evidence, gaps = _carry_last_known_good(evidence, health, prev, today)
-    overall = _good_is_good(evidence, health, gaps)
+    evidence, gaps = _safe_stage(
+        errors, "last_known_good",
+        lambda: _carry_last_known_good(evidence, health, prev, today),
+        (evidence, [h.source for h in health if not h.available]))
+    overall = _safe_stage(errors, "good_is_good",
+                          lambda: _good_is_good(evidence, health, gaps, errors), INSUFFICIENT_DATA)
     conflicts = [e.id for e in evidence if e.status == CONFLICT]
 
-    return AthleteState(
+    st = AthleteState(
         athlete_key=user_key, naam=naam or user_key,
         built_at=datetime.now().isoformat(timespec="seconds"),
         overall=overall, schema_version=SCHEMA_VERSION,
         sources=health, evidence=evidence, conflicts=conflicts, source_gaps=gaps,
     )
+    # Diagnostic: welke build-stages onverwacht faalden (leeg = alles gebouwd).
+    # Runtime-attribuut (transient, niet in de snapshot) — consumers lezen het via
+    # getattr zodat een uit de snapshot herbouwde state ook veilig blijft.
+    st.build_errors = errors
+    return st
 
 
 def build_athlete_state(user_key: str, naam: str = "", today: date | None = None,

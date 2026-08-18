@@ -431,16 +431,23 @@ def bekende_context(key: str) -> dict:
     try:
         import athlete_context as AC
         ctx = AC.build_athlete_context(key)
-        return {"secties": AC.ui_sections(ctx), "used": AC.used_summary(ctx)}
+        # Partial-truth is normaal: één gefaalde build-stage wist niet de hele context.
+        # `build_errors` is een diagnostic (geen bronfout) zodat de UI eerlijk kan tonen
+        # dat een deel niet berekend kon worden zonder alle bekende kennis te verbergen.
+        return {"secties": AC.ui_sections(ctx), "used": AC.used_summary(ctx),
+                "build_errors": list(ctx.get("_build_errors") or [])}
     except Exception as e:
-        import sys
-        sys.stderr.write(f"[bekende_context] build faalde voor {key}: {e}\n")
+        import sys, traceback
+        sys.stderr.write(f"[bekende_context] build faalde volledig voor {key}: {e}\n")
+        traceback.print_exc()
+        # Alleen bij een TOTALE onverwachte fout (na per-stage-isolatie zeldzaam):
+        # eerlijk labelen als INTERNE fout, niet als generieke 'bronfout'.
         return {"secties": [{"titel": "Context tijdelijk niet beschikbaar",
                              "regels": ["De centrale atleetcontext kon nu niet worden "
-                                        "opgebouwd (bronfout) — dit betekent NIET dat er "
-                                        "niets bekend is. Probeer zo opnieuw."],
+                                        "opgebouwd (interne fout — geen bronfout). Dit "
+                                        "betekent NIET dat er niets bekend is. Probeer zo opnieuw."],
                              "onbekend": False, "source_error": True}],
-                "used": {}, "err": str(e)[:200]}
+                "used": {}, "err": str(e)[:200], "build_errors": [{"stage": "context", "error": str(e)[:200]}]}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
