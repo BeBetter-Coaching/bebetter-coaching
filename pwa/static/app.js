@@ -352,9 +352,12 @@ function laadHeroFoto() {
   img.src = "/static/team.jpeg";
 }
 
-// Is de snapshot verouderd? Nieuwe dag → altijd; anders ouder dan 15 min.
+// Is de snapshot verouderd? Server-invalidatie (na feedback-post/skip) → altijd;
+// nieuwe dag → altijd; anders ouder dan 15 min.
 function cockpitStale(s) {
-  if (!s || !s.berekend) return true;
+  if (!s) return true;
+  if (s._revalidate) return true;          // Feedback→Home seam: sweep moet de tegel verversen
+  if (!s.berekend) return true;
   const today = new Date().toISOString().slice(0, 10);
   if (s.datum && s.datum !== today) return true;
   const t = Date.parse(s.berekend);
@@ -378,6 +381,9 @@ function cockpitVersen(s) {
     const box = $("#home-prio");
     const heeftLijst = box && box.querySelector(".prio-item, .prio-leeg");
     if (!heeftLijst) { vulCockpit(fresh, true); return; }   // eerste build → direct tonen (autoritatief)
+    // Feedbacktegel convergeert altijd naar de canonieke sweep (los van de lijst-diff),
+    // zodat een post/skip-invalidatie de telling ook in diff-modus bijwerkt.
+    renderFeedbackStrip(fresh.feedback, true);
     cockpitDiffToon(fresh);                            // actieve lijst → NIET verspringen
   }).catch(() => { markVersen(false); if (note) note.dataset.busy = ""; prioTekenStatus(); });
 }
@@ -424,11 +430,38 @@ function markVersen(on) {
 }
 
 // Vult hero-status + feedbackbalk + prioriteitlijst + info-strip met echte cockpit-data.
-// `fresh` = de data komt van een AUTORITATIEVE server-refresh (refresh=1) → de
-// optimistische feedback-delta is dan verrekend en wordt gereset. Bij een cachede
-// eerste-paint (fresh=false) passen we de delta toe zodat een net verstuurde/
-// overgeslagen Feedback-actie meteen in de Home-balk klopt (cross-module invalidatie
-// zonder Home te herbouwen; de refresh reconcilieert daarna).
+// Feedbacktegel: de TELLING is altijd de canonieke sweep-waarde (server muteert geen
+// afgeleide teller). Een bevestigde post/skip markeert de Home-snapshot server-side als
+// 'moet revalideren' (home_core.invalidate_feedback → `_revalidate`), zodat cockpitStale
+// de bestaande achtergrond-refresh triggert die de tegel naar de sweep-waarde brengt.
+// `homeFbDelta` is enkel een TRANSIËNTE client-optimalisatie die het korte venster tot
+// die refresh overbrugt: toegepast op een cachede paint, gereset zodra een autoritatieve
+// (fresh) read binnenkomt. Geen tweede waarheid — de server reconcilieert altijd.
+// Feedback-voortgangsbalk (los renderbaar zodat een achtergrond-refresh de tegel naar de
+// canonieke sweep-waarde kan brengen zónder de actieve prioriteitslijst te verstoren).
+function renderFeedbackStrip(fbs, fresh) {
+  fbs = fbs || {};
+  const fb = $("#home-fb");
+  if (!fb) return;
+  if (fresh) homeFbDelta = { wachten: 0, gepost: 0 };     // autoritatieve sweep binnen → transiënt optimisme verrekend
+  const w = Math.max(0, (fbs.wachten || 0) + homeFbDelta.wachten);
+  const gepost = Math.max(0, (fbs.gepost || 0) + homeFbDelta.gepost);
+  // pct opnieuw afleiden uit de (evt. optimistisch bijgestelde) getallen zodat de
+  // balk intern consistent blijft; val terug op de serverwaarde als er geen basis is.
+  const totaal = w + gepost;
+  const pct = totaal ? Math.round(gepost / totaal * 100) : (fbs.pct != null ? fbs.pct : 100);
+  fb.classList.remove("skel-strip");
+  fb.classList.toggle("done", w === 0);
+  fb.innerHTML = `
+    <div class="fb-strip-top">
+      <span class="fb-strip-ic">${ic(w ? "message" : "check")}</span>
+      <span class="fb-strip-t">${w ? `<b>${w}</b> wachten op feedback` : "Alles beoordeeld"}</span>
+      <span class="fb-strip-pct">${pct}%</span>
+    </div>
+    <div class="mt-bar"><i style="width:${pct}%"></i></div>
+    <span class="fb-strip-sub">${gepost} vandaag gepost · ${pct}% afgerond</span>`;
+}
+
 function vulCockpit(s, fresh) {
   if (!s || !s.fs) {
     const p = $("#home-prio"); if (p) p.innerHTML = '<p class="muted klein">FinalSurge niet gekoppeld.</p>';
@@ -449,26 +482,7 @@ function vulCockpit(s, fresh) {
   prioTekenStatus();
 
   // ── Feedback: dagelijkse kern als voortgangsbalk ──
-  const fb = $("#home-fb");
-  if (fb) {
-    if (fresh) homeFbDelta = { wachten: 0, gepost: 0 };     // server is bijgewerkt → delta verrekend
-    const w = Math.max(0, (fbs.wachten || 0) + homeFbDelta.wachten);
-    const gepost = Math.max(0, (fbs.gepost || 0) + homeFbDelta.gepost);
-    // pct opnieuw afleiden uit de (evt. optimistisch bijgestelde) getallen zodat de
-    // balk intern consistent blijft; val terug op de serverwaarde als er geen basis is.
-    const totaal = w + gepost;
-    const pct = totaal ? Math.round(gepost / totaal * 100) : (fbs.pct != null ? fbs.pct : 100);
-    fb.classList.remove("skel-strip");
-    fb.classList.toggle("done", w === 0);
-    fb.innerHTML = `
-      <div class="fb-strip-top">
-        <span class="fb-strip-ic">${ic(w ? "message" : "check")}</span>
-        <span class="fb-strip-t">${w ? `<b>${w}</b> wachten op feedback` : "Alles beoordeeld"}</span>
-        <span class="fb-strip-pct">${pct}%</span>
-      </div>
-      <div class="mt-bar"><i style="width:${pct}%"></i></div>
-      <span class="fb-strip-sub">${gepost} vandaag gepost · ${pct}% afgerond</span>`;
-  }
+  renderFeedbackStrip(fbs, fresh);
 
   // ── Prioriteit vandaag: gegroepeerd per atleet (wie → waarom → actie) ──
   const prio = s.prioriteit || [];

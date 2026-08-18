@@ -29,6 +29,20 @@ import intake_store                                     # skip-opslag + on-hold 
 _cache: dict[str, dict] = {}                            # workout_key -> workout_data (details lazy)
 
 
+def _home_invalidate_feedback() -> None:
+    """Server-side invalidatie-seam Feedback → Home. Na een BEVESTIGDE post/skip markeert
+    Home zijn feedbacktegel als 'moet revalideren' (géén handmatige teller-mutatie), zodat
+    de volgende Home-read — óók na reload/koude start — de tegel via de canonieke sweep
+    ververst i.p.v. een bevroren waarde te tonen. Lui geïmporteerd (home_core importeert
+    feedback_core; top-level import = cyclus) en NOOIT fataal: een Home-hapering mag
+    post/skip niet breken."""
+    try:
+        import home_core
+        home_core.invalidate_feedback()
+    except Exception:
+        pass
+
+
 def heeft_key() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
 
@@ -181,6 +195,10 @@ def plaats(wid: str, tekst: str) -> bool:
                 athlete_messages=_atleet_berichten(w), coach_text=tekst)
     except Exception:
         pass
+
+    # Home's feedbacktegel server-side laten revalideren (geen handmatige teller).
+    # Non-fataal: de reactie is al geplaatst.
+    _home_invalidate_feedback()
     return True
 
 
@@ -242,7 +260,15 @@ def _snapshot(w: dict) -> dict:
 
 
 def overslaan(wid: str) -> bool:
-    """Sla een training over (uit de lijst tot de atleet weer nieuwe input geeft)."""
+    """Sla een training over (uit de lijst tot de atleet weer nieuwe input geeft).
+
+    CANONIEKE persistence: een skip is pas 'gelukt' als de gedeelde store (skipped.json)
+    de write BEVESTIGT. Faalt `save_skipped`, dan mag dit NOOIT stil succes melden — dan
+    zou de UI de training verbergen terwijl hij na reload/koude read terugkomt (verloren
+    skip). We gooien in dat geval, zodat de API géén 200/ok teruggeeft en de client de
+    optimistische verwijdering terugrolt. De duurzame feedback-queue-snapshot wordt
+    daarnaast geïnvalideerd (zie `queue()`-leespad → `_apply_skips`), zodat een
+    verouderde queue de skip niet opnieuw introduceert."""
     w = _cache.get(wid)
     if not w:
         raise ValueError("Training niet meer in beeld — ververs de lijst.")
@@ -251,7 +277,12 @@ def overslaan(wid: str) -> bool:
         raise ValueError("Geen workout-sleutel.")
     sk = intake_store.load_skipped()
     sk[wk] = _snapshot(w)
-    intake_store.save_skipped(sk)
+    ok, err = intake_store.save_skipped(sk)
+    if not ok:
+        # Persistence niet bewezen → geen success-response (geen verloren skip).
+        raise RuntimeError("Overslaan niet opgeslagen: " + (err or "onbekende opslagfout"))
+    # Home's feedbacktegel server-side laten revalideren (geen handmatige teller).
+    _home_invalidate_feedback()
     return True
 
 
@@ -293,6 +324,42 @@ def _filter_skipped(workouts: list) -> list:
         except Exception:
             pass
     return uit
+
+
+def _wid(w: dict) -> str:
+    """Canonieke item-id voor een workout — ZELFDE afleiding als `_bouw_queue`."""
+    return w.get("workout_key") or (str(w.get("athlete_key", "")) + ":" + str(w.get("workout_date", "")))
+
+
+def _apply_skips(snap: dict) -> dict:
+    """Filter een (mogelijk verouderde) queue-snapshot tegen de CANONIEKE skip-store,
+    zodat élke queue-read — warme mem, koude durable of verse sweep — geen overgeslagen
+    training terugbrengt. Zo kan een skip die ná de laatste sweep is gezet nooit via een
+    stale `feedback_queue.json` opnieuw verschijnen (koude read / reload / restart).
+
+    Werkt op `_volle` (de echte workout-dicts in de snapshot) → exact dezelfde
+    `_filter_skipped`-semantiek als de sweep, inclusief her-activatie zodra de atleet
+    nieuwe input gaf. Ontbreekt `_volle` (oudere lichte snapshot), dan filteren we op de
+    skip-keys zelf (veilige richting: verbergen). Idempotent en niet-muterend voor de
+    snapshot (levert een nieuwe dict met gefilterde `items`)."""
+    items = snap.get("items") or []
+    if not items:
+        return snap
+    try:
+        sk = intake_store.load_skipped()
+    except Exception:
+        return snap
+    if not sk:
+        return snap
+    volle = snap.get("_volle") or {}
+    if volle:
+        houd = {_wid(w) for w in _filter_skipped(list(volle.values()))}
+        gefilterd = [it for it in items if it.get("id") in houd]
+    else:
+        gefilterd = [it for it in items if it.get("id") not in sk]
+    if len(gefilterd) == len(items):
+        return snap
+    return {**snap, "items": gefilterd}
 
 
 def dagoverzicht() -> dict:
@@ -584,7 +651,12 @@ def _groep_samenvatting(items: list) -> list:
 def _queue_public(snap: dict, cached: bool, **extra) -> dict:
     """Snapshot → publieke payload (zonder _volle), gesorteerd: groep
     (Start to Run→…→Comfort→Overig), dan categorie (reactie→gevoel→uitgevoerd),
-    daarbinnen OUDSTE onbeantwoord eerst. `groepen` = selector-samenvatting."""
+    daarbinnen OUDSTE onbeantwoord eerst. `groepen` = selector-samenvatting.
+
+    ELKE read passeert eerst `_apply_skips`: de canonieke skip-store filtert een
+    verouderde snapshot, zodat een net overgeslagen training nooit via een koude/mem
+    read terugkomt (bron van waarheid = skipped.json, niet de queue-snapshot)."""
+    snap = _apply_skips(snap)
     items = sorted(snap.get("items", []),
                    key=lambda i: (_GROEP_RANK.get(i.get("groep"), 9),
                                   _CAT_RANK.get(i["categorie"], 9),
