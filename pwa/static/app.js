@@ -265,6 +265,13 @@ async function renderHome() {
   // een volledige reset + zware herlaad bij elke terugkeer naar Home (#14).
   if (box && box.dataset.done === "1") {
     requestAnimationFrame(() => { const sc = $("#scroller"); if (sc) sc.scrollTo({ top: homeScroll || 0 }); });
+    // Terugkeer via in-app navigatie (geen browserrefresh): her-evalueer de freshness
+    // met dezelfde snapshot-read als de eerste paint. Staat de server-invalidatie
+    // (_revalidate, na een Feedback-post/skip) of is de snapshot verouderd, dan start
+    // cockpitVersen de BESTAANDE autoritatieve achtergrond-refresh die de feedbacktegel
+    // naar de canonieke sweep-telling brengt. Geen teller-mutatie, geen nieuwe client-
+    // state, geen server-wijziging — enkel de bestaande refresh-primitive her-triggeren.
+    api("/api/home/stats").then(s => { if (s && s.fs) cockpitVersen(s); }).catch(() => {});
     return;
   }
   const g = groetInfo();

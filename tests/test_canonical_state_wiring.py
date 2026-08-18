@@ -78,3 +78,12 @@ class TestClientInvalidatie:
     def test_delta_is_transient_reset_op_fresh(self):
         src = self._src()
         assert "if (fresh) homeFbDelta" in src             # optimisme verrekend bij fresh read
+
+    def test_terugkeer_naar_home_herleest_stats(self):
+        """Navigation-freshness seam: bij terugkeer naar een al-opgebouwde Home (in-app
+        nav, geen browserrefresh) her-leest renderHome de snapshot en start via
+        cockpitVersen de bestaande refresh — zodat de server-invalidatie (_revalidate)
+        herkend wordt. Hergebruikt de bestaande api-read + refresh-primitive."""
+        src = self._src()
+        # de dataset.done-terugkeerbranch bevat nu een verse stats-read die cockpitVersen voedt
+        assert 'api("/api/home/stats").then(s => { if (s && s.fs) cockpitVersen(s); })' in src
