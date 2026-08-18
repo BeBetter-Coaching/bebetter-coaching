@@ -74,6 +74,7 @@
       <button class="nav-item on" data-open-view="home"><svg class="ic"><use href="#ic-home"/></svg><span>Home</span></button>
       <button class="nav-item" data-open-view="feedback"><svg class="ic"><use href="#ic-message"/></svg><span>Feedback</span></button>
       <button class="nav-item" data-open-view="atleten"><svg class="ic"><use href="#ic-users"/></svg><span>Atleten</span></button>
+      <button class="nav-item" data-open-view="dossier"><svg class="ic"><use href="#ic-brain"/></svg><span>Dossier</span></button>
       <button class="nav-item" data-open-view="teampuls"><svg class="ic"><use href="#ic-pulse"/></svg><span>Teampuls</span></button>
       <p class="sb-label">Plannen</p>
       <button class="nav-item" data-open-view="schema"><svg class="ic"><use href="#ic-brain"/></svg><span>Schema bouwen</span></button>
@@ -107,6 +108,20 @@
           <section id="d-lijst" class="lijst"></section>
         </div>
         <div id="d-detail" class="md-detail" hidden></div>
+      </div>
+    </section>
+
+    <!-- ════════ DOSSIER (read-only Masterbrein-cockpit) ════════ -->
+    <section class="view" data-view="dossier">
+      <header class="appbar"><h1>Dossier</h1>
+        <button class="iconbtn" id="dc-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+      </header>
+      <div class="md-split">
+        <div class="md-list">
+          <div class="search"><svg class="ic"><use href="#ic-search"/></svg><input id="dc-zoek" placeholder="Zoek atleet"></div>
+          <section id="dc-lijst" class="lijst"></section>
+        </div>
+        <div id="dc-detail" class="md-detail" hidden></div>
       </div>
     </section>
 
@@ -261,6 +276,12 @@
       <header class="appbar"><h1>Meer</h1></header>
 
       <p class="sec-label">Plannen</p>
+      <button class="listcard" data-open-view="dossier">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-brain"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Dossier</span>
+          <span class="lc-sub">Hoe staat een atleet ervoor — cockpit</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
       <button class="listcard" data-open-view="schema">
         <span class="lc-ic"><svg class="ic"><use href="#ic-brain"/></svg></span>
         <span class="lc-body"><span class="lc-title">Schema bouwen</span>

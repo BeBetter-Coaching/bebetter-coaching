@@ -687,6 +687,27 @@ def import_commit(body: ImportCommit):
     return {"ok": ok, "err": err, **telling}
 
 
+# ── API: Dossier Fase B — read-only Masterbrein-cockpit view-model ───────────
+# Los prefix (/api/cockpit) om routebotsing met /api/dossier/{key} te vermijden.
+@app.get("/api/cockpit")
+def cockpit(key: str = ""):
+    try:
+        import dossier_cockpit
+        return dossier_cockpit.cockpit(key)
+    except Exception as e:
+        # Bronfout ≠ 'niets bekend' (§9): laat de UI de source-health-staat tonen.
+        return JSONResponse({"ok": False, "err": f"Cockpit mislukt: {e}"}, status_code=500)
+
+
+@app.get("/api/cockpit/explain")          # 'Waarom?'-laag (§12-E), on-demand
+def cockpit_explain(key: str = "", id: str = ""):
+    try:
+        import dossier_cockpit
+        return {"ok": True, "explain": dossier_cockpit.explain_claim(key, id)}
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Waarom mislukt: {e}"}, status_code=500)
+
+
 # ── API: dossier (store-only, zelfde data als Streamlit) ─────────────────────
 @app.get("/api/dossier/athletes")
 def dossier_athletes():
