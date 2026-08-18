@@ -320,6 +320,10 @@ def cockpit(key: str, today: date | None = None) -> dict:
         "domains": domains,
         "timeline": timeline,
         "source_health": _sources(state_obj),
+        # Partial-truth diagnostic: build-stages die onverwacht faalden (geen bronfout).
+        # Leeg = volledige build. De cockpit toont hiermee eerlijk dat een deel niet
+        # berekend kon worden, zónder alle bekende kennis te verbergen.
+        "build_diagnostic": list(getattr(state_obj, "build_errors", []) or []),
     }
 
 

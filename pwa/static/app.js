@@ -3895,8 +3895,9 @@ async function openDossierCockpit(ident) {
   catch { r = null; }
   if (!wrap || dcSel !== ident) return;                       // leak guard: andere atleet gekozen
   if (!r || !r.ok) {
-    // Bronfout ≠ 'niets bekend' (§9)
-    wrap.innerHTML = `<div class="dc-err">${ic("alert")}<p>De centrale atleetcontext kon nu niet worden opgebouwd (bronfout). Dit betekent <b>niet</b> dat er niets bekend is.</p>
+    // Totale onverwachte fout (na per-stage-isolatie zeldzaam): eerlijk als INTERNE
+    // fout labelen, niet als generieke 'bronfout'. Niets-bekend ≠ waar.
+    wrap.innerHTML = `<div class="dc-err">${ic("alert")}<p>De centrale atleetcontext kon nu niet worden opgebouwd (interne fout — geen bronfout). Dit betekent <b>niet</b> dat er niets bekend is.</p>
       <button class="btn ghost" onclick="openDossierCockpit('${esc(ident)}')">Opnieuw</button></div>`;
     return;
   }
@@ -3930,6 +3931,12 @@ function dcRender(wrap, vm) {
     </div>
     <div class="dc-actions"><button class="btn ghost" onclick="dcGoSchema('${esc(vm.key)}')">Naar Schema</button></div>
   </div>`;
+
+  // Partial-truth diagnostic: één build-stage faalde → alleen dát stuk mist, de rest klopt.
+  const diag = vm.build_diagnostic || [];
+  if (diag.length) {
+    h += `<div class="dc-diag">${ic("alert")}<span>Enkele onderdelen konden niet worden berekend (${esc(diag.map(d => d.stage).join(", "))}). De overige bekende kennis hieronder klopt — dit is een interne fout, <b>geen</b> bronfout.</span></div>`;
+  }
 
   // Z1 — Aandacht nu
   const attn = vm.attention || [];

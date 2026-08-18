@@ -1210,6 +1210,9 @@ button.sb-ready:hover{filter:brightness(1.08)}
 /* ════════ DOSSIER FASE B — read-only Masterbrein-cockpit (.dc-*) ════════ */
 #dc-detail{padding:0}
 .dc-load,.dc-err{padding:24px;text-align:center}
+.dc-diag{display:flex;gap:8px;align-items:flex-start;margin:0 16px;padding:9px 12px;border-radius:10px;
+  background:rgba(239,159,39,.10);border:1px solid #7a5a1f;color:#f6c069;font-size:12px}
+.dc-diag .ic{width:15px;height:15px;flex:0 0 auto}
 .dc-err{display:flex;flex-direction:column;align-items:center;gap:12px}
 .dc-err .ic{width:26px;height:26px;color:var(--warn)}
 .dc-sec{padding:14px 16px;border-top:1px solid var(--border)}

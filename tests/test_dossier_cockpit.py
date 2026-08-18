@@ -153,3 +153,17 @@ def test_changes_alleen_bij_echte_recency(monkeypatch):
     assert any("knie" in t.lower() for t in titels)
     for c in vm["changes"]:                                     # drop-in-vorm voor echte HistoryEvents
         assert c["derived_from"] == "state" and "transition" in c
+
+
+# ── Partial-truth resilience (foutklasse A) — cockpit toont partial context ───
+def test_cockpit_partial_bij_gefaalde_build_stage(monkeypatch):
+    """Eén gefaalde sub-builder (derive) → cockpit blijft ok, toont partial domeinen
+    + diagnostic, en géén vals STABLE/GOOD (kerncomponent ontbreekt)."""
+    import brain.derive as D
+    monkeypatch.setattr(D, "all", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    _patch_gather(monkeypatch, _raw("pijn in de knie", log=[]), _health(True))
+    vm = DC.cockpit("K", today=TODAY)
+    assert vm["ok"] is True                                     # geen totale uitval
+    assert any(not d["onbekend"] for d in vm["domains"])       # onafhankelijke intakefacts blijven
+    assert vm["build_diagnostic"] and any(e["stage"] == "derive" for e in vm["build_diagnostic"])
+    assert vm["status"]["overall"] == "INSUFFICIENT_DATA"      # geen vals oordeel
