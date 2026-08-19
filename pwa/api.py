@@ -361,6 +361,11 @@ class FeedbackGen(BaseModel):
     tekst: str = ""
 
 
+class SamenvattingReq(BaseModel):
+    coach: str = ""
+    items: list = []                                     # client-sessielog: geposte feedback
+
+
 @app.get("/api/feedback")
 def feedback_lijst(dagen: int = 7):
     return feedback.te_beoordelen(days_back=dagen)
@@ -423,11 +428,14 @@ def feedback_gen(body: FeedbackGen):
 def feedback_post(body: FeedbackGen):
     try:
         feedback.plaats(body.id, body.tekst)
+        # Server-bevestigd sessielog-item terug zodat de client de sessie-samenvatting
+        # kan opbouwen uit UITSLUITEND geslaagde posts (geen drafts, geen skips).
+        item = feedback.session_log_item(body.id, body.tekst)
     except ValueError as e:
         return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"Posten mislukt: {e}"}, status_code=500)
-    return {"ok": True}
+    return {"ok": True, "item": item}
 
 
 @app.get("/api/feedback/thread")         # volledige conversatie (atleet + coach)
@@ -449,6 +457,26 @@ def feedback_skip(body: FeedbackGen):
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"Overslaan mislukt: {e}"}, status_code=500)
     return {"ok": True}
+
+
+@app.post("/api/feedback/summary")       # sessie-samenvatting via de bewezen pure core
+def feedback_summary(body: SamenvattingReq):
+    """Dun AI-read-endpoint: draait ai_feedback.generate_session_summary op de door de
+    client meegestuurde sessielog (alleen geposte feedback). Geen eigen prompt, geen
+    FinalSurge-write, geen Masterbrein-write."""
+    coach = (body.coach or "").strip()
+    if not coach:                                        # coach-identiteit uit login vereist —
+        return JSONResponse(                             # nooit een samenvatting onder een verzonnen naam
+            {"ok": False, "err": "Coach-identiteit onbekend — log opnieuw in."},
+            status_code=400)
+    try:
+        tekst = feedback.session_summary(coach, body.items)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Samenvatting mislukt: {e}"}, status_code=500)
+    if not tekst:
+        return JSONResponse({"ok": False, "err": "Nog geen geposte feedback deze sessie."},
+                            status_code=400)
+    return {"ok": True, "tekst": tekst}
 
 
 # NB: deze pad-parameter-route staat BEWUST ná /queue, /generate, /post, /thread,

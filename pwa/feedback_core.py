@@ -261,6 +261,61 @@ def plaats(wid: str, tekst: str) -> bool:
     return True
 
 
+# --- Sessie-samenvatting (Feedback Summary Parity) --------------------------------
+# Herstel van de bewezen Streamlit-functionaliteit: één coaching-handover over de
+# feedback die deze sessie ÉCHT is gepost. Hergebruikt exact de pure core
+# ai_feedback.generate_session_summary — geen tweede prompt, geen FinalSurge/Masterbrein-
+# write. De sessielog is workflow-state (client-side, in-memory), geen nieuwe truth-store.
+
+def session_log_item(wid: str, tekst: str) -> dict:
+    """Canoniek sessielog-item voor één ZOJUIST succesvol geposte feedback: server-
+    bevestigde identiteit uit de queue-cache + de geposte tekst. Vorm = precies wat
+    generate_session_summary verwacht (athlete_name/workout_name/feedback_text) plus
+    workout_key voor client-side dedup. Alleen aanroepen ná een geslaagde plaats()."""
+    w = _cache.get(wid) or {}
+    return {
+        "athlete_name": w.get("athlete_name", ""),
+        "workout_name": w.get("workout_name") or "Training",
+        "workout_key": w.get("workout_key") or wid,
+        "feedback_text": (tekst or "").strip(),
+    }
+
+
+def _clean_summary_items(items) -> list[dict]:
+    """Normaliseer + valideer de client-sessielog tot de 3 velden die de core wil.
+    Dedupt op workout_key (anders athlete|workout) zodat een dubbele/retried post nooit
+    dubbel telt, en dropt lege/malformed items. Geen nieuwe truth — puur opschonen."""
+    out: list[dict] = []
+    seen: set = set()
+    for it in (items or []):
+        if not isinstance(it, dict):
+            continue
+        naam = (it.get("athlete_name") or "").strip()
+        workout = (it.get("workout_name") or "").strip()
+        tekst = (it.get("feedback_text") or "").strip()
+        if not (naam and tekst):                          # geen naam of geen tekst → geen echt item
+            continue
+        sleutel = it.get("workout_key") or f"{naam}|{workout}"
+        if sleutel in seen:
+            continue
+        seen.add(sleutel)
+        out.append({"athlete_name": naam,
+                    "workout_name": workout or "Training",
+                    "feedback_text": tekst})
+    return out
+
+
+def session_summary(coach: str, items) -> str:
+    """Sessie-samenvatting via de BEWEZEN pure core (ai_feedback.generate_session_summary).
+    Geen eigen prompt, geen alternatieve samenvattingslogica, geen FinalSurge/Masterbrein-
+    write. Alleen genormaliseerde, daadwerkelijk geposte items tellen mee; lege set → ''."""
+    clean = _clean_summary_items(items)
+    if not clean:
+        return ""
+    import ai_feedback                                     # lui: pas hier is de key nodig
+    return ai_feedback.generate_session_summary((coach or "").strip(), clean)
+
+
 def thread(wid: str) -> list[dict]:
     """De volledige comment-conversatie (atleet + coach) op deze training —
     zodat je ook je eigen al-gegeven feedback ziet."""
