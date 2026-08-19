@@ -750,11 +750,15 @@ def generate_reply(workout_data: dict, thread: list) -> str:
         # Niets te beantwoorden
         return generate_feedback(workout_data)
 
-    # Voeg instructie toe aan het laatste user-bericht
+    # Voeg instructie toe aan het laatste user-bericht — follow-up-specifiek: antwoord
+    # op wat de atleet zojuist zegt, niet de training opnieuw analyseren.
     messages[-1]["content"] += (
-        f"\n\n[Dit is het laatste bericht van {first_name}. "
-        f"Reageer ALLEEN op dit bericht. Je hoeft de training niet opnieuw te analyseren. "
-        f"Houd het kort en persoonlijk, in de stijl van Jip.{nonrun_note}]"
+        f"\n\n[Dit is het laatste bericht van {first_name}. Reageer ALLEEN hierop. "
+        f"Analyseer de training niet opnieuw en vat tempo/zones niet opnieuw samen. "
+        f"Herhaal geen vraag die hierboven al beantwoord is en parafraseer "
+        f"{first_name} niet uitgebreid terug. Benoem trainingsdata alleen als die nodig is "
+        f"om te antwoorden of als het nieuwe verandert wat je eerder dacht. "
+        f"Kort en coachend, in de stijl van Jip; onzekerheid eerlijk houden.{nonrun_note}]"
     )
 
     response = create_message(

@@ -139,17 +139,76 @@ def _brein_context(w: dict) -> str:
         return ""
 
 
+# --- Conversation-aware dispatch (Fase 2 — Feedback conversation parity) ----------
+# De eerste feedback op een training is een trainingsanalyse; zodra de atleet daarna
+# inhoudelijk reageert loopt er een gesprek en moet de AI daarop antwoorden. De keuze is
+# DETERMINISTISCH — puur op spreker + volgorde, nooit een LLM/tekstheuristiek — en spiegelt
+# 1:1 het bewezen Streamlit-gedrag (main.py: last_van=="atleet" én coach in de thread).
+INITIAL_ANALYSIS = "INITIAL_ANALYSIS"
+FOLLOW_UP_REPLY = "FOLLOW_UP_REPLY"
+
+
+def feedback_mode(thread) -> str:
+    """Bepaal deterministisch of dit een eerste analyse of een vervolgreactie is.
+
+    FOLLOW_UP_REPLY  ⇔  de thread bevat minstens één coachbericht ÉN het laatste
+    relevante (niet-lege) bericht komt van de atleet. Anders INITIAL_ANALYSIS.
+
+    Geen LLM, geen inhoudsheuristiek: alleen `van` (spreker) en de volgorde beslissen.
+    Malformed/lege input → veilige INITIAL_ANALYSIS. Lege-tekst berichten tellen niet mee
+    als gesprekstobeurt (spiegelt de queue-opbouw die blanco comments al weglaat), zodat
+    een blanco/irrelevante athlete-reply geen valse follow-up forceert."""
+    if not isinstance(thread, list):
+        return INITIAL_ANALYSIS
+    msgs = [m for m in thread
+            if isinstance(m, dict) and (m.get("tekst") or "").strip()]
+    if not msgs:
+        return INITIAL_ANALYSIS
+    if msgs[-1].get("van") == "atleet" and any(m.get("van") == "coach" for m in msgs):
+        return FOLLOW_UP_REPLY
+    return INITIAL_ANALYSIS
+
+
+def _refresh_thread(w: dict) -> None:
+    """§9 — lees vóór (her)genereren de ACTUELE thread-state van de server, zodat een
+    athlete-comment dat ná de queue-opbouw binnenkwam de mode meebepaalt (geen stale
+    gesprekstoestand). Hergebruikt exact de queue-thread-vorm (fs_client.get_workout_thread
+    → build_thread). NON-FATAAL: faalt de live-read, dan blijft de gecachete thread staan
+    (nooit slechter dan de Streamlit-parity). Overschrijft alleen bij een niet-lege verse
+    thread, zodat een transiënte lege read een bestaand gesprek nooit wist."""
+    wk, ak = w.get("workout_key"), w.get("athlete_key")
+    if not (wk and ak):
+        return
+    try:
+        fresh = FS.get_workout_thread(wk, ak, w.get("post_notes") or "",
+                                      w.get("athlete_first_name") or "")
+    except Exception:
+        return
+    if fresh:
+        w["thread"] = fresh
+
+
 def genereer(wid: str) -> str:
-    """AI-concept voor de training met dit id (uit de gecachete lijst)."""
+    """AI-concept voor de training met dit id (uit de gecachete lijst).
+
+    Conversation-aware: eerste analyse → generate_feedback; loopt er al een gesprek waarin
+    de atleet als laatste reageerde → generate_reply op dat laatste bericht. De mode wordt
+    deterministisch bepaald op de VERSE thread-state (zie feedback_mode/_refresh_thread)."""
     w = _cache.get(wid)
     if not w:
         raise ValueError("Training niet meer in beeld — ververs de lijst en probeer opnieuw.")
     _ensure_details(wid)                                 # lichte queue → details nu alsnog laden
     w = _cache.get(wid) or w
+    _refresh_thread(w)                                   # §9: actuele thread-state vóór dispatch
     brein = _brein_context(w)                            # Masterbrein-context (gated)
     if brein:
         w = {**w, "brein_context": brein}               # kopie: cache niet met prompttekst muteren
     import ai_feedback                                   # lui: pas hier is de key nodig
+    thread = w.get("thread") or []
+    if feedback_mode(thread) == FOLLOW_UP_REPLY:
+        # Vervolg in een lopend gesprek: reageer op het laatste athlete-bericht, met
+        # dezelfde centrale waarheid + Masterbrein-context als de eerste analyse.
+        return ai_feedback.generate_reply(w, thread)
     return ai_feedback.generate_feedback(w)
 
 

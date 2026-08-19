@@ -762,6 +762,57 @@ def mark_workout_comments_read(coach_athlete_key: str) -> None:
         pass  # stil falen — teller blijft staan maar app werkt gewoon door
 
 
+def is_athlete_comment(c: dict, coach_key: str) -> bool:
+    """Canonieke coach/atleet-classificatie van één comment (module-niveau, zodat
+    zowel de queue-opbouw als een verse single-workout thread-read exact dezelfde
+    waarheid gebruiken). Identiek aan de bewezen closure in get_workouts_needing_feedback:
+    respecteer een expliciet `is_athlete`-veld, val anders terug op user_key≠coach_key."""
+    if "is_athlete" in c:
+        return bool(c["is_athlete"])
+    return c.get("user_key") != coach_key
+
+
+def build_thread(comments_sorted: list, post_notes: str,
+                 athlete_first_name: str, coach_key: str) -> list[dict]:
+    """Bouw de `van`-genormaliseerde thread voor één workout — de ENIGE bron van de
+    thread-vorm (queue-opbouw én verse read gebruiken dit). Volgorde: post_notes eerst
+    (atleet, geen tijdstempel, niet-tonend), daarna de comments chronologisch. Lege
+    tekst wordt overgeslagen — een blanco comment is nooit een echte gesprekstobeurt."""
+    thread: list[dict] = []
+    if post_notes:
+        thread.append({
+            "tekst": post_notes,
+            "van": "atleet",
+            "naam": athlete_first_name,
+            "timestamp": "",
+            "_display": False,
+        })
+    for c in comments_sorted:
+        tekst = c.get("comment") or ""
+        if tekst.strip():
+            is_coach = not is_athlete_comment(c, coach_key)
+            thread.append({
+                "tekst": tekst,
+                "van": "coach" if is_coach else "atleet",
+                "naam": c.get("first_name") or ("jij" if is_coach else athlete_first_name),
+                "timestamp": c.get("timestamp", ""),
+            })
+    return thread
+
+
+def get_workout_thread(workout_key: str, user_key: str, post_notes: str = "",
+                       athlete_first_name: str = "") -> list[dict]:
+    """Verse thread-state voor één workout: haalt de comments LIVE op en bouwt dezelfde
+    `van`-genormaliseerde structuur als de queue (via build_thread), chronologisch
+    gesorteerd. Gebruikt door Feedback bij (her)genereren zodat een athlete-comment dat
+    ná de queue-opbouw binnenkwam alsnog de mode meebepaalt (geen stale gesprekstoestand)."""
+    comments = get_comments(workout_key, user_key)
+    coach_key = get_coach_key()
+    comments_sorted = sorted(
+        comments, key=lambda c: c.get("timestamp") or c.get("created_at") or "")
+    return build_thread(comments_sorted, post_notes, athlete_first_name, coach_key)
+
+
 def get_workouts_needing_feedback(
     days_back: int = 1,
     athlete_filter: list[str] = None,
@@ -971,25 +1022,8 @@ def get_workouts_needing_feedback(
         athlete_comments = cand["_athlete_comments"]
         comments_sorted = cand["_comments_sorted"]
 
-        thread: list[dict] = []
-        if post_notes:
-            thread.append({
-                "tekst": post_notes,
-                "van": "atleet",
-                "naam": athlete["first_name"],
-                "timestamp": "",
-                "_display": False,
-            })
-        for c in comments_sorted:
-            tekst = c.get("comment") or ""
-            if tekst.strip():
-                is_coach = not _is_athlete_comment(c)
-                thread.append({
-                    "tekst": tekst,
-                    "van": "coach" if is_coach else "atleet",
-                    "naam": c.get("first_name") or ("jij" if is_coach else athlete["first_name"]),
-                    "timestamp": c.get("timestamp", ""),
-                })
+        # Eén bron van waarheid voor de thread-vorm (queue én verse read): build_thread.
+        thread = build_thread(comments_sorted, post_notes, athlete["first_name"], coach_key)
 
         results.append({
             "athlete_name": athlete["name"],
