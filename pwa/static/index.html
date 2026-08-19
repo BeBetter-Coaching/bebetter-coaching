@@ -210,6 +210,19 @@
           <button class="fb-nieuw" id="fb-nieuw" type="button" hidden></button>
           <p class="hint" id="fb-info">laden…</p>
           <section id="fb-queue" class="fb-queue"></section>
+          <!-- Sessie-samenvatting: alleen zichtbaar zodra ≥1 feedback deze sessie is gepost -->
+          <div class="fb-summary" id="fb-summary" hidden>
+            <button class="btn small primary" id="fb-sum-gen" type="button"><svg class="ic"><use href="#ic-message"/></svg> <span id="fb-sum-gen-lbl">Sessie-samenvatting</span></button>
+            <div class="fb-sum-panel" id="fb-sum-panel" hidden>
+              <textarea id="fb-sum-out" rows="7" readonly aria-label="Sessie-samenvatting"></textarea>
+              <div class="fb-sum-acts">
+                <button class="btn small" id="fb-sum-copy" type="button"><svg class="ic"><use href="#ic-copy"/></svg> Kopieer</button>
+                <button class="btn small" id="fb-sum-wa" type="button"><svg class="ic"><use href="#ic-message"/></svg> WhatsApp</button>
+                <button class="btn small" id="fb-sum-mail" type="button"><svg class="ic"><use href="#ic-mail"/></svg> E-mail</button>
+                <button class="btn small" id="fb-sum-regen" type="button"><svg class="ic"><use href="#ic-refresh"/></svg> Opnieuw</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="fb-focus-col" id="fb-focus-col" aria-hidden="true">
           <div id="fb-focus" class="fb-focus"></div>

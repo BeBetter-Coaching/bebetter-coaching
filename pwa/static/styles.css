@@ -809,6 +809,13 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 .fb-dbg-acts .btn.small{flex:1;min-width:96px}
 .fb-dbg-panel .hint{margin:8px 0 0}
 .fb-dbg-panel textarea{margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+/* Sessie-samenvatting */
+.fb-summary{margin:14px 0 6px;border-top:1px solid var(--border);padding-top:12px}
+.fb-summary>.btn{width:100%;justify-content:center}
+.fb-sum-panel{margin-top:10px}
+.fb-sum-panel textarea{width:100%;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;color:var(--text);font-size:14px;line-height:1.5;resize:vertical}
+.fb-sum-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.fb-sum-acts .btn.small{flex:1;min-width:110px;justify-content:center}
 
 /* Groep-selector: compacte, horizontaal scrollbare pills (default Alle) */
 .fb-groups{display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;

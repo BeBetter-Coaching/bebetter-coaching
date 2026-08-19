@@ -1915,6 +1915,7 @@ const FB = {
   detailCache: {},      // id -> detailpayload
   sentSet: new Set(),   // deze sessie verstuurd (SWR mag ze niet terugbrengen)
   skipSet: new Set(),   // optimistisch overgeslagen (idem, tot commit/rollback)
+  summaryLog: [],       // sessie-samenvatting: UITSLUITEND geslaagde posts (workflow-state, in-memory)
   sending: false,
   loaded: false,
   log: [],              // geïsoleerde Feedback-debuglog (ringbuffer, max 300)
@@ -1974,6 +1975,61 @@ function fbLogBind() {
     FB.log = []; const out = $("#fb-log-out"); if (out) { out.value = ""; out.hidden = true; } fbLogStatus();
   };
   fbLogStatus();
+}
+
+// ── Sessie-samenvatting: één coaching-handover over UITSLUITEND geposte feedback ──
+// Sessielog = client-side workflow-state (reset bij reload = Streamlit-sessieparity).
+// Vult zich alleen via een server-bevestigde geslaagde post (fbSend), nooit uit drafts
+// of skips. De AI-samenvatting draait server-side op de bewezen core.
+function fbSummaryAppend(item, id, tekst) {
+  const it = FB.items.find(i => i.id === id) || {};     // val terug op de zichtbare kaart
+  const rec = {
+    athlete_name: (item && item.athlete_name) || it.naam || "",
+    workout_name: (item && item.workout_name) || it.workout || "Training",
+    workout_key: (item && item.workout_key) || id,
+    feedback_text: (item && item.feedback_text) || (tekst || "").trim(),
+  };
+  if (!rec.feedback_text) return;
+  if (FB.summaryLog.some(r => r.workout_key === rec.workout_key)) return;  // dubbel/retry telt niet
+  FB.summaryLog.push(rec);
+  fbSummaryUpdate();
+}
+function fbSummaryUpdate() {
+  const box = $("#fb-summary"); if (!box) return;
+  const n = FB.summaryLog.length;
+  box.hidden = n < 1;                                   // pas tonen na ≥1 geslaagde post
+  const lbl = $("#fb-sum-gen-lbl"); if (lbl) lbl.textContent = `Sessie-samenvatting (${n})`;
+}
+function fbSummaryText() { return $("#fb-sum-out")?.value || ""; }
+async function fbSummaryGen() {
+  if (!FB.summaryLog.length) return;
+  // Coach-identiteit komt uit de authenticated login-context (/api/me → ingelogdeCoach).
+  // Ontbreekt die, dan GEEN samenvatting onder een verzonnen naam — duidelijke fout.
+  if (!ingelogdeCoach) return melding("Coach onbekend — log opnieuw in om een samenvatting te maken.", true);
+  const btn = $("#fb-sum-gen"), lbl = $("#fb-sum-gen-lbl");
+  if (btn) btn.disabled = true; if (lbl) lbl.textContent = "Samenvatten…";
+  const r = await jpost("/api/feedback/summary",
+    { coach: ingelogdeCoach, items: FB.summaryLog }).catch(() => null);
+  if (btn) btn.disabled = false; fbSummaryUpdate();     // herstelt het label met de teller
+  if (!r || !r.ok) return melding(r && r.err || "Samenvatten mislukt.", true);
+  const panel = $("#fb-sum-panel"), out = $("#fb-sum-out");
+  if (out) out.value = r.tekst || "";
+  if (panel) panel.hidden = false;
+}
+function fbSummaryMailto(txt) {
+  const emails = "jip_vanlent@hotmail.com,Remco-groen@hotmail.com";  // bestaande Streamlit-ontvangers
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0"), mm = String(d.getMonth() + 1).padStart(2, "0");
+  const subj = encodeURIComponent(`Coaching update ${dd}-${mm}-${d.getFullYear()} — ${ingelogdeCoach}`);
+  return `mailto:${emails}?subject=${subj}&body=${encodeURIComponent(txt)}`;
+}
+function fbSummaryBind() {
+  const g = $("#fb-sum-gen"); if (g) g.onclick = fbSummaryGen;
+  const rg = $("#fb-sum-regen"); if (rg) rg.onclick = fbSummaryGen;
+  const c = $("#fb-sum-copy"); if (c) c.onclick = () => { const t = fbSummaryText(); if (t) navigator.clipboard?.writeText(t).then(() => melding("Gekopieerd."), () => melding("Kopiëren mislukt — selecteer handmatig.", true)); };
+  const w = $("#fb-sum-wa"); if (w) w.onclick = () => { const t = fbSummaryText(); if (t) window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, "_blank"); };
+  const m = $("#fb-sum-mail"); if (m) m.onclick = () => { const t = fbSummaryText(); if (t) window.open(fbSummaryMailto(t), "_blank"); };
+  fbSummaryUpdate();
 }
 
 // ── Drafts (localStorage per workout_key) ────────────────────────────────────
@@ -2419,6 +2475,7 @@ async function fbSend(id) {
   if (!r || !r.ok) { fbLog("send_error", { target: id, send_duration_ms: dur }); return melding(r && r.err || "Versturen mislukt — je concept staat er nog.", true); }
   fbLog("send_success", { target: id, send_duration_ms: dur });
   FB.sentSet.add(id); fbDraftClear(id);              // pas ná server-ok
+  fbSummaryAppend(r.item, id, tekst);                // sessielog: alleen deze geslaagde post
   FB.gepost = (FB.gepost || 0) + 1;
   homeFbBijwerken(-1, +1);                            // Home-balk: één minder wachtend, één meer gepost
   const idx = FB.items.findIndex(i => i.id === id);
@@ -4059,6 +4116,7 @@ laders["schema-verloop"] = laadSchemaVerloop;
 laders.teampuls = laadTeampuls;
 laders.admin = laadAdmin;
 fbLogBind();
+fbSummaryBind();
 if ("serviceWorker" in navigator) {
   // Bij een nieuwe deploy installeert de nieuwe SW (skipWaiting + clients.claim) en
   // neemt de controle over → 'controllerchange'. De AL geladen pagina draait dan nog
