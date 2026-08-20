@@ -239,7 +239,10 @@ class TestZoneBoundaries:
         assert self._z(237) == 4                      # ~3:57 midden Z4
 
     def test_net_buiten_snelste(self):
-        assert self._z(179) == 5                      # sneller dan alle banden → rand-zone Z5
+        # FC-2: sneller dan alle banden → GEEN valse Z5-membership (clamp verwijderd)
+        assert self._z(179) is None
+        cls = fs_client.classify_pace_hr_zone(self.PACE, 179, is_pace=True)
+        assert cls["status"] == "ABOVE_HARDEST_ZONE" and cls["nearest_num"] == 5
 
     def test_display_afronding_blijft_zelfde_zone(self):
         # 3:47.4 (227.4s) en weergegeven '3:47' (227s) vallen beide in Z4

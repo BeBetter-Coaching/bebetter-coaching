@@ -1567,37 +1567,282 @@ def get_athlete_zones(user_key: str) -> dict:
 
 
 def zone_van_waarde(zones: list[dict], waarde: float, is_pace: bool) -> dict | None:
+    """Dunne, EERLIJKE adapter op de canonieke `classify_pace_hr_zone` (FC-2, contract 1):
+    geeft `{num, naam}` UITSLUITEND bij ECHTE zonemembership (IN_ZONE); een out-of-range
+    waarde levert None — nooit meer een stille nearest-zone clamp die als membership oogt.
+    Zo classificeert elke consumer (Feedback, Masterbrein, Schema) dezelfde waarde identiek.
+    Wie de out-of-range-status wél nodig heeft, gebruikt `classify_pace_hr_zone` rechtstreeks."""
+    cls = classify_pace_hr_zone(zones, waarde, is_pace)
+    if cls["status"] == "IN_ZONE":
+        return {"num": cls["num"], "naam": cls["naam"]}
+    return None
+
+
+# ── FC-2: EERLIJKE zone-classificatie + deterministische blok-assessment vóór AI ─────
+# zone_van_waarde (hierboven) clampt out-of-range naar de dichtstbijzijnde zone — bewust
+# behouden voor bestaande consumers (Masterbrein/Schema). Voor Feedback mag een out-of-range
+# NOOIT als echte membership worden gepresenteerd; daarom onderstaande expliciete classifier.
+
+def classify_pace_hr_zone(zones: list, waarde, is_pace: bool) -> dict:
+    """Deterministische, EERLIJKE zone-classificatie: geeft expliciet aan of een waarde
+    ECHT binnen een persoonlijke zone valt of daarbuiten — GEEN stille nearest-zone clamp die
+    eruitziet als membership. `num`/`naam` worden ALLEEN gezet bij IN_ZONE.
+
+    status:
+      IN_ZONE            — valt binnen een persoonlijke zone (echte membership)
+      ABOVE_HARDEST_ZONE — voorbij de zwaarste kant (pace: sneller dan de snelste zone;
+                           HF: boven de hoogste zone)
+      BELOW_EASIEST_ZONE — voorbij de makkelijkste kant (pace: langzamer dan de langzaamste;
+                           HF: onder de laagste zone)
+      BETWEEN_ZONES      — binnen het totale bereik maar in een gat tussen zones
+      UNKNOWN            — onvoldoende/ongeldige brondata
+    Extra (metadata, NOOIT membership): nearest_num/nearest_naam, delta (>=0), unit, edge.
     """
-    Bepaal in welke zone een waarde valt — deterministisch, zodat de AI dit
-    niet hoeft te raden. Hartslag: bpm (hoger = zwaarder). Tempo: seconden/km
-    (lager = sneller = zwaarder). Grenzen kunnen in beide richtingen opgeslagen
-    zijn; we vergelijken tegen de feitelijke min/max per zone. Geeft {num, naam}
-    of None.
-    """
+    unit = "sec/km" if is_pace else "bpm"
+    res = {"status": "UNKNOWN", "num": None, "naam": None, "nearest_num": None,
+           "nearest_naam": None, "delta": None, "unit": unit, "edge": None}
     if not zones or waarde is None:
-        return None
+        return res
     try:
         w = float(waarde)
     except (TypeError, ValueError):
-        return None
-
-    beste = None
+        return res
+    banden = []
     for z in zones:
         lo, hi = z.get("low"), z.get("high")
         grenzen = [g for g in (lo, hi) if g is not None]
-        if not grenzen:
+        if not grenzen or "num" not in z:
             continue
-        onder, boven = min(grenzen), max(grenzen)
-        # binnen de band (inclusief ondergrens, exclusief bovengrens om overlap
-        # tussen aangrenzende zones eenduidig te maken)
-        if onder <= w < boven or (w == boven and z is zones[-1]):
-            return {"num": z["num"], "naam": z["naam"]}
-        # onthoud de dichtstbijzijnde zone voor waarden buiten alle banden
-        afstand = 0 if onder <= w <= boven else min(abs(w - onder), abs(w - boven))
-        if beste is None or afstand < beste[0]:
-            beste = (afstand, {"num": z["num"], "naam": z["naam"]})
-    # Buiten alle banden (bijv. hartslag boven de hoogste zone): pak de rand-zone
-    return beste[1] if beste else None
+        banden.append({"num": z["num"], "naam": z.get("naam", ""),
+                       "onder": min(grenzen), "boven": max(grenzen)})
+    if not banden:
+        return res
+    # 1) echte membership (inclusief ondergrens, exclusief bovengrens; laatste zone incl. boven)
+    for idx, b in enumerate(banden):
+        if b["onder"] <= w < b["boven"] or (w == b["boven"] and idx == len(banden) - 1):
+            return {**res, "status": "IN_ZONE", "num": b["num"], "naam": b["naam"]}
+    # 2) buiten alle banden — bepaal de kant deterministisch (metadata, geen membership)
+    hardste_grens = min(b["onder"] for b in banden) if is_pace else max(b["boven"] for b in banden)
+    makkelijkste_grens = max(b["boven"] for b in banden) if is_pace else min(b["onder"] for b in banden)
+    hardste_band = min(banden, key=lambda b: b["onder"]) if is_pace else max(banden, key=lambda b: b["boven"])
+    makkelijkste_band = max(banden, key=lambda b: b["boven"]) if is_pace else min(banden, key=lambda b: b["onder"])
+    voorbij_hardste = (w < hardste_grens) if is_pace else (w > hardste_grens)
+    voorbij_makkelijkste = (w > makkelijkste_grens) if is_pace else (w < makkelijkste_grens)
+    if voorbij_hardste:
+        return {**res, "status": "ABOVE_HARDEST_ZONE", "edge": "harder",
+                "nearest_num": hardste_band["num"], "nearest_naam": hardste_band["naam"],
+                "delta": round(abs(w - hardste_grens), 1)}
+    if voorbij_makkelijkste:
+        return {**res, "status": "BELOW_EASIEST_ZONE", "edge": "easier",
+                "nearest_num": makkelijkste_band["num"], "nearest_naam": makkelijkste_band["naam"],
+                "delta": round(abs(w - makkelijkste_grens), 1)}
+    # 3) in een gat tussen zones: dichtstbijzijnde grens als metadata
+    dichtst = min(banden, key=lambda b: min(abs(w - b["onder"]), abs(w - b["boven"])))
+    return {**res, "status": "BETWEEN_ZONES", "nearest_num": dichtst["num"],
+            "nearest_naam": dichtst["naam"],
+            "delta": round(min(abs(w - dichtst["onder"]), abs(w - dichtst["boven"])), 1)}
+
+
+def _hms_to_s(v) -> float | None:
+    """'MM:SS' of 'HH:MM:SS' of losse seconden → seconden. None bij onbruikbaar."""
+    s = str(v or "").strip()
+    if not s or s in ("00:00", "0"):
+        return None
+    if ":" in s:
+        try:
+            parts = [int(p) for p in s.split(":")]
+        except ValueError:
+            return None
+        if len(parts) == 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        if len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _dist_to_m(dist, unit) -> float | None:
+    """Geplande afstand → meters (km default; 'm' = meters; 'mi' = mijl)."""
+    try:
+        d = float(dist)
+    except (TypeError, ValueError):
+        return None
+    u = (unit or "km").lower()
+    if u in ("mi", "mile", "miles"):
+        return d * 1609.34
+    if u in ("m", "meter", "meters"):
+        return d
+    return d * 1000.0
+
+
+def _lap_dist_m(lap: dict) -> float | None:
+    a = lap.get("amount")
+    try:
+        return float(a) * 1000.0 if a is not None else None      # lap.amount = km
+    except (TypeError, ValueError):
+        return None
+
+
+def _lap_time_s(lap: dict) -> float | None:
+    for k in ("duration", "total_time", "moving_time", "elapsed_time",
+              "total_timer_time", "time"):
+        if lap.get(k) is not None:
+            s = _hms_to_s(lap.get(k))
+            if s:
+                return s
+    return None
+
+
+def _planned_blocks(steps: list) -> list:
+    """Geplande blokken in volgorde met type + doelzone + EXPLICIETE target-metric + geplande
+    maat (dist_m/time_s) — voor de blok-assessment. Houdt WARMUP/ACTIVE/REST/COOLDOWN (anders
+    dan `_plan_steps_flat`). Recurset repeat-/groepsblokken (`step['data']`). Deterministisch."""
+    out: list = []
+
+    def _walk(sts):
+        for s in sts:
+            if not isinstance(s, dict):
+                continue
+            inner = s.get("data") or []
+            if inner:
+                _walk(inner)
+                continue
+            inten = (s.get("intensity") or "").upper() or "ACTIVE"
+            zone, metric = None, None
+            for t in (s.get("target") or []):
+                if not isinstance(t, dict):
+                    continue
+                tt = (t.get("targetType") or "").lower()
+                if "zone" in tt and t.get("zone"):
+                    try:
+                        zone = int(t["zone"])
+                    except (TypeError, ValueError):
+                        zone = None
+                    # EXPLICIETE geplande metric leidt (contract 3): pace vs HF vs anders
+                    if "pace" in tt or "speed" in tt:
+                        metric = "tempo"
+                    elif "hr" in tt or "heart" in tt:
+                        metric = "hartslag"
+                    break
+            dtype = (s.get("durationType") or "").upper()
+            dist = s.get("durationDist")
+            dur = s.get("duration") or ""
+            dur_kind, dur_val, dur_label = None, None, ""
+            if dtype == "DISTANCE" and dist:
+                m = _dist_to_m(dist, s.get("distUnit") or "km")
+                if m:
+                    dur_kind, dur_val = "dist", m
+                try:
+                    dist_clean = int(dist) if float(dist) == int(float(dist)) else dist
+                except (TypeError, ValueError):
+                    dist_clean = dist
+                dur_label = f"{dist_clean} {s.get('distUnit') or 'km'}"
+            elif dur and dur != "00:00":
+                secs = _hms_to_s(dur)
+                if secs:
+                    dur_kind, dur_val = "time", secs
+                dur_label = f"{dur} min"
+            out.append({"type": inten, "zone": zone, "metric": metric, "dur": dur_label,
+                        "dur_kind": dur_kind, "dur_val": dur_val})
+
+    _walk(steps or [])
+    for i, b in enumerate(out, 1):
+        b["index"] = i
+    return out
+
+
+def _block_lap_compatible(block: dict, lap: dict) -> bool:
+    """Structurele verificatie van een positionele koppeling: de geplande maat van het blok
+    (afstand óf tijd) moet binnen tolerantie overeenkomen met dezelfde maat van de lap. Kan de
+    benodigde dimensie niet geverifieerd worden (ontbreekt op de lap, of het blok heeft geen
+    geplande maat) → False (conservatief; dan geen MATCHED)."""
+    kind = block.get("dur_kind")
+    planned = block.get("dur_val")
+    if kind == "dist":
+        actual = _lap_dist_m(lap)
+    elif kind == "time":
+        actual = _lap_time_s(lap)
+    else:
+        return False
+    if not planned or not actual:
+        return False
+    ratio = actual / planned
+    return 0.7 <= ratio <= 1.43                          # ~±35% speling (GPS/handmatige laps)
+
+
+def _block_target_status(block: dict, observed, zones: list, is_pace: bool) -> str:
+    """Per-blok target-status: ON_TARGET / ABOVE_TARGET / BELOW_TARGET / UNKNOWN / NOT_EVALUATED.
+    WARMUP/REST/COOLDOWN → NOT_EVALUATED (nooit als targetblok beoordelen). Geen doelzone of
+    geen meetwaarde of geen zonegrenzen → UNKNOWN (geen vergelijking gokken)."""
+    if block.get("type") in ("WARMUP", "REST", "COOLDOWN"):
+        return "NOT_EVALUATED"
+    tz = block.get("zone")
+    if tz is None or observed is None:
+        return "UNKNOWN"
+    target = next((z for z in zones if z.get("num") == tz), None)
+    if not target or target.get("low") is None or target.get("high") is None:
+        return "UNKNOWN"
+    lo, hi = min(target["low"], target["high"]), max(target["low"], target["high"])
+    if is_pace:                                          # kleinere sec = harder
+        if observed < lo:
+            return "ABOVE_TARGET"
+        if observed > hi:
+            return "BELOW_TARGET"
+        return "ON_TARGET"
+    if observed > hi:                                    # hogere bpm = harder
+        return "ABOVE_TARGET"
+    if observed < lo:
+        return "BELOW_TARGET"
+    return "ON_TARGET"
+
+
+def assess_workout_blocks(steps: list, laps: list, zones: list, zone_type: str) -> dict:
+    """Deterministische blok-assessment vóór AI. Koppel geplande blokken aan uitgevoerde laps
+    ALLEEN bij AANTOONBAAR betrouwbare structurele overeenkomst — gelijke aantallen ÉN per
+    positie een geplande-maat↔lap-maat die binnen tolerantie klopt (contract 2). Gelijke
+    aantallen alléén is niet genoeg (auto-laps kunnen toevallig even talrijk zijn); dan blijft
+    het AMBIGUOUS. De vergelijkings-metric komt uit het GEPLANDE target (pace/HF); wijkt die af
+    van de zonetabel, dan UNKNOWN i.p.v. stil converteren (contract 3). NOOIT gokken; geen
+    fysiologische conclusie — alleen feiten + status.
+
+    confidence: MATCHED | AMBIGUOUS | UNAVAILABLE (PARTIAL gereserveerd)."""
+    planned = _planned_blocks(steps)
+    laps = [l for l in (laps or []) if isinstance(l, dict)]
+    if not planned or not laps or not zones or zone_type not in ("tempo", "hartslag"):
+        return {"confidence": "UNAVAILABLE", "blocks": []}
+    if len(planned) != len(laps):                        # aantallen verschillen → niet koppelbaar
+        return {"confidence": "AMBIGUOUS", "blocks": [], "reason": "count_mismatch",
+                "planned_count": len(planned), "lap_count": len(laps)}
+    if not all(_block_lap_compatible(b, l) for b, l in zip(planned, laps)):
+        # gelijke aantallen maar structuur (duur/afstand) matcht niet 1-op-1 → geen MATCHED
+        return {"confidence": "AMBIGUOUS", "blocks": [], "reason": "structure_mismatch",
+                "planned_count": len(planned), "lap_count": len(laps)}
+    blocks = []
+    for b, lap in zip(planned, laps):
+        resolved = b.get("metric") or zone_type          # geplande target-metric leidt; anders zonetabel
+        row = {"index": b["index"], "type": b["type"], "target_zone": b["zone"],
+               "dur": b["dur"], "metric": ("tempo" if resolved == "tempo" else "hr"),
+               "observed_pace": None, "observed_hr": None}
+        if resolved != zone_type:
+            # geplande target in andere metric dan de enige persoonlijke zonetabel → niet vergelijken
+            blocks.append({**row, "status": "UNKNOWN"})
+            continue
+        is_pace = (resolved == "tempo")
+        if is_pace:
+            pm = _pace_to_float(lap.get("pace_display") or "")
+            observed = pm * 60 if pm not in (0, float("inf")) else None
+            row["observed_pace"] = lap.get("pace_display")
+        else:
+            try:
+                observed = float(lap.get("hr_avg")) if lap.get("hr_avg") else None
+            except (TypeError, ValueError):
+                observed = None
+            row["observed_hr"] = int(observed) if observed is not None else None
+        blocks.append({**row, "status": _block_target_status(b, observed, zones, is_pace)})
+    return {"confidence": "MATCHED", "blocks": blocks}
 
 
 def get_calendar_labels(user_key: str, start: date, end: date) -> list[dict]:

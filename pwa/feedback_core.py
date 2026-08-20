@@ -970,18 +970,25 @@ def afwijking(planned_km, actual_km) -> dict:
 
 
 def _actual_zone(act: dict, zone_type: str, zones: list) -> dict | None:
-    """Zone van het gemiddelde — deterministisch via de bestaande zonetabel."""
+    """Zone van het gemiddelde — deterministisch én EERLIJK: geeft alleen `{num,naam}` terug
+    als het gemiddelde ECHT binnen een persoonlijke zone valt (IN_ZONE). Een out-of-range
+    gemiddelde (sneller/langzamer dan de zones, of in een gat) levert None — nooit een stille
+    clamp die als membership oogt (FC-2). De rijke out-of-range-context gaat via de AI-laag."""
     if zone_type == "hartslag":
         hr = act.get("hr_avg")
         try:
             hr = float(hr) if hr else None
         except (TypeError, ValueError):
             hr = None
-        return FS.zone_van_waarde(zones, hr, is_pace=False) if hr else None
-    if zone_type == "tempo":
+        cls = FS.classify_pace_hr_zone(zones, hr, is_pace=False) if hr else None
+    elif zone_type == "tempo":
         pm = FS._pace_to_float(act.get("pace_display") or "")
         ps = pm * 60 if pm not in (0, float("inf")) else None
-        return FS.zone_van_waarde(zones, ps, is_pace=True) if ps else None
+        cls = FS.classify_pace_hr_zone(zones, ps, is_pace=True) if ps else None
+    else:
+        return None
+    if cls and cls["status"] == "IN_ZONE":
+        return {"num": cls["num"], "naam": cls["naam"]}
     return None
 
 

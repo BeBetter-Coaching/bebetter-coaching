@@ -56,10 +56,14 @@ def _structural_over_zone(raw: dict, evidence, athlete_key: str, today: date):
         if not any(h in text for h in _EASY_HINTS):
             continue
         zn = _zones.zone_of(struct, hr=e.get("hr_avg"), pace=e.get("pace"), is_pace=is_pace)
-        if not zn:
-            continue
+        if not zn or zn.get("status") in (None, "UNKNOWN"):
+            continue                                     # geen betrouwbare plaatsing → niet meetellen
         considered += 1
-        if zn.get("num", 0) >= 4:
+        # "over" = feitelijk zwaarder dan easy: ECHTE membership in Z4+ óf voorbij de zwaarste
+        # zone (sneller/hoger dan de top). Out-of-range wordt hier geabstraheerd als 'over',
+        # nooit als valse Z-membership (contract 1: geen tegenstrijdige canonieke classificatie).
+        st = zn.get("status")
+        if st == "ABOVE_HARDEST_ZONE" or (st == "IN_ZONE" and (zn.get("num") or 0) >= 4):
             over += 1
             dates.append(d.isoformat())
     if considered < 3:

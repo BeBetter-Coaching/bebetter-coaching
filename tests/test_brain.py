@@ -214,12 +214,12 @@ def test_28_one_over_zone_geen_structural_pattern():
 
 def test_29_repeated_over_zone_pattern():
     # herhaald over + actieve klacht → blijft REPEATED_OVER (geen review candidate)
-    st = build(raw_base(training_log=_easy_runs(4, "5:00"), zones=ZONES_TEMPO,
+    st = build(raw_base(training_log=_easy_runs(4, "4:15"), zones=ZONES_TEMPO,
                         notes=[{"datum": d(2), "tekst": "pijn aan knie"}]))
     assert _key(st, "zones.structural_over").value == "REPEATED_OVER"
 
 def test_30_repeated_over_good_feedback_review_candidate():
-    st = build(raw_base(training_log=_easy_runs(4, "5:00"), zones=ZONES_TEMPO))
+    st = build(raw_base(training_log=_easy_runs(4, "4:15"), zones=ZONES_TEMPO))
     assert _key(st, "zones.structural_over").value == "ZONE_REVIEW_CANDIDATE"
 
 # ══ CONTRADICTIONS ═════════════════════════════════════════════════════════

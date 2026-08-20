@@ -32,7 +32,10 @@ def _pace_to_sec(pace) -> float | None:
 
 
 def zone_of(zones_struct: list, *, hr=None, pace=None, is_pace: bool):
-    """Deterministische zone-indeling via fs_client.zone_van_waarde. Pure wrapper."""
+    """Canonieke zone-classificatie voor Masterbrein via `fs_client.classify_pace_hr_zone`
+    (ÉÉN classifier als waarheid — dezelfde als Feedback). Geeft de VOLLEDIGE status terug
+    ({status, num, naam, nearest_num, ...}) of None. Masterbrein mag out-of-range abstraheren,
+    maar nooit als valse membership presenteren (geen stille nearest-zone clamp meer)."""
     try:
         import fs_client as FS
     except Exception:
@@ -46,7 +49,7 @@ def zone_of(zones_struct: list, *, hr=None, pace=None, is_pace: bool):
             waarde = None
     if waarde is None:
         return None
-    return FS.zone_van_waarde(zones_struct or [], waarde, is_pace=is_pace)
+    return FS.classify_pace_hr_zone(zones_struct or [], waarde, is_pace=is_pace)
 
 
 def build(raw: dict, health_by_source: dict, athlete_key: str, today: date) -> list:

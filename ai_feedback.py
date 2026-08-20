@@ -61,12 +61,19 @@ ZONE-ACCURACY — KRITIEKE REGELS (niet onderhandelbaar):
    Maak NOOIT de fout te zeggen dat een langzamer tempo een hogere zone is.
 7. GEMIDDELDE BINNEN DE ZONE = CORRECT UITGEVOERD (niet onderhandelbaar):
    Als het gemiddelde van een duurloop of aaneengesloten tempoblok BINNEN de zonegrenzen valt
-   (zie 'BEREKENDE ZONE' — door de app berekend), was de intensiteit GOED. Schrijf dan NOOIT
-   "te hard", "te zacht", "te snel" of "te langzaam". De woorden "te hard/zacht" zijn UITSLUITEND
-   toegestaan als het gemiddelde AANTOONBAAR BUITEN de bedoelde zone ligt.
-   Een atleet die netjes middenin zijn zone loopt, doet het per definitie goed — bevestig dat,
+   (zie 'BEREKENDE POSITIE' — door de app bepaald, IN_ZONE), was de intensiteit GOED. Schrijf dan
+   NOOIT "te hard", "te zacht", "te snel" of "te langzaam". De woorden "te hard/zacht" zijn
+   UITSLUITEND toegestaan als de app AANTOONBAAR 'BUITEN de persoonlijke zones' meldt — en zelfs
+   dan is out-of-range een FEIT, geen automatisch waardeoordeel; frame het niet vanzelf als fout.
+   Een atleet die midden in zijn zone loopt, doet het per definitie goed — bevestig dat,
    ga er geen probleem van maken. (Uitzondering: bij interval-/blokkentrainingen wisselt de zone
-   binnen de training; beoordeel dan per blok via de splits, niet via dit gemiddelde.)
+   binnen de training; gebruik dan de deterministische 'BLOK-ANALYSE' als die aanwezig is, niet
+   dit gemiddelde. Staat er dat de blokmatch onbetrouwbaar is, beoordeel HF/tempo dan NIET hard per blok.)
+8. HARTSLAG ONDER TARGET ≠ "HARDER LOPEN": een hartslag die (nog) onder de doelzone ligt, zeker
+   vroeg in een intervaltraining of in het eerste werkblok, is op zichzelf GEEN bewijs dat de atleet
+   harder had moeten lopen (hartslag-lag, warming-up, korte blokduur spelen mee). Trek geen blanket
+   fysiologische conclusie; benoem het feit en houd interpretatie voorzichtig. Warming-up en
+   herstelblokken beoordeel je NOOIT alsof het targetblokken zijn.
 
 PLAN VS UITVOERING:
 Als er een geplande structuur beschikbaar is (workout builder), vergelijk dan ACTIEF de uitvoering daarmee. Was het geplande tempo gehaald? Liep de atleet in de geplande zone? Dat is het meest waardevolle wat je kunt zeggen."""
@@ -206,6 +213,85 @@ def _format_builder_steps(steps: list) -> str:
     return "Geplande structuur: " + " → ".join(parts)
 
 
+def _zone_regel_tekst(waarde_str: str, cls: dict, is_pace: bool) -> str:
+    """FC-2: eerlijke 'BEREKENDE ZONE'-regel uit `classify_pace_hr_zone` — alleen bij ECHTE
+    membership (IN_ZONE) een zone-label; out-of-range wordt als feit benoemd, NOOIT als zone."""
+    if not cls:
+        return ""
+    st = cls.get("status")
+    if st == "IN_ZONE":
+        return (f"Gemiddeld over de hele training: {waarde_str} = Zone {cls['num']} "
+                f"({cls['naam']}) — BINNEN de persoonlijke zone.")
+    eenheid = "sec/km" if is_pace else "bpm"
+    if st == "ABOVE_HARDEST_ZONE":
+        kant = "SNELLER dan de snelste persoonlijke zone" if is_pace else "HOGER dan de hoogste persoonlijke zone"
+        return (f"Gemiddeld over de hele training: {waarde_str} — {kant} "
+                f"(dichtstbij Z{cls['nearest_num']}, ~{cls['delta']:g} {eenheid} voorbij de grens). "
+                f"Dit ligt BUITEN de persoonlijke zones — behandel het NIET als 'Zone {cls['nearest_num']}'.")
+    if st == "BELOW_EASIEST_ZONE":
+        kant = "LANGZAMER dan de langzaamste persoonlijke zone" if is_pace else "LAGER dan de laagste persoonlijke zone"
+        return (f"Gemiddeld over de hele training: {waarde_str} — {kant} "
+                f"(dichtstbij Z{cls['nearest_num']}, ~{cls['delta']:g} {eenheid} voorbij de grens). "
+                f"BUITEN de persoonlijke zones — geen exacte zone.")
+    if st == "BETWEEN_ZONES":
+        return (f"Gemiddeld over de hele training: {waarde_str} — valt in een gat tussen de "
+                f"persoonlijke zones (dichtstbij Z{cls['nearest_num']}); BUITEN de banden, geen exacte zone.")
+    return ""
+
+
+def _format_block_assessment(assessment: dict, first_name: str) -> str:
+    """FC-2: deterministische BLOK-ANALYSE naar prompttekst. MATCHED → per-blok feit + status
+    (WARMUP/REST niet als targetblok; HR-lag-caveat bij eerste werkblok onder target);
+    AMBIGUOUS/PARTIAL → expliciet 'niet betrouwbaar te koppelen'; UNAVAILABLE → niets."""
+    if not assessment:
+        return ""
+    conf = assessment.get("confidence")
+    if conf == "UNAVAILABLE":
+        return ""
+    if conf in ("AMBIGUOUS", "PARTIAL"):
+        return ("\n\nBLOK-ANALYSE (door de app bepaald): de geplande blokken en de uitgevoerde "
+                "laps zijn NIET betrouwbaar één-op-één te koppelen (blokmatch onvoldoende "
+                "betrouwbaar). Beoordeel hartslag/tempo daarom NIET hard per blok; gebruik het "
+                "verloop hooguit als globale indruk.")
+    blocks = assessment.get("blocks") or []
+    if not blocks:
+        return ""
+    eerste_active = next((b["index"] for b in blocks
+                          if b["type"] not in ("WARMUP", "REST", "COOLDOWN")), None)
+    regels = []
+    for b in blocks:
+        t = b["type"]
+        if t == "WARMUP":
+            regels.append(f"- Warming-up (blok {b['index']}): geen harde target-evaluatie.")
+            continue
+        if t in ("REST", "COOLDOWN"):
+            naam = "Herstel" if t == "REST" else "Cooldown"
+            regels.append(f"- {naam} (blok {b['index']}): herstelblok, niet beoordelen op target-tempo/HF.")
+            continue
+        if b["metric"] == "hr":
+            obs = f"HF {b['observed_hr']} bpm" if b.get("observed_hr") else "geen HF-meetwaarde"
+        else:
+            obs = f"tempo {b['observed_pace']}" if b.get("observed_pace") else "geen tempo-meetwaarde"
+        doel = f"doel Z{b['target_zone']}" if b.get("target_zone") else "geen doelzone"
+        status_tekst = {
+            "ON_TARGET": "in target",
+            "ABOVE_TARGET": "boven target (harder dan gepland)",
+            "BELOW_TARGET": "onder target",
+            "UNKNOWN": "geen betrouwbare targetvergelijking",
+            "NOT_EVALUATED": "niet beoordelen",
+        }.get(b["status"], "onbekend")
+        regel = f"- Werkblok {b['index']} (ACTIVE, {doel}): {obs} — {status_tekst}."
+        if b["status"] == "BELOW_TARGET" and b["index"] == eerste_active:
+            regel += (" Let op: vroeg in een intervaltraining is de hartslag nog niet op peil "
+                      "(hartslag-lag); onder target in dit eerste blok is op zichzelf GEEN bewijs "
+                      "dat harder gelopen had moeten worden.")
+        regels.append(regel)
+    return ("\n\nBLOK-ANALYSE (door de app bepaald — deterministisch, per gematcht blok):\n"
+            + "\n".join(regels)
+            + "\nBeoordeel elk werkblok apart; één blok onder target is geen totaaloordeel. "
+            "Warming-up/herstel zijn geen targetblokken.")
+
+
 def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     """
     Bouw de workout-context op voor de AI.
@@ -280,10 +366,11 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
                 f"NIET automatisch negatief; weeg wat de atleet schrijft en de context mee.")
 
     builder_steps_text = ""
+    builder_steps_raw = []
     if details.get("has_structured_workout") and workout_key and athlete_key:
         try:
-            builder_steps = _fs.get_workout_builder(workout_key, athlete_key)
-            builder_steps_text = _format_builder_steps(builder_steps)
+            builder_steps_raw = _fs.get_workout_builder(workout_key, athlete_key)
+            builder_steps_text = _format_builder_steps(builder_steps_raw)
         except Exception:
             pass
 
@@ -301,8 +388,9 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
         except Exception:
             pass
 
-    # BEREKENDE ZONE — deterministisch uit de zonetabel, zodat de AI dit niet
-    # hoeft te raden (dé oorzaak van 147 bpm dat als Z1 werd geschreven).
+    # BEREKENDE ZONE — deterministisch + EERLIJK uit de zonetabel (FC-2): een out-of-range
+    # gemiddelde wordt als feit benoemd, NOOIT als valse zonemembership (dé oorzaak van
+    # 147 bpm als Z1, en van 3:53/km dat als Z3 werd gepresenteerd).
     berekende_zone_regel = ""
     if athlete_zones_struct and activities:
         _act = activities[0]
@@ -312,19 +400,21 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
                 _hr = float(_hr) if _hr else None
             except (TypeError, ValueError):
                 _hr = None
-            _z = _fs.zone_van_waarde(athlete_zones_struct, _hr, is_pace=False) if _hr else None
-            if _z:
-                berekende_zone_regel = (
-                    f"Gemiddeld over de hele training: {int(_hr)} bpm = "
-                    f"Zone {_z['num']} ({_z['naam']}).")
+            if _hr:
+                _cls = _fs.classify_pace_hr_zone(athlete_zones_struct, _hr, is_pace=False)
+                berekende_zone_regel = _zone_regel_tekst(f"{int(_hr)} bpm", _cls, is_pace=False)
         elif athlete_zone_type == "tempo":
             _pace_min = _fs._pace_to_float(_act.get("pace_display") or "")
             _pace_sec = _pace_min * 60 if _pace_min not in (0, float("inf")) else None
-            _z = _fs.zone_van_waarde(athlete_zones_struct, _pace_sec, is_pace=True) if _pace_sec else None
-            if _z:
-                berekende_zone_regel = (
-                    f"Gemiddeld over de hele training: {_act.get('pace_display')} min/km = "
-                    f"Zone {_z['num']} ({_z['naam']}).")
+            if _pace_sec:
+                _cls = _fs.classify_pace_hr_zone(athlete_zones_struct, _pace_sec, is_pace=True)
+                berekende_zone_regel = _zone_regel_tekst(
+                    f"{_act.get('pace_display')} min/km", _cls, is_pace=True)
+
+    # BLOK-ANALYSE — deterministische planned-block ↔ executed-lap koppeling met confidence.
+    blok_section = _format_block_assessment(
+        _fs.assess_workout_blocks(builder_steps_raw, laps, athlete_zones_struct, athlete_zone_type),
+        first_name)
 
     felt = workout_data.get("felt")
     effort = workout_data.get("effort")
@@ -373,20 +463,25 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
             )
         else:
             zone_instruction = f"ZONES VAN {first_name.upper()} — gebruik ALLEEN deze waarden, niet je eigen aannames."
-        # De app heeft de zone van het gemiddelde al berekend uit de tabel.
-        # Die is LEIDEND; de AI mag niet zelf opnieuw indelen (LLM's tellen fout).
+        # De app heeft de zone/positie van het gemiddelde al deterministisch bepaald.
+        # Die is LEIDEND; de AI mag niet zelf opnieuw indelen (LLM's tellen fout). Staat er
+        # 'BUITEN de persoonlijke zones', dan is dat GEEN zone — behandel het als feit, niet
+        # als membership, en niet automatisch als fout of goed (FC-2).
         berekend_blok = ""
         if berekende_zone_regel:
             berekend_blok = (
-                f"\n\nBEREKENDE ZONE (door de app bepaald uit de zonetabel — LEIDEND, "
-                f"neem deze zone letterlijk over, deel NIET zelf opnieuw in):\n"
+                f"\n\nBEREKENDE POSITIE (door de app bepaald uit de zonetabel — LEIDEND, "
+                f"neem letterlijk over, deel NIET zelf opnieuw in):\n"
                 f"{berekende_zone_regel}\n"
+                f"Zeg alleen 'binnen zone Zx' of 'past bij Zx' als hierboven ECHTE membership "
+                f"(IN_ZONE) staat. Staat er 'BUITEN de persoonlijke zones', benoem dan het feit "
+                f"(bijv. sneller dan de zonegrens) maar plak er GEEN zone-label op.\n"
                 f"Let op: dit is het gemiddelde over de héle training. Bij een interval-/"
-                f"blokkentraining wisselen de zones binnen de training (zie het verloop per "
-                f"km/interval); benoem dan de zones per blok, niet alleen dit gemiddelde.\n"
-                f"OORDEEL: valt dit gemiddelde binnen de bedoelde/geplande zone, dan is de "
+                f"blokkentraining wisselen de zones binnen de training — gebruik dan de "
+                f"BLOK-ANALYSE hieronder (indien aanwezig), niet dit gemiddelde.\n"
+                f"OORDEEL: valt dit gemiddelde ECHT binnen de bedoelde/geplande zone, dan is de "
                 f"training CORRECT uitgevoerd — schrijf dan NIET 'te hard' of 'te zacht'.")
-        zones_section = f"\n\n{zone_instruction}\n{athlete_zones_text}{berekend_blok}"
+        zones_section = f"\n\n{zone_instruction}\n{athlete_zones_text}{berekend_blok}{blok_section}"
     else:
         zones_section = (
             f"\n\n⚠️ GEEN zones beschikbaar voor {first_name}. "
