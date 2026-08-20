@@ -307,13 +307,38 @@ _TREND_NL = {"opbouwend": "opbouwend", "afbouwend/minder": "afbouwend",
              "stabiel": "stabiel", "hervat": "net hervat"}
 
 
-def feedback_context(state, workout_key: str = "") -> dict:
+def _klacht_coachregel(area, status, count, last_seen) -> str:
+    """FC-3 — één compacte klachtregel met lifecycle-onderscheid + coachrelevant
+    handelingsperspectief (COACHACTIES, geen diagnose). 'Goed is goed': een recente
+    eenmalige melding krijgt bewust een milde regel, geen zware waarschuwing."""
+    rec = (f"voor het laatst ~{last_seen}d geleden gemeld"
+           if isinstance(last_seen, int) else "recent gemeld")
+    if status == RECURRING:
+        freq = f"{count}x " if isinstance(count, int) and count else ""
+        return (f"Terugkerende klacht rond {area} ({freq}gemeld, {rec}). Coachperspectief: dit "
+                f"patroon verdient concreter opvolgadvies, bespreek belasting en opbouw; bij "
+                f"aanhoudende of verergerende klachten is een professionele beoordeling verstandig. "
+                f"Geen diagnose.")
+    if status == ACTIVE:
+        return (f"Actieve klacht rond {area} ({rec}). Coachperspectief: belasting deze week niet "
+                f"verhogen; gebruik de eerstvolgende rustige sessie als evaluatiemoment of stel een "
+                f"gerichte vervolgvraag. Geen diagnose, niet dramatiseren.")
+    return (f"Recent gemelde klacht rond {area} ({rec}). Coachperspectief: houd de reactie op deze "
+            f"en de volgende training in het oog; gaat het verder goed, dan is er nog geen reden tot "
+            f"aanpassing. Geen diagnose.")
+
+
+def feedback_context(state, workout_key: str = "", today: date | None = None) -> dict:
     """Deterministische Feedback-sessiecontext uit `for_feedback(state)` — compact,
     recency/relevance-gefilterd, NOOIT een history-dump. Geeft zowel gestructureerde
     velden (voor diagnostics/shadow) als een korte prompttekst (voor de AI).
 
     SOURCE-HEALTH: bij een ontbrekende taak-relevante bron wordt GEEN load/klacht-
-    claim gedaan; de onzekerheid gaat expliciet mee zodat de AI niet vals geruststelt."""
+    claim gedaan; de onzekerheid gaat expliciet mee zodat de AI niet vals geruststelt.
+    FC-3: projecteert ook deterministische race/event-tijd (via eventtime) en een rijkere
+    klacht-lifecycle met coachperspectief — uitsluitend uit bestaande AthleteState-truth."""
+    from . import eventtime
+    today = today or date.today()
     proj = projections.for_feedback(state, workout_key)
     evs = proj.get("evidence") or []
     gaps = set(proj.get("source_gaps") or [])
@@ -358,11 +383,28 @@ def feedback_context(state, workout_key: str = "") -> dict:
         subj.append(f"gevoel {feel.get('value')}")
     if subj:
         regels.append("Subjectieve trend: " + ", ".join(subj) + ".")
-    for c in complaints[:2]:
-        area = (c.get("detail") or {}).get("area") or c.get("value")
-        st = "terugkerend" if c.get("status") == RECURRING else "recent gemeld"
-        regels.append(f"Aandacht: klacht rond {area} ({st}) — houd hier rekening mee, "
-                      f"maar leg geen oorzakelijk verband met deze training.")
+
+    # FC-3 — bekende race/afspraak: deterministische relatieve tijd uit de canonieke
+    # goal.race-truth (geen vrije-tekst-gok, geen AI-herberekening). Alleen toekomstige,
+    # betrouwbaar gedateerde events geven een vooruitblik-regel; PAST/UNKNOWN → géén regel.
+    race_ev = _ev(evs, "goal.race")
+    doel_ev = _ev(evs, "goal.doel")
+    event = eventtime.relative_event((race_ev or {}).get("value"), today) if race_ev else \
+        {"status": "UNKNOWN", "days": None, "date": None, "label": ""}
+    if event["status"] in ("TODAY", "TOMORROW", "IN_N_DAYS"):
+        naam = (doel_ev or {}).get("value") or (race_ev or {}).get("value") or "wedstrijd/doel"
+        regels.append(
+            f"Bekende afspraak: {naam} is {event['label']} ({event['date']}). Je mag hiernaar "
+            f"kort vooruitkijken; reken de tijd NIET zelf uit, gebruik letterlijk '{event['label']}'.")
+
+    # FC-3 — klacht-lifecycle rijker + coachperspectief (geen diagnose, 'goed is goed').
+    # Onderscheid ACTIVE/RECENT/RECURRING; prioriteer en cap compact; recency/frequentie mee.
+    _prio = {ACTIVE: 0, RECURRING: 1, RECENT: 2}
+    for c in sorted(complaints, key=lambda x: _prio.get(x.get("status"), 9))[:3]:
+        det = c.get("detail") or {}
+        regels.append(_klacht_coachregel(det.get("area") or c.get("value"),
+                                          c.get("status"), det.get("count"),
+                                          det.get("last_seen_days")))
 
     tekst = ""
     if regels:
@@ -378,6 +420,7 @@ def feedback_context(state, workout_key: str = "") -> dict:
         "source_gaps": sorted(gaps & FEEDBACK_RELEVANT_SOURCES),
         "has_load": km is not None and not tl_gap,
         "complaint_areas": [(c.get("detail") or {}).get("area") or c.get("value") for c in complaints],
+        "event": {"status": event["status"], "days": event["days"], "date": event["date"]},
         "prompt_block": tekst,
     }
 
@@ -391,7 +434,7 @@ def feedback_context_block(user_key: str, workout_key: str = "", today: date | N
     except Exception as e:
         return {"prompt_block": "", "source_gaps": [], "has_load": False,
                 "complaint_areas": [], "error": str(e)[:120]}
-    return feedback_context(state, workout_key)
+    return feedback_context(state, workout_key, today)
 
 
 # ── Schema config-prefill: planning-defaults uit de canonieke Masterbrein-kennis ──
@@ -468,6 +511,16 @@ def planning_defaults(user_key: str, today: date | None = None) -> dict:
         val = val.strip() if isinstance(val, str) else val
         if val:
             out[veld] = val
+    # FC-3 truth-contract: wedstrijddatum uit DEZELFDE canonieke `goal.race`-truth als
+    # Feedback/Dossier (betrouwbaar geparste datum), zodat Schema in v2 GEEN tweede
+    # racewaarheid uit raw intake gebruikt. Onbetrouwbare/vrije-tekst datum → geen default
+    # (unknown blijft unknown; de coach kan altijd zelf invullen).
+    race_ev = evs.get("goal.race")
+    if race_ev:
+        from . import eventtime
+        d = eventtime.parse_reliable_date(race_ev.get("value"))
+        if d:
+            out["wedstrijddatum"] = d.isoformat()
     return out
 
 
