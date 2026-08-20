@@ -72,7 +72,10 @@ def for_feedback(state, workout_key: str = "") -> dict:
                      "load.possible_relation", "zones.structural_over",
                      # longitudinale hardloopbelasting — zodat Feedback niet vraagt
                      # naar km/frequentie die het zelf betrouwbaar weet (run-only)
-                     "load.km_per_week", "load.runs_per_week", "load.interruption"):
+                     "load.km_per_week", "load.runs_per_week", "load.interruption",
+                     # FC-3: dezelfde canonieke race/doel-truth als Schema/Dossier, zodat
+                     # Feedback deterministische event/tijd-context krijgt (geen vrije-tekst-reconstructie)
+                     "goal.race", "goal.doel"):
             keep.append(e)
     return {
         "task": "feedback", "athlete_key": state.athlete_key, "naam": state.naam,

@@ -406,7 +406,7 @@ def config_prefill(key: str) -> dict:
     config = {
         "athlete_key": key, "naam": voornaam, "athlete_name": naam_vol,
         "doel": _plan("doel"), "startdatum": start, "weken": str(weken_int),
-        "schema_einddatum": einddatum, "wedstrijddatum": base.get("wedstrijddatum", ""),
+        "schema_einddatum": einddatum, "wedstrijddatum": _plan("wedstrijddatum"),
         "trainingsdagen": _plan("trainingsdagen"),
         "huidig_volume": _plan("huidig_volume"),
         "tijd_per_training": _plan("tijd_per_training"),

@@ -75,6 +75,26 @@ class TestPlanningDefaultsChain:
         out = brain_adapter.planning_defaults("AK", TODAY)
         assert out == {"trainingsdagen": "ma/wo"}         # unknown blijft unknown
 
+    # FC-3 truth-contract: Schema-racedatum uit DEZELFDE canonieke goal.race-truth ─────
+    def test_wedstrijddatum_via_goal_race(self, monkeypatch):
+        # ISO wedstrijddatum in intake → goal.race → planning_defaults geeft betrouwbare datum
+        self._live_intake(monkeypatch, {"wedstrijddatum": "2026-08-22", "athlete_name": "Lisa"})
+        monkeypatch.setattr(brain_snapshot, "load_snapshot", lambda k: None)
+        assert brain_adapter.planning_defaults("AK", TODAY).get("wedstrijddatum") == "2026-08-22"
+
+    def test_wedstrijddatum_uit_tekstveld_ook_via_goal_race(self, monkeypatch):
+        # alleen het vrije-tekst-veld met een parseerbare datum → goal.race pikt 'm op →
+        # Schema ziet 'm ook (bewijst: bron = goal.race, niet raw 'wedstrijddatum')
+        self._live_intake(monkeypatch, {"wedstrijddatum_tekst": "2026-08-22", "athlete_name": "Lisa"})
+        monkeypatch.setattr(brain_snapshot, "load_snapshot", lambda k: None)
+        assert brain_adapter.planning_defaults("AK", TODAY).get("wedstrijddatum") == "2026-08-22"
+
+    def test_onbetrouwbare_datum_geen_wedstrijddatum(self, monkeypatch):
+        self._live_intake(monkeypatch, {"wedstrijddatum_tekst": "ergens in het najaar",
+                                        "athlete_name": "Lisa"})
+        monkeypatch.setattr(brain_snapshot, "load_snapshot", lambda k: None)
+        assert "wedstrijddatum" not in brain_adapter.planning_defaults("AK", TODAY)
+
 
 # ── 2. config_prefill: v2 = uitsluitend Masterbrein; legacy = raw (geen mix) ──
 @pytest.fixture
@@ -144,3 +164,33 @@ class TestConfigPrefillSingleSource:
                "startdatum": "2026-09-01", "weken": "8"}
         intake = schema_core._intake_from_config("AK", cfg)
         assert intake["trainingsdagen"] == "ma/wo/vr"      # coach-keuze wint
+
+
+class TestRaceTruthOneSource:
+    """FC-3 truth-contract: config_prefill's wedstrijddatum komt in v2 UITSLUITEND uit de
+    canonieke Masterbrein-truth (goal.race); geen tweede racewaarheid uit raw intake."""
+
+    def test_v2_wedstrijddatum_uit_masterbrein_niet_raw(self, prefill_env):
+        mp = prefill_env
+        _set_intake(mp, {"wedstrijddatum": "2020-01-01"})     # raw (oud/afwijkend)
+        _v2(mp, {"wedstrijddatum": "2026-08-22"})             # canoniek goal.race
+        cfg = schema_core.config_prefill("AK")["config"]
+        assert cfg["wedstrijddatum"] == "2026-08-22"          # Masterbrein wint, geen raw
+
+    def test_v2_leeg_masterbrein_geen_raw_fallback(self, prefill_env):
+        mp = prefill_env
+        _set_intake(mp, {"wedstrijddatum": "2020-01-01"})     # raw kent 't nog
+        _v2(mp, {})                                           # Masterbrein niet
+        cfg = schema_core.config_prefill("AK")["config"]
+        assert cfg["wedstrijddatum"] == ""                    # geen tweede truth in v2
+
+    def test_legacy_wedstrijddatum_gebruikt_raw(self, prefill_env):
+        mp = prefill_env
+        _set_intake(mp, {"wedstrijddatum": "2026-08-22"})
+        mp.setattr(athlete_context, "schema_brain_mode", lambda: "legacy")
+
+        def _forbidden(k):
+            raise AssertionError("planning_defaults mag niet in legacy draaien")
+        mp.setattr(brain_adapter, "planning_defaults", _forbidden)
+        cfg = schema_core.config_prefill("AK")["config"]
+        assert cfg["wedstrijddatum"] == "2026-08-22"          # legacy-only raw-pad, buiten v2

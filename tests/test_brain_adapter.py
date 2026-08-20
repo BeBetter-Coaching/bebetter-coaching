@@ -413,12 +413,14 @@ class TestFeedbackProjection:
         assert "onbekend" in block["prompt_block"].lower()
         assert "km/week" not in block["prompt_block"]
 
-    def test_context_block_klacht_zonder_causaliteit(self):
+    def test_context_block_klacht_coachperspectief_zonder_diagnose(self):
+        # FC-3: klacht komt door met coachperspectief (coachacties), nooit als diagnose
         notes = [{"datum": _d(3), "tekst": "achilles zeurt weer opnieuw"}]
         _, st = _ctx(_raw(_pure_runner_log(), notes=notes), _health())
         block = adapter.feedback_context(st, "")
-        assert "achilles" in block["prompt_block"].lower()
-        assert "geen oorzakelijk verband" in block["prompt_block"].lower()
+        pb = block["prompt_block"].lower()
+        assert "achilles" in pb
+        assert "coachperspectief" in pb and "geen diagnose" in pb
 
     def test_empty_athlete_safe(self):
         _, st = _ctx(_raw([]), _health())
