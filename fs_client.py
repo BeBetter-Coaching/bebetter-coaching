@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import threading
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -739,6 +740,56 @@ def get_comments(workout_key: str, user_key: str) -> list[dict]:
     return comments
 
 
+# ── Coach↔atleet relatiesleutel (badge-reset) — één keer opgebouwd + gecachet ──────
+# De FinalSurge-notificatieteller reset via CoachAthleteResetCounter en heeft de
+# coach↔atleet-RELATIESLEUTEL nodig — NIET de user_key. Streamlit bouwt hiervoor één
+# keer een map (COACH_ATHLETE_KEY) uit de roster; de PWA deed dat per post live, wat bij
+# throttle/fout None opleverde en dan (fout) op user_key terugviel. Hieronder dezelfde
+# bewezen bron (get_athletes) als één gecachete map, resilient tegen transiënte FS-fouten.
+_COACH_ATHLETE_MAP: dict = {}
+_COACH_ATHLETE_LOCK = threading.Lock()
+
+
+def build_coach_athlete_map(refresh: bool = False) -> dict:
+    """Bouw (en cache) de `user_key → coach_athlete_key`-relatie-map één keer uit de roster
+    (`get_athletes`) — dezelfde bron/semantiek als Streamlit's `COACH_ATHLETE_KEY`.
+    RESILIENT: een lege/mislukte roster-read wist een eerder gebouwde map NIET, zodat een
+    transiënte FS-hapering de reeds bekende relatiesleutels niet kwijtraakt."""
+    global _COACH_ATHLETE_MAP
+    if _COACH_ATHLETE_MAP and not refresh:
+        return _COACH_ATHLETE_MAP
+    with _COACH_ATHLETE_LOCK:
+        if _COACH_ATHLETE_MAP and not refresh:
+            return _COACH_ATHLETE_MAP
+        try:
+            nieuw = {a["user_key"]: a.get("coach_athlete_key")
+                     for a in get_athletes() if a.get("user_key")}
+        except Exception:
+            nieuw = {}
+        if nieuw:                                        # alleen overschrijven bij een échte roster
+            _COACH_ATHLETE_MAP = nieuw
+    return _COACH_ATHLETE_MAP
+
+
+def coach_athlete_key_for(user_key: str) -> Optional[str]:
+    """De ECHTE coach↔atleet-relatiesleutel voor de reset-teller, of None.
+
+    Cache-first (geen live call per post voor bekende atleten); één verse poging bij een
+    onbekende sleutel (nieuwe atleet). Geeft NOOIT `user_key` als gok terug: is de enige
+    bekende waarde gelijk aan `user_key` (roster-fallback in `_extract_athlete`), dan is de
+    echte relatiesleutel niet betrouwbaar bekend → None, zodat de aanroeper liever niet
+    reset dan de verkeerde/geen relatie te resetten."""
+    if not user_key:
+        return None
+    m = build_coach_athlete_map()
+    if user_key not in m:
+        m = build_coach_athlete_map(refresh=True)        # nieuwe atleet? één verse roster-poging
+    cak = m.get(user_key)
+    if not cak or cak == user_key:                       # geen echte relatiesleutel bekend
+        return None
+    return cak
+
+
 def post_comment(workout_key: str, user_key: str, comment: str,
                  coach_athlete_key: str = None) -> dict:
     result = _post("WorkoutCommentSave", {
@@ -746,8 +797,15 @@ def post_comment(workout_key: str, user_key: str, comment: str,
         "comment_text": comment,
         "comment_image": None,
     })
-    # Na het posten direct markeren als gelezen zodat het getal in FinalSurge verdwijnt
-    mark_workout_comments_read(coach_athlete_key or user_key)
+    # Reset de notificatieteller ALLEEN met een betrouwbare relatiesleutel. Nooit met een
+    # gegokte user_key (dat reset de verkeerde/geen relatie → badge blijft staan). Ontbreekt
+    # de sleutel, dan slaan we de reset eerlijk over (retrybaar bij een volgende post/refresh);
+    # de comment-write zelf is dan al gelukt.
+    if coach_athlete_key:
+        mark_workout_comments_read(coach_athlete_key)
+    else:
+        print("[fs_client] reset overgeslagen: geen betrouwbare coach_athlete_key "
+              f"(user_key={user_key}) — badge niet gereset, comment wél geplaatst")
     return result
 
 
