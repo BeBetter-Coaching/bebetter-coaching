@@ -178,8 +178,11 @@ class TestZoneVanWaarde:
     def test_ondergrens_inclusief(self):
         assert fs_client.zone_van_waarde(self.HR, 130, is_pace=False)["num"] == 2
 
-    def test_boven_alles_pakt_hoogste(self):
-        assert fs_client.zone_van_waarde(self.HR, 185, is_pace=False)["num"] == 3
+    def test_boven_hoogste_is_geen_valse_membership(self):
+        # FC-2: 185 bpm ligt BOVEN de hoogste zone → geen stille clamp naar Z3 (geen lie).
+        assert fs_client.zone_van_waarde(self.HR, 185, is_pace=False) is None
+        cls = fs_client.classify_pace_hr_zone(self.HR, 185, is_pace=False)
+        assert cls["status"] == "ABOVE_HARDEST_ZONE" and cls["num"] is None and cls["nearest_num"] == 3
 
     def test_tempo_seconden_per_km(self):
         pace = [
