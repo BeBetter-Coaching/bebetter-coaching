@@ -1917,6 +1917,7 @@ const FB = {
   skipSet: new Set(),   // optimistisch overgeslagen (idem, tot commit/rollback)
   summaryLog: [],       // sessie-samenvatting: UITSLUITEND geslaagde posts (workflow-state, in-memory)
   sending: false,
+  recovering: false,    // FC-1: gerichte stale/not-found-recovery loopt (voorkomt refresh-loop)
   loaded: false,
   log: [],              // geïsoleerde Feedback-debuglog (ringbuffer, max 300)
   logOn: false,
@@ -2450,6 +2451,26 @@ function fbThreadHtml(d) {
   return `<div class="fb-thread">${bubbels}</div>`;
 }
 
+// ── FC-1: gerichte stale/not-found-recovery (server-side restore is de primaire fix) ──
+// Alleen voor de specifieke "Training niet meer in beeld"-respons: één queue-refresh +
+// her-open dezelfde workout indien nog aanwezig. Geen refresh-loop, geen generieke
+// auto-refresh voor andere fouten, geen auto-retry van de actie (voorkomt dubbelpost).
+function fbIsStaleErr(r) { return !!(r && r.err && /in beeld/i.test(r.err)); }
+async function fbStaleRecover(id) {
+  if (FB.recovering) return false;                     // geen refresh-loop
+  FB.recovering = true;
+  try {
+    fbLog("stale_recover_start", { target: id });
+    await fbRefresh();                                 // één gerichte queue-refresh (bestaande primitive)
+    const nog = FB.items.some(i => i.id === id);
+    if (nog) fbOpen(id, "stale_recover");              // her-open dezelfde workout indien nog aanwezig
+    fbLog("stale_recover_done", { target: id, still_present: nog });
+    return nog;
+  } finally {
+    FB.recovering = false;
+  }
+}
+
 // ── Acties: Genereer / Versturen (idle→sending→sent|error) / Overslaan ───────
 async function fbGen(id) {
   const btn = $("#fb-gen"); if (btn) { btn.disabled = true; btn.innerHTML = `${ic("brain")} AI schrijft…`; }
@@ -2457,7 +2478,11 @@ async function fbGen(id) {
   const r = await jpost("/api/feedback/generate", { id }).catch(() => null);
   const dur = Math.round(performance.now() - t0);
   if (btn) { btn.disabled = false; btn.innerHTML = `${ic("brain")} Genereer`; }
-  if (!r || !r.ok) { fbLog("generate_error", { generate_duration_ms: dur }); return melding(r && r.err || "Genereren mislukt.", true); }
+  if (!r || !r.ok) {
+    fbLog("generate_error", { generate_duration_ms: dur });
+    if (fbIsStaleErr(r)) { melding("Even herladen…"); fbStaleRecover(id); return; }   // gerichte recovery i.p.v. dode kaart
+    return melding(r && r.err || "Genereren mislukt.", true);
+  }
   fbLog("generate_success", { generate_duration_ms: dur });
   const ta = $("#fb-ta"); if (ta) { ta.value = r.tekst || ""; fbDraftSave(id, ta.value); fbGrow(ta); ta.focus(); }
 }
@@ -2472,7 +2497,11 @@ async function fbSend(id) {
   const dur = Math.round(performance.now() - t0);
   FB.sending = false;
   if (btn) { btn.disabled = false; btn.innerHTML = `${ic("message")} Versturen`; }
-  if (!r || !r.ok) { fbLog("send_error", { target: id, send_duration_ms: dur }); return melding(r && r.err || "Versturen mislukt — je concept staat er nog.", true); }
+  if (!r || !r.ok) {
+    fbLog("send_error", { target: id, send_duration_ms: dur });
+    if (fbIsStaleErr(r)) { melding("Even herladen — je concept blijft staan."); fbStaleRecover(id); return; }  // gerichte recovery; draft behouden
+    return melding(r && r.err || "Versturen mislukt — je concept staat er nog.", true);
+  }
   fbLog("send_success", { target: id, send_duration_ms: dur });
   FB.sentSet.add(id); fbDraftClear(id);              // pas ná server-ok
   fbSummaryAppend(r.item, id, tekst);                // sessielog: alleen deze geslaagde post

@@ -188,13 +188,84 @@ def _refresh_thread(w: dict) -> None:
         w["thread"] = fresh
 
 
+# --- FC-1: gedeelde restore-on-miss route + no-resurrection guard -----------------
+# `_cache` is process-local en kan na een deploy/OOM-recycle leeg zijn. `detail()`
+# herstelde al op miss, maar `genereer()`/`plaats()` niet → coach kreeg "Training niet
+# meer in beeld" tot een refresh. Onderstaande ÉNE helper geeft alle drie hetzelfde
+# gedrag: cache → herstel uit de bestaande durable snapshot → opnieuw opzoeken, met een
+# canonieke skip/afwezigheid-guard zodat een geskipte/verdwenen training niet herleeft.
+
+def _is_canonically_skipped(w: dict) -> bool:
+    """True als deze workout canoniek is overgeslagen (gedeelde skipped.json) én de atleet
+    daarna geen nieuwe input gaf — EXACT de `_filter_skipped`/`_apply_skips`-semantiek
+    (incl. her-activatie). Bij een leesfout: niet als skip behandelen (we blokkeren een
+    actieve workout niet op een transiënte fout; skip blijft elders gefilterd)."""
+    try:
+        return not _filter_skipped([w])
+    except Exception:
+        return False
+
+
+def get_or_restore_workout(wid: str) -> dict | None:
+    """Eén gedeelde restore-route voor Feedback-workouts (detail/genereer/plaats).
+
+    1) process-local `_cache` eerst;
+    2) miss → herstel via de bestaande durable/current queue-snapshot
+       (`_queue_current` → `_herstel_cache`, `setdefault` op dezelfde wid → identity blijft);
+    3) opnieuw opzoeken.
+    Geeft None als de workout canoniek niet meer bestaat: niet in cache én niet in de
+    snapshot (gepost/verwijderd), óf canoniek overgeslagen (skipped.json). Resurrect dus
+    nooit een geskipte/verdwenen training en verandert geen identity. Geen nieuwe store."""
+    w = _cache.get(wid)
+    if not w:
+        _queue_current()                                 # herstel _cache uit durable snapshot
+        w = _cache.get(wid)
+    if not w:
+        return None                                      # canoniek weg: niet in cache én snapshot
+    if _is_canonically_skipped(w):                       # nooit een overgeslagen training resurrecten
+        return None
+    return w
+
+
+def _verwijder_uit_queue(wid: str) -> None:
+    """Ná een succesvolle post: haal deze nu-beantwoorde workout canoniek weg als openstaand
+    item — uit `_cache` (in-proces re-post/hergeneratie-guard) én uit de queue-snapshot
+    (mem + durable, zodat een stale durable snapshot hem ná een recycle niet resurrecteert).
+    Zo valt een tweede `genereer`/`plaats` door dezelfde 'niet in cache én niet in snapshot →
+    None'-route als een echt verdwenen workout. GEEN nieuwe store — een veilige mutatie van
+    de BESTAANDE snapshot. Non-fataal: de reactie is al geplaatst; faalt de persist, dan is
+    het niet slechter dan voorheen. Concurrency-veilig via `_QLOCK` (zelfde lock als de sweep);
+    een concurrent sweep sluit een beantwoorde workout sowieso uit (coach had het laatste
+    woord), dus de uitkomst convergeert."""
+    global _QUEUE_MEM
+    _cache.pop(wid, None)                                 # in-proces: niet opnieuw actionable
+    persist_snap = None
+    try:
+        with _QLOCK:
+            snap = _QUEUE_MEM if _queue_valid(_QUEUE_MEM) else _durable_load_diag()[0]
+            if not _queue_valid(snap):
+                return
+            items = snap.get("items") or []
+            volle = snap.get("_volle") or {}
+            if wid not in volle and not any(it.get("id") == wid for it in items):
+                return                                    # al weg uit de snapshot
+            persist_snap = {**snap,
+                            "items": [it for it in items if it.get("id") != wid],
+                            "_volle": {k: v for k, v in volle.items() if k != wid}}
+            _QUEUE_MEM = persist_snap
+    except Exception:
+        return
+    if persist_snap is not None:
+        _queue_persist(persist_snap)                     # durable (non-fataal via _LAST_PERSIST)
+
+
 def genereer(wid: str) -> str:
     """AI-concept voor de training met dit id (uit de gecachete lijst).
 
     Conversation-aware: eerste analyse → generate_feedback; loopt er al een gesprek waarin
     de atleet als laatste reageerde → generate_reply op dat laatste bericht. De mode wordt
     deterministisch bepaald op de VERSE thread-state (zie feedback_mode/_refresh_thread)."""
-    w = _cache.get(wid)
+    w = get_or_restore_workout(wid)                      # FC-1: herstel op miss (deploy/recycle)
     if not w:
         raise ValueError("Training niet meer in beeld — ververs de lijst en probeer opnieuw.")
     _ensure_details(wid)                                 # lichte queue → details nu alsnog laden
@@ -212,23 +283,14 @@ def genereer(wid: str) -> str:
     return ai_feedback.generate_feedback(w)
 
 
-def _coach_athlete_key(athlete_key: str):
-    """De coach-atleet-relatiesleutel (om de teller in FinalSurge te resetten)."""
-    try:
-        for a in FS.get_athletes():
-            if a.get("user_key") == athlete_key:
-                return a.get("coach_athlete_key")
-    except Exception:
-        pass
-    return None
-
-
 def plaats(wid: str, tekst: str) -> bool:
     """Post de (bewerkte) feedback als coach-reactie in FinalSurge. WRITE-actie.
 
     Hergebruikt exact `fs_client.post_comment` (beproefd in Streamlit). Geen AI.
-    """
-    w = _cache.get(wid)
+    De coach↔atleet-relatiesleutel voor de badge-reset komt uit de gecachete, bewezen
+    roster-map (`fs_client.coach_athlete_key_for`) — geen fragiele per-post live lookup en
+    nooit een `user_key`-gok (zie FC-1)."""
+    w = get_or_restore_workout(wid)                      # FC-1: herstel op miss (deploy/recycle)
     if not w:
         raise ValueError("Training niet meer in beeld — ververs de lijst en probeer opnieuw.")
     tekst = (tekst or "").strip()
@@ -239,7 +301,7 @@ def plaats(wid: str, tekst: str) -> bool:
     if not (ak and wk):
         raise ValueError("Geen FinalSurge-koppeling voor deze training.")
     FS.post_comment(workout_key=wk, user_key=ak, comment=tekst,
-                    coach_athlete_key=_coach_athlete_key(ak))
+                    coach_athlete_key=FS.coach_athlete_key_for(ak))
 
     # Dossier Fase A — additieve, NIET-FATALE history-hook ná de (locked) send.
     # De reactie is op dit punt al succesvol geplaatst; history-capture komt daarna
@@ -258,6 +320,11 @@ def plaats(wid: str, tekst: str) -> bool:
     # Home's feedbacktegel server-side laten revalideren (geen handmatige teller).
     # Non-fataal: de reactie is al geplaatst.
     _home_invalidate_feedback()
+
+    # Canoniek afhandelen: verwijder de nu-beantwoorde workout uit de queue-snapshot zodat
+    # een stale durable snapshot hem ná een recycle NIET opnieuw postbaar maakt, en een
+    # warme cache dat in-proces ook niet doet (FC-1 re-post-guard). Non-fataal.
+    _verwijder_uit_queue(wid)
     return True
 
 
@@ -1038,10 +1105,7 @@ def detail(wid: str) -> dict:
     tempo/HF, zones deterministisch), afstandsafwijking, gevoel/RPE, laps, plan-
     structuur + gesprek. Eén workout — geen roster-sweep. Zones/afwijking worden in
     code bepaald (AI rekent nooit zelf)."""
-    w = _cache.get(wid)
-    if not w:
-        _queue_current()                                 # probeer _cache te herstellen
-        w = _cache.get(wid)
+    w = get_or_restore_workout(wid)                      # FC-1: gedeelde restore-on-miss route
     if not w:
         return {"ok": False, "err": "Training niet in beeld — ververs de queue."}
     _ensure_details(wid)

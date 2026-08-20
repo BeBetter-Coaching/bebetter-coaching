@@ -427,10 +427,11 @@ def feedback_gen(body: FeedbackGen):
 @app.post("/api/feedback/post")          # WRITE: post de reactie in FinalSurge
 def feedback_post(body: FeedbackGen):
     try:
-        feedback.plaats(body.id, body.tekst)
-        # Server-bevestigd sessielog-item terug zodat de client de sessie-samenvatting
-        # kan opbouwen uit UITSLUITEND geslaagde posts (geen drafts, geen skips).
+        # Server-bevestigd sessielog-item vóór de post opbouwen: `plaats` haalt de workout
+        # ná een succesvolle post canoniek uit de cache (re-post-guard), dus de identiteit
+        # (naam/training) moet hier nog uit de warme cache komen.
         item = feedback.session_log_item(body.id, body.tekst)
+        feedback.plaats(body.id, body.tekst)
     except ValueError as e:
         return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
     except Exception as e:
