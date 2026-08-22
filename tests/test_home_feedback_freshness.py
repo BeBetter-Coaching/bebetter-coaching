@@ -47,6 +47,11 @@ def home(monkeypatch):
                         lambda d: (durable.__setitem__("snap", d) or (True, "")))
     monkeypatch.setattr(home_core.intake_store, "load_home_handled", lambda: {})
     monkeypatch.setattr(home_core, "_heeft_token", lambda: True)
+    # PF-3: deze suite toetst de invalidate/_bereken-contracten, NIET de feedback-overlay.
+    # Isoleer daarom de gedeelde Feedback-queue → geen queue → overlay is een no-op, dus de
+    # feedbacktelling volgt hier zuiver de snapshot/_bereken-waarde (bestaande semantiek).
+    import feedback_core as _fc
+    monkeypatch.setattr(_fc, "feedback_open_truth", lambda: None)
     home_core._MEM = {}
     yield durable
     home_core._MEM = {}

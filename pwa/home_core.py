@@ -162,6 +162,7 @@ def _belasting_vandaag(atleten: list) -> list:
 _MEM: dict = {}                          # laatst bekende snapshot in dit proces
 _FLAG_LOCK = threading.Lock()
 _REFRESHING = False                      # draait er al een refresh op deze instance?
+_INVAL_SEQ = 0                           # PF-3 — monotone invalidatie-teller (feedback post/skip)
 
 
 def _valid(snap) -> bool:
@@ -212,14 +213,42 @@ def invalidate_feedback() -> None:
     en klopt de telling ook na reload/koude start.
 
     Idempotent (een vlag, geen som): dubbel aanroepen = zelfde toestand. Is Home nog nooit
-    gebouwd (geen geldige snapshot), dan is er niets te revalideren → no-op. Nooit fataal."""
+    gebouwd (geen geldige snapshot), dan is er geen snapshot om te flaggen — maar de
+    monotone `_INVAL_SEQ`-bump (PF-3, race-veilig onder `_FLAG_LOCK`) zorgt dat een
+    parallelle `_bereken()` die vóór deze invalidatie startte de vlag niet stil kan
+    overschrijven, en dat de eerstvolgende refresh alsnog als 'moet revalideren' geldt.
+    De feedbacktelling wordt hier NOOIT gemuteerd (dat doet de per-read overlay canoniek).
+    Nooit fataal."""
+    global _INVAL_SEQ
     try:
+        with _FLAG_LOCK:
+            _INVAL_SEQ += 1
         snap = _current()
         if not _valid(snap):
             return
         _persist({**snap, "_revalidate": True})
     except Exception:
         pass
+
+
+def _apply_feedback_overlay(snap: dict) -> dict:
+    """PF-3 — reconcilieer Home's feedbacktegel op ELKE fast-read tegen de GEDEELDE
+    canonieke open-feedbacktruth (`feedback_core.feedback_open_truth`), met exact dezelfde
+    skip/post-semantiek als de Feedback-pagina. Zo klopt de teller direct na een skip én
+    een post, zonder de zware `_bereken`-rebuild (~26s) en zonder een tweede skiplogica of
+    een client-delta. Bron afwezig/fout → laat de bestaande snapshot-waarde staan
+    (niet fataal). Idempotent en niet-muterend voor de snapshot."""
+    if not snap or snap.get("feedback") is None:
+        return snap
+    try:
+        truth = feedback_core.feedback_open_truth()
+    except Exception:
+        truth = None
+    if not truth:
+        return snap
+    fb = {**(snap.get("feedback") or {}), "wachten": truth["wachten"],
+          "gepost": truth["gepost"], "pct": truth["pct"]}
+    return {**snap, "feedback": fb}
 
 
 def _apply_handled_overlay(snap: dict) -> dict:
@@ -270,7 +299,8 @@ def cockpit(refresh: bool = False) -> dict:
     if not refresh:
         snap = _current()
         if snap:
-            return {**_apply_handled_overlay(snap), "cached": True}
+            # PF-3: reconcilieer de feedbacktegel canoniek (skip+post) op elke fast-read.
+            return {**_apply_feedback_overlay(_apply_handled_overlay(snap)), "cached": True}
         # Nog nooit opgebouwd (eerste-ooit): geen zware sweep in het renderpad.
         # Client toont shell + skeletons en triggert de achtergrond-refresh.
         return {"fs": True, "prioriteit": None, "pending": True, "cached": False,
@@ -286,16 +316,23 @@ def cockpit(refresh: bool = False) -> dict:
         # Er draait al een refresh op deze instance → geen tweede zware sweep.
         snap = _current()
         if snap:
-            return {**_apply_handled_overlay(snap), "cached": True, "verversen_bezig": True}
+            return {**_apply_feedback_overlay(_apply_handled_overlay(snap)),
+                    "cached": True, "verversen_bezig": True}
         return {"fs": True, "prioriteit": None, "pending": True, "cached": False}
 
     try:
+        seq0 = _INVAL_SEQ                       # PF-3: invalidatie-stand vóór de sweep
         data = _bereken()
         if _valid(data):
             # Overlay ook hier: een Gezien/Later die tijdens de ~26s-sweep binnenkwam
             # wordt zo meteen meegenomen én mee gepersisteerd (durable snapshot klopt).
             data = _apply_handled_overlay(data)
             data["cached"] = False
+            # Race-veilig: kwam er tijdens deze sweep een feedback-invalidatie binnen, dan is
+            # deze snapshot al verouderd → behoud `_revalidate` (lost-update-guard: de skip/
+            # post gaat niet verloren doordat deze oudere sweep terugschrijft).
+            if _INVAL_SEQ != seq0:
+                data["_revalidate"] = True
             _persist(data)
             return data
         # Mislukte/incomplete refresh → gooi bruikbare oude data niet weg.
