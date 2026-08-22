@@ -2703,6 +2703,10 @@ function schemaWerk(a, mode) {
   const configStale = draft && draft.stage === "config" && (draft.intake_stamp || "") !== (a.intake_stamp || "");
   if (draft && draft.stage && !configStale) {
     sbState = draft; sbState.naam = a.naam; sbState.mode = mode;
+    // PF-2: een herstelde draft mag zijn zones NIET als 'vers uit FinalSurge' blijven
+    // presenteren — die read is van een eerder moment. Downgrade naar RESTORED zodat de
+    // coach ziet dat verversen zinvol is; een expliciete refresh zet 'm weer op FRESH.
+    if (sbState.zones_status === "FRESH") sbState.zones_status = "RESTORED";
     // 'publish' is een live check → val terug op de workbench (rows intact); coach opent preview opnieuw.
     if ((sbState.stage === "workbench" || sbState.stage === "publish") && sbState.weken && sbState.weken.length) {
       // Draft met rows maar zonder hash (bv. gebouwd op een oudere versie) → backfill:
@@ -2757,7 +2761,8 @@ async function sbStartConfig(a) {
   if (!r || !r.ok) { const l = $("#sb-cfg-load"); if (l) l.textContent = "Kon instellingen niet laden."; return; }
   sbState = { key: a.key, naam: a.naam, mode: "nieuw", stage: "config", config: r.config || {},
     context: r.context || {}, plan: "", planEdited: false, prevPlan: null, chat: [],
-    intake_stamp: r.intake_stamp || (a.intake_stamp || "") };   // canonieke-intake-versie van deze prefill
+    intake_stamp: r.intake_stamp || (a.intake_stamp || ""),      // canonieke-intake-versie van deze prefill
+    zones_status: r.zones_status || "", zone_fingerprint: r.zone_fingerprint || "" };  // PF-2 zone-versheid
   sbState.config.mode = "nieuw";
   sbDraftSave();
   sbRenderConfig();
@@ -3123,6 +3128,51 @@ function sbSyncConfig() {
   sbDebouncedSave();
 }
 
+// ── PF-2 — expliciete zone-refresh + bronstatus ──────────────────────────────
+// Een expliciete coach-refresh forceert ALTIJD een verse zone-read (los van draft/
+// fingerprint) en werkt enkel de zonebron-context bij; workbench/plan/coach-edits
+// (PF-1) blijven ongemoeid. Mislukt de verse read → eerlijk "laatst bekend/niet
+// beschikbaar", nooit stil oude zones als actueel.
+const SB_ZONE_STATUS = {
+  FRESH: { txt: "vers uit FinalSurge", cls: "ok" },
+  RESTORED: { txt: "laatst geladen — ververs voor de nieuwste", cls: "warn" },
+  LAST_KNOWN: { txt: "laatst bekend — kon niet verversen", cls: "warn" },
+  UNAVAILABLE: { txt: "geen zones beschikbaar", cls: "warn" },
+};
+function sbZoneStatusHtml() {
+  const m = SB_ZONE_STATUS[sbState && sbState.zones_status];
+  const status = m ? `<span class="sb-zone-status ${m.cls}">· ${esc(m.txt)}</span>` : "";
+  return `${status} <button type="button" class="btn ghost mini" id="sb-zone-refresh">${ic("refresh")} Ververs zones</button>`;
+}
+function sbWireZoneRefresh() {
+  const b = $("#sb-zone-refresh"); if (b) b.addEventListener("click", sbRefreshZones);
+}
+async function sbRefreshZones() {
+  if (!sbState || !sbState.key) return;
+  if (sbState.stage === "config") sbSyncConfig();          // pending veld-edits eerst borgen
+  const b = $("#sb-zone-refresh"); if (b) { b.disabled = true; b.textContent = "Verversen…"; }
+  const r = await api("/api/schema/zones?key=" + encodeURIComponent(sbState.key)).catch(() => null);
+  if (!sbState) return;
+  if (!r || !r.ok) {                                        // transport faalde → nooit als 'fresh' tonen
+    sbState.zones_status = (sbState.config && sbState.config.zones) ? "LAST_KNOWN" : "UNAVAILABLE";
+    melding("Zones konden niet worden ververst. Laatst bekende zones blijven zichtbaar.", true);
+  } else {
+    // Alleen de zonebron bijwerken — géén schema-inhoud aanraken (PF-1 authority intact).
+    if (sbState.config) { sbState.config.zones = r.zones || ""; sbState.config.zone_type = r.zone_type || "tempo"; }
+    sbState.zones_status = r.zones_status || "UNAVAILABLE";
+    sbState.zone_fingerprint = r.zone_fingerprint || "";
+    melding(r.zones_status === "FRESH" ? "Zones ververst uit FinalSurge."
+            : "Zones konden niet vers worden gelezen — laatst bekende zones getoond.", r.zones_status !== "FRESH");
+  }
+  sbDraftSave();
+  // Her-render de HUIDIGE fase; bestaande state blijft ongemoeid (config + workbench-rijen).
+  const stage = sbState.stage;
+  if (stage === "workbench") sbRenderWorkbench();
+  else if (stage === "plan") sbRenderPlan();
+  else if (stage === "herijking") sbRenderHerijking();
+  else sbRenderConfig();
+}
+
 function sbRenderConfig() {
   const c = sbState.config, sel = sbDagenUitString(c.trainingsdagen);
   $("#sb-werk").innerHTML = `
@@ -3142,7 +3192,7 @@ function sbRenderConfig() {
           <div><label class="lbl">Huidig volume</label><input type="text" id="cfg-vol" placeholder="bijv. 25-30 km/week" value="${esc(c.huidig_volume)}"></div>
           <div><label class="lbl">Race-prioriteit</label><input type="text" id="cfg-race" placeholder="bijv. A-race" value="${esc(c.race_prioriteit)}"></div></div>
         <div><label class="lbl">Coachinstructies</label><textarea id="cfg-notitie" rows="2" placeholder="bijv. rustig opbouwen; meer tempowerk richting 10km">${esc(c.coach_notitie)}</textarea></div>
-        <div class="sb-zones"><span class="lbl">Zones · ${esc(c.zone_type || "tempo")} (uit FinalSurge — enige intensiteitsbron)</span>
+        <div class="sb-zones"><span class="lbl">Zones · ${esc(c.zone_type || "tempo")} (uit FinalSurge — enige intensiteitsbron) ${sbZoneStatusHtml()}</span>
           <pre class="sb-zonebox">${esc(c.zones || "geen zones gevonden in FinalSurge")}</pre></div>
       </div>
       <aside class="sb-afspraken">
@@ -3163,6 +3213,7 @@ function sbRenderConfig() {
   $("#cfg-dagen").querySelectorAll(".sb-dag").forEach(b => b.addEventListener("click", () => { b.classList.toggle("on"); sbSyncConfig(); sbRefreshAfspraken(); sbUpdateGate(); }));
   ["cfg-doel", "cfg-start", "cfg-weken", "cfg-vol", "cfg-race", "cfg-notitie"].forEach(id => $("#" + id).addEventListener("input", () => { sbSyncConfig(); sbRefreshAfspraken(); sbUpdateGate(); }));
   $("#cfg-gen").addEventListener("click", sbGenPlan);
+  sbWireZoneRefresh();                      // PF-2: expliciete verse zone-read
   sbUpdateGate();                          // begintoestand: knop uit tot verplichte velden kloppen
   sbLoadContext(sbState.key);              // 'Bekende atleetcontext' lazy laden
 }
@@ -3498,9 +3549,10 @@ function sbRenderWorkbench() {
         <span class="sb-chip">🆕 nieuw</span>
         ${ctx.weken ? `<span class="sb-chip">${esc(String(ctx.weken))} weken</span>` : ""}
         ${ctx.trainingsdagen ? `<span class="sb-chip">${esc(ctx.trainingsdagen)}</span>` : ""}
-        <span class="sb-chip">zones · ${esc(ctx.zone_bron || "tempo")}</span>
+        <span class="sb-chip">zones · ${esc((sbState.config && sbState.config.zone_type) || ctx.zone_bron || "tempo")}</span>
         <span class="sb-chip sb-chip-sel"></span>
       </div>
+      <div class="sb-zone-fresh klein muted">Zones ${sbZoneStatusHtml()}</div>
     </div>
     <div class="sb-grid">
       <div class="sb-master">
@@ -3521,6 +3573,7 @@ function sbRenderWorkbench() {
   $("#sb-replan").addEventListener("click", () => { sbState.stage = "plan"; sbDraftSave(); sbRenderPlan(); });
   $("#scroller").scrollTo({ top: 0 });
   sbWasDesktop = isDesktop();
+  sbWireZoneRefresh();                      // PF-2: expliciete verse zone-read (workbench)
   sbRenderWeeks();
   sbRenderDetail();
   sbUpdateChips();

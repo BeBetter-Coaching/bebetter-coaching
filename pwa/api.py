@@ -590,6 +590,14 @@ def schema_config(key: str = ""):
         return JSONResponse({"ok": False, "err": f"Config mislukt: {e}"}, status_code=500)
 
 
+@app.get("/api/schema/zones")             # PF-2: expliciete coach-refresh — verse zone-read + bronstatus
+def schema_zones(key: str = ""):
+    try:
+        return {"ok": True, **schema_core.zones_fresh(key)}
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Zones verversen mislukt: {e}"}, status_code=500)
+
+
 @app.get("/api/schema/verleng")           # Verlengen: herijking (vorig blok + delta + readiness)
 def schema_verleng(key: str = ""):
     try:
