@@ -416,9 +416,11 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
                     f"{_act.get('pace_display')} min/km", _cls, is_pace=True)
 
     # BLOK-ANALYSE — deterministische planned-block ↔ executed-lap koppeling met confidence.
-    blok_section = _format_block_assessment(
-        _fs.assess_workout_blocks(builder_steps_raw, laps, athlete_zones_struct, athlete_zone_type),
-        first_name)
+    # (PF-4: de assessment-dict wordt ook hergebruikt om het whole-workout-OORDEEL te scopen;
+    #  de classifier/block-mapping zelf blijft ONGEWIJZIGD — FC-2 locked.)
+    _block_assessment = _fs.assess_workout_blocks(
+        builder_steps_raw, laps, athlete_zones_struct, athlete_zone_type)
+    blok_section = _format_block_assessment(_block_assessment, first_name)
 
     felt = workout_data.get("felt")
     effort = workout_data.get("effort")
@@ -473,18 +475,46 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
         # als membership, en niet automatisch als fout of goed (FC-2).
         berekend_blok = ""
         if berekende_zone_regel:
-            berekend_blok = (
+            # PF-4 — HR/zone output-contract, STRUCTURE-AWARE. Het whole-workout gemiddelde
+            # blijft altijd een FEIT, maar mag bij een gestructureerde interval-/blokkentraining
+            # NOOIT op zichzelf bewijzen dat de geplande werkblokken hun target haalden
+            # (warming-up/herstel drukken het gemiddelde). Alleen bij een CONTINUE training is
+            # het gemiddelde de passende evaluatiemaat → daar blijft het bestaande OORDEEL staan.
+            # Structuur-signaal = ≥2 geplande blokken (bewezen FC-2-helper, read-only; geen
+            # classifier/mapping-wijziging). Confidence scopet de formulering verder.
+            _conf = (_block_assessment or {}).get("confidence")
+            try:
+                _is_structured = len(_fs._planned_blocks(builder_steps_raw)) >= 2
+            except Exception:
+                _is_structured = False
+            _kop = (
                 f"\n\nBEREKENDE POSITIE (door de app bepaald uit de zonetabel — LEIDEND, "
                 f"neem letterlijk over, deel NIET zelf opnieuw in):\n"
                 f"{berekende_zone_regel}\n"
                 f"Zeg alleen 'binnen zone Zx' of 'past bij Zx' als hierboven ECHTE membership "
                 f"(IN_ZONE) staat. Staat er 'BUITEN de persoonlijke zones', benoem dan het feit "
-                f"(bijv. sneller dan de zonegrens) maar plak er GEEN zone-label op.\n"
-                f"Let op: dit is het gemiddelde over de héle training. Bij een interval-/"
-                f"blokkentraining wisselen de zones binnen de training — gebruik dan de "
-                f"BLOK-ANALYSE hieronder (indien aanwezig), niet dit gemiddelde.\n"
-                f"OORDEEL: valt dit gemiddelde ECHT binnen de bedoelde/geplande zone, dan is de "
-                f"training CORRECT uitgevoerd — schrijf dan NIET 'te hard' of 'te zacht'.")
+                f"(bijv. sneller dan de zonegrens) maar plak er GEEN zone-label op.\n")
+            if _is_structured:
+                _oordeel = (
+                    "Let op: dit is een gestructureerde interval-/blokkentraining. Het gemiddelde "
+                    "over de héle training is een FEIT (warming-up en herstel tellen mee), maar "
+                    "bewijst NIET of de geplande werkblokken hun target haalden. Concludeer op basis "
+                    "van DIT gemiddelde daarom NOOIT dat de training 'correct uitgevoerd' is, en "
+                    "evenmin dat er 'te hard' of 'te zacht' is gelopen.")
+                if _conf == "MATCHED":
+                    _oordeel += (" Gebruik de BLOK-ANALYSE hieronder als leidende beoordeling per "
+                                 "werkblok; het gemiddelde is hooguit aanvullende context.")
+                else:  # AMBIGUOUS / PARTIAL / UNAVAILABLE → geen betrouwbare per-blok-truth
+                    _oordeel += (" De geplande blokken zijn niet betrouwbaar te koppelen aan de "
+                                 "uitgevoerde laps, dus of de werkblokken hun target haalden is "
+                                 "hiermee NIET vast te stellen; benoem het gemiddelde hooguit als "
+                                 "observatie.")
+            else:
+                _oordeel = (
+                    "Let op: dit is het gemiddelde over de héle training (een continue inspanning). "
+                    "Valt dit gemiddelde ECHT binnen de bedoelde/geplande zone, dan is de training "
+                    "correct uitgevoerd — schrijf dan NIET 'te hard' of 'te zacht'.")
+            berekend_blok = _kop + _oordeel
         zones_section = f"\n\n{zone_instruction}\n{athlete_zones_text}{berekend_blok}{blok_section}"
     else:
         zones_section = (
