@@ -976,7 +976,14 @@ def validate_rows(key: str, rows: list) -> list:
 
 
 def _to_write_row(r: dict) -> dict:
-    """Canonieke row → import_to_finalsurge-vorm (edits zitten al in de row)."""
+    """Canonieke row → import_to_finalsurge-vorm (edits zitten al in de row).
+
+    `measure_edited` (PF-1) draagt door of de coach de numerieke meetwaarde
+    (planned_km/planned_min) handmatig wijzigde t.o.v. de gegenereerde waarde. De
+    frontend berekent dit tegen `_orig`; is de vlag waar, dan is de ingediende
+    waarde autoritatief voor de FinalSurge-write en schrijft de Builder geen
+    tegenstrijdige structured steps. Ontbreekt de vlag (oude client) → False =
+    bestaand bewezen Builder-pad."""
     return {
         "date": r.get("date"),
         "name": r.get("name") or r.get("activity_type") or "Training",
@@ -984,6 +991,7 @@ def _to_write_row(r: dict) -> dict:
         "activity_type": r.get("activity_type", "Run"),
         "planned_km": r.get("planned_km"),
         "planned_min": r.get("planned_min"),
+        "measure_edited": bool(r.get("measure_edited")),
     }
 
 

@@ -3319,11 +3319,20 @@ const SB_PUB_STAT = { nieuw: "Nieuw", bestaande_op_datum: "Bestaande training op
 const SB_RES_STAT = { success: "Gepubliceerd", failed: "Mislukt",
   builder_failed: "Gepubliceerd — WorkoutBuilder mislukt" };
 
+// PF-1: is de numerieke meetwaarde (km/min) handmatig gewijzigd t.o.v. de
+// gegenereerde waarde? Dan is de ingediende waarde autoritatief voor de FinalSurge-
+// write (geen her-afleiding uit de description). Losser dan `edited` (die ook op
+// naam/beschrijving vlagt) — alleen een échte km/min-wijziging telt hier.
+function sbMeasureEdited(r) {
+  const o = r._orig || {};
+  return r.planned_km !== (o.planned_km ?? null) || r.planned_min !== (o.planned_min ?? null);
+}
+
 function sbRowsPayload() {                            // exacte, actuele rows (incl. edits + include-state)
   const out = [];
   sbState.weken.forEach(w => w.rows.forEach(r => out.push({
-    id: r.id, included: !!r.included, edited: !!r.edited, date: r.date,
-    activity_type: r.activity_type, name: r.name,
+    id: r.id, included: !!r.included, edited: !!r.edited, measure_edited: sbMeasureEdited(r),
+    date: r.date, activity_type: r.activity_type, name: r.name,
     planned_km: r.planned_km, planned_min: r.planned_min, description: r.description,
   })));
   return out;

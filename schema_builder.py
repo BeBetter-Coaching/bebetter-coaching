@@ -1883,6 +1883,46 @@ def _calc_builder_distance_km(target_options: list):
     return round(total) if found_any else None  # afronden naar heel kilometer
 
 
+# PF-1 — server-side coach-edit detectie (backward-compat vangnet). Tolerantie zo
+# gekozen dat 8.0 vs 8.00 géén edit is, maar 8.5 vs 8 wel; en dat de whole-km-round
+# van parse_csv_text/_calc_builder_distance_km geen valse edit oplevert (beide heel).
+_EDIT_TOL_KM = 0.1
+_EDIT_TOL_MIN = 0.5
+
+
+def _submitted_conflicts_builder(op_tijd: bool, submitted_km, submitted_min, builder_steps: list) -> bool:
+    """Wijkt de INGEDIENDE numerieke meetwaarde materieel af van wat de description-
+    driven WorkoutBuilder-steps opleveren? Vergelijkt uitsluitend in de door `op_tijd`
+    bepaalde autoritatieve eenheid (km bij afstandsschema, minuten bij tijdsschema) en
+    behandelt een eenheidwissel (description levert de andere eenheid) als conflict.
+
+    Dit is het server-side vangnet voor een stale client die `measure_edited` niet
+    meestuurt: als submitted en builder-derived botsen, wint de coachwaarde (degrade).
+    Gebruikt ALLEEN de al-gegenereerde `builder_steps` — geen extra AI-call. None-
+    submitted = niets te beschermen (bestaand pad vult dan de top-level uit de builder)."""
+    if not builder_steps:
+        return False
+    if op_tijd:
+        if submitted_min is None:
+            return False
+        b_min = _calc_builder_duration_min(builder_steps)
+        if b_min is None:                       # builder levert afstand, submit is tijd → wissel
+            return True
+        try:
+            return abs(float(submitted_min) - float(b_min)) > _EDIT_TOL_MIN
+        except (TypeError, ValueError):
+            return False
+    if submitted_km is None:
+        return False
+    b_km = _calc_builder_distance_km(builder_steps)
+    if b_km is None:                            # builder levert tijd, submit is afstand → wissel
+        return True
+    try:
+        return abs(float(submitted_km) - float(b_km)) > _EDIT_TOL_KM
+    except (TypeError, ValueError):
+        return False
+
+
 def import_to_finalsurge(
     athlete_key: str,
     workouts: list[dict],
@@ -1912,31 +1952,60 @@ def import_to_finalsurge(
             desc = w.get("description", "")
             activity_type = w.get("activity_type", "Run")
 
+            # PF-1 — coach-edit write authority. Is de numerieke meetwaarde
+            # (planned_km/planned_min) van deze rij door de coach gewijzigd, dan is die
+            # ingediende waarde de ENIGE waarheid voor de write: we nemen planned_km/
+            # planned_min LETTERLIJK over (geen her-afleiding uit de description, geen
+            # stille round naar hele km) en schrijven GEEN structured WorkoutBuilder-steps
+            # — die zouden nog de oude description-meeteenheid dragen (bv. top-level 8 km
+            # + steps van 40 min = intern tegenstrijdig). Bewuste degrade naar de
+            # eenvoudige FS-workoutvorm (audit Class A / Finding 4, strategie B).
+            #
+            # De coach-edit wordt op TWEE manieren herkend, zodat write-correctness niet
+            # volledig van de client afhangt:
+            #  1) client-hint `measure_edited` (sterk, precies; SW v82+) → sla de Builder-
+            #     AI-call meteen over;
+            #  2) server-side vangnet: mist de vlag (stale client), dan genereren we — net
+            #     als bij een normale ongewijzigde rij, ZONDER extra AI-call — de steps en
+            #     vergelijken de ingediende waarde met wat die steps opleveren. Wijken ze
+            #     materieel af (of eenheidwissel), dan wint de coachwaarde en degraderen we
+            #     identiek aan (1). Alleen bij coherente overeenkomst blijft het bewezen
+            #     Builder-pad staan. Ongewijzigde, coherente rijen: gedrag ongewijzigd.
+            measure_edited = bool(w.get("measure_edited"))
+            coach_authoritative = measure_edited
+
             # Stap 1: genereer WorkoutBuilder stappen eerst zodat we de exacte afstand weten
             builder_steps = []
             planned_km = w.get("planned_km")
 
-            if fill_builder and desc.strip() and activity_type in ("Run", "Bike", "Swim"):
+            if not measure_edited and fill_builder and desc.strip() and activity_type in ("Run", "Bike", "Swim"):
                 try:
-                    builder_steps = generate_builder_steps(
+                    steps = generate_builder_steps(
                         workout_name=w["name"],
                         description=desc,
                         zone_type=zone_type,
                         activity_type=activity_type,
                         op_tijd=op_tijd,
                     )
-                    # Bij afstandsschema: gebruik builder-km als geplande afstand
-                    if builder_steps and not op_tijd:
-                        builder_km = _calc_builder_distance_km(builder_steps)
-                        if builder_km:
-                            planned_km = builder_km
+                    if _submitted_conflicts_builder(op_tijd, w.get("planned_km"), w.get("planned_min"), steps):
+                        # Server-side gedetecteerde coach-edit (client-hint ontbrak) →
+                        # coachwaarde leidt, geen tegenstrijdige steps schrijven.
+                        coach_authoritative = True
+                    else:
+                        builder_steps = steps
+                        # Bij afstandsschema: gebruik builder-km als geplande afstand
+                        if builder_steps and not op_tijd:
+                            builder_km = _calc_builder_distance_km(builder_steps)
+                            if builder_km:
+                                planned_km = builder_km
                 except Exception as be:
                     builder_errors.append(f"{w['date']} {w['name']} (builder generatie): {be}")
 
             # Stap 2: sla de workout op
             planned_min = w.get("planned_min") if op_tijd else None
-            # Bij tijdsschema: gebruik de builder-totaaltijd als geplande tijd,
-            # zodat de geplande totaaltijd exact matcht met de WorkoutBuilder.
+            # Bij tijdsschema: gebruik de builder-totaaltijd als geplande tijd, zodat de
+            # geplande totaaltijd exact matcht met de WorkoutBuilder. (Alleen bij een
+            # coherente ongewijzigde rij; edited/gedegradeerd → ingediende planned_min leidt.)
             if op_tijd and builder_steps:
                 builder_min = _calc_builder_duration_min(builder_steps)
                 if builder_min:
@@ -1975,7 +2044,9 @@ def import_to_finalsurge(
                         )
                     except Exception as be:
                         builder_errors.append(f"{w['date']} {w['name']} (builder opslaan): {be}")
-            elif fill_builder and desc.strip() and activity_type in ("Run", "Bike", "Swim") and not builder_steps:
+            elif (fill_builder and not coach_authoritative and desc.strip()
+                  and activity_type in ("Run", "Bike", "Swim") and not builder_steps):
+                # (Coach-edited/gedegradeerde rijen slaan de Builder bewust over — geen fout.)
                 builder_errors.append(
                     f"{w['date']} {w['name']}: geen stappen gegenereerd (lege beschrijving?)"
                 )
