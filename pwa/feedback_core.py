@@ -685,6 +685,30 @@ def _queue_current() -> dict:
     return snap
 
 
+def feedback_open_truth() -> dict | None:
+    """PF-3 — canonieke open-feedbacktruth voor Home's tegel, UIT DEZELFDE bron als de
+    Feedback-pagina: de gedeelde queue-snapshot, met exact dezelfde skip-reconciliatie
+    (`_apply_skips` → `_filter_skipped`) die élke Feedback-read toepast. Reflecteert
+    daarmee zowel SKIP (canonical `skipped.json`) als POST (`_verwijder_uit_queue` haalt de
+    beantwoorde workout uit `items`+`_volle`) — ZONDER FinalSurge-sweep, zonder een tweede
+    skiplogica of store, zonder client-delta. Zo tonen Home en Feedback per definitie
+    dezelfde open-set/count.
+
+    None → er is (nog) geen geldige queue-snapshot → Home kan niet goedkoop reconciliëren
+    en houdt zijn eigen (rebuild-)waarde. Nooit een negatieve teller (`len` ≥ 0). `gepost`
+    volgt de laatste sweep-`posted_today` (zelfde semantiek als de Feedback-queue)."""
+    snap = _queue_current()
+    if not _queue_valid(snap):
+        return None
+    open_items = _apply_skips(snap).get("items", [])
+    wachten = len(open_items)
+    gepost = int(snap.get("gepost", 0) or 0)
+    totaal = wachten + gepost
+    return {"wachten": wachten, "gepost": gepost,
+            "pct": int(gepost / totaal * 100) if totaal else 100,
+            "open_ids": [it.get("id") for it in open_items]}
+
+
 def _queue_persist(snap: dict) -> tuple[bool, str]:
     """Persisteer de snapshot; geeft (ok, fout) terug zodat de aanroeper save-
     fouten zichtbaar kan maken in de diagnostiek. Retry/SHA-gedrag ONGEWIJZIGD."""
