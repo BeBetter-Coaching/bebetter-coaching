@@ -355,6 +355,67 @@ def _brein_planning_defaults(key: str) -> dict:
         return {}
 
 
+# ── PF-2 — zone-freshness contract ───────────────────────────────────────────
+# Eén canonieke persoonlijke-zonebron (FinalSurge, via get_athlete_zones). PF-2 gaat
+# NIET over classificatie (dat is FC-2) maar over VERSHEID: een expliciete coach-refresh
+# moet een verse bron-read forceren; mislukt die, dan MOET dat eerlijk zichtbaar zijn —
+# nooit stil oude zones als actueel tonen.
+_ZONES_FRESH = "FRESH"                # live uit FinalSurge gelezen
+_ZONES_LAST_KNOWN = "LAST_KNOWN"      # live read faalde/leeg → laatst bekende (intake) zones
+_ZONES_UNAVAILABLE = "UNAVAILABLE"    # geen verse én geen laatst bekende zones
+
+
+def _norm_zone_type(zt: str) -> str:
+    return "hartslag" if (zt or "") in ("hartslag", "heart_rate", "heartrate", "hr") else "tempo"
+
+
+def _zone_fingerprint(zones_text: str, zone_type: str) -> str:
+    """Deterministische, INHOUD-afgeleide fingerprint van de persoonlijke zones (geen
+    timestamp): gelijke zone-inhoud → gelijke fingerprint, een echte zonewijziging →
+    andere fingerprint. Whitespace-genormaliseerd zodat equivalente data geen valse
+    wijziging oplevert. Leeg bij ontbrekende zones."""
+    text = "\n".join(l.strip() for l in (zones_text or "").splitlines() if l.strip())
+    if not text:
+        return ""
+    return hashlib.sha1(f"{_norm_zone_type(zone_type)}\n{text}".encode("utf-8")).hexdigest()[:16]
+
+
+def _resolve_zones(key: str, base_zones_text: str, base_zone_type: str) -> tuple:
+    """Lees de zones VERS uit FinalSurge en bepaal bronstatus + fingerprint. GEEN stille
+    fallback: mislukt de live read, dan is de status expliciet LAST_KNOWN (intake-zones
+    nog beschikbaar) of UNAVAILABLE — nooit FRESH. `get_athlete_zones` vangt zijn eigen
+    excepties en geeft {'error': ...}; we dekken beide (error-dict én exceptie).
+    Retourneert (zones_text, zone_type[genormaliseerd], status, fingerprint)."""
+    zones_text = base_zones_text or ""
+    zone_type = base_zone_type or "tempo"
+    try:
+        import fs_client as FS
+        fetched = FS.get_athlete_zones(key) or {}
+    except Exception:
+        fetched = {}
+    if fetched.get("zones_text"):
+        zones_text = fetched["zones_text"]
+        zone_type = fetched.get("zone_type", zone_type)
+        status = _ZONES_FRESH
+    elif (base_zones_text or "").strip():
+        status = _ZONES_LAST_KNOWN
+    else:
+        status = _ZONES_UNAVAILABLE
+    return zones_text, _norm_zone_type(zone_type), status, _zone_fingerprint(zones_text, zone_type)
+
+
+def zones_fresh(key: str) -> dict:
+    """Expliciete coach-refresh (endpoint /api/schema/zones): forceer ALTIJD een verse
+    zone-read — nooit afhankelijk van een al bekende fingerprint — en geef de bronstatus
+    terug. Geen zware sweep, alleen de zonebron. Verandert GEEN schema-inhoud; de client
+    werkt hiermee enkel `config.zones`/`zone_type` + fingerprint bij (workbench/plan blijft)."""
+    base = _nieuwste_intake(key) or {}
+    zones_text, zone_type, status, fp = _resolve_zones(
+        key, base.get("zones", ""), base.get("zone_type", "tempo"))
+    return {"zones": zones_text, "zone_type": zone_type,
+            "zones_status": status, "zone_fingerprint": fp}
+
+
 def config_prefill(key: str) -> dict:
     """Slimme prefill voor modus NIEUW uit bestaande atleet-/intakecontext + FS-zones.
     Snel: geen zware sweep (trainingslog volgt pas bij plan-generatie).
@@ -390,16 +451,9 @@ def config_prefill(key: str) -> dict:
             pass
     naam_vol = naam_vol or key
     voornaam = voornaam or (naam_vol.split()[0] if naam_vol and naam_vol != key else "")
-    zones_text = base.get("zones", "")
-    zone_type = base.get("zone_type", "tempo")
-    try:
-        import fs_client as FS
-        fetched = FS.get_athlete_zones(key) or {}
-        if fetched.get("zones_text"):
-            zones_text = fetched["zones_text"]
-            zone_type = fetched.get("zone_type", zone_type)
-    except Exception:
-        pass
+    # PF-2: verse zone-read met expliciete bronstatus (geen stille fallback).
+    zones_text, zone_type, zones_status, zone_fp = _resolve_zones(
+        key, base.get("zones", ""), base.get("zone_type", "tempo"))
     start = base.get("startdatum") or _default_start()
     weken_int, einddatum = _bereken_periode(start, base.get("weken") or "8",
                                              base.get("schema_einddatum", ""))
@@ -419,7 +473,8 @@ def config_prefill(key: str) -> dict:
         "_context": "",   # zware actuele context — pas bij plan-generatie gevuld
     }
     return {"config": config, "context": context_config(config), "afspraken": afspraken(config),
-            "intake_stamp": _intake_stamp(base)}
+            "intake_stamp": _intake_stamp(base),
+            "zones_status": zones_status, "zone_fingerprint": zone_fp}
 
 
 def _intake_from_config(key: str, config: dict) -> dict:

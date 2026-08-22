@@ -1082,6 +1082,11 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
   color:var(--muted);border-radius:10px;font-size:13px;font-weight:650;cursor:pointer}
 .sb-dag.on{background:var(--acc);border-color:var(--acc);color:var(--bg)}
 .sb-zones .lbl{margin-bottom:4px}
+/* PF-2 — zone-versheid status + expliciete refresh */
+.sb-zone-status{font-weight:600}
+.sb-zone-status.ok{color:var(--ok,#3a9d5d)}
+.sb-zone-status.warn{color:var(--warn,#c2872a)}
+.sb-zone-fresh{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sb-zonebox{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:0;
   font-size:12.5px;color:var(--text);white-space:pre-wrap;word-break:break-word;font-family:inherit;line-height:1.5}
 .sb-afspraken{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 15px;height:max-content}
