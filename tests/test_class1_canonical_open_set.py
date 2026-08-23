@@ -11,7 +11,7 @@ te corrigeren.
 """
 import os
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 
@@ -33,28 +33,36 @@ def _wk(wid, notes=False, felt=False, effort=False, athlete_ts=""):
             "effort": (1 if effort else None), "thread": thread}
 
 
-def _qsnap(*wids, gepost=0, volle_over=None):
-    """Volwaardige queue-snapshot met sorteerbare items (via `_queue_item`)."""
+def _qsnap(*wids, gepost=0, volle_over=None, berekend=None):
+    """Volwaardige queue-snapshot met sorteerbare items (via `_queue_item`).
+    Recente `berekend` → FRESH (geldig ÉN vers); geef expliciet een oude waarde voor STALE."""
     volle = {w: _wk(w) for w in wids}
     if volle_over:
         volle.update(volle_over)
     items = [FC._queue_item(w, volle[w]) for w in wids]
+    ber = berekend or datetime.now().isoformat(timespec="seconds")
     return {"fs": True, "items": items, "_volle": volle, "gepost": gepost,
-            "berekend": "2026-08-20T10:00:00", "datum": "2026-08-20"}
+            "berekend": ber, "datum": "2026-08-20"}
 
 
 def _skip(athlete_ts="", notes=False, felt=False, effort=False):
     return {"athlete_ts": athlete_ts, "notes": notes, "felt": felt, "effort": effort}
 
 
-def _home_snap(wachten, gepost=0):
+def _now(delta_min=0):
+    return (datetime.now() - timedelta(minutes=delta_min)).isoformat(timespec="seconds")
+
+
+def _home_snap(wachten, gepost=0, berekend="2026-01-01T09:00:00"):
+    # `berekend` default is bewust OUD (verlopen) → home-snapshot geldt niet als recent,
+    # tenzij een test expliciet een verse waarde meegeeft.
     tot = wachten + gepost
     return {"fs": True, "atleten": 30, "groepen": 3,
             "team": {"actie": 0, "aandacht": 0, "rustig": 30},
             "feedback": {"wachten": wachten, "gepost": gepost,
                          "pct": int(gepost / tot * 100) if tot else 100},
             "prioriteit": [], "prioriteit_totaal": 0,
-            "berekend": "2026-08-20T09:00:00", "datum": "2026-08-20"}
+            "berekend": berekend, "datum": "2026-08-20"}
 
 
 @pytest.fixture
@@ -236,3 +244,71 @@ def test_10_badge_autoritatieve_setdiff_geen_dom():
     assert "lastPrioSig" in src                       # diff tegen laatst toegepaste set
     assert "const basis = lastPrioSig || {}" in src
     assert "el.dataset.sig" not in src.split("function cockpitDiffToon")[1].split("}")[0]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Freshness-authority (Round 2 correctie): valid ≠ fresh
+# ════════════════════════════════════════════════════════════════════════════
+def test_fresh_valid_en_recent(env):
+    # geldig ÉN recent (berekend binnen TTL) → FRESH met echte count
+    FC._QUEUE_MEM = _qsnap("W1", "W2", berekend=_now(1))
+    truth = FC.canonical_open_actions()
+    assert truth["status"] == FC.OPEN_FRESH and truth["wachten"] == 2
+
+
+def test_stale_valid_maar_verlopen(env):
+    # geldig maar `berekend` verlopen (> 15 min) → STALE, GEEN count als authority
+    FC._QUEUE_MEM = _qsnap("W1", "W2", berekend=_now(30))
+    truth = FC.canonical_open_actions()
+    assert truth["status"] == FC.OPEN_STALE
+    assert truth["wachten"] is None and truth["open_ids"] is None
+
+
+def test_stale_zonder_berekend_is_niet_fresh(env):
+    # geldig maar zónder betrouwbare `berekend` → conservatief STALE (niet FRESH)
+    snap = _qsnap("W1", "W2")
+    snap.pop("berekend", None)
+    FC._QUEUE_MEM = snap
+    assert FC.canonical_open_actions()["status"] == FC.OPEN_STALE
+
+
+def test_stale_queue_geen_actuele_count_op_home(env):
+    # verlopen queue + verlopen home-snapshot → Home mag de oude count NIET als actueel tonen
+    FC._QUEUE_MEM = _qsnap("W1", "W2", "W3", berekend=_now(30))
+    home_core._MEM = _home_snap(3)                    # oude berekend (default)
+    fb = home_core.cockpit(refresh=False)["feedback"]
+    assert fb.get("stale") is True and fb.get("wachten") is None and fb.get("wachten") != 3
+
+
+def test_stale_queue_maar_recente_home_sweep_behoudt_count(env):
+    # verlopen queue MAAR een recente home-sweep → die telling is zelf vers → behouden
+    # (geen valse 'bijwerken…'; een ≤15 min oude sweep is per definitie 'recent', niet 'oud').
+    FC._QUEUE_MEM = _qsnap("W1", "W2", "W3", berekend=_now(30))
+    home_core._MEM = _home_snap(3, berekend=_now(2))
+    fb = home_core.cockpit(refresh=False)["feedback"]
+    assert fb.get("stale") is False and fb.get("wachten") == 3
+
+
+def test_post_op_warme_actuele_queue_blijft_fast(env, monkeypatch):
+    # post/skip op een WARME, ACTUELE queue blijft fast: FRESH, direct correct, geen _bereken
+    calls = {"n": 0}
+    monkeypatch.setattr(home_core, "_bereken", lambda: calls.__setitem__("n", calls["n"] + 1) or {})
+    FC._QUEUE_MEM = _qsnap("W1", "W2", berekend=_now(1))
+    FC._cache["W1"] = _wk("W1")
+    home_core._MEM = _home_snap(2)
+    FC._verwijder_uit_queue("W1")                     # post (behoudt de recente berekend)
+    fb = home_core.cockpit(refresh=False)["feedback"]
+    assert fb["wachten"] == 1 and fb.get("stale") is False
+    assert calls["n"] == 0                             # geen full Home-sweep
+
+
+def test_cold_durable_queue_recent_blijft_fast(env, monkeypatch):
+    # koud proces + RECENTE durable queue → FRESH zonder warm/sweep
+    durable_q = _qsnap("W1", "W2", berekend=_now(2))
+    monkeypatch.setattr(FC.intake_store, "load_feedback_queue", lambda: durable_q)
+    FC._QUEUE_MEM = {}
+    home_core._MEM = {}
+    env["durable"]["snap"] = _home_snap(2, berekend=_now(2))
+    assert FC.canonical_open_actions()["status"] == FC.OPEN_FRESH
+    fb = home_core.cockpit(refresh=False)["feedback"]
+    assert fb["wachten"] == 2 and fb.get("stale") is False

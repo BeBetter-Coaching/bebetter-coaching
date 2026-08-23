@@ -11,6 +11,7 @@ haalt de workout uit de gedeelde queue → telt ook direct mee.
 """
 import os
 import sys
+from datetime import datetime
 
 import pytest
 
@@ -30,12 +31,14 @@ def _wk(wid, notes=False, felt=False, effort=False, athlete_ts=""):
             "effort": (1 if effort else None), "thread": thread}
 
 
-def _queue(*wids, gepost=0, volle_over=None):
+def _queue(*wids, gepost=0, volle_over=None, berekend=None):
     volle = {w: _wk(w) for w in wids}
     if volle_over:
         volle.update(volle_over)
+    # Recente `berekend` → canonical_open_actions ziet dit als FRESH (geldig ÉN vers).
+    ber = berekend or datetime.now().isoformat(timespec="seconds")
     return {"fs": True, "items": [{"id": w} for w in wids], "_volle": volle,
-            "gepost": gepost, "berekend": "2026-08-20T10:00:00", "datum": "2026-08-20"}
+            "gepost": gepost, "berekend": ber, "datum": "2026-08-20"}
 
 
 def _skip(athlete_ts="", notes=False, felt=False, effort=False):

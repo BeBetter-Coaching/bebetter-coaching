@@ -685,12 +685,21 @@ def _queue_current() -> dict:
     return snap
 
 
-# Statussen voor de canonieke open-set (Class 1). FRESH = bewezen-actueel uit een geldige
-# queue-snapshot. UNKNOWN = geen geldige queue-snapshot op deze instance → de actuele
-# open-set is hier NIET goedkoop te bewijzen; er is dan GEEN count. Een consumer mag bij
-# UNKNOWN nooit een oude/bevroren integer als 'actueel' presenteren.
+# Statussen voor de canonieke open-set (Class 1). 'valid' (structureel bruikbare snapshot,
+# `_queue_valid`) en 'fresh' (recent genoeg, `berekend` binnen `_OPEN_TTL_SEC`) zijn EXPLICIET
+# verschillende begrippen:
+#   FRESH   = geldige ÉN recente snapshot → bewezen-actuele open-set + count.
+#   STALE   = geldige maar VERLOPEN snapshot (of zonder betrouwbare `berekend`) → structureel
+#             bruikbaar, maar niet bewezen actueel → GEEN count als authority.
+#   UNKNOWN = geen geldige snapshot op deze instance.
+# Bij STALE én UNKNOWN mag een consumer nooit een oude/bevroren integer als 'actueel' tonen.
 OPEN_FRESH = "FRESH"
+OPEN_STALE = "STALE"
 OPEN_UNKNOWN = "UNKNOWN"
+
+# Freshness-venster van de queue-snapshot: gelijk aan de client-side Home-TTL (cockpitStale,
+# 15 min). Hergebruikt de bestaande `berekend` op de snapshot — geen nieuwe store/timestamp.
+_OPEN_TTL_SEC = 15 * 60
 
 
 def canonical_open_actions() -> dict:
@@ -703,15 +712,20 @@ def canonical_open_actions() -> dict:
     post-verwijdering (`_verwijder_uit_queue` haalt de beantwoorde workout uit `items`+`_volle`).
     GEEN FinalSurge-sweep, GEEN tweede skiplogica/store, GEEN client-delta.
 
-    status FRESH  → geldige queue-snapshot: bewezen-actuele open-set + count (`len` ≥ 0, nooit
-                    negatief). `gepost` volgt de laatste sweep-`posted_today`.
-    status UNKNOWN → geen geldige queue-snapshot op deze instance (koud proces, ontbrekende of
-                     mislukte durable build): `wachten`/`gepost`/`pct`/`open_ids` = None. De
-                     consumer toont dan expliciet 'moet verversen' en verwarmt de queue —
-                     NOOIT een bevroren getal alsof het actueel is."""
+    Onderscheidt STRUCTURELE geldigheid van FRESHNESS (zie de statusdefinities hierboven):
+    - geen geldige snapshot            → UNKNOWN (geen count).
+    - geldig maar `berekend` verlopen  → STALE   (geen count als authority).
+    - geldig én recent                 → FRESH   (bewezen-actuele open-set + count, `len` ≥ 0;
+                                          `gepost` volgt de laatste sweep-`posted_today`).
+    Bij STALE/UNKNOWN degradeert de consument eerlijk (tegel 'bijwerken…' + queue verwarmen);
+    hij toont NOOIT een verlopen count alsof die actueel is."""
     snap = _queue_current()
     if not _queue_valid(snap):
         return {"status": OPEN_UNKNOWN, "wachten": None, "gepost": None,
+                "pct": None, "open_ids": None}
+    leeftijd = _snapshot_leeftijd_sec(snap)
+    if leeftijd is None or leeftijd > _OPEN_TTL_SEC:
+        return {"status": OPEN_STALE, "wachten": None, "gepost": None,
                 "pct": None, "open_ids": None}
     open_items = _apply_skips(snap).get("items", [])
     wachten = len(open_items)
