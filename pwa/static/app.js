@@ -265,13 +265,18 @@ async function renderHome() {
   // een volledige reset + zware herlaad bij elke terugkeer naar Home (#14).
   if (box && box.dataset.done === "1") {
     requestAnimationFrame(() => { const sc = $("#scroller"); if (sc) sc.scrollTo({ top: homeScroll || 0 }); });
-    // Terugkeer via in-app navigatie (geen browserrefresh): her-evalueer de freshness
-    // met dezelfde snapshot-read als de eerste paint. Staat de server-invalidatie
-    // (_revalidate, na een Feedback-post/skip) of is de snapshot verouderd, dan start
-    // cockpitVersen de BESTAANDE autoritatieve achtergrond-refresh die de feedbacktegel
-    // naar de canonieke sweep-telling brengt. Geen teller-mutatie, geen nieuwe client-
-    // state, geen server-wijziging — enkel de bestaande refresh-primitive her-triggeren.
-    api("/api/home/stats").then(s => { if (s && s.fs) cockpitVersen(s); }).catch(() => {});
+    // Terugkeer via in-app navigatie (geen browserrefresh): her-lees de snapshot en render
+    // de feedbacktegel DIRECT uit de canonieke fast-read (Class 1: `_apply_feedback_overlay`
+    // → open-set). Na een post/skip klopt de tegel zo binnen één read, ZONDER de trage
+    // Home-sweep (~20-25s). Is de open-set UNKNOWN (koud proces), dan toont de strip
+    // 'bijwerken…' en verwarmen we de queue. cockpitVersen blijft enkel voor prioriteit-
+    // staleness (nieuwe dag / TTL) op de achtergrond.
+    api("/api/home/stats").then(s => {
+      if (!s || !s.fs) return;
+      renderFeedbackStrip(s.feedback, true);
+      if (s.feedback && s.feedback.stale) feedbackQueueWarm();
+      cockpitVersen(s);
+    }).catch(() => {});
     return;
   }
   const g = groetInfo();
@@ -316,6 +321,7 @@ async function renderHome() {
     // Eerste-ooit (pending): laat de skeletons staan en bouw op de achtergrond op.
     if (s && s.pending) { cockpitVersen(s); return; }
     vulCockpit(s); cockpitVersen(s);
+    if (s && s.feedback && s.feedback.stale) feedbackQueueWarm();   // Class 1: koude open-set → queue verwarmen
   }).catch(() => {
     const p = $("#home-prio"); if (p) p.innerHTML = '<p class="muted klein">Kon de dagstatus niet laden.</p>';
     const fb = $("#home-fb"); if (fb) fb.remove();
@@ -359,11 +365,13 @@ function laadHeroFoto() {
   img.src = "/static/team.jpeg";
 }
 
-// Is de snapshot verouderd? Server-invalidatie (na feedback-post/skip) → altijd;
-// nieuwe dag → altijd; anders ouder dan 15 min.
+// Is de snapshot verouderd? Nieuwe dag → altijd; anders ouder dan 15 min.
+// Class 1: een feedback-post/skip forceert HIER geen refresh meer — de tegel wordt canoniek
+// uit de open-set gereconcilieerd (`_apply_feedback_overlay`) op de fast-read, dus de trage
+// Home-sweep is niet nodig om de teller te corrigeren. Staleness geldt alleen nog de
+// prioriteit-signalen (nieuwe dag / TTL), die post/skip niet raken.
 function cockpitStale(s) {
   if (!s) return true;
-  if (s._revalidate) return true;          // Feedback→Home seam: sweep moet de tegel verversen
   if (!s.berekend) return true;
   const today = new Date().toISOString().slice(0, 10);
   if (s.datum && s.datum !== today) return true;
@@ -395,15 +403,22 @@ function cockpitVersen(s) {
   }).catch(() => { markVersen(false); if (note) note.dataset.busy = ""; prioTekenStatus(); });
 }
 
-// Tijdens actief coachen mag een achtergrondrefresh de lijst niet omgooien: we
-// diffen tegen de zichtbare lijst en tonen enkel een compacte "N nieuw"-balk. De
-// coach beslist wanneer de nieuwe stand wordt toegepast (scroll/open/swipe intact).
+// Class 1 (punt 6): "N nieuw" = AUTORITATIEVE set-diff, niet een DOM-diff. We vergelijken
+// de verse serverlijst met de laatst TOEGEPASTE autoritatieve set (`lastPrioSig`, uk→signature),
+// niet met de toevallige DOM-state — die kan optimistisch geleegd zijn, waardoor een oude
+// lijst als "iedereen nieuw" terugkwam. De coach beslist wanneer de nieuwe stand wordt
+// toegepast (scroll/open/swipe intact). DOM is rendering, geen truth-store.
+let lastPrioSig = null;   // laatst toegepaste autoritatieve prioriteit-set (uk→signature)
+function prioSigMap(list) {
+  const m = {};
+  (list || []).forEach(it => { m[it.user_key] = it.signature || ""; });
+  return m;
+}
 function cockpitDiffToon(fresh) {
-  const huidig = {};
-  $$("#home-prio .prio-item").forEach(el => huidig[el.dataset.uk] = el.dataset.sig || "");
+  const basis = lastPrioSig || {};
   let nieuw = 0;
   (fresh.prioriteit || []).forEach(it => {
-    if (!(it.user_key in huidig) || huidig[it.user_key] !== (it.signature || "")) nieuw++;
+    if (!(it.user_key in basis) || basis[it.user_key] !== (it.signature || "")) nieuw++;
   });
   pendingSnap = fresh;
   if (nieuw > 0) cockpitNieuwBalk(nieuw);
@@ -446,11 +461,39 @@ function markVersen(on) {
 // (fresh) read binnenkomt. Geen tweede waarheid — de server reconcilieert altijd.
 // Feedback-voortgangsbalk (los renderbaar zodat een achtergrond-refresh de tegel naar de
 // canonieke sweep-waarde kan brengen zónder de actieve prioriteitslijst te verstoren).
+// Verwarm de gedeelde Feedback-queue en herlees de tegel — het HONESTE herstel bij een
+// UNKNOWN open-set (koud proces / queue nog niet gebouwd). Reuse de bestaande queue-refresh
+// (goedkoper dan de volledige Home-sweep); nooit de bevroren integer als 'actueel' tonen.
+let fbWarmBezig = false;
+function feedbackQueueWarm() {
+  if (fbWarmBezig) return;
+  fbWarmBezig = true;
+  api("/api/feedback/queue?refresh=1")
+    .then(() => api("/api/home/stats"))
+    .then(s => { if (s && s.fs) renderFeedbackStrip(s.feedback, true); })
+    .catch(() => {})
+    .then(() => { fbWarmBezig = false; });
+}
+
 function renderFeedbackStrip(fbs, fresh) {
   fbs = fbs || {};
   const fb = $("#home-fb");
   if (!fb) return;
-  if (fresh) homeFbDelta = { wachten: 0, gepost: 0 };     // autoritatieve sweep binnen → transiënt optimisme verrekend
+  if (fresh) homeFbDelta = { wachten: 0, gepost: 0 };     // autoritatieve read binnen → transiënt optimisme verrekend
+  // Class 1: UNKNOWN open-set (koud proces / queue nog niet gebouwd) → NOOIT een bevroren
+  // getal als 'actueel'. Toon 'bijwerken…'; de aanroeper verwarmt de queue (feedbackQueueWarm).
+  if (fbs.stale) {
+    fb.classList.remove("skel-strip", "done");
+    fb.innerHTML = `
+      <div class="fb-strip-top">
+        <span class="fb-strip-ic">${ic("message")}</span>
+        <span class="fb-strip-t">Feedback bijwerken…</span>
+        <span class="fb-strip-pct"></span>
+      </div>
+      <div class="mt-bar"><i style="width:0%"></i></div>
+      <span class="fb-strip-sub">Even de actuele stand ophalen</span>`;
+    return;
+  }
   const w = Math.max(0, (fbs.wachten || 0) + homeFbDelta.wachten);
   const gepost = Math.max(0, (fbs.gepost || 0) + homeFbDelta.gepost);
   // pct opnieuw afleiden uit de (evt. optimistisch bijgestelde) getallen zodat de
@@ -493,6 +536,7 @@ function vulCockpit(s, fresh) {
 
   // ── Prioriteit vandaag: gegroepeerd per atleet (wie → waarom → actie) ──
   const prio = s.prioriteit || [];
+  lastPrioSig = prioSigMap(prio);      // Class 1: deze toegepaste set = de nieuwe autoritatieve diff-basis
   const box = $("#home-prio");
   if (box) {
     if (!prio.length) {

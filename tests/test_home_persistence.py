@@ -79,12 +79,37 @@ class TestHandledOverlay:
         out = home_core._apply_handled_overlay(_snapshot())
         assert "A" in [i["user_key"] for i in out["prioriteit"]]   # venster voorbij → weer zichtbaar
 
-    def test_escalatie_toont_opnieuw(self, monkeypatch):
-        # Gezien bij severity 2, maar het signaal is nu severity 3 (erger) → tonen.
+    def test_severity_bump_binnen_tier_blijft_verborgen(self, monkeypatch):
+        # Class 1 (inversie): een louter NUMERIEKE severity-bump binnen dezelfde tier
+        # (compliance: 'n gemist' loopt op, tier blijft 'actie', bv. na een weekend) mag een
+        # afgehandelde atleet NIET terugbrengen. Anders keert na elke sweep vrijwel iedereen
+        # terug. Record heeft geen 'tier' (of gelijke tier) → venster telt → verborgen.
         morgen = (date.today() + timedelta(days=1)).isoformat()
         self._patch(monkeypatch, {"A|compliance": _handled_rec("gezien", 2, morgen)})
         out = home_core._apply_handled_overlay(_snapshot())
-        assert "A" in [i["user_key"] for i in out["prioriteit"]]
+        assert "A" not in [i["user_key"] for i in out["prioriteit"]]   # blijft gedempt
+
+    def test_echte_tier_escalatie_toont_opnieuw(self, monkeypatch):
+        # Alleen een KWALITATIEF zwaarder signaal (tier aandacht → actie) doorbreekt het
+        # venster. Bram's schema is afgehandeld op tier 'aandacht'; het huidige signaal is nu
+        # 'actie' (schema verlopen) → terecht opnieuw tonen.
+        morgen = (date.today() + timedelta(days=1)).isoformat()
+        rec = {"status": "gezien", "severity": 1, "tier": "aandacht", "tot": morgen,
+               "handled_at": date.today().isoformat()}
+        snap = _snapshot()
+        snap["prioriteit"][1]["signalen"][0]["tier"] = "actie"     # Bram's schema geëscaleerd
+        self._patch(monkeypatch, {"B|schema": rec})
+        out = home_core._apply_handled_overlay(snap)
+        assert "B" in [i["user_key"] for i in out["prioriteit"]]   # echte escalatie → terug
+
+    def test_gelijke_tier_binnen_venster_blijft_verborgen(self, monkeypatch):
+        # Record MÉT tier, huidige tier gelijk → geen escalatie → venster telt → verborgen.
+        morgen = (date.today() + timedelta(days=1)).isoformat()
+        rec = {"status": "gezien", "severity": 3, "tier": "actie", "tot": morgen,
+               "handled_at": date.today().isoformat()}
+        self._patch(monkeypatch, {"A|compliance": rec})
+        out = home_core._apply_handled_overlay(_snapshot())
+        assert "A" not in [i["user_key"] for i in out["prioriteit"]]
 
     def test_lege_store_laat_snapshot_ongemoeid(self, monkeypatch):
         self._patch(monkeypatch, {})

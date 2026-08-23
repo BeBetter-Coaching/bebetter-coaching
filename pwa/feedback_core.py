@@ -685,28 +685,53 @@ def _queue_current() -> dict:
     return snap
 
 
-def feedback_open_truth() -> dict | None:
-    """PF-3 — canonieke open-feedbacktruth voor Home's tegel, UIT DEZELFDE bron als de
-    Feedback-pagina: de gedeelde queue-snapshot, met exact dezelfde skip-reconciliatie
-    (`_apply_skips` → `_filter_skipped`) die élke Feedback-read toepast. Reflecteert
-    daarmee zowel SKIP (canonical `skipped.json`) als POST (`_verwijder_uit_queue` haalt de
-    beantwoorde workout uit `items`+`_volle`) — ZONDER FinalSurge-sweep, zonder een tweede
-    skiplogica of store, zonder client-delta. Zo tonen Home en Feedback per definitie
-    dezelfde open-set/count.
+# Statussen voor de canonieke open-set (Class 1). FRESH = bewezen-actueel uit een geldige
+# queue-snapshot. UNKNOWN = geen geldige queue-snapshot op deze instance → de actuele
+# open-set is hier NIET goedkoop te bewijzen; er is dan GEEN count. Een consumer mag bij
+# UNKNOWN nooit een oude/bevroren integer als 'actueel' presenteren.
+OPEN_FRESH = "FRESH"
+OPEN_UNKNOWN = "UNKNOWN"
 
-    None → er is (nog) geen geldige queue-snapshot → Home kan niet goedkoop reconciliëren
-    en houdt zijn eigen (rebuild-)waarde. Nooit een negatieve teller (`len` ≥ 0). `gepost`
-    volgt de laatste sweep-`posted_today` (zelfde semantiek als de Feedback-queue)."""
+
+def canonical_open_actions() -> dict:
+    """Class 1 — DE ENE canonieke open-set van coach-feedbackacties. Home-tegel,
+    Feedback-lijst én de Home-Prioriteiten-feedbackafleiding leiden hun 'wat staat open?'
+    hieruit af, zodat ze per definitie niet kunnen divergeren (parity by construction).
+
+    Bron = dezelfde gedeelde queue-snapshot + skip-reconciliatie (`_apply_skips` →
+    `_filter_skipped`, inclusief her-activatie) die élke Feedback-read gebruikt, plus
+    post-verwijdering (`_verwijder_uit_queue` haalt de beantwoorde workout uit `items`+`_volle`).
+    GEEN FinalSurge-sweep, GEEN tweede skiplogica/store, GEEN client-delta.
+
+    status FRESH  → geldige queue-snapshot: bewezen-actuele open-set + count (`len` ≥ 0, nooit
+                    negatief). `gepost` volgt de laatste sweep-`posted_today`.
+    status UNKNOWN → geen geldige queue-snapshot op deze instance (koud proces, ontbrekende of
+                     mislukte durable build): `wachten`/`gepost`/`pct`/`open_ids` = None. De
+                     consumer toont dan expliciet 'moet verversen' en verwarmt de queue —
+                     NOOIT een bevroren getal alsof het actueel is."""
     snap = _queue_current()
     if not _queue_valid(snap):
-        return None
+        return {"status": OPEN_UNKNOWN, "wachten": None, "gepost": None,
+                "pct": None, "open_ids": None}
     open_items = _apply_skips(snap).get("items", [])
     wachten = len(open_items)
     gepost = int(snap.get("gepost", 0) or 0)
     totaal = wachten + gepost
-    return {"wachten": wachten, "gepost": gepost,
+    return {"status": OPEN_FRESH, "wachten": wachten, "gepost": gepost,
             "pct": int(gepost / totaal * 100) if totaal else 100,
             "open_ids": [it.get("id") for it in open_items]}
+
+
+def feedback_open_truth() -> dict | None:
+    """Back-compat dunne wrapper op `canonical_open_actions` (Class 1). FRESH → de open-set-dict
+    (wachten/gepost/pct/open_ids); UNKNOWN → None. Nieuwe code gebruikt
+    `canonical_open_actions` direct, zodat de UNKNOWN-status expliciet (en niet als 'None==0')
+    wordt afgehandeld."""
+    truth = canonical_open_actions()
+    if truth.get("status") != OPEN_FRESH:
+        return None
+    return {"wachten": truth["wachten"], "gepost": truth["gepost"],
+            "pct": truth["pct"], "open_ids": truth["open_ids"]}
 
 
 def _queue_persist(snap: dict) -> tuple[bool, str]:
