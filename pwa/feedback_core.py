@@ -236,7 +236,15 @@ def _verwijder_uit_queue(wid: str) -> None:
     de BESTAANDE snapshot. Non-fataal: de reactie is al geplaatst; faalt de persist, dan is
     het niet slechter dan voorheen. Concurrency-veilig via `_QLOCK` (zelfde lock als de sweep);
     een concurrent sweep sluit een beantwoorde workout sowieso uit (coach had het laatste
-    woord), dus de uitkomst convergeert."""
+    woord), dus de uitkomst convergeert.
+
+    Class 1 (coherence van de statistieken): in DEZELFDE atomische mutatie stijgt `gepost` met
+    precies 1. Zo blijft de open-set (`wachten`) én de teller (`gepost`/`pct`) direct coherent op
+    de eerstvolgende fast-read — zonder queue/Home-rebuild. Exact-één-keer: de guard hierboven
+    keert al terug als het item al weg is (retry/dubbele post → geen tweede increment), en de
+    FC-1 re-post-guard blokkeert een tweede `plaats` sowieso. Skip loopt hier NOOIT langs (die
+    raakt alleen `skipped.json`), dus een skip verhoogt `gepost` niet. De volgende sweep
+    overschrijft `gepost` met het autoritatieve `posted_today` (geen drift over sweeps heen)."""
     global _QUEUE_MEM
     _cache.pop(wid, None)                                 # in-proces: niet opnieuw actionable
     persist_snap = None
@@ -248,10 +256,11 @@ def _verwijder_uit_queue(wid: str) -> None:
             items = snap.get("items") or []
             volle = snap.get("_volle") or {}
             if wid not in volle and not any(it.get("id") == wid for it in items):
-                return                                    # al weg uit de snapshot
+                return                                    # al weg uit de snapshot (retry → geen 2e increment)
             persist_snap = {**snap,
                             "items": [it for it in items if it.get("id") != wid],
-                            "_volle": {k: v for k, v in volle.items() if k != wid}}
+                            "_volle": {k: v for k, v in volle.items() if k != wid},
+                            "gepost": int(snap.get("gepost", 0) or 0) + 1}
             _QUEUE_MEM = persist_snap
     except Exception:
         return
