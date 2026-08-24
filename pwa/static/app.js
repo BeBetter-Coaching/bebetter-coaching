@@ -480,9 +480,11 @@ function renderFeedbackStrip(fbs, fresh) {
   const fb = $("#home-fb");
   if (!fb) return;
   if (fresh) homeFbDelta = { wachten: 0, gepost: 0 };     // autoritatieve read binnen → transiënt optimisme verrekend
-  // Class 1: UNKNOWN open-set (koud proces / queue nog niet gebouwd) → NOOIT een bevroren
-  // getal als 'actueel'. Toon 'bijwerken…'; de aanroeper verwarmt de queue (feedbackQueueWarm).
-  if (fbs.stale) {
+  // Class 1: alleen een UNKNOWN open-set (koud proces / queue nog niet gebouwd → GEEN count,
+  // wachten==null) toont 'bijwerken…'. Een STALE-maar-geldige open-set draagt de gereconcilieerde
+  // count (skip/post al verwerkt) en wordt DIRECT getoond; de aanroeper ververst dan enkel
+  // niet-blokkerend op de achtergrond (Round-2 regressie A: geen 12–20s wachten na skip/post).
+  if (fbs.stale && fbs.wachten == null) {
     fb.classList.remove("skel-strip", "done");
     fb.innerHTML = `
       <div class="fb-strip-top">

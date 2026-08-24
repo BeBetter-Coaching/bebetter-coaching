@@ -224,6 +224,54 @@ def test_12_enige_zone_engine_is_fs_classifier():
     assert 'cls.get("status")' in body                      # mapt uitsluitend de deterministische status
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# Round-2 regressie B — inclusieve zonegrenzen (5:34 bij zone 5:14–5:34 = IN de zone)
+# ════════════════════════════════════════════════════════════════════════════
+# FinalSurge-stijl: 1-seconde gat tussen aangrenzende zones (Z2.high=334, Z1.low=335).
+GAP_PACE = [{"num": 1, "naam": "Herstel", "low": 335, "high": 390},   # 5:35–6:30
+            {"num": 2, "naam": "Duur",    "low": 314, "high": 334},   # 5:14–5:34
+            {"num": 3, "naam": "Tempo",   "low": 290, "high": 313}]   # 4:50–5:13
+GAP_HR = [{"num": 1, "low": 111, "high": 130},
+          {"num": 2, "low": 131, "high": 145},                        # gat: 130↔131
+          {"num": 3, "low": 146, "high": 160}]
+
+
+def test_B_exacte_snelle_grens_in_zone():
+    assert fs_client.classify_pace_hr_zone(GAP_PACE, 314, is_pace=True)["num"] == 2   # 5:14
+
+
+def test_B_exacte_langzame_grens_in_zone():
+    r = fs_client.classify_pace_hr_zone(GAP_PACE, 334, is_pace=True)                  # 5:34
+    assert r["status"] == "IN_ZONE" and r["num"] == 2                                 # NIET BETWEEN
+
+
+def test_B_een_sec_sneller_in_zone():
+    assert fs_client.classify_pace_hr_zone(GAP_PACE, 333, is_pace=True)["num"] == 2   # 5:33
+
+
+def test_B_een_sec_langzamer_volgende_zone():
+    assert fs_client.classify_pace_hr_zone(GAP_PACE, 335, is_pace=True)["num"] == 1   # 5:35 → Z1
+
+
+def test_B_hr_exacte_bovengrens_in_zone():
+    r = fs_client.classify_pace_hr_zone(GAP_HR, 145, is_pace=False)                   # exact Z2.high
+    assert r["status"] == "IN_ZONE" and r["num"] == 2
+
+
+def test_B_ai_context_behoudt_exact_label_geen_erbuiten():
+    # de per-lap AI-context krijgt het deterministische IN_ZONE-label; nooit 'BUITEN de banden'.
+    out = ai_feedback._format_laps([_lap(pace="5:34")], zones=GAP_PACE, is_pace=True)
+    assert "→ Z2" in out
+    assert "BUITEN" not in out and "tussen zones" not in out                          # geen 'net erbuiten'
+
+
+def test_B_contigue_tabel_ongewijzigd():
+    # regressiebescherming: bij een CONTIGUE tabel blijft de bovengrens naar de langzamere zone
+    # gaan (geen overlap-verandering) — bewijs dat B alleen gaten/laatste-zone-randen dicht.
+    contig = [{"num": 3, "low": 247, "high": 270}, {"num": 4, "low": 227, "high": 247}]
+    assert fs_client.classify_pace_hr_zone(contig, 247, is_pace=True)["num"] == 3     # 4:07 → Z3 (ongewijzigd)
+
+
 def test_13_zonegrenzen_math_ongewijzigd():
     # De canonical classifier blijft exact hetzelfde rekenen (geen zonegrens-wijziging).
     assert fs_client.classify_pace_hr_zone(TEMPO_ZONES, 252, is_pace=True)["num"] == 3    # 4:12 → Z3

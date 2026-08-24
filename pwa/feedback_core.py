@@ -698,10 +698,14 @@ def _queue_current() -> dict:
 # `_queue_valid`) en 'fresh' (recent genoeg, `berekend` binnen `_OPEN_TTL_SEC`) zijn EXPLICIET
 # verschillende begrippen:
 #   FRESH   = geldige ÉN recente snapshot → bewezen-actuele open-set + count.
-#   STALE   = geldige maar VERLOPEN snapshot (of zonder betrouwbare `berekend`) → structureel
-#             bruikbaar, maar niet bewezen actueel → GEEN count als authority.
-#   UNKNOWN = geen geldige snapshot op deze instance.
-# Bij STALE én UNKNOWN mag een consumer nooit een oude/bevroren integer als 'actueel' tonen.
+#   STALE   = geldige maar VERLOPEN snapshot → de open-set-count is nog steeds de per-read
+#             gereconcilieerde waarheid (skip/post ZIJN verwerkt via `_apply_skips`/
+#             `_verwijder_uit_queue`), dus die count wordt DIRECT getoond; 'stale' betekent enkel
+#             dat er mogelijk NIEUWE, nog-niet-geveegde items zijn → niet-blokkerende
+#             achtergrond-refresh. (Round-2 regressie A: een skip/post moet Home meteen bijwerken,
+#             niet 12–20s wachten op een sweep.)
+#   UNKNOWN = geen geldige snapshot op deze instance → GEEN count (nooit een bevroren integer).
+# Alleen bij UNKNOWN mag een consumer geen count tonen; STALE toont de gereconcilieerde count.
 OPEN_FRESH = "FRESH"
 OPEN_STALE = "STALE"
 OPEN_UNKNOWN = "UNKNOWN"
@@ -723,35 +727,35 @@ def canonical_open_actions() -> dict:
 
     Onderscheidt STRUCTURELE geldigheid van FRESHNESS (zie de statusdefinities hierboven):
     - geen geldige snapshot            → UNKNOWN (geen count).
-    - geldig maar `berekend` verlopen  → STALE   (geen count als authority).
-    - geldig én recent                 → FRESH   (bewezen-actuele open-set + count, `len` ≥ 0;
-                                          `gepost` volgt de laatste sweep-`posted_today`).
-    Bij STALE/UNKNOWN degradeert de consument eerlijk (tegel 'bijwerken…' + queue verwarmen);
-    hij toont NOOIT een verlopen count alsof die actueel is."""
+    - geldige snapshot                 → count = per-read gereconcilieerde open-set
+                                          (`_apply_skips` incl. skip/post) — DIRECT bruikbaar;
+                                          status FRESH als `berekend` recent is, anders STALE
+                                          (zelfde count, maar met een achtergrond-refresh-hint voor
+                                          eventuele nieuwe items). `gepost` volgt `posted_today`.
+    Alleen UNKNOWN levert geen count; een skip/post is via `_apply_skips`/`_verwijder_uit_queue`
+    ook op een STALE snapshot al verwerkt, dus wordt de nieuwe count meteen gereflecteerd (A)."""
     snap = _queue_current()
     if not _queue_valid(snap):
         return {"status": OPEN_UNKNOWN, "wachten": None, "gepost": None,
-                "pct": None, "open_ids": None}
-    leeftijd = _snapshot_leeftijd_sec(snap)
-    if leeftijd is None or leeftijd > _OPEN_TTL_SEC:
-        return {"status": OPEN_STALE, "wachten": None, "gepost": None,
                 "pct": None, "open_ids": None}
     open_items = _apply_skips(snap).get("items", [])
     wachten = len(open_items)
     gepost = int(snap.get("gepost", 0) or 0)
     totaal = wachten + gepost
-    return {"status": OPEN_FRESH, "wachten": wachten, "gepost": gepost,
+    leeftijd = _snapshot_leeftijd_sec(snap)
+    fresh = leeftijd is not None and leeftijd <= _OPEN_TTL_SEC
+    return {"status": OPEN_FRESH if fresh else OPEN_STALE,
+            "wachten": wachten, "gepost": gepost,
             "pct": int(gepost / totaal * 100) if totaal else 100,
             "open_ids": [it.get("id") for it in open_items]}
 
 
 def feedback_open_truth() -> dict | None:
-    """Back-compat dunne wrapper op `canonical_open_actions` (Class 1). FRESH → de open-set-dict
-    (wachten/gepost/pct/open_ids); UNKNOWN → None. Nieuwe code gebruikt
-    `canonical_open_actions` direct, zodat de UNKNOWN-status expliciet (en niet als 'None==0')
-    wordt afgehandeld."""
+    """Back-compat dunne wrapper op `canonical_open_actions` (Class 1). FRESH én STALE → de
+    open-set-dict (wachten/gepost/pct/open_ids; STALE draagt dezelfde per-read gereconcilieerde
+    count); UNKNOWN → None. Nieuwe code gebruikt `canonical_open_actions` direct."""
     truth = canonical_open_actions()
-    if truth.get("status") != OPEN_FRESH:
+    if truth.get("status") == OPEN_UNKNOWN:
         return None
     return {"wachten": truth["wachten"], "gepost": truth["gepost"],
             "pct": truth["pct"], "open_ids": truth["open_ids"]}

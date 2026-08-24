@@ -1617,9 +1617,19 @@ def classify_pace_hr_zone(zones: list, waarde, is_pace: bool) -> dict:
                        "onder": min(grenzen), "boven": max(grenzen)})
     if not banden:
         return res
-    # 1) echte membership (inclusief ondergrens, exclusief bovengrens; laatste zone incl. boven)
-    for idx, b in enumerate(banden):
-        if b["onder"] <= w < b["boven"] or (w == b["boven"] and idx == len(banden) - 1):
+    # 1) echte membership (inclusief ondergrens, exclusief bovengrens)
+    for b in banden:
+        if b["onder"] <= w < b["boven"]:
+            return {**res, "status": "IN_ZONE", "num": b["num"], "naam": b["naam"]}
+    # 1b) GRENS-INCLUSIVITEIT (Round-2 regressie B): een waarde EXACT op een bovengrens die niet
+    # door een aangrenzende zone is geclaimd — de laatste (langzaamste/laagste) zone, óf een waarde
+    # die in een 1-seconde/1-bpm gat tussen twee zones valt (FinalSurge-zonetabellen hebben zulke
+    # gaten) — hoort BIJ die zone. Zo wordt 5:34, exact de bovengrens van zone 5:14–5:34, IN die zone
+    # geplaatst i.p.v. als BETWEEN_ZONES ('net erbuiten'). Contigue tabellen blijven ONGEWIJZIGD: daar
+    # claimde de aangrenzende zone die grens al via zijn ondergrens in de lus hierboven (consistent
+    # met `_block_target_status`, dat ook inclusief is).
+    for b in banden:
+        if w == b["boven"]:
             return {**res, "status": "IN_ZONE", "num": b["num"], "naam": b["naam"]}
     # 2) buiten alle banden — bepaal de kant deterministisch (metadata, geen membership)
     hardste_grens = min(b["onder"] for b in banden) if is_pace else max(b["boven"] for b in banden)
