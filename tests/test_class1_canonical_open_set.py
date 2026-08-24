@@ -312,3 +312,62 @@ def test_cold_durable_queue_recent_blijft_fast(env, monkeypatch):
     assert FC.canonical_open_actions()["status"] == FC.OPEN_FRESH
     fb = home_core.cockpit(refresh=False)["feedback"]
     assert fb["wachten"] == 2 and fb.get("stale") is False
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Statistiek-coherentie: post verhoogt gepost/pct direct (live finding aug 2026)
+# ════════════════════════════════════════════════════════════════════════════
+def test_17open_1post_16_1_5pct(env):
+    # 17 open, 1 post → 16 open / 1 gepost / 5% afgerond, in DEZELFDE fast-read.
+    wids = [f"W{i}" for i in range(17)]
+    FC._QUEUE_MEM = _qsnap(*wids, gepost=0)
+    FC._cache["W0"] = _wk("W0")
+    FC._verwijder_uit_queue("W0")                    # = post-afhandeling (plaats())
+    t = FC.canonical_open_actions()
+    assert t["status"] == FC.OPEN_FRESH
+    assert (t["wachten"], t["gepost"], t["pct"]) == (16, 1, 5)   # int(1/17*100)=5
+    home_core._MEM = _home_snap(17)
+    fb = home_core.cockpit(refresh=False)["feedback"]
+    assert (fb["wachten"], fb["gepost"], fb["pct"]) == (16, 1, 5)  # Home-tegel coherent
+
+
+def test_twee_posts_count_en_pct(env):
+    wids = [f"W{i}" for i in range(17)]
+    FC._QUEUE_MEM = _qsnap(*wids, gepost=0)
+    for w in ("W0", "W1"):
+        FC._cache[w] = _wk(w)
+        FC._verwijder_uit_queue(w)
+    t = FC.canonical_open_actions()
+    assert (t["wachten"], t["gepost"], t["pct"]) == (15, 2, int(2 / 17 * 100))   # 15/2/11
+
+
+def test_skip_verandert_gepost_niet(env):
+    # skip verlaagt alleen de open count; gepost/pct blijven ongemoeid.
+    FC._QUEUE_MEM = _qsnap("W0", "W1", "W2", gepost=0)
+    FC._cache["W0"] = _wk("W0")
+    FC.overslaan("W0")                               # echte skip-route (skipped.json)
+    t = FC.canonical_open_actions()
+    assert t["wachten"] == 2 and t["gepost"] == 0    # skip telt niet als gepost
+
+
+def test_retry_post_geen_double_increment(env):
+    FC._QUEUE_MEM = _qsnap("W0", "W1", gepost=0)
+    FC._cache["W0"] = _wk("W0")
+    FC._verwijder_uit_queue("W0")
+    FC._verwijder_uit_queue("W0")                    # retry: item al weg → geen 2e increment
+    t = FC.canonical_open_actions()
+    assert t["wachten"] == 1 and t["gepost"] == 1    # exact één keer
+
+
+def test_gepost_durable_parity_na_reload(env, monkeypatch):
+    dq = {"snap": {}}
+    monkeypatch.setattr(FC.intake_store, "save_feedback_queue",
+                        lambda s: (dq.__setitem__("snap", s) or (True, "")))
+    monkeypatch.setattr(FC.intake_store, "load_feedback_queue", lambda: dq["snap"])
+    FC._QUEUE_MEM = _qsnap("W0", "W1", gepost=0)
+    FC._cache["W0"] = _wk("W0")
+    FC._verwijder_uit_queue("W0")                    # persist (met gepost+1) naar durable
+    FC._QUEUE_MEM = {}                               # koude reload
+    t = FC.canonical_open_actions()                 # leest durable
+    assert t["status"] == FC.OPEN_FRESH
+    assert t["wachten"] == 1 and t["gepost"] == 1    # gepost overleeft reload/cold read
