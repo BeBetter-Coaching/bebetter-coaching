@@ -879,6 +879,7 @@ def get_workouts_needing_feedback(
     exclude_groups: set | None = None,
     return_stats: bool = False,
     include_details: bool = True,
+    include_unplanned_reactions: bool = False,
 ) -> list[dict] | tuple[list[dict], dict]:
     """
     Geeft workouts terug die coaching-aandacht nodig hebben.
@@ -962,10 +963,17 @@ def get_workouts_needing_feedback(
             # reactie/notitie van de atleet wél: die vraagt misschien iets, bijv.
             # waarom hij de training niet gaat doen. Dus we sluiten alleen runs
             # uit die niet uitgevoerd zijn ÉN geen atleet-input hebben.
+            # Feedback v1 (D) — unplanned coverage: laat een UITGEVOERDE, ongeplande run zonder
+            # list-level atleet-input tóch door als PROBE-kandidaat, zodat fase 2 zijn comments
+            # ophaalt. Hij overleeft de comment-filter alleen als er een ECHTE atleet-comment blijkt
+            # (die filter eist athlete_comments). Zo verschijnt een ad-hoc run met een atleet-reactie,
+            # maar niet elke ongeplande run. Opt-in (default off → Streamlit-gedrag ongewijzigd).
+            _probe_unplanned = bool(include_unplanned_reactions and is_data_only and not has_athlete_input)
             if (
                 not has_athlete_input
                 and not (include_data_only and (is_data_only or is_skipped))
                 and not (include_planned_no_notes and is_planned_no_notes)
+                and not _probe_unplanned
             ):
                 continue
 
@@ -973,6 +981,7 @@ def get_workouts_needing_feedback(
                 "athlete": athlete,
                 "w": w,
                 "workout_key": workout_key,
+                "_probe_unplanned": _probe_unplanned,
                 "workout_date_str": workout_date_str,
                 "post_notes": post_notes,
                 "comment_count": comment_count,
@@ -993,7 +1002,7 @@ def get_workouts_needing_feedback(
         try:
             cand["_comments"] = (
                 get_comments(cand["workout_key"], cand["athlete"]["user_key"])
-                if cand["comment_count"] else []
+                if (cand["comment_count"] or cand.get("_probe_unplanned")) else []
             )
         except Exception:
             cand["_comments"] = []
@@ -1001,7 +1010,7 @@ def get_workouts_needing_feedback(
         return cand
 
     # Aantal kandidaten dat daadwerkelijk een comment-fetch (API-call) doet.
-    _comment_fetch_count = sum(1 for c in candidates if c["comment_count"])
+    _comment_fetch_count = sum(1 for c in candidates if c["comment_count"] or c.get("_probe_unplanned"))
     _t_comments = time.perf_counter()
     with_comments = _parallel_per_athlete(candidates, _fetch_comments)
     _comments_ms = int((time.perf_counter() - _t_comments) * 1000)

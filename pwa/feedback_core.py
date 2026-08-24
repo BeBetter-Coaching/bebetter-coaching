@@ -119,6 +119,22 @@ def feedback_brain_mode() -> str:
     return m if m in _FEEDBACK_BRAIN_MODES else "legacy"
 
 
+_RACE_WOORDEN = ("wedstrijd", "race", "wedstrijden", "startnummer", "parkrun", "marathon",
+                 "halve marathon", "10 km wedstrijd", "5 km wedstrijd", "koers", "loop ik",
+                 "start ik", "pr ", "pr.", "persoonlijk record")
+
+
+def _athlete_raises_race(w: dict) -> bool:
+    """Feedback v1 (A) — noemt de atleet in DEZE feedback/thread zelf een wedstrijd? Zo ja mag de
+    (verder weg gelegen) race-context als reactie worden gebruikt; anders NOOIT proactief noemen.
+    Puur op de atleet-teksten (post_notes + atleet-comments + atleet-thread), niet op coachtekst."""
+    stukken = list(_atleet_berichten(w))
+    if (w.get("post_notes") or "").strip():
+        stukken.append(w["post_notes"])
+    laag = " ".join(stukken).lower()
+    return any(term in laag for term in _RACE_WOORDEN)
+
+
 def _brein_context(w: dict) -> str:
     """Longitudinale Masterbrein-sessiecontext voor deze workout. Nooit fataal;
     legacy → ''; shadow → gebouwd voor diagnostiek maar niet geïnjecteerd; v2 →
@@ -131,7 +147,8 @@ def _brein_context(w: dict) -> str:
         return ""
     try:
         from brain import adapter as _ad
-        block = _ad.feedback_context_block(ak, w.get("workout_key", ""))
+        raised = _athlete_raises_race(w)
+        block = _ad.feedback_context_block(ak, w.get("workout_key", ""), athlete_raised_race=raised)
         w["_brein_diag"] = {k: block.get(k) for k in
                             ("source_gaps", "has_load", "complaint_areas", "overall")}
         return (block.get("prompt_block") or "") if mode == "v2" else ""
@@ -349,11 +366,15 @@ def session_log_item(wid: str, tekst: str) -> dict:
     generate_session_summary verwacht (athlete_name/workout_name/feedback_text) plus
     workout_key voor client-side dedup. Alleen aanroepen ná een geslaagde plaats()."""
     w = _cache.get(wid) or {}
+    groepen = w.get("athlete_groups") or ([w.get("athlete_group")] if w.get("athlete_group") else [])
+    groep = _canon_groep(groepen)
     return {
         "athlete_name": w.get("athlete_name", ""),
         "workout_name": w.get("workout_name") or "Training",
         "workout_key": w.get("workout_key") or wid,
         "feedback_text": (tekst or "").strip(),
+        "datum": (w.get("workout_date") or "")[:10],            # Feedback v1 (F): per-datum groepering
+        "groep_label": _GROEP_LABEL.get(groep, "Overig"),       # Feedback v1 (F): per-groep groepering
     }
 
 
@@ -377,7 +398,11 @@ def _clean_summary_items(items) -> list[dict]:
         seen.add(sleutel)
         out.append({"athlete_name": naam,
                     "workout_name": workout or "Training",
-                    "feedback_text": tekst})
+                    "feedback_text": tekst,
+                    # Feedback v1 (F): datum/groep meenemen voor per-datum/per-groep-samenvatting.
+                    # Puur presentatie; verandert NIET welke items meetellen (successfully-posted truth).
+                    "datum": (it.get("datum") or "")[:10],
+                    "groep_label": (it.get("groep_label") or "Overig")})
     return out
 
 
@@ -572,7 +597,8 @@ def dagoverzicht() -> dict:
     # Achter elkaar duurt even lang (FS is de bottleneck) maar is betrouwbaar.
     try:
         wk, stats = FS.get_workouts_needing_feedback(7, None, False, True,
-                                                     {"los schema"}, True)
+                                                     {"los schema"}, True,
+                                                     include_unplanned_reactions=True)
         wachten = len(_filter_skipped(wk))
         gepost = stats.get("posted_today", 0)
     except Exception:
@@ -864,7 +890,8 @@ def _bouw_queue() -> dict:
     try:
         workouts, stats = FS.get_workouts_needing_feedback(
             days_back=7, include_planned_no_notes=True,
-            exclude_groups={"los schema"}, return_stats=True, include_details=False)
+            exclude_groups={"los schema"}, return_stats=True, include_details=False,
+            include_unplanned_reactions=True)
     except Exception:
         oud = _queue_current()
         if oud:
@@ -906,18 +933,22 @@ def _groep_samenvatting(items: list) -> list:
 
 
 def _queue_public(snap: dict, cached: bool, **extra) -> dict:
-    """Snapshot → publieke payload (zonder _volle), gesorteerd: groep
-    (Start to Run→…→Comfort→Overig), dan categorie (reactie→gevoel→uitgevoerd),
-    daarbinnen OUDSTE onbeantwoord eerst. `groepen` = selector-samenvatting.
+    """Snapshot → publieke payload (zonder _volle). DETERMINISTISCHE volgorde (Feedback v1 E):
+    DATUM eerst (oudste actionable eerst — de coach werkt de achterstand chronologisch weg zodat
+    niets veroudert), dan groep (Start to Run→…→Comfort→Overig), dan categorie
+    (reactie→gevoel→uitgevoerd), dan athlete-timestamp, dan naam. Dit is de ENIGE sort-waarheid:
+    de client rendert exact deze volgorde (geen tweede client-sort). `groepen` = selector-samenvatting.
 
     ELKE read passeert eerst `_apply_skips`: de canonieke skip-store filtert een
     verouderde snapshot, zodat een net overgeslagen training nooit via een koude/mem
     read terugkomt (bron van waarheid = skipped.json, niet de queue-snapshot)."""
     snap = _apply_skips(snap)
     items = sorted(snap.get("items", []),
-                   key=lambda i: (_GROEP_RANK.get(i.get("groep"), 9),
+                   key=lambda i: ((i.get("datum") or ""),                    # datum eerst (oudste actionable eerst)
+                                  _GROEP_RANK.get(i.get("groep"), 9),
                                   _CAT_RANK.get(i["categorie"], 9),
-                                  i.get("athlete_ts") or "", i.get("datum") or ""))
+                                  i.get("athlete_ts") or "",
+                                  (i.get("naam") or "").lower()))
     out = {"fs": True, "items": items, "groepen": _groep_samenvatting(items),
            "gepost": snap.get("gepost", 0),
            "berekend": snap.get("berekend"), "datum": snap.get("datum"),

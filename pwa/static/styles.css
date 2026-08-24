@@ -773,6 +773,7 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 .versen::before{content:"";width:9px;height:9px;border-radius:50%;border:2px solid var(--border);
   border-top-color:var(--acc);animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+.iconbtn.spinning .ic{animation:spin .7s linear infinite}
 @media(prefers-reduced-motion:reduce){
   .skel,.hs-skel,.hero-portrait::after,.versen::before{animation:none}
 }
