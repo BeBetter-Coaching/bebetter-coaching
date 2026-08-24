@@ -53,6 +53,17 @@ def _steps_interval():                       # warmup + 5×ACTIVE Z4 + cooldown 
             + [{"intensity": "COOLDOWN", "durationType": "DISTANCE", "durationDist": 1, "distUnit": "km", "target": []}])
 
 
+def _active_pace(zone=4, km=1):              # Class 2: pace-target werkblok
+    return {"intensity": "ACTIVE", "durationType": "DISTANCE", "durationDist": km, "distUnit": "km",
+            "target": [{"targetType": "pace zone", "zone": zone}]}
+
+
+def _steps_interval_pace():                  # warmup + 5×ACTIVE pace-Z4 + cooldown = 7 blokken
+    return ([{"intensity": "WARMUP", "durationType": "DISTANCE", "durationDist": 2, "distUnit": "km", "target": []}]
+            + [_active_pace() for _ in range(5)]
+            + [{"intensity": "COOLDOWN", "durationType": "DISTANCE", "durationDist": 1, "distUnit": "km", "target": []}])
+
+
 def _steps_matched():                        # 3×ACTIVE Z4 1km (matcht 3 laps 1-op-1)
     return [_active() for _ in range(3)]
 
@@ -164,12 +175,13 @@ def test_7b_enkel_blok_is_geen_interval(fs):
 # 8,9 — pace-target geen HR-verdict; missing HR → geen zone-regel
 # ════════════════════════════════════════════════════════════════════════════
 def test_8_pace_target_interval_zelfde_guard_geen_hr_oordeel(fs):
+    # Class 2: een ECHTE pace-target interval bij een tempo-atleet (planned metric == zonetabel).
     fs["zones"] = PACE_ZONES
-    fs["steps"] = _steps_interval()
-    ctx = _ctx(_wd(150, _laps(12), pace_display="5:00"))  # tempo-atleet, interval, AMBIGUOUS
-    assert PROT in ctx and UNCERTAIN in ctx               # zelfde structuur-guard, metric-agnostisch
-    # tempo-atleet → intensiteit UITSLUITEND via tempo; geen HR-zoneoordeel
-    assert "beoordeel intensiteit UITSLUITEND via tempo" in ctx
+    fs["steps"] = _steps_interval_pace()
+    ctx = _ctx(_wd(150, _laps(12), pace_display="5:00"))  # tempo-atleet, pace-interval, AMBIGUOUS
+    assert PROT in ctx and UNCERTAIN in ctx               # PF-4 structuur-guard blijft firen
+    # planned metric = tempo → tempo is PRIMAIR; geen HR-zoneoordeel
+    assert "PRIMAIR via tempo" in ctx
     assert "bpm = Zone" not in ctx and "bpm — BINNEN" not in ctx
 
 

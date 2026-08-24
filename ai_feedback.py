@@ -124,10 +124,39 @@ def _format_activity(activity: dict) -> str:
     return "\n".join(lines) if lines else "Geen metrics beschikbaar."
 
 
-def _format_laps(laps: list) -> str:
-    """Vat lap-data samen: tempo, hartslag en cadans per km/interval."""
+def _lap_zone_label(cls: dict, is_pace: bool) -> str:
+    """Class 2 — korte, DETERMINISTISCHE per-lap zonelabel uit `classify_pace_hr_zone`. Alleen
+    bij ECHTE membership een 'Zx'; out-of-range wordt als feit benoemd (sneller/langzamer/hoger/
+    lager dan de dichtstbijzijnde zone), NOOIT als valse membership. Leeg bij UNKNOWN."""
+    if not cls:
+        return ""
+    st = cls.get("status")
+    if st == "IN_ZONE":
+        return f"Z{cls['num']}"
+    if st == "ABOVE_HARDEST_ZONE":
+        kant = "sneller dan" if is_pace else "hoger dan"
+        return f"{kant} Z{cls['nearest_num']}, BUITEN de zones"
+    if st == "BELOW_EASIEST_ZONE":
+        kant = "langzamer dan" if is_pace else "lager dan"
+        return f"{kant} Z{cls['nearest_num']}, BUITEN de zones"
+    if st == "BETWEEN_ZONES":
+        return f"tussen zones (dichtstbij Z{cls['nearest_num']}), BUITEN de banden"
+    return ""
+
+
+def _format_laps(laps: list, zones: list | None = None, is_pace: bool | None = None) -> str:
+    """Vat lap-data samen: tempo, hartslag en cadans per km/interval.
+
+    Class 2: als `zones` + `is_pace` gegeven zijn (de PRIMAIRE metric is deterministisch te
+    classificeren), krijgt elke lap zijn zone-label uit de bestaande canonical classifier
+    (`fs_client.classify_pace_hr_zone`) — de AI ontvangt zo een FEIT per lap i.p.v. een
+    uitnodiging om zelf `pace ↔ zonegrens` te berekenen. De secundaire metric blijft een ruw
+    getal zonder oordeel. Zonder classificatiecontext = ongewijzigd gedrag (ruwe getallen)."""
     if not laps:
         return ""
+    can_classify = bool(zones) and is_pace is not None
+    if can_classify:
+        import fs_client as _fs
 
     rows = []
     for i, lap in enumerate(laps[:20], 1):  # max 20 laps
@@ -146,9 +175,28 @@ def _format_laps(laps: list) -> str:
         if cadence:
             parts.append(f"cadans {cadence}")
 
-        if parts:
-            label = f"Km {i}" if not dist else f"{dist}"
-            rows.append(f"  {label}: {', '.join(parts)}")
+        if not parts:
+            continue
+        label = f"Km {i}" if not dist else f"{dist}"
+        regel = f"  {label}: {', '.join(parts)}"
+        if can_classify:
+            cls = None
+            if is_pace:
+                _pm = _fs._pace_to_float(pace)
+                _sec = _pm * 60 if _pm not in (0, float("inf")) else None
+                if _sec:
+                    cls = _fs.classify_pace_hr_zone(zones, _sec, is_pace=True)
+            else:
+                try:
+                    _h = float(hr) if hr else None
+                except (TypeError, ValueError):
+                    _h = None
+                if _h:
+                    cls = _fs.classify_pace_hr_zone(zones, _h, is_pace=False)
+            lab = _lap_zone_label(cls, bool(is_pace))
+            if lab:
+                regel += f" → {lab} (door de app bepaald)"
+        rows.append(regel)
 
     return "\n".join(rows) if rows else ""
 
@@ -296,6 +344,19 @@ def _format_block_assessment(assessment: dict, first_name: str) -> str:
             "Warming-up/herstel zijn geen targetblokken.")
 
 
+def _dominant_planned_metric(planned_blocks: list) -> str | None:
+    """Class 2 — de EXPLICIET geplande target-metric van de workout, uit de bestaande
+    `_planned_blocks[].metric` (afgeleid van `targetType`). Eén eenduidige metric over de
+    blokken → die metric ('tempo'/'hartslag'); gemengd of geen → None (dan geldt de athlete-
+    zonetype-fallback). Geen nieuwe classifier, geen zone-math — puur de geplande target lezen."""
+    metrics = {b.get("metric") for b in (planned_blocks or []) if b.get("metric")}
+    if metrics == {"tempo"}:
+        return "tempo"
+    if metrics == {"hartslag"}:
+        return "hartslag"
+    return None
+
+
 def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     """
     Bouw de workout-context op voor de AI.
@@ -332,7 +393,8 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
 
     activity_summary = _format_activity(activities[0]) if activities else "Geen data beschikbaar."
     laps = activities[0].get("Laps", []) if activities else []
-    lap_summary = _format_laps(laps)
+    # lap_summary wordt PAS gebouwd zodra de primaire metric bekend is (Class 2: per-lap
+    # deterministische classificatie), zie hieronder.
 
     # DETERMINISTISCHE AFSTANDSAFWIJKING (vóór AI) — de app bepaalt de band, de AI
     # niet. <10% mag NOOIT als feedbackpunt lekken; 10–20% neutraal benoembaar;
@@ -392,11 +454,29 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
         except Exception:
             pass
 
+    # ── PLANNED-METRIC PRECEDENCE (Class 2) ──────────────────────────────────
+    # We classificeren ALTIJD de metric waarvoor deze atleet een zonetabel heeft
+    # (`athlete_zone_type`) — per lap én het gemiddelde — via de bestaande canonical classifier,
+    # zodat ruwe pace/HF nooit zonder deterministisch label naast de zonegrenzen staat.
+    # LOS daarvan bepaalt de EXPLICIET geplande target-metric welke metric LEIDEND is voor de
+    # beoordeling (`planned metric → athlete zone type fallback`). Matcht de geplande metric de
+    # zonetabel → de labels zijn de primaire beoordeling. Wijkt hij af (bv. pace-target +
+    # HR-zone-atleet) → de labels blijven deterministische FEITEN, maar van de SECUNDAIRE metric:
+    # alleen neutrale observatie, nooit de beoordelingsbasis; primair wordt via de geplande metric
+    # versus het plan beoordeeld. Geen tweede classifier, geen zone-math in ai_feedback.
+    _planned_metric = _dominant_planned_metric(_fs._planned_blocks(builder_steps_raw))
+    primary_metric = _planned_metric or athlete_zone_type or ""
+    _can_classify = bool(athlete_zones_struct) and athlete_zone_type in ("tempo", "hartslag")
+    _classified_is_pace = (athlete_zone_type == "tempo")
+    _metrics_match = _can_classify and bool(primary_metric) and primary_metric == athlete_zone_type
+
     # BEREKENDE ZONE — deterministisch + EERLIJK uit de zonetabel (FC-2): een out-of-range
     # gemiddelde wordt als feit benoemd, NOOIT als valse zonemembership (dé oorzaak van
-    # 147 bpm als Z1, en van 3:53/km dat als Z3 werd gepresenteerd).
+    # 147 bpm als Z1, en van 3:53/km dat als Z3 werd gepresenteerd). Class 2: altijd de
+    # zonetabel-metric classificeren; of het gemiddelde LEIDEND dan wel neutraal is, bepaalt de
+    # framing (zie `berekend_blok`), niet óf het geclassificeerd wordt.
     berekende_zone_regel = ""
-    if athlete_zones_struct and activities:
+    if _can_classify and activities:
         _act = activities[0]
         if athlete_zone_type == "hartslag":
             _hr = _act.get("hr_avg")
@@ -446,7 +526,29 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
             athlete_input_parts.append(comment)
     athlete_input = "\n".join(athlete_input_parts) if athlete_input_parts else "(geen notities van de atleet)"
 
-    lap_section = f"\nVerloop per km/interval (tempo, hartslag, cadans):\n{lap_summary}" if lap_summary else ""
+    # Class 2 — bouw het lap-verloop met per-lap DETERMINISTISCHE classificatie van de
+    # zonetabel-metric (indien beschikbaar). Zo staat rauwe pace/HF nooit los naast de
+    # zonegrenzen zonder label. De framing (primair vs neutraal-secundair) volgt de geplande metric.
+    lap_summary = _format_laps(
+        laps,
+        zones=athlete_zones_struct if _can_classify else None,
+        is_pace=(_classified_is_pace if _can_classify else None))
+    if lap_summary:
+        if _can_classify and _metrics_match:
+            _lap_kop = ("Verloop per km/interval — elke lap is door de app DETERMINISTISCH "
+                        "geclassificeerd (label na '→'). Neem die labels letterlijk over; reken "
+                        "tempo/HF NIET zelf tegen de zonegrenzen. De labels zijn PER LAP, niet per "
+                        "blok — generaliseer ze niet naar 'alle blokken waren Zx'.")
+        elif _can_classify:  # mismatch: labels = secundaire metric, neutrale feiten
+            _lap_kop = (f"Verloop per km/interval — het label na '→' is de DETERMINISTISCHE "
+                        f"{athlete_zone_type}-zone per lap (de SECUNDAIRE metric): een neutraal FEIT, "
+                        f"NIET de beoordelingsbasis. Reken zelf niets uit; beoordeel primair via "
+                        f"{primary_metric}. Labels zijn per lap, niet per blok.")
+        else:
+            _lap_kop = "Verloop per km/interval (tempo, hartslag, cadans):"
+        lap_section = f"\n{_lap_kop}\n{lap_summary}"
+    else:
+        lap_section = ""
 
     plan_parts = []
     if plan_description.strip():
@@ -456,16 +558,31 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     plan_text = "\n\n".join(plan_parts) if plan_parts else "Geen beschrijving."
 
     if athlete_zones_text:
-        if athlete_zone_type == "tempo":
+        # PRIMARY-METRIC PRECEDENCE (Class 2): de expliciet geplande metric is leidend; de AI mag
+        # die niet verdringen door een secundaire metric. Is de zonetabel van dezelfde metric als
+        # de primaire → de app classificeert deterministisch (per lap + gemiddelde) en de AI neemt
+        # dat letterlijk over. Wijkt de zonetabel af (zones alleen voor de secundaire metric) → de
+        # primaire metric NIET op die zones mappen; secundair blijft neutrale observatie.
+        _prim = primary_metric or athlete_zone_type
+        _sec_label = "hartslag" if _prim == "tempo" else "tempo"
+        if _metrics_match:
             zone_instruction = (
-                f"TEMPO-ZONES VAN {first_name.upper()} — beoordeel intensiteit UITSLUITEND via tempo. "
-                f"Zeg NOOIT dat de hartslag hoog/laag/te hard is of in een zone zit. "
-                f"Hartslag mag alleen als neutraal getal (bijv. 'HF 148 bpm'), nooit met oordeel."
+                f"{_prim.upper()}-ZONES VAN {first_name.upper()} — beoordeel de intensiteit PRIMAIR via "
+                f"{_prim}. De app heeft elke lap én het gemiddelde al DETERMINISTISCH geclassificeerd; "
+                f"neem die labels letterlijk over en reken {_prim} NIET zelf tegen de zonegrenzen. "
+                f"{_sec_label.capitalize()} mag alleen als neutraal getal (bijv. 'HF 148 bpm'), NOOIT met "
+                f"een oordeel of zone-label; ontbrekende/matige {_sec_label}-data mag het {_prim}-oordeel "
+                f"nooit verdringen."
             )
-        elif athlete_zone_type == "hartslag":
+        elif _can_classify:
             zone_instruction = (
-                f"HARTSLAG-ZONES VAN {first_name.upper()} — beoordeel intensiteit UITSLUITEND via hartslag. "
-                f"Hang GEEN zone-labels aan tempo zonder tempo-zones."
+                f"LET OP — de GEPLANDE target-metric is {_prim.upper()}, maar {first_name} heeft alleen "
+                f"{athlete_zone_type}-zones (de SECUNDAIRE metric). Beoordeel PRIMAIR via {_prim}: vergelijk "
+                f"de uitgevoerde {_prim}-waarden met het plan. De onderstaande {athlete_zone_type}-zones en de "
+                f"per-lap-/gemiddelde-labels zijn deterministische FEITEN, maar alléén als neutrale "
+                f"observatie — gebruik ze NIET om de intensiteit te beoordelen en map {_prim} er niet op. "
+                f"Ontbrekende/matige {athlete_zone_type}-data mag nooit maken dat je {_prim} niet beoordeelt; "
+                f"beoordeel dus nooit 'alleen op {athlete_zone_type}'."
             )
         else:
             zone_instruction = f"ZONES VAN {first_name.upper()} — gebruik ALLEEN deze waarden, niet je eigen aannames."
@@ -487,13 +604,21 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
                 _is_structured = len(_fs._planned_blocks(builder_steps_raw)) >= 2
             except Exception:
                 _is_structured = False
-            _kop = (
-                f"\n\nBEREKENDE POSITIE (door de app bepaald uit de zonetabel — LEIDEND, "
-                f"neem letterlijk over, deel NIET zelf opnieuw in):\n"
-                f"{berekende_zone_regel}\n"
-                f"Zeg alleen 'binnen zone Zx' of 'past bij Zx' als hierboven ECHTE membership "
-                f"(IN_ZONE) staat. Staat er 'BUITEN de persoonlijke zones', benoem dan het feit "
-                f"(bijv. sneller dan de zonegrens) maar plak er GEEN zone-label op.\n")
+            if _metrics_match:
+                _kop = (
+                    f"\n\nBEREKENDE POSITIE (door de app bepaald uit de zonetabel — LEIDEND, "
+                    f"neem letterlijk over, deel NIET zelf opnieuw in):\n"
+                    f"{berekende_zone_regel}\n"
+                    f"Zeg alleen 'binnen zone Zx' of 'past bij Zx' als hierboven ECHTE membership "
+                    f"(IN_ZONE) staat. Staat er 'BUITEN de persoonlijke zones', benoem dan het feit "
+                    f"(bijv. sneller dan de zonegrens) maar plak er GEEN zone-label op.\n")
+            else:
+                # Mismatch: het gemiddelde is van de SECUNDAIRE metric — een feit, geen oordeelsbasis.
+                _kop = (
+                    f"\n\nBEREKENDE POSITIE van de SECUNDAIRE metric ({athlete_zone_type}) — door de app "
+                    f"bepaald, neem letterlijk over (deel NIET zelf in), maar dit is een NEUTRALE "
+                    f"observatie, NIET de beoordelingsbasis. Beoordeel primair via {_prim}:\n"
+                    f"{berekende_zone_regel}\n")
             if _is_structured:
                 _oordeel = (
                     "Let op: dit is een gestructureerde interval-/blokkentraining. Het gemiddelde "
