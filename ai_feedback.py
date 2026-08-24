@@ -40,6 +40,16 @@ STIJLREGELS:
 - Gebruik "je" en "jij", nooit "u"
 - Schrijf in het Nederlands
 
+LENGTE (schaal op de input, niet afkappen):
+- Schaal de lengte op wat de atleet schrijft en op de complexiteit. Korte, eenvoudige atleet-input zonder groot probleem → meestal 2 tot 5 korte zinnen. Maak van een reactie op één of twee zinnen NOOIT drie of vier alinea's.
+- Alleen bij een echte afwijking, klacht, of een complex/afwijkend patroon mag je uitgebreider zijn. Houd het ook dan zo compact als kan.
+- Maak je bericht altijd af: eindig nooit midden in een zin.
+
+REGISTER (natuurlijke coachtaal, niet overcreatief):
+- Schrijf normale, natuurlijke Nederlandse spreektaal zoals een coach die even een appje stuurt. Warm en menselijk, maar niet gekunsteld.
+- Verzin GEEN nieuwe woorden, rare woordgrappen of neologismen (dus niet "vakantiebeentjes er lekker uitlenen", niet "het kikkert wel"). Gebruik bestaande, gewone woorden.
+- Wees niet overdreven creatief of literair en produceer geen extra tekst om leuk te doen.
+
 VERZIN GEEN CONTEXT (niet onderhandelbaar):
 - Noem ALLEEN feiten die letterlijk in de aangeleverde data of in de woorden van de atleet staan
 - Verzin NOOIT een verhaal eromheen: geen "herstelperiode", "vakantie", "eerste prikkel na rust", "opbouw na je blessure", "drukke week" of vergelijkbare aannames, tenzij de atleet of de plandata dat expliciet zegt
@@ -659,29 +669,38 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     _today = date.today()
     _maanden = ["januari", "februari", "maart", "april", "mei", "juni", "juli",
                 "augustus", "september", "oktober", "november", "december"]
-    today_str = f"{_today.day} {_maanden[_today.month - 1]} {_today.year}"
+    _weekdagen = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
+    _vandaag_weekdag = _weekdagen[_today.weekday()]
+    today_str = f"{_vandaag_weekdag} {_today.day} {_maanden[_today.month - 1]} {_today.year}"
     dag_info = ""
+    _train_weekdag = ""
     try:
         _wd = date.fromisoformat((workout_date or "")[:10])
+        _train_weekdag = _weekdagen[_wd.weekday()]
         _gap = (_today - _wd).days
         if _gap <= 0:
             dag_info = "Je reageert op de dag van de training zelf."
         elif _gap == 1:
-            dag_info = "De training was gisteren; je reageert vandaag."
+            dag_info = f"De training was gisteren ({_train_weekdag}); je reageert vandaag ({_vandaag_weekdag})."
         else:
-            dag_info = f"De training was {_gap} dagen geleden; je reageert vandaag."
+            dag_info = f"De training was {_gap} dagen geleden ({_train_weekdag}); je reageert vandaag ({_vandaag_weekdag})."
     except ValueError:
         pass
 
+    # Feedback v1 (A): huidige weekdag is expliciet onderdeel van de context, en relatieve
+    # dagwoorden uit de atleet worden tegen VANDAAG geïnterpreteerd. Zo wordt een afsluiting
+    # over "zondag" (uit een training van gisteren) op maandag NIET als actuele wens geëchood.
     datum_section = (
         f"\n\nDATUM-CONTEXT:\n"
-        f"Trainingsdatum: {workout_date or 'onbekend'}\n"
+        f"Trainingsdatum: {workout_date or 'onbekend'}"
+        + (f" ({_train_weekdag})" if _train_weekdag else "") + "\n"
         f"Vandaag (wanneer jij reageert): {today_str}\n"
         f"{dag_info}\n"
-        f"Let op: tijdsaanduidingen in de woorden van de atleet (zoals 'morgen' "
-        f"of 'vandaag') zijn relatief aan de TRAININGSDATUM, niet aan vandaag. "
-        f"Neem ze niet letterlijk over en reken ze niet om; reageer op de inhoud, "
-        f"niet op het tijdstip."
+        f"Let op: een weekdag of tijdsaanduiding in de woorden van de atleet (zoals 'zondag', "
+        f"'morgen', 'vandaag') hoort bij de TRAININGSDATUM, niet bij vandaag. Reken die eerst om "
+        f"tegen vandaag ({today_str}) voordat je reageert. Een dag die al voorbij is (bijv. de "
+        f"atleet schrijft 'op naar zondag' terwijl het vandaag al {_vandaag_weekdag} is) mag je "
+        f"NIET als actuele afsluiting of vooruitblik echoën; reageer op de inhoud, niet op het tijdstip."
     )
 
     # Coach-geheugen: wat we uit eerdere gesprekken over deze atleet weten
@@ -900,6 +919,31 @@ Wat {first_name} zelf schrijft/zegt:
     return context, first_name
 
 
+# Feedback v1 — output-length/truncation-contract (B). Ruim genoeg tokenbudget zodat een
+# normale coachreactie NOOIT midden in een zin wordt afgekapt; de lengte wordt door het
+# prompt/register-contract geschaald (kort bij korte input), niet door hard afkappen.
+_FEEDBACK_MAX_TOKENS = 1000
+_FEEDBACK_RETRY_MAX_TOKENS = 1800
+
+
+class FeedbackTruncated(RuntimeError):
+    """Het model kapte af op de tokengrens en een ruimere retry deed dat opnieuw — de tekst
+    is onvolledig en mag NOOIT stil als volledige feedback worden gepubliceerd."""
+
+
+def _generate_text(*, max_tokens: int, retry_max_tokens: int | None = None, **kwargs) -> str:
+    """Roep het model aan en handel truncation EERLIJK af (geen silent truncation, B):
+    bij `stop_reason == 'max_tokens'` één retry met een ruimer budget; kapt die óók af, dan
+    `FeedbackTruncated` (de aanroeper mag geen half antwoord teruggeven/plaatsen). Geen
+    output-string-hack — puur tokenbudget + stop_reason."""
+    resp = create_message(max_tokens=max_tokens, **kwargs)
+    if getattr(resp, "stop_reason", None) == "max_tokens":
+        resp = create_message(max_tokens=(retry_max_tokens or max_tokens * 2), **kwargs)
+        if getattr(resp, "stop_reason", None) == "max_tokens":
+            raise FeedbackTruncated("De feedback werd afgekapt; genereer opnieuw of kort in.")
+    return resp.content[0].text
+
+
 def generate_feedback(workout_data: dict) -> str:
     """Genereer het eerste feedback-concept op een training. Run-specifieke context
     en prompt draaien ALLEEN bij een hardlooptraining; andere types (of onbekend)
@@ -917,10 +961,10 @@ AANPAK:
 3. Gebruik alleen de feitelijke gegevens hierboven. Bij weinig data: kort en menselijk, niets verzinnen.
 
 Schrijf nu de reactie. Alleen de kale tekst, niet tussen aanhalingstekens. Kort en menselijk, in de stijl van Jip."""
-        response = create_message(
-            model="claude-sonnet-4-6", max_tokens=400,
-            system=_NONRUN_SYSTEM, messages=[{"role": "user", "content": prompt}])
-        return _clean_text(response.content[0].text)
+        return _clean_text(_generate_text(
+            max_tokens=_FEEDBACK_MAX_TOKENS, retry_max_tokens=_FEEDBACK_RETRY_MAX_TOKENS,
+            model="claude-sonnet-4-6",
+            system=_NONRUN_SYSTEM, messages=[{"role": "user", "content": prompt}]))
 
     context, first_name = _build_workout_context(workout_data)
 
@@ -937,14 +981,12 @@ AANPAK:
 
 Schrijf nu de reactie. Alleen de kale tekst, niet tussen aanhalingstekens; natuurlijke hardloop-/coachtaal. Kort en menselijk, in de stijl van Jip."""
 
-    response = create_message(
+    return _clean_text(_generate_text(
+        max_tokens=_FEEDBACK_MAX_TOKENS, retry_max_tokens=_FEEDBACK_RETRY_MAX_TOKENS,
         model="claude-sonnet-4-6",
-        max_tokens=400,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
-    )
-
-    return _clean_text(response.content[0].text)
+    ))
 
 
 def generate_reply(workout_data: dict, thread: list) -> str:
@@ -1016,14 +1058,12 @@ def generate_reply(workout_data: dict, thread: list) -> str:
         f"Kort en coachend, in de stijl van Jip; onzekerheid eerlijk houden.{nonrun_note}]"
     )
 
-    response = create_message(
+    return _clean_text(_generate_text(
+        max_tokens=_FEEDBACK_MAX_TOKENS, retry_max_tokens=_FEEDBACK_RETRY_MAX_TOKENS,
         model="claude-sonnet-4-6",
-        max_tokens=400,
         system=system_prompt,
         messages=messages,
-    )
-
-    return _clean_text(response.content[0].text)
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -1265,17 +1305,42 @@ Begin direct met het eerste kopje — geen inleiding, geen rekencheck zichtbaar.
 def generate_session_summary(coach_name: str, items: list[dict]) -> str:
     """
     Genereer een beknopte coaching handover voor WhatsApp/e-mail.
-    items: lijst van {athlete_name, workout_name, feedback_text}
+    items: lijst van {athlete_name, workout_name, feedback_text[, datum, groep_label]}
+
+    Feedback v1 (F): de samenvatting wordt GEGROEPEERD PER DATUM en daarbinnen per groep. Dit is
+    puur presentatie: ELK meegegeven item is een succesvol geposte feedback (successfully-posted
+    session truth); er wordt niets toegevoegd of weggelaten.
     """
     if not items:
         return ""
 
-    # Kort de feedback-teksten in zodat de prompt niet te lang wordt
-    items_tekst = "\n\n".join(
-        f"Atleet: {it['athlete_name']} | Training: {it['workout_name']}\n"
-        f"Feedback: {it['feedback_text'][:200]}{'…' if len(it['feedback_text']) > 200 else ''}"
-        for it in items
-    )
+    _md = ["januari", "februari", "maart", "april", "mei", "juni", "juli",
+           "augustus", "september", "oktober", "november", "december"]
+
+    def _datum_label(d: str) -> str:
+        try:
+            dt = date.fromisoformat((d or "")[:10])
+            return f"{dt.day} {_md[dt.month - 1]}"
+        except Exception:
+            return "Zonder datum"
+
+    # Groepeer PER DATUM (oplopend), daarbinnen PER GROEP; binnen een groep per atleet.
+    per_datum: dict = {}
+    for it in items:
+        d = (it.get("datum") or "")[:10]
+        per_datum.setdefault(d, {}).setdefault(it.get("groep_label") or "Overig", []).append(it)
+
+    blokken = []
+    for d in sorted(per_datum.keys()):
+        regels = [f"[{_datum_label(d)}]"]
+        for groep in sorted(per_datum[d].keys()):
+            regels.append(f"  Groep {groep}:")
+            for it in per_datum[d][groep]:
+                tekst = it["feedback_text"][:200] + ("…" if len(it["feedback_text"]) > 200 else "")
+                regels.append(f"    Atleet: {it['athlete_name']} | Training: {it['workout_name']}\n"
+                              f"    Feedback: {tekst}")
+        blokken.append("\n".join(regels))
+    items_tekst = "\n\n".join(blokken)
 
     try:
         today = f"{date.today().day} {date.today().strftime('%B %Y')}"
@@ -1285,31 +1350,32 @@ def generate_session_summary(coach_name: str, items: list[dict]) -> str:
     n = len(items)
     namen = ", ".join(it["athlete_name"].split()[0] for it in items)
 
-    prompt = f"""Schrijf een beknopte coaching handover voor {coach_name} over de feedback die vandaag gegeven is.
+    prompt = f"""Schrijf een beknopte coaching handover voor {coach_name} over de gegeven feedback.
 
-Datum: {today}
+Datum van de sessie: {today}
 Coach: {coach_name}
-Aantal atleten deze sessie: {n} ({namen})
+Aantal feedbacks deze sessie: {n} ({namen})
 
-Gegeven feedback:
+De gegeven feedback is hieronder al GEGROEPEERD PER TRAININGSDATUM en daarbinnen per groep:
 {items_tekst}
 
-BELANGRIJK: neem ALLE {n} atleten op in de samenvatting — sla niemand over.
+BELANGRIJK: neem ALLE {n} atleten/feedbacks op — sla niemand over.
 
-FORMAT (exact dit, geen kopjes, geen uitleg erbuiten):
+FORMAT (exact deze structuur, geen extra uitleg erbuiten):
 📋 Coaching update {today} — {coach_name}
 
-[Per atleet één regel: Voornaam: kern van de feedback + aandachtspunt voor volgende training indien relevant]
+Per trainingsdatum een kopje "📅 <datum>", daaronder per groep een kopje "▸ <groep>", en daaronder per atleet één regel: Voornaam: kern van de feedback + aandachtspunt voor de volgende training indien relevant.
 
 Regels:
-- Eén regel per atleet, ALLE {n} atleten vermelden
+- Behoud de datum- en groepindeling hierboven exact; verzin geen atleten of data bij
+- Eén regel per atleet, ALLE {n} vermelden
 - Alleen de essentie: wat was opvallend, wat moet de andere coach weten
 - Schrijf in het Nederlands, informeel
 - Geen streepjes als gedachtestreepje"""
 
     response = create_message(
         model="claude-sonnet-4-6",
-        max_tokens=150 * n + 100,  # ~150 tokens per atleet + header
+        max_tokens=150 * n + 150,  # ~150 tokens per atleet + header/kopjes
         messages=[{"role": "user", "content": prompt}],
     )
 

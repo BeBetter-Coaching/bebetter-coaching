@@ -328,7 +328,13 @@ def _klacht_coachregel(area, status, count, last_seen) -> str:
             f"aanpassing. Geen diagnose.")
 
 
-def feedback_context(state, workout_key: str = "", today: date | None = None) -> dict:
+# Feedback v1 (A): proactieve race-vermelding alleen binnen dit venster; verder weg noemen we
+# een wedstrijd NIET uit onszelf (tenzij de atleet er in de actuele feedback/thread zelf over begint).
+_RACE_PROACTIVE_DAYS = 10
+
+
+def feedback_context(state, workout_key: str = "", today: date | None = None,
+                     athlete_raised_race: bool = False) -> dict:
     """Deterministische Feedback-sessiecontext uit `for_feedback(state)` — compact,
     recency/relevance-gefilterd, NOOIT een history-dump. Geeft zowel gestructureerde
     velden (voor diagnostics/shadow) als een korte prompttekst (voor de AI).
@@ -391,11 +397,24 @@ def feedback_context(state, workout_key: str = "", today: date | None = None) ->
     doel_ev = _ev(evs, "goal.doel")
     event = eventtime.relative_event((race_ev or {}).get("value"), today) if race_ev else \
         {"status": "UNKNOWN", "days": None, "date": None, "label": ""}
-    if event["status"] in ("TODAY", "TOMORROW", "IN_N_DAYS"):
+    # Feedback v1 (A) — salience: noem een wedstrijd alleen PROACTIEF als die binnen
+    # `_RACE_PROACTIVE_DAYS` valt. Ligt de wedstrijd verder weg, dan noemen we hem NIET uit
+    # onszelf; wél als de atleet er in de actuele feedback/thread zelf over begint
+    # (`athlete_raised_race`) — dan als reactie, niet als proactieve vooruitblik.
+    _within = event["status"] in ("TODAY", "TOMORROW") or (
+        event["status"] == "IN_N_DAYS" and isinstance(event.get("days"), int)
+        and event["days"] <= _RACE_PROACTIVE_DAYS)
+    if _within or (event["status"] in ("TODAY", "TOMORROW", "IN_N_DAYS") and athlete_raised_race):
         naam = (doel_ev or {}).get("value") or (race_ev or {}).get("value") or "wedstrijd/doel"
-        regels.append(
-            f"Bekende afspraak: {naam} is {event['label']} ({event['date']}). Je mag hiernaar "
-            f"kort vooruitkijken; reken de tijd NIET zelf uit, gebruik letterlijk '{event['label']}'.")
+        if _within:
+            regels.append(
+                f"Bekende afspraak: {naam} is {event['label']} ({event['date']}). Je mag hiernaar "
+                f"kort vooruitkijken; reken de tijd NIET zelf uit, gebruik letterlijk '{event['label']}'.")
+        else:
+            regels.append(
+                f"De atleet noemt zelf een wedstrijd; die staat {event['label']} ({event['date']}). "
+                f"Reageer alleen op wat de atleet erover zegt (reken de tijd NIET zelf uit, gebruik "
+                f"letterlijk '{event['label']}'); begin er niet uit jezelf over.")
 
     # FC-3 — klacht-lifecycle rijker + coachperspectief (geen diagnose, 'goed is goed').
     # Onderscheid ACTIVE/RECENT/RECURRING; prioriteer en cap compact; recency/frequentie mee.
@@ -408,11 +427,20 @@ def feedback_context(state, workout_key: str = "", today: date | None = None) ->
 
     tekst = ""
     if regels:
+        # Basisguard (altijd): geen verzonnen plan/weekopbouw, geen 'nieuwe fase' zonder bron (A).
+        _slot = ("\n\nGebruik dit alleen als achtergrond. Vraag NIET naar informatie die hier "
+                 "al staat (zoals recente kilometers of frequentie). Noem alleen wat voor DEZE "
+                 "training relevant is; verzin geen trainingsplan of weekopbouw, en begin nooit over "
+                 "een 'nieuwe fase' of opbouwperiode zonder expliciete, gelabelde bron in deze context.")
+        # Klacht-guard alleen wanneer er daadwerkelijk een klacht in de context staat (A):
+        # niet uit jezelf ernaar vragen, en afwezigheid ≠ opgelost / geen hinder.
+        if complaints:
+            _slot += (" Vraag NIET actief naar een bestaande klacht tenzij de atleet er in DEZE "
+                      "training zelf over begint; de afwezigheid van een klachtmelding bewijst NIET "
+                      "dat de klacht weg is of geen hinder gaf, dus schrijf nooit dat een klacht "
+                      "'geen hinder gaf' of 'over' is zonder dat de atleet dat nu zelf zegt.")
         tekst = ("━━━ WAT BEBETTER AL WEET OVER DEZE ATLEET (achtergrond — verzin niets bij) ━━━\n"
-                 + "\n".join("- " + r for r in regels)
-                 + "\n\nGebruik dit alleen als achtergrond. Vraag NIET naar informatie die hier "
-                   "al staat (zoals recente kilometers of frequentie). Noem alleen wat voor DEZE "
-                   "training relevant is; verzin geen trainingsplan of weekopbouw.")
+                 + "\n".join("- " + r for r in regels) + _slot)
 
     return {
         "workout_key": workout_key,
@@ -426,15 +454,16 @@ def feedback_context(state, workout_key: str = "", today: date | None = None) ->
 
 
 def feedback_context_block(user_key: str, workout_key: str = "", today: date | None = None,
-                           gather_fn=None) -> dict:
+                           gather_fn=None, athlete_raised_race: bool = False) -> dict:
     """Impure ingang: build_state (1 gather, snapshot, last-known-good) → Feedback-
-    sessiecontext. Nooit fataal: bij een fout geeft het een lege, veilige context."""
+    sessiecontext. Nooit fataal: bij een fout geeft het een lege, veilige context.
+    `athlete_raised_race` = de atleet noemt de wedstrijd in DEZE feedback/thread zelf (A)."""
     try:
         state, _raw = build_state(user_key, today, gather_fn=gather_fn)
     except Exception as e:
         return {"prompt_block": "", "source_gaps": [], "has_load": False,
                 "complaint_areas": [], "error": str(e)[:120]}
-    return feedback_context(state, workout_key, today)
+    return feedback_context(state, workout_key, today, athlete_raised_race=athlete_raised_race)
 
 
 # ── Schema config-prefill: planning-defaults uit de canonieke Masterbrein-kennis ──

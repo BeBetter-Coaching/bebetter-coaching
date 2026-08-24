@@ -34,8 +34,10 @@ class TestSessionLogItem:
     def test_canonieke_vorm(self):
         self._seed("W1")
         it = FC.session_log_item("W1", "  Sterke tempo's!  ")
-        assert it == {"athlete_name": "Lisa Test", "workout_name": "Tempoduurloop",
-                      "workout_key": "W1", "feedback_text": "Sterke tempo's!"}
+        # Feedback v1 (F): datum/groep_label meegenomen voor per-datum/per-groep-samenvatting.
+        assert it["athlete_name"] == "Lisa Test" and it["workout_name"] == "Tempoduurloop"
+        assert it["workout_key"] == "W1" and it["feedback_text"] == "Sterke tempo's!"
+        assert "datum" in it and "groep_label" in it
 
     def test_missende_cache_valt_terug(self):
         it = FC.session_log_item("Wx", "tekst")
@@ -75,7 +77,8 @@ class TestCleanItems:
     def test_vorm_is_exact_de_core_velden(self):
         out = FC._clean_summary_items(
             [{"athlete_name": "Lisa", "workout_name": "Duurloop", "feedback_text": "top", "workout_key": "W1"}])
-        assert set(out[0].keys()) == {"athlete_name", "workout_name", "feedback_text"}
+        # Feedback v1 (F): kernvelden + datum/groep_label voor de per-datum/per-groep-samenvatting.
+        assert set(out[0].keys()) == {"athlete_name", "workout_name", "feedback_text", "datum", "groep_label"}
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -91,7 +94,8 @@ class TestSessionSummary:
         out = FC.session_summary("Jip", items)
         assert out == "SAMENVATTING"                      # verbatim resultaat van de core
         assert captured["coach"] == "Jip"
-        assert captured["items"] == [{"athlete_name": "Lisa", "workout_name": "Duurloop", "feedback_text": "top"}]
+        assert captured["items"] == [{"athlete_name": "Lisa", "workout_name": "Duurloop",
+                                      "feedback_text": "top", "datum": "", "groep_label": "Overig"}]
 
     def test_lege_log_geen_core_call(self, monkeypatch):
         import ai_feedback
@@ -145,7 +149,10 @@ class TestStreamlitParity:
         monkeypatch.setattr(ai_feedback, "generate_session_summary",
                             lambda coach, items: cap.update(items=items) or "S")
         FC.session_summary("Jip", pwa_log)
-        assert cap["items"] == streamlit_log             # identieke core-input
+        # Feedback v1 (F): dezelfde geposte SET/volgorde (kernvelden identiek); de core krijgt
+        # daarnaast datum/groep_label als presentatie — de posted-session-truth verandert niet.
+        core = [{k: it[k] for k in ("athlete_name", "workout_name", "feedback_text")} for it in cap["items"]]
+        assert core == streamlit_log
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -172,8 +179,10 @@ class TestEndpoints:
         assert r.status_code == 200
         body = r.json()
         assert body["ok"] is True
-        assert body["item"] == {"athlete_name": "Lisa Test", "workout_name": "Duurloop",
-                                "workout_key": "W1", "feedback_text": "Sterke tempo's!"}
+        assert body["item"]["athlete_name"] == "Lisa Test"
+        assert body["item"]["workout_name"] == "Duurloop" and body["item"]["workout_key"] == "W1"
+        assert body["item"]["feedback_text"] == "Sterke tempo's!"
+        assert "datum" in body["item"] and "groep_label" in body["item"]   # Feedback v1 (F)
 
     def test_summary_endpoint_gebruikt_core(self, client, monkeypatch):
         import ai_feedback

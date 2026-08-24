@@ -2007,7 +2007,13 @@ function fbLogStatus() {
   const dbg = $("#fb-dbg"); if (dbg) dbg.classList.toggle("on", FB.logOn);
 }
 function fbLogBind() {
-  const dbg = $("#fb-dbg"); if (dbg) dbg.onclick = () => { const p = $("#fb-dbg-panel"); if (p) p.hidden = !p.hidden; };
+  // Feedback v1 (H): de Debug-knop is GEEN productie-UI. Toon hem alleen in expliciete
+  // debug-modus (?swdebug=1 of localStorage bb_swdebug); anders volledig verbergen.
+  let _dbgMode = false;
+  try { _dbgMode = localStorage.getItem("bb_swdebug") === "1"; } catch {}
+  const dbg = $("#fb-dbg");
+  if (dbg && !_dbgMode) { dbg.hidden = true; const p = $("#fb-dbg-panel"); if (p) p.hidden = true; return; }
+  if (dbg) { dbg.hidden = false; dbg.onclick = () => { const p = $("#fb-dbg-panel"); if (p) p.hidden = !p.hidden; }; }
   const t = $("#fb-log-toggle"); if (t) t.onclick = () => {
     FB.logOn = !FB.logOn; try { localStorage.setItem("fb_log_on", FB.logOn ? "1" : "0"); } catch {}
     fbLogStatus();
@@ -2035,6 +2041,9 @@ function fbSummaryAppend(item, id, tekst) {
     workout_name: (item && item.workout_name) || it.workout || "Training",
     workout_key: (item && item.workout_key) || id,
     feedback_text: (item && item.feedback_text) || (tekst || "").trim(),
+    // Feedback v1 (F): datum/groep meesturen voor per-datum/per-groep-samenvatting.
+    datum: (item && item.datum) || it.datum || "",
+    groep_label: (item && item.groep_label) || it.groep_label || "Overig",
   };
   if (!rec.feedback_text) return;
   if (FB.summaryLog.some(r => r.workout_key === rec.workout_key)) return;  // dubbel/retry telt niet
@@ -2205,8 +2214,27 @@ function renderGroupsBar() {
   });
 }
 
-// ── Queue renderen: bij Alle = groepskoppen (rijen dragen categorie via badge);
-//    bij één groep = categorie-koppen. Max twee informatieniveaus tegelijk. ────
+// Feedback v1 (E): leesbaar datumlabel (Vandaag/Gisteren/wd d mnd), lokaal (geen UTC-verschuiving).
+function fbLocalISO(dd) {
+  return `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, "0")}-${String(dd.getDate()).padStart(2, "0")}`;
+}
+function fbDateLabel(d) {
+  if (!d) return "Zonder datum";
+  const dt = new Date(d + "T00:00:00");
+  if (isNaN(dt)) return "Zonder datum";
+  const wd = ["zo", "ma", "di", "wo", "do", "vr", "za"];
+  const md = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
+  const iso = fbLocalISO(dt);
+  const today = new Date();
+  if (iso === fbLocalISO(today)) return "Vandaag";
+  const y = new Date(today.getTime() - 864e5);
+  if (iso === fbLocalISO(y)) return "Gisteren";
+  return `${wd[dt.getDay()]} ${dt.getDate()} ${md[dt.getMonth()]}`;
+}
+
+// ── Queue renderen: DATUM-first (Feedback v1 E). De backend levert de ENIGE sort-waarheid
+//    (datum → groep → categorie → athlete); we renderen die volgorde met datumkoppen, oudste
+//    eerst, zodat de coach chronologisch werkt. Groep is een filter-pill; categorie zit op de rij. ─
 function renderQueue() {
   const box = $("#fb-queue"); if (!box) return;
   renderGroupsBar();
@@ -2217,22 +2245,15 @@ function renderQueue() {
     box.innerHTML = `<div class="leeg">${ic("check")}<p>Niks te beoordelen — netjes bijgewerkt.</p></div>`;
     return;
   }
+  // Groepeer per datum in de door de server geleverde volgorde (die is al datum-first).
   let html = "";
-  if (FB.group === "alle") {                           // groepskoppen; items al gesorteerd groep→cat→leeftijd
-    fbGroupOrder(shown).forEach(gk => {
-      const rows = shown.filter(i => (i.groep || "overig") === gk);
-      if (!rows.length) return;
-      html += `<p class="fbq-groep">${esc(rows[0].groep_label || "Overig")}<span>${rows.length}</span></p>`;
-      html += rows.map(fbRowHtml).join("");
-    });
-  } else {                                             // categorie-koppen binnen de groep
-    for (const key of ["reactie", "gevoel", "uitgevoerd"]) {
-      const rows = shown.filter(i => i.categorie === key);
-      if (!rows.length) continue;
-      html += `<p class="fbq-cat">${FB_CAT[key]} · ${rows.length}</p>`;
-      html += rows.map(fbRowHtml).join("");
-    }
-  }
+  const seen = [], byDate = {};
+  shown.forEach(i => { const d = i.datum || ""; if (!(d in byDate)) { byDate[d] = []; seen.push(d); } byDate[d].push(i); });
+  seen.forEach(d => {
+    const rows = byDate[d];
+    html += `<p class="fbq-groep">${esc(fbDateLabel(d))}<span>${rows.length}</span></p>`;
+    html += rows.map(fbRowHtml).join("");
+  });
   box.innerHTML = html;
   $$(".fbq-row", box).forEach(r => r.addEventListener("click", () => fbOpen(r.dataset.id, "row_tap")));
 }
@@ -2611,11 +2632,18 @@ $("#fb-nieuw").addEventListener("click", () => {
 });
 $("#fb-refresh").addEventListener("click", async () => {
   fbLog("queue_refresh_start", { reason: "manual" });
-  const r = await api("/api/feedback/queue?refresh=1").catch(() => null);
-  if (r && r.fs && Array.isArray(r.items)) {
-    FB.gepost = r.gepost || 0; FB.groups = r.groepen || FB.groups; FB.pending = null; FB.pendingInitial = false;
-    $("#fb-nieuw").hidden = true; FB.loaded = true; fbApplyQueue(r.items);
-    fbLog("queue_apply", { reason: "manual", queue_length: FB.items.length });
+  // Feedback v1 (G): zichtbare loading-state zolang de refresh loopt; reset bij succes én fout.
+  const btn = $("#fb-refresh");
+  if (btn) { if (btn.dataset.busy === "1") return; btn.dataset.busy = "1"; btn.classList.add("spinning"); btn.disabled = true; }
+  try {
+    const r = await api("/api/feedback/queue?refresh=1").catch(() => null);
+    if (r && r.fs && Array.isArray(r.items)) {
+      FB.gepost = r.gepost || 0; FB.groups = r.groepen || FB.groups; FB.pending = null; FB.pendingInitial = false;
+      $("#fb-nieuw").hidden = true; FB.loaded = true; fbApplyQueue(r.items);
+      fbLog("queue_apply", { reason: "manual", queue_length: FB.items.length });
+    }
+  } finally {
+    if (btn) { btn.classList.remove("spinning"); btn.disabled = false; btn.dataset.busy = ""; }
   }
 });
 document.addEventListener("keydown", e => {

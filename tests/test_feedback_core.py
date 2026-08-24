@@ -81,7 +81,7 @@ class TestFeedbackBrainGate:
     def _stub_block(self, monkeypatch):
         from brain import adapter
         monkeypatch.setattr(adapter, "feedback_context_block",
-                            lambda ak, wk="", today=None: {
+                            lambda ak, wk="", today=None, **kw: {
                                 "prompt_block": "BREIN: ~30 km/week", "source_gaps": [],
                                 "has_load": True, "complaint_areas": [], "overall": "STABLE"})
 

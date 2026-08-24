@@ -400,7 +400,8 @@ def _bereken() -> dict:
     wachten = gepost = 0
     try:
         wk, stats = FS.get_workouts_needing_feedback(7, None, False, True,
-                                                     {"los schema"}, True)
+                                                     {"los schema"}, True,
+                                                     include_unplanned_reactions=True)
         wachten = len(feedback_core._filter_skipped(wk))
         gepost = stats.get("posted_today", 0)
     except Exception:
