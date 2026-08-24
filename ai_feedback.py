@@ -88,6 +88,21 @@ ZONE-ACCURACY — KRITIEKE REGELS (niet onderhandelbaar):
    harder had moeten lopen (hartslag-lag, warming-up, korte blokduur spelen mee). Trek geen blanket
    fysiologische conclusie; benoem het feit en houd interpretatie voorzichtig. Warming-up en
    herstelblokken beoordeel je NOOIT alsof het targetblokken zijn.
+9. GEEN ONNODIGE CORRECTIE BINNEN HET GEPLANDE BEREIK (niet onderhandelbaar):
+   Meldt de app IN_ZONE, dan is de intensiteit in principe correct uitgevoerd — punt. Dicht bij een
+   zonegrens lopen (net aan de snelle of langzame kant) is op zichzelf GEEN probleem en NOOIT een
+   reden voor een waarschuwing of "let op"-punt. Een zonegrens is GEEN veiligheidsmarge waar de
+   atleet bewust ruim vandaan moet blijven; verzin daarom NOOIT een corrigerende instructie als
+   "bewaak het tempo de hele rit", "houd het volgende keer wat rustiger" of "let dat je niet over de
+   grens gaat" wanneer de uitvoering binnen de zone valt. Formuleer alléén een aandachtspunt bij
+   ECHT deterministisch bewijs: de app meldt AANTOONBAAR 'BUITEN de persoonlijke zones', aantoonbare
+   structurele drift, een afwijking van de geplande workout-opbouw, óf de atleet meldt zelf dat het
+   te zwaar voelde (hoge RPE / slecht gevoel). Zonder zulk bewijs bevestig je de goede uitvoering en
+   laat je het daarbij — maak van een correct gelopen training geen probleem.
+   GEPLANDE PROGRESSIE: gaat de workout bewust van een lichtere naar een zwaardere zone (bijv. Z1 →
+   Z2), dan is die zwaardere zone GEPLAND en dus GOED — frame Z2 daar NOOIT als afwijking of "te
+   hard". Beoordeel elk segment tegen het GEPLANDE target van DAT blok, nooit tegen de zone van een
+   ander blok.
 
 PLAN VS UITVOERING:
 Als er een geplande structuur beschikbaar is (workout builder), vergelijk dan ACTIEF de uitvoering daarmee. Was het geplande tempo gehaald? Liep de atleet in de geplande zone? Dat is het meest waardevolle wat je kunt zeggen."""
@@ -648,7 +663,10 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
                 _oordeel = (
                     "Let op: dit is het gemiddelde over de héle training (een continue inspanning). "
                     "Valt dit gemiddelde ECHT binnen de bedoelde/geplande zone, dan is de training "
-                    "correct uitgevoerd — schrijf dan NIET 'te hard' of 'te zacht'.")
+                    "correct uitgevoerd — schrijf dan NIET 'te hard' of 'te zacht', en verzin evenmin "
+                    "een correctie als 'bewaak het tempo' omdat het dicht bij een zonegrens lag: binnen "
+                    "de zone is binnen de zone. Alleen bij ECHT bewijs (de app meldt BUITEN de zone, "
+                    "structurele drift, of de atleet meldt hoge RPE) mag je een aandachtspunt maken.")
             berekend_blok = _kop + _oordeel
         zones_section = f"\n\n{zone_instruction}\n{athlete_zones_text}{berekend_blok}{blok_section}"
     else:

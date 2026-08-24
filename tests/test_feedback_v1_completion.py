@@ -1,8 +1,8 @@
-"""Feedback v1 Completion — acceptance-set (A–H).
+"""Feedback v1 Completion — acceptance-set (A–I).
 
 Temporal/context salience, output-length/truncation, register, unplanned coverage, date-first
-ordering, summary grouping, refresh spinner en debug-knop. Bewaakt de bestaande locks (Class 1/2,
-PF-4) via de rest van de suite.
+ordering, summary grouping, refresh spinner, debug-knop, en (I) geen onnodige correctie binnen het
+geplande bereik. Bewaakt de bestaande locks (Class 1/2, PF-4) via de rest van de suite.
 
     python3 -m pytest tests/test_feedback_v1_completion.py -q
 """
@@ -256,3 +256,92 @@ def test_16_debugknop_production_hidden():
     src = _appjs()
     seg = src.split("function fbLogBind()")[1].split("function ")[0]
     assert "bb_swdebug" in seg and "dbg.hidden = true" in seg   # verborgen buiten debug-modus
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# I — geen onnodige correctie binnen het geplande bereik
+# ════════════════════════════════════════════════════════════════════════════
+def _tempo_zones():
+    # FinalSurge tempo-zonestruct: low = langzame grens (hoge sec), high = snelle grens (lage sec).
+    # Z1 (Rustig) 5:14–5:34 min/km = 314–334 sec/km.
+    return {"zone_type": "tempo", "zones_text": "Z1 (Rustig): 5:14-5:34 min/km",
+            "zones": [{"num": 1, "naam": "Rustig", "low": 334.0, "high": 314.0}]}
+
+
+def _pace_ctx(monkeypatch, pace_display, *, effort=None, felt=None, laps=None,
+              plan="Rustige duurloop in Z1.", zones=None):
+    """Bouw een CONTINUE run-context (geen builder-structuur) met echte Class-2 classificatie."""
+    monkeypatch.setattr(ai_feedback.intake_store, "garmin_context_text",
+                        lambda *a, **k: "", raising=False)
+    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda ak, d: None)
+    monkeypatch.setattr(fs_client, "get_athlete_zones",
+                        lambda ak: zones if zones is not None else _tempo_zones())
+    wd = {
+        "athlete_name": "Lisa Jansen", "athlete_first_name": "Lisa",
+        "workout_name": "Duurloop", "post_notes": "", "athlete_comments": [],
+        "athlete_key": "A", "workout_key": "W", "workout_date": _d(1),
+        "felt": felt, "effort": effort,
+        "details": {"description": plan,
+                    "Activities": [{"amount": 8.0, "amount_type": "km",
+                                    "pace_display": pace_display, "pace_display_type": "min/km",
+                                    "Laps": laps or []}]},
+    }
+    ctx, _ = ai_feedback._build_workout_context(wd)
+    return ctx
+
+
+def test_17_geen_onnodige_correctie_regel_in_prompt():
+    sp = ai_feedback.SYSTEM_PROMPT
+    assert "GEEN ONNODIGE CORRECTIE" in sp
+    assert "veiligheidsmarge" in sp                       # een zonegrens is geen marge om vandaan te blijven
+    assert "bewaak het tempo" in sp                       # het verzonnen-correctie-voorbeeld is expliciet verboden
+
+
+def test_18_in_zone_dicht_bij_grens_geen_waarschuwing(monkeypatch):
+    # 5:16/km = 316 sec, vlak naast de snelle grens 314 → IN_ZONE.
+    assert fs_client.classify_pace_hr_zone(_tempo_zones()["zones"], 316, True)["status"] == "IN_ZONE"
+    ctx = _pace_ctx(monkeypatch, "5:16")
+    assert "BINNEN de persoonlijke zone" in ctx           # berekende positie = echte membership
+    assert "correct uitgevoerd" in ctx
+    assert "binnen de zone is binnen de zone" in ctx      # geen correctie omwille van grensnabijheid
+
+
+def test_19_exact_op_grens_geen_waarschuwing(monkeypatch):
+    # 5:34 = 334 = bovengrens → IN_ZONE (Round-2 regressie B), niet 'net erbuiten'.
+    assert fs_client.classify_pace_hr_zone(_tempo_zones()["zones"], 334, True)["status"] == "IN_ZONE"
+    ctx = _pace_ctx(monkeypatch, "5:34")
+    assert "BINNEN de persoonlijke zone" in ctx           # exacte grens telt als binnen
+    assert "correct uitgevoerd" in ctx
+    assert "SNELLER dan de snelste persoonlijke zone" not in ctx   # geen out-of-range framing
+
+
+def test_20_echt_buiten_zone_aandacht_mag(monkeypatch):
+    # 5:05 = 305 sec, sneller dan de snelste grens 314 → BUITEN.
+    assert fs_client.classify_pace_hr_zone(_tempo_zones()["zones"], 305, True)["status"] == "ABOVE_HARDEST_ZONE"
+    ctx = _pace_ctx(monkeypatch, "5:05")
+    assert "SNELLER dan de snelste persoonlijke zone" in ctx   # out-of-range feit → aandacht toegestaan
+    assert "BINNEN de persoonlijke zone" not in ctx
+
+
+def test_21_geplande_progressie_niet_als_fout():
+    sp = ai_feedback.SYSTEM_PROMPT
+    assert "GEPLANDE PROGRESSIE" in sp
+    assert "frame Z2 daar NOOIT als afwijking" in sp      # Z1→Z2 is gepland, geen fout
+    assert "tegen het GEPLANDE target van DAT blok" in sp # beoordeel per gepland segment
+
+
+def test_22_hoge_rpe_ondanks_in_zone_nuance_mag(monkeypatch):
+    ctx = _pace_ctx(monkeypatch, "5:20", effort=9)        # IN_ZONE maar RPE 9/10
+    assert "BINNEN de persoonlijke zone" in ctx
+    assert "Inspanning (RPE): 9/10" in ctx                # atleet-signaal staat in de context
+    assert "hoge RPE" in ai_feedback.SYSTEM_PROMPT         # echt bewijs → inhoudelijke nuance toegestaan
+
+
+def test_23_class2_labels_blijven_leidend(monkeypatch):
+    laps = [{"pace_display": "5:20", "distance_display": "1.0 km"},
+            {"pace_display": "5:30", "distance_display": "1.0 km"}]
+    ctx = _pace_ctx(monkeypatch, "5:20", laps=laps)
+    assert "DETERMINISTISCH" in ctx                        # per-lap classificatie is deterministisch
+    assert "letterlijk over" in ctx                        # AI neemt labels over, rekent niet zelf
+    assert "LEIDEND" in ctx                                # berekende positie leidt
+    assert "→ Z1 (door de app bepaald)" in ctx             # echte Class-2 membership-labels aanwezig
