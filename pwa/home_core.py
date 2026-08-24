@@ -240,18 +240,20 @@ def _apply_feedback_overlay(snap: dict, allow_stale: bool = True) -> dict:
     (`feedback_core.canonical_open_actions`), met exact dezelfde skip/post-semantiek als de
     Feedback-pagina → Home en Feedback kunnen niet divergeren (parity by construction).
 
-    FRESH (geldige én RECENTE queue-snapshot) → de tegel wordt de bewezen-actuele queue-telling
-    (geen `_bereken`-sweep nodig; klopt direct na een skip én een post).
+    FRESH of STALE (beide = geldige queue-snapshot) → de tegel wordt de per-read gereconcilieerde
+    open-set-count (`_apply_skips`/`_verwijder_uit_queue` zijn al verwerkt), dus klopt DIRECT na een
+    skip én een post — geen `_bereken`-sweep, geen 12–20s wachten (Round-2 regressie A). Bij STALE
+    (verlopen `berekend`) wordt de tegel alleen `stale` gemarkeerd op de fast-read → de client
+    ververst de queue NIET-BLOKKEREND op de achtergrond voor eventuele nieuwe items, zónder de
+    getoonde count te verbergen.
 
-    NIET-FRESH (queue STALE = geldig-maar-verlopen, of UNKNOWN = geen geldige snapshot):
-    een verlopen queue-count mag NOOIT als 'actueel' worden getoond. Dan geldt de vraag of de
-    HOME-snapshot zélf een bewijsbaar-recente telling draagt:
-      - `allow_stale=False` (refresh-read: snap = zojuist verse `_bereken`) OF een fast-read waar
-        de home-snapshot zelf recent is (`_snap_recent`) → die feedbacktelling is legitiem vers
-        berekend → laat 'm staan (geen valse 'bijwerken…').
-      - anders (beide bronnen verlopen) → markeer de tegel `stale` (wachten=None): de client toont
-        'bijwerken…' en verwarmt de queue (goedkoper dan een volledige Home-sweep). NOOIT de
-        bevroren integer als 'actueel'.
+    UNKNOWN (geen geldige queue-snapshot — koud proces / ontbrekende durable): geen count. Dan geldt
+    de vraag of de HOME-snapshot zélf een bewijsbaar-recente telling draagt:
+      - `allow_stale=False` (refresh-read: snap = zojuist verse `_bereken`) OF een fast-read waar de
+        home-snapshot zelf recent is (`_snap_recent`) → die feedbacktelling is legitiem vers → laat
+        'm staan (geen valse 'bijwerken…').
+      - anders (beide bronnen verlopen) → markeer `stale` (wachten=None): de client toont 'bijwerken…'
+        en verwarmt de queue. NOOIT een bevroren integer als 'actueel'.
     Bron-fout → als UNKNOWN behandeld. Idempotent en niet-muterend voor de snapshot."""
     if not snap or snap.get("feedback") is None:
         return snap
@@ -259,10 +261,15 @@ def _apply_feedback_overlay(snap: dict, allow_stale: bool = True) -> dict:
         truth = feedback_core.canonical_open_actions()
     except Exception:
         truth = {"status": feedback_core.OPEN_UNKNOWN}
-    if truth.get("status") == feedback_core.OPEN_FRESH:
+    st = truth.get("status")
+    if st in (feedback_core.OPEN_FRESH, feedback_core.OPEN_STALE):
+        # Geldige open-set → toon de gereconcilieerde count meteen. STALE zet enkel op de fast-read
+        # een niet-blokkerende achtergrond-refresh-hint (nieuwe items), zonder de count te verbergen.
         fb = {**(snap.get("feedback") or {}), "wachten": truth["wachten"],
-              "gepost": truth["gepost"], "pct": truth["pct"], "stale": False}
+              "gepost": truth["gepost"], "pct": truth["pct"],
+              "stale": bool(allow_stale and st == feedback_core.OPEN_STALE)}
         return {**snap, "feedback": fb}
+    # UNKNOWN
     if (not allow_stale) or _snap_recent(snap):
         # Verse _bereken-telling (refresh) of een recente home-sweep (fast-read) → actueel genoeg.
         fb = {**(snap.get("feedback") or {}), "stale": False}

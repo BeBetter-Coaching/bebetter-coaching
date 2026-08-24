@@ -256,34 +256,56 @@ def test_fresh_valid_en_recent(env):
     assert truth["status"] == FC.OPEN_FRESH and truth["wachten"] == 2
 
 
-def test_stale_valid_maar_verlopen(env):
-    # geldig maar `berekend` verlopen (> 15 min) → STALE, GEEN count als authority
+def test_stale_valid_maar_verlopen_draagt_gereconcilieerde_count(env):
+    # geldig maar `berekend` verlopen (> 15 min) → STALE, MAAR met de per-read gereconcilieerde
+    # count (regressie A: skip/post is ook op een stale snapshot al verwerkt → direct bruikbaar).
     FC._QUEUE_MEM = _qsnap("W1", "W2", berekend=_now(30))
     truth = FC.canonical_open_actions()
     assert truth["status"] == FC.OPEN_STALE
-    assert truth["wachten"] is None and truth["open_ids"] is None
+    assert truth["wachten"] == 2 and set(truth["open_ids"]) == {"W1", "W2"}
 
 
 def test_stale_zonder_berekend_is_niet_fresh(env):
-    # geldig maar zónder betrouwbare `berekend` → conservatief STALE (niet FRESH)
+    # geldig maar zónder betrouwbare `berekend` → conservatief STALE (niet FRESH), wél een count
     snap = _qsnap("W1", "W2")
     snap.pop("berekend", None)
     FC._QUEUE_MEM = snap
-    assert FC.canonical_open_actions()["status"] == FC.OPEN_STALE
+    truth = FC.canonical_open_actions()
+    assert truth["status"] == FC.OPEN_STALE and truth["wachten"] == 2
 
 
-def test_stale_queue_geen_actuele_count_op_home(env):
-    # verlopen queue + verlopen home-snapshot → Home mag de oude count NIET als actueel tonen
+def test_stale_queue_toont_gereconcilieerde_count_direct(env):
+    # verlopen queue → Home toont DIRECT de gereconcilieerde count (skip/post-authoritatief),
+    # met alleen een niet-blokkerende achtergrond-refresh-hint (stale), NOOIT verborgen (regressie A).
     FC._QUEUE_MEM = _qsnap("W1", "W2", "W3", berekend=_now(30))
     home_core._MEM = _home_snap(3)                    # oude berekend (default)
     fb = home_core.cockpit(refresh=False)["feedback"]
-    assert fb.get("stale") is True and fb.get("wachten") is None and fb.get("wachten") != 3
+    assert fb.get("wachten") == 3                      # count direct getoond, niet verborgen
+    assert fb.get("stale") is True                     # enkel een achtergrond-refresh-hint
 
 
-def test_stale_queue_maar_recente_home_sweep_behoudt_count(env):
-    # verlopen queue MAAR een recente home-sweep → die telling is zelf vers → behouden
-    # (geen valse 'bijwerken…'; een ≤15 min oude sweep is per definitie 'recent', niet 'oud').
-    FC._QUEUE_MEM = _qsnap("W1", "W2", "W3", berekend=_now(30))
+def test_regressie_A_skip_op_stale_queue_home_direct(env, monkeypatch):
+    # Round-2 regressie A: 18 open, 1 skip → Home DIRECT 17 in de fast-read, zonder _bereken en
+    # zonder 12–20s queue/home-sweep — ook als de queue-snapshot verlopen is (>15 min).
+    calls = {"n": 0}
+    monkeypatch.setattr(home_core, "_bereken", lambda: calls.__setitem__("n", calls["n"] + 1) or {})
+    wids = [f"W{i}" for i in range(18)]
+    FC._QUEUE_MEM = _qsnap(*wids, berekend=_now(30))     # geldige maar VERLOPEN snapshot (18 open)
+    home_core._MEM = _home_snap(18, berekend=_now(30))
+    env["skips"]["map"] = {"W0": _skip()}                # 1 overgeslagen (skipped.json)
+    fb = home_core.cockpit(refresh=False)["feedback"]
+    assert fb["wachten"] == 17                            # direct correct via de open-set
+    assert calls["n"] == 0                                # GEEN _bereken voor de teller
+    # reload (koud proces, laadt durable) blijft 17
+    home_core._MEM = {}
+    env["durable"]["snap"] = _home_snap(18, berekend=_now(30))
+    assert home_core.cockpit(refresh=False)["feedback"]["wachten"] == 17
+
+
+def test_unknown_queue_recente_home_sweep_behoudt_count(env):
+    # GEEN geldige queue-snapshot (UNKNOWN) MAAR een recente home-sweep → val terug op die verse
+    # home-telling (geen valse 'bijwerken…'). Dit is de `_snap_recent`-fallback, alleen voor UNKNOWN.
+    FC._QUEUE_MEM = {}                                 # ongeldige queue → UNKNOWN
     home_core._MEM = _home_snap(3, berekend=_now(2))
     fb = home_core.cockpit(refresh=False)["feedback"]
     assert fb.get("stale") is False and fb.get("wachten") == 3
