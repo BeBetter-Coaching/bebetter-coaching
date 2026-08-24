@@ -67,9 +67,12 @@ class TestClientInvalidatie:
     def _src(self):
         return open(os.path.join(_ROOT, "pwa", "static", "app.js")).read()
 
-    def test_revalidate_forceert_refresh(self):
+    def test_tegel_uit_canonieke_fastread_geen_geforceerde_sweep(self):
+        # Class 1: de tegel corrigeert op de FAST-READ (overlay → open-set); cockpitStale
+        # forceert GEEN sweep meer op een feedback-post/skip (`_revalidate` retired).
         src = self._src()
-        assert "s._revalidate" in src                     # cockpitStale honoreert de seam-vlag
+        assert "s._revalidate" not in src                 # geen geforceerde sweep-seam meer
+        assert "renderFeedbackStrip(s.feedback, true)" in src  # tegel uit de fast-read
 
     def test_tegel_convergeert_op_achtergrondrefresh(self):
         src = self._src()
@@ -80,10 +83,17 @@ class TestClientInvalidatie:
         assert "if (fresh) homeFbDelta" in src             # optimisme verrekend bij fresh read
 
     def test_terugkeer_naar_home_herleest_stats(self):
-        """Navigation-freshness seam: bij terugkeer naar een al-opgebouwde Home (in-app
-        nav, geen browserrefresh) her-leest renderHome de snapshot en start via
-        cockpitVersen de bestaande refresh — zodat de server-invalidatie (_revalidate)
-        herkend wordt. Hergebruikt de bestaande api-read + refresh-primitive."""
+        """Navigation-freshness seam: bij terugkeer naar een al-opgebouwde Home (in-app nav,
+        geen browserrefresh) her-leest renderHome de snapshot en rendert de tegel DIRECT uit
+        de canonieke fast-read (Class 1), zonder de trage Home-sweep te forceren. cockpitVersen
+        blijft enkel voor prioriteit-staleness."""
         src = self._src()
-        # de dataset.done-terugkeerbranch bevat nu een verse stats-read die cockpitVersen voedt
-        assert 'api("/api/home/stats").then(s => { if (s && s.fs) cockpitVersen(s); })' in src
+        assert "renderFeedbackStrip(s.feedback, true)" in src
+        assert "if (s.feedback && s.feedback.stale) feedbackQueueWarm()" in src
+
+    def test_nieuw_badge_diff_is_autoritatief_niet_dom(self):
+        # Class 1 (punt 6): "N nieuw" diff tegen de laatst toegepaste autoritatieve set
+        # (lastPrioSig), niet tegen de toevallige DOM-state.
+        src = self._src()
+        assert "lastPrioSig" in src
+        assert "$$(\"#home-prio .prio-item\").forEach(el => huidig" not in src   # geen DOM-diff meer

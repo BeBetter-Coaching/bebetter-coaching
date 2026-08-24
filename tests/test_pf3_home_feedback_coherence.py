@@ -11,6 +11,7 @@ haalt de workout uit de gedeelde queue → telt ook direct mee.
 """
 import os
 import sys
+from datetime import datetime
 
 import pytest
 
@@ -30,12 +31,14 @@ def _wk(wid, notes=False, felt=False, effort=False, athlete_ts=""):
             "effort": (1 if effort else None), "thread": thread}
 
 
-def _queue(*wids, gepost=0, volle_over=None):
+def _queue(*wids, gepost=0, volle_over=None, berekend=None):
     volle = {w: _wk(w) for w in wids}
     if volle_over:
         volle.update(volle_over)
+    # Recente `berekend` → canonical_open_actions ziet dit als FRESH (geldig ÉN vers).
+    ber = berekend or datetime.now().isoformat(timespec="seconds")
     return {"fs": True, "items": [{"id": w} for w in wids], "_volle": volle,
-            "gepost": gepost, "berekend": "2026-08-20T10:00:00", "datum": "2026-08-20"}
+            "gepost": gepost, "berekend": ber, "datum": "2026-08-20"}
 
 
 def _skip(athlete_ts="", notes=False, felt=False, effort=False):
@@ -195,44 +198,51 @@ def test_9_invalidation_zonder_snapshot_niet_verloren(env, monkeypatch):
     assert vers["feedback"]["wachten"] == 0           # correcte telling, niet verloren
 
 
-def test_10_lost_update_revalidate_behouden(env, monkeypatch):
-    home_core._MEM = _home_snap(2)
-
-    def _bereken_met_concurrente_skip():
-        home_core.invalidate_feedback()               # skip komt binnen TIJDENS de sweep
-        return _home_snap(2)
-
-    monkeypatch.setattr(home_core, "_bereken", _bereken_met_concurrente_skip)
-    out = home_core.cockpit(refresh=True)
-    assert out.get("_revalidate") is True             # niet overschreven door de oude sweep
-    assert home_core._MEM.get("_revalidate") is True  # overleeft durable
-
-
-def test_11_concurrent_refresh_en_skip_geen_stale_eindstatus(env, monkeypatch):
-    # na de race blijft de fast-read canoniek correct (queue is leidend).
+def test_10_concurrente_skip_tijdens_sweep_canoniek_zichtbaar(env, monkeypatch):
+    # Class 1: een skip die TIJDENS de sweep binnenkomt heeft GEEN vlag nodig — de fast-read
+    # leidt de tegel canoniek uit de open-set af, dus de skip is meteen zichtbaar; de oude
+    # sweep-integer wint nooit.
     FC._QUEUE_MEM = _queue("W1", "W2")
     home_core._MEM = _home_snap(2)
 
     def _bereken_met_skip():
         env["skips"]["map"] = {"W1": _skip(), "W2": _skip()}   # skip tijdens de sweep
-        home_core.invalidate_feedback()
-        return _home_snap(2)                          # oude sweep zag nog 2
+        return _home_snap(2)                                    # oude sweep zag nog 2
 
     monkeypatch.setattr(home_core, "_bereken", _bereken_met_skip)
-    refreshed = home_core.cockpit(refresh=True)
-    assert refreshed.get("_revalidate") is True       # herflag → nog een refresh volgt
-    fast = home_core.cockpit(refresh=False)           # maar de teller is nu al canoniek 0
-    assert fast["feedback"]["wachten"] == 0
+    home_core.cockpit(refresh=True)
+    assert home_core.cockpit(refresh=False)["feedback"]["wachten"] == 0   # queue is leidend
+
+
+def test_11_post_skip_forceert_geen_bereken(env, monkeypatch):
+    # Class 1 (latency): post/skip mag geen volledige Home-sweep afdwingen alleen om de teller
+    # te corrigeren — de fast-read overlay doet dat canoniek en goedkoop.
+    calls = {"n": 0}
+    monkeypatch.setattr(home_core, "_bereken", lambda: calls.__setitem__("n", calls["n"] + 1) or {})
+    FC._QUEUE_MEM = _queue("W1", "W2")
+    home_core._MEM = _home_snap(2)
+    env["skips"]["map"] = {"W1": _skip(), "W2": _skip()}
+    FC._home_invalidate_feedback()                    # seam (nu geen geforceerde sweep)
+    assert home_core.cockpit(refresh=False)["feedback"]["wachten"] == 0
+    assert calls["n"] == 0                             # géén _bereken voor de teller
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Bron None → geen override (fallback-veiligheid)
+# Cold/invalid queue → GEEN bevroren integer als 'actueel' (Class 1, ex-PF-3 inversie)
 # ════════════════════════════════════════════════════════════════════════════
-def test_geen_queue_houdt_snapshotwaarde(env):
+def test_geen_geldige_queue_toont_geen_bevroren_integer(env):
+    # LIVE-ACCEPTANCE-INVERSIE: onder PF-3 gold "geen queue → frozen Home-integer blijft
+    # leidend". Dat contract is fout gebleken (Home toonde 6 terwijl Feedback leeg was).
+    # Class 1: een koude/ongeldige queue mag NOOIT de bevroren snapshot-integer als actueel
+    # tonen — de tegel degradeert eerlijk naar 'stale', zonder valse precisie.
     FC._QUEUE_MEM = {}                                 # geen geldige queue-snapshot
     home_core._MEM = _home_snap(7)
+    assert FC.canonical_open_actions()["status"] == "UNKNOWN"
     assert FC.feedback_open_truth() is None
-    assert home_core.cockpit(refresh=False)["feedback"]["wachten"] == 7  # snapshot blijft leidend
+    fb = home_core.cockpit(refresh=False)["feedback"]
+    assert fb.get("stale") is True                     # eerlijke onbekend-status
+    assert fb.get("wachten") != 7                      # niet de bevroren 7
+    assert fb.get("wachten") is None                   # geen valse precisie
 
 
 def test_overlay_muteert_snapshot_niet(env):

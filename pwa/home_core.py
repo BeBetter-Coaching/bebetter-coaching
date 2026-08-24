@@ -76,21 +76,24 @@ def _rec_tot(rec: dict) -> str | None:
     return None
 
 
-def _handled_active(rec: dict | None, severity, vandaag: date) -> bool:
-    """Is dit signaal nu uit de werkvoorraad? (True = onderdrukken.) Eén regel voor
-    Gezien én Later: verborgen zolang (a) het NIET erger is geworden dan wat de coach
-    zag (severity ≤ opgeslagen) én (b) binnen het venster (nu < tot). Stijgt de
-    severity → direct opnieuw zichtbaar; anders pas terug na 7d (Gezien) / snooze_until
-    (Later). Oud record zonder 'severity' → sla de escalatie-check over (venster telt)."""
+def _handled_active(rec: dict | None, tier: str | None, vandaag: date) -> bool:
+    """Is dit signaal nu uit de werkvoorraad? (True = onderdrukken.) Eén regel voor Gezien
+    én Later: verborgen zolang we binnen het venster zijn (nu < tot) — TENZIJ het signaal
+    aantoonbaar ZWAARDER is geworden dan wat de coach afhandelde.
+
+    Class 1: 'zwaarder' = een echte TIER-escalatie (aandacht → actie), niet een louter
+    numerieke severity-bump binnen dezelfde tier. Zo brengt een gewone nieuwe sweep (bv. na
+    een weekend, waarin een compliance-'n gemist' oploopt maar de tier 'actie' blijft) een
+    afgehandelde atleet NIET massaal terug; alleen een kwalitatief zwaarder signaal doorbreekt
+    het snooze-venster. Een genuinely nieuw signaaltype heeft een eigen `uk|soort`-sleutel en
+    is dus sowieso niet onderdrukt. Oud record zonder 'tier' → geen escalatie-doorbraak
+    (venster telt) → conservatief, nooit een valse mass-terugkeer. Venster verstreken → terug."""
     if not rec:
         return False
-    sev_opgeslagen = rec.get("severity")
-    if sev_opgeslagen is not None:
-        try:
-            if severity is not None and float(severity) > float(sev_opgeslagen):
-                return False                              # verergerd → tonen
-        except (TypeError, ValueError):
-            pass
+    tier_opgeslagen = rec.get("tier")
+    if tier_opgeslagen is not None and tier is not None:
+        if _TIER_RANK.get(tier, 9) < _TIER_RANK.get(tier_opgeslagen, 9):
+            return False                                  # echte tier-escalatie → tonen
     tot = _rec_tot(rec)
     return bool(tot) and vandaag.isoformat() < tot
 
@@ -162,7 +165,6 @@ def _belasting_vandaag(atleten: list) -> list:
 _MEM: dict = {}                          # laatst bekende snapshot in dit proces
 _FLAG_LOCK = threading.Lock()
 _REFRESHING = False                      # draait er al een refresh op deze instance?
-_INVAL_SEQ = 0                           # PF-3 — monotone invalidatie-teller (feedback post/skip)
 
 
 def _valid(snap) -> bool:
@@ -202,52 +204,70 @@ def _persist(data: dict) -> None:
 
 
 def invalidate_feedback() -> None:
-    """Invalidatie-seam Feedback → Home — SNAPSHOT-INVALIDATIE, geen afgeleide teller.
+    """Class 1 — Feedback→Home seam. De feedbacktegel wordt op ELKE Home-read canoniek
+    afgeleid uit de gedeelde open-set (`_apply_feedback_overlay` → `canonical_open_actions`),
+    dus een post/skip hoeft GEEN volledige Home-sweep (`_bereken`, ~20-25s) meer te forceren
+    alleen om de teller goed te krijgen: de eerstvolgende fast-read toont hem al correct. Een
+    post/skip raakt bovendien geen prioriteit/compliance/schema-signalen, dus er valt niets te
+    herberekenen.
 
-    Na een BEVESTIGDE feedback-post/skip markeert dit de Home-snapshot als 'moet
-    revalideren' (`_revalidate`-vlag) in beide lagen (in-memory + durabel). De feedback-
-    TELLINGEN worden hier NOOIT met de hand gemuteerd: ze komen uitsluitend uit de
-    canonieke `_bereken`-sweep. De volgende Home-read ziet de vlag → de client triggert de
-    (bestaande, single-flight) achtergrond-refresh → de tegel convergeert naar exact de
-    sweep-waarde. Zo is er geen tweede teller-truth (geen dubbeltelling/drift, race-veilig)
-    en klopt de telling ook na reload/koude start.
+    We houden deze seam als expliciet, nooit-fataal aanroeppunt (bewijsbaar bedraad via de
+    canonical-state-tests) maar muteren de snapshot NIET meer en zetten geen `_revalidate` —
+    díe vlag forceerde juist de trage sweep. Idempotent en zonder bijwerking."""
+    return
 
-    Idempotent (een vlag, geen som): dubbel aanroepen = zelfde toestand. Is Home nog nooit
-    gebouwd (geen geldige snapshot), dan is er geen snapshot om te flaggen — maar de
-    monotone `_INVAL_SEQ`-bump (PF-3, race-veilig onder `_FLAG_LOCK`) zorgt dat een
-    parallelle `_bereken()` die vóór deze invalidatie startte de vlag niet stil kan
-    overschrijven, en dat de eerstvolgende refresh alsnog als 'moet revalideren' geldt.
-    De feedbacktelling wordt hier NOOIT gemuteerd (dat doet de per-read overlay canoniek).
-    Nooit fataal."""
-    global _INVAL_SEQ
+
+# Freshness-venster van de Home-snapshot: gelijk aan de client-side cockpitStale (15 min).
+# Hergebruikt de bestaande `berekend` — geen nieuwe store/timestamp.
+_SNAP_TTL_SEC = 15 * 60
+
+
+def _snap_recent(snap: dict) -> bool:
+    """Is deze Home-snapshot ZELF recent genoeg om zijn (door `_bereken` verse) feedbacktelling
+    als actueel te tonen wanneer de queue-open-set niet FRESH is? Hergebruikt `berekend`.
+    Geen/kapot `berekend` → niet recent (conservatief: dan liever eerlijk 'bijwerken…')."""
+    ber = snap.get("berekend") if isinstance(snap, dict) else None
+    if not ber:
+        return False
     try:
-        with _FLAG_LOCK:
-            _INVAL_SEQ += 1
-        snap = _current()
-        if not _valid(snap):
-            return
-        _persist({**snap, "_revalidate": True})
+        return (datetime.now() - datetime.fromisoformat(ber)).total_seconds() <= _SNAP_TTL_SEC
     except Exception:
-        pass
+        return False
 
 
-def _apply_feedback_overlay(snap: dict) -> dict:
-    """PF-3 — reconcilieer Home's feedbacktegel op ELKE fast-read tegen de GEDEELDE
-    canonieke open-feedbacktruth (`feedback_core.feedback_open_truth`), met exact dezelfde
-    skip/post-semantiek als de Feedback-pagina. Zo klopt de teller direct na een skip én
-    een post, zonder de zware `_bereken`-rebuild (~26s) en zonder een tweede skiplogica of
-    een client-delta. Bron afwezig/fout → laat de bestaande snapshot-waarde staan
-    (niet fataal). Idempotent en niet-muterend voor de snapshot."""
+def _apply_feedback_overlay(snap: dict, allow_stale: bool = True) -> dict:
+    """Class 1 — reconcilieer Home's feedbacktegel op ELKE read tegen DE canonieke open-set
+    (`feedback_core.canonical_open_actions`), met exact dezelfde skip/post-semantiek als de
+    Feedback-pagina → Home en Feedback kunnen niet divergeren (parity by construction).
+
+    FRESH (geldige én RECENTE queue-snapshot) → de tegel wordt de bewezen-actuele queue-telling
+    (geen `_bereken`-sweep nodig; klopt direct na een skip én een post).
+
+    NIET-FRESH (queue STALE = geldig-maar-verlopen, of UNKNOWN = geen geldige snapshot):
+    een verlopen queue-count mag NOOIT als 'actueel' worden getoond. Dan geldt de vraag of de
+    HOME-snapshot zélf een bewijsbaar-recente telling draagt:
+      - `allow_stale=False` (refresh-read: snap = zojuist verse `_bereken`) OF een fast-read waar
+        de home-snapshot zelf recent is (`_snap_recent`) → die feedbacktelling is legitiem vers
+        berekend → laat 'm staan (geen valse 'bijwerken…').
+      - anders (beide bronnen verlopen) → markeer de tegel `stale` (wachten=None): de client toont
+        'bijwerken…' en verwarmt de queue (goedkoper dan een volledige Home-sweep). NOOIT de
+        bevroren integer als 'actueel'.
+    Bron-fout → als UNKNOWN behandeld. Idempotent en niet-muterend voor de snapshot."""
     if not snap or snap.get("feedback") is None:
         return snap
     try:
-        truth = feedback_core.feedback_open_truth()
+        truth = feedback_core.canonical_open_actions()
     except Exception:
-        truth = None
-    if not truth:
-        return snap
-    fb = {**(snap.get("feedback") or {}), "wachten": truth["wachten"],
-          "gepost": truth["gepost"], "pct": truth["pct"]}
+        truth = {"status": feedback_core.OPEN_UNKNOWN}
+    if truth.get("status") == feedback_core.OPEN_FRESH:
+        fb = {**(snap.get("feedback") or {}), "wachten": truth["wachten"],
+              "gepost": truth["gepost"], "pct": truth["pct"], "stale": False}
+        return {**snap, "feedback": fb}
+    if (not allow_stale) or _snap_recent(snap):
+        # Verse _bereken-telling (refresh) of een recente home-sweep (fast-read) → actueel genoeg.
+        fb = {**(snap.get("feedback") or {}), "stale": False}
+        return {**snap, "feedback": fb}
+    fb = {**(snap.get("feedback") or {}), "wachten": None, "pct": None, "stale": True}
     return {**snap, "feedback": fb}
 
 
@@ -275,7 +295,7 @@ def _apply_handled_overlay(snap: dict) -> dict:
         uk = it.get("user_key")
         zichtbaar = [s for s in it.get("signalen", [])
                      if not _handled_active(handled.get(f"{uk}|{s['soort']}"),
-                                            s.get("severity"), vandaag)]
+                                            s.get("tier"), vandaag)]
         herbouwd = _bouw_item(uk, it.get("naam", ""), it.get("voornaam", ""), zichtbaar)
         if herbouwd:
             items.append(herbouwd)
@@ -321,24 +341,22 @@ def cockpit(refresh: bool = False) -> dict:
         return {"fs": True, "prioriteit": None, "pending": True, "cached": False}
 
     try:
-        seq0 = _INVAL_SEQ                       # PF-3: invalidatie-stand vóór de sweep
         data = _bereken()
         if _valid(data):
             # Overlay ook hier: een Gezien/Later die tijdens de ~26s-sweep binnenkwam
             # wordt zo meteen meegenomen én mee gepersisteerd (durable snapshot klopt).
-            data = _apply_handled_overlay(data)
+            # Feedbacktegel: canoniek uit de open-set (FRESH); is de queue op deze instance
+            # niet geldig, dan is de zojuist VERS berekende `_bereken`-telling actueel →
+            # allow_stale=False laat die staan (geen valse 'bijwerken…' na een echte sweep).
+            data = _apply_feedback_overlay(_apply_handled_overlay(data), allow_stale=False)
             data["cached"] = False
-            # Race-veilig: kwam er tijdens deze sweep een feedback-invalidatie binnen, dan is
-            # deze snapshot al verouderd → behoud `_revalidate` (lost-update-guard: de skip/
-            # post gaat niet verloren doordat deze oudere sweep terugschrijft).
-            if _INVAL_SEQ != seq0:
-                data["_revalidate"] = True
             _persist(data)
             return data
         # Mislukte/incomplete refresh → gooi bruikbare oude data niet weg.
         oud = _current()
         if oud:
-            return {**_apply_handled_overlay(oud), "cached": True, "refresh_mislukt": True}
+            return {**_apply_feedback_overlay(_apply_handled_overlay(oud)),
+                    "cached": True, "refresh_mislukt": True}
         return {**data, "cached": False}
     finally:
         with _FLAG_LOCK:
@@ -484,7 +502,7 @@ def _bereken() -> dict:
     for uk, rij in atl.items():
         zichtbaar = [s for s in rij["signalen"]
                      if not _handled_active(_handled.get(f"{uk}|{s['soort']}"),
-                                            s["severity"], _vandaag)]
+                                            s["tier"], _vandaag)]
         it = _bouw_item(uk, rij["naam"], rij["voornaam"], zichtbaar)
         if it:
             items.append(it)
@@ -615,7 +633,8 @@ def handled(user_key: str, status: str = "gezien", snooze_dagen: int = 7,
                 tot = (vandaag + timedelta(days=7)).isoformat()
             store[f"{user_key}|{s}"] = {
                 "status": status, "fingerprint": sg.get("fingerprint"),
-                "severity": sg.get("severity"), "handled_at": vandaag.isoformat(),
+                "severity": sg.get("severity"), "tier": sg.get("tier"),
+                "handled_at": vandaag.isoformat(),
                 "snooze_until": tot if status == "later" else None, "tot": tot, "by": by,
             }
             _dual_write(user_key, naam, s, sg, tot, False)
