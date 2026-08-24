@@ -202,6 +202,42 @@ function applyRoute() {
 }
 window.addEventListener("popstate", applyRoute);
 
+// ── Coach Workflow Cohesion v1 — één canoniek athlete-navigatiecontract ──────
+// Eén helper om DEZELFDE atleet (canonical `user_key`) in een andere module te
+// openen, zonder opnieuw te zoeken/selecteren. Generaliseert het bestaande
+// `dcGoSchema`-patroon (hash schrijven + applyRoute) tot alle athlete-modules, en
+// blijft daarmee de bestaande deep-link-routing hergebruiken (geen tweede laag,
+// geen nieuwe store). De ROUTE-`user_key` is leidend: applyRoute her-dispatcht uit
+// de hash, dus stale in-memory UI-state kan nooit winnen van de expliciete route.
+const _AM_ROUTES = { dossier: "atleten", schema: "schema", cockpit: "dossier" };
+function openAthleteModule(module, user_key) {
+  const view = _AM_ROUTES[module] || module;
+  if (!user_key) { toonView(view); return; }               // geen key → gewone module-entry (picker)
+  // Draft-veiligheid (§9 / PF-1): verlaat je de schema-workbench, flush dan eerst de
+  // coach-draft zodat in-memory edits niet verloren gaan bij het wegnavigeren.
+  if (huidigeView === "schema" && view !== "schema" && typeof sbDraftSave === "function" && sbState) {
+    try { sbDraftSave(); } catch {}
+  }
+  const h = "#" + view + "/" + encodeURIComponent(user_key);
+  if (location.hash !== h) { try { history.pushState(null, "", h); } catch {} }
+  applyRoute();                                             // laadt via de bestaande consume-paden
+}
+// Gedeelde, compacte athlete-context navigatie (§5): toont de OVERIGE athlete-tools
+// als chips naast de bestaande naam-kop. Eén component, hergebruikt over modules —
+// geen per-module duplicatie, geen tweede athlete-picker. `activeView` = huidige
+// route-view (atleten|schema|dossier) zodat de actieve tool niet dubbel verschijnt.
+function athleteNav(activeView, user_key) {
+  if (!user_key) return "";
+  const opts = [
+    { m: "dossier", view: "atleten", label: "Dossier" },
+    { m: "schema", view: "schema", label: "Schema" },
+    { m: "cockpit", view: "dossier", label: "Cockpit" },
+  ];
+  const chips = opts.filter(o => o.view !== activeView).map(o =>
+    `<button type="button" class="anav-chip" onclick="openAthleteModule('${o.m}','${esc(user_key)}')">${esc(o.label)}</button>`).join("");
+  return chips ? `<div class="anav" role="group" aria-label="Ga naar voor deze atleet">${chips}</div>` : "";
+}
+
 // Begroeting + datum voor de home-hero (zelfde toon als de Streamlit-home)
 function groetInfo() {
   const dagen = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"];
@@ -844,7 +880,10 @@ function prioDoe(wrap, act, dagen, soort) {
   const it = wrap._it;
   if (act === "dossier") { deepAtleet("atleten", it.user_key, () => openDossier(it.user_key)); return; }
   if (act === "teampuls") { deepAtleet("teampuls", it.user_key); return; }
-  if (act === "schema") { deepAtleet("schema-verloop", it.user_key); return; }
+  // Cohesion (§6): een schema-signaal is 'schema loopt af' → primaire actie is de
+  // Schema-workbench van DEZE atleet openen (verlengen/openen), niet eerst de
+  // algemene schema-verloop-lijst. Onthoud de open rij voor terugkeer naar Home.
+  if (act === "schema") { prioHerstelUk = prioOpenUk; openAthleteModule("schema", it.user_key); return; }
   if (act !== "gezien" && act !== "later") return;
 
   if (soort && it.n_signalen > 1) { prioSignaalDoe(wrap, act, dagen, soort); return; }   // per-signaal
@@ -1700,6 +1739,7 @@ function tekenAtleet(d) {
     <div class="d-head"><span class="avatar big">${initialen(d.naam)}</span>
       <div><h2 class="d-naam">${esc(d.naam)}</h2>
         ${d.groep ? `<p class="muted klein" style="margin:3px 0 0">${esc(d.groep)}</p>` : ""}</div></div>
+    ${athleteNav("atleten", d.user_key)}
 
     <section class="panel open-static">
       <h3 class="panel-h">${ic("activity")} Training <span class="muted klein">(uit FinalSurge)</span></h3>
@@ -1750,9 +1790,12 @@ function tekenAtleet(d) {
     if (!userKey) return melding("Kies eerst een atleet.", true);
     const r = await jpost("/api/intake/koppel", { nieuw_key: nieuwKey, user_key: userKey }).catch(() => null);
     if (!r || !r.ok) return melding(r?.err || "Koppelen mislukt.", true);
-    melding(`Intake gekoppeld aan ${r.naam || "atleet"}.`);
+    melding(`Intake gekoppeld aan ${r.naam || "atleet"} — bouw nu het schema.`);
     vervalDossierLijst();
-    openDossier(userKey);                 // spring naar het gekoppelde FinalSurge-account
+    // Cohesion (§10): primaire next-action voor een nieuw gekoppelde coaching-atleet
+    // is 'Bouw schema' → open Schema direct op de canonieke user_key (geen re-search).
+    // Het Dossier blijft één tik weg via de athlete-nav in de Schema-kop (secundair).
+    openAthleteModule("schema", userKey);
   };
   $("#kp-direct")?.addEventListener("click", () => doeKoppel(d.user_key));
   $("#kp-open")?.addEventListener("click", () => openAthletePickerOverlay({
@@ -2829,7 +2872,8 @@ async function sbStartConfig(a) {
   const wrap = $("#sb-werk");
   wrap.innerHTML = `<button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
     <div class="d-head"><span class="avatar big">${initialen(a.naam)}</span>
-      <div><h2 class="d-naam">${esc(a.naam)}</h2><p class="muted klein" id="sb-cfg-load">Instellingen laden…</p></div></div>`;
+      <div><h2 class="d-naam">${esc(a.naam)}</h2><p class="muted klein" id="sb-cfg-load">Instellingen laden…</p></div>
+      ${athleteNav("schema", a.key)}</div>`;
   $("#sb-terug").addEventListener("click", sbBackToList);
   const r = await api("/api/schema/config?key=" + encodeURIComponent(a.key)).catch(() => null);
   if (!r || !r.ok) { const l = $("#sb-cfg-load"); if (l) l.textContent = "Kon instellingen niet laden."; return; }
@@ -3618,7 +3662,8 @@ function sbRenderWorkbench() {
     <div class="sb-context">
       <div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
         <div><h2 class="d-naam">${esc(sbState.naam)}</h2>
-          <p class="muted klein">${ctx.doel ? esc(ctx.doel) : "nieuw schema"}</p></div></div>
+          <p class="muted klein">${ctx.doel ? esc(ctx.doel) : "nieuw schema"}</p></div>
+        ${athleteNav("schema", sbState.key)}</div>
       <div class="sb-chips">
         <span class="sb-chip">🆕 nieuw</span>
         ${ctx.weken ? `<span class="sb-chip">${esc(String(ctx.weken))} weken</span>` : ""}
@@ -3892,7 +3937,12 @@ function svItem(it) {
       <span style="margin-left:auto;text-align:right">
         <b style="color:${kleur}">${dagtxt}</b>
         <span class="muted klein" style="display:block">${SV_LABEL[it.status] || ""}</span></span></div>
-    ${it.verborgen ? `<p class="muted klein">${it.verborgen} training(en) nog verborgen voor de atleet${it.zichtbaar_tot ? " · zichtbaar t/m " + esc(it.zichtbaar_tot) : ""}</p>` : ""}`;
+    ${it.verborgen ? `<p class="muted klein">${it.verborgen} training(en) nog verborgen voor de atleet${it.zichtbaar_tot ? " · zichtbaar t/m " + esc(it.zichtbaar_tot) : ""}</p>` : ""}
+    ${it.user_key ? `<div class="sv-acts"><button class="btn ghost small" data-open-schema>${ic("clock")} Schema openen</button></div>` : ""}`;
+  // Cohesion (§8): vanuit schema-verloop direct naar de Schema-workbench van DEZE
+  // atleet — geen algemene picker, dezelfde canonical user_key via het contract.
+  if (it.user_key) el.querySelector("[data-open-schema]").addEventListener("click",
+    () => openAthleteModule("schema", it.user_key));
   return el;
 }
 $("#sv-refresh").addEventListener("click", () => { geladen["schema-verloop"] = true; laadSchemaVerloop(); });
@@ -3945,7 +3995,9 @@ function pulsItem(it) {
     if (!r || !r.ok) return melding("Kon niet dempen.", true);
     el.style.opacity = ".4"; setTimeout(() => el.remove(), 250); haptic(10);
   });
-  el.querySelector("[data-dossier]").addEventListener("click", () => toonView("atleten"));
+  // Cohesion-fix: open het dossier van DEZE atleet i.p.v. de algemene atletenlijst
+  // (de user_key was al bekend maar werd weggegooid). Via het canonieke contract.
+  el.querySelector("[data-dossier]").addEventListener("click", () => openAthleteModule("dossier", it.user_key));
   return el;
 }
 
@@ -4172,7 +4224,7 @@ function dcRender(wrap, vm) {
       <span class="dc-badge dc-${(st.overall || "").toLowerCase()}">${esc(_DC_OVERALL[st.overall] || st.overall || "—")}</span>
       <span class="dc-rel dc-rel-${esc(rel.level || "")}" title="${esc(relTxt)}"><i></i>${esc(relTxt)}</span>
     </div>
-    <div class="dc-actions"><button class="btn ghost" onclick="dcGoSchema('${esc(vm.key)}')">Naar Schema</button></div>
+    <div class="dc-actions">${athleteNav("dossier", vm.key)}</div>
   </div>`;
 
   // Partial-truth diagnostic: één build-stage faalde → alleen dát stuk mist, de rest klopt.
@@ -4245,8 +4297,8 @@ function dcRender(wrap, vm) {
 }
 
 function dcGoSchema(key) {
-  try { history.pushState(null, "", "#schema/" + encodeURIComponent(key)); } catch {}
-  applyRoute();
+  // Genormaliseerd naar het canonieke contract (was hand-rolled pushState + applyRoute).
+  openAthleteModule("schema", key);
 }
 
 async function dcWaarom(btn) {
