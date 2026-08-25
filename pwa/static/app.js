@@ -238,6 +238,24 @@ function athleteNav(activeView, user_key) {
   return chips ? `<div class="anav" role="group" aria-label="Ga naar voor deze atleet">${chips}</div>` : "";
 }
 
+// ── Gedeelde refresh-feedback (Cohesion live-repair, cluster C) ──────────────
+// Eén helper voor ELKE expliciete refresh-knop: directe spinner bij klik, blijft
+// draaien tijdens de async refresh, reset bij succes én fout (finally) en blokkeert
+// dubbel afvuren zolang de refresh loopt. Puur presentation-state — geen nieuwe truth,
+// geen persistente state. Herbruikt de bestaande .iconbtn.spinning-animatie en het
+// bewezen patroon van de Feedback-refresh (nu gedeeld i.p.v. per-module gekopieerd).
+async function withSpin(btn, fn) {
+  if (!btn) return fn && fn();
+  if (btn.dataset.busy === "1") return;                    // dubbel afvuren geblokkeerd tijdens run
+  btn.dataset.busy = "1"; btn.classList.add("spinning"); btn.disabled = true; btn.setAttribute("aria-busy", "true");
+  try { return await fn(); }
+  finally { btn.classList.remove("spinning"); btn.disabled = false; btn.dataset.busy = ""; btn.removeAttribute("aria-busy"); }
+}
+function bindRefresh(id, fn) {
+  const btn = document.getElementById(id);
+  if (btn) btn.addEventListener("click", () => withSpin(btn, fn));
+}
+
 // Begroeting + datum voor de home-hero (zelfde toon als de Streamlit-home)
 function groetInfo() {
   const dagen = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"];
@@ -878,7 +896,9 @@ function prioTierWissel(oud, nieuw) {
 // → rollback naar exact de vorige rijstate.
 function prioDoe(wrap, act, dagen, soort) {
   const it = wrap._it;
-  if (act === "dossier") { deepAtleet("atleten", it.user_key, () => openDossier(it.user_key)); return; }
+  // Cohesion: één gedeeld athlete-contract (geen caller-specific openDossier-hack).
+  // openAthleteModule → #atleten/<uk> → reload-safe consume (pending-patroon).
+  if (act === "dossier") { prioHerstelUk = prioOpenUk; openAthleteModule("dossier", it.user_key); return; }
   if (act === "teampuls") { deepAtleet("teampuls", it.user_key); return; }
   // Cohesion (§6): een schema-signaal is 'schema loopt af' → primaire actie is de
   // Schema-workbench van DEZE atleet openen (verlengen/openen), niet eerst de
@@ -1595,6 +1615,7 @@ function renderPicker(cfg) {
 }
 
 let dossierPicker = null;
+let atletenOpenPending = "";              // atleet uit de route die geopend moet worden zodra de roster er is
 let dossierGroepVolgorde = [];           // canonieke groepsvolgorde (voor koppel-picker)
 // Gedeelde picker in een modal (desktop) / bottom-sheet (mobiel). Confirm-modus:
 // selecteren markeert alleen; de write gebeurt pas op de bevestigknop.
@@ -1631,7 +1652,10 @@ function _dossierSecundair(a) {          // task-relevante info: intake + notiti
 function toonDossierLijstView() {        // alleen tonen/verbergen (master-detail)
   $("#d-lijst").hidden = false;
   if (isDesktop()) { if (!dossierSel) toonDetailLeeg(); }   // detail blijft staan naast de lijst
-  else { $(".md-list").hidden = false; $("#d-detail").hidden = true; }  // telefoon: terug naar de lijst
+  // Telefoon: is er een atleet open (dossierSel), dan blijft het detail leidend —
+  // een late roster-render (deep-link/refresh) mag de geopende atleet nooit clobberen.
+  else if (dossierSel) { $(".md-list").hidden = true; $("#d-detail").hidden = false; }
+  else { $(".md-list").hidden = false; $("#d-detail").hidden = true; }  // geen atleet → lijst
 }
 async function laadDossierLijst() {
   const box = $("#d-lijst");
@@ -1660,6 +1684,9 @@ async function laadDossierLijst() {
     });
   }
   toonDossierLijstView();
+  // Deep-link/refresh: eerst de lijst tekenen, DAARNA de atleet openen (detail wint als
+  // laatste). Zelfde patroon als de cockpit (dcOpenPending) — geen race, elke breedte.
+  if (atletenOpenPending) { const p = atletenOpenPending; atletenOpenPending = ""; openDossier(p); }
 }
 function tekenDossierLijst() { toonDossierLijstView(); dossierPicker && dossierPicker.herteken(); }
 function initialen(naam) {
@@ -1668,11 +1695,14 @@ function initialen(naam) {
 }
 
 // (zoeken wordt door de gedeelde picker aan #d-zoek gebonden)
-$("#a-refresh").addEventListener("click", () => { geladen.atleten = true; laadDossierLijst(); });
+bindRefresh("a-refresh", () => { geladen.atleten = true; return laadDossierLijst(); });
 
 async function openDossier(ident) {
+  // Roster nog niet geladen? → onthoud en open zodra laadDossierLijst klaar is (detail
+  // opent dan ná de lijst-render → geen clobber, reload-safe). Mirror van de cockpit.
+  if (!dossierPicker) { atletenOpenPending = ident; if (!geladen.atleten) { geladen.atleten = true; laadDossierLijst(); } return; }
   dossierSel = ident;
-  dossierPicker && dossierPicker.setSelected(ident);   // rij licht op (desktop + mobiel)
+  dossierPicker.setSelected(ident);          // rij licht op (desktop + mobiel)
   pushRoute("atleten", ident);              // deep-link: refresh houdt deze atleet open (#C)
   const wrap = $("#d-detail");
   if (!isDesktop()) { $(".md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }  // telefoon: meteen 'in' de klant
@@ -1714,14 +1744,22 @@ function tekenAtleet(d) {
   // het Masterbrein hem gaan gebruiken (die zoeken op user_key). Non-destructief.
   const isNieuw = !!(dos && dos.nieuw);
   const nieuwKey = dos ? dos.key : "";
+  const suggestie = d.suggestie || null;                       // eenduidige FS-naam-match (kandidaat, geen auto-link)
   const fsKandidaten = dossierCache.filter(a => a.user_key);   // alleen echte FS-accounts
+  // Koppel-actie: (1) name-merged FS-rij → koppel aan dit account; (2) losse orphan met
+  // eenduidige naam-match → bied die match als KANDIDAAT (coach bevestigt); (3) anders
+  // handmatig kiezen. Nooit blind auto-linken; de write gebeurt pas op de knop.
+  const koppelActie = d.user_key
+    ? `<button class="btn primary" id="kp-direct">Koppel aan dit account (${esc(d.naam)})</button>`
+    : (suggestie
+      ? `<button class="btn primary" id="kp-suggest">Koppel aan ${esc(suggestie.naam)}${suggestie.groep ? ` <span class="muted klein">(${esc(suggestie.groep)})</span>` : ""} — voorgestelde match</button>
+         <button class="btn ghost" id="kp-open">Andere atleet kiezen&hellip;</button>`
+      : `<button class="btn primary" id="kp-open">Kies FinalSurge-atleet&hellip;</button>`);
   const koppelHtml = isNieuw ? `
     <section class="panel open-static">
       <h3 class="panel-h">${ic("file")} Koppel intake aan FinalSurge</h3>
       <p class="hint">Deze intake staat nog los opgeslagen. Koppel hem aan het FinalSurge-account — daarna gebruikt Schema (en het Masterbrein) hem automatisch.</p>
-      ${d.user_key
-      ? `<button class="btn primary" id="kp-direct">Koppel aan dit account (${esc(d.naam)})</button>`
-      : `<button class="btn primary" id="kp-open">Kies FinalSurge-atleet&hellip;</button>`}
+      ${koppelActie}
     </section>` : "";
   const _redenLabel = r => r === "vervangen_bij_koppelen" ? "vervangen bij koppelen"
     : r === "opnieuw_overgenomen" ? "opnieuw overgenomen" : (r || "");
@@ -1798,6 +1836,7 @@ function tekenAtleet(d) {
     openAthleteModule("schema", userKey);
   };
   $("#kp-direct")?.addEventListener("click", () => doeKoppel(d.user_key));
+  $("#kp-suggest")?.addEventListener("click", () => suggestie && doeKoppel(suggestie.user_key));  // confirm = klik; geen auto-link
   $("#kp-open")?.addEventListener("click", () => openAthletePickerOverlay({
     title: `Koppel "${esc(d.naam)}" aan FinalSurge`,
     items: fsKandidaten.map(a => ({ key: a.user_key, naam: a.naam, groep: a.groep })),
@@ -1890,8 +1929,29 @@ async function laadInbox() {
   });
 }
 
-$("#i-refresh").addEventListener("click", laadInbox);
-function laadIntake() { laadIntakeLink(); laadInbox(); }
+bindRefresh("i-refresh", laadInbox);
+function laadIntake() { laadIntakeLink(); laadInbox(); laadOrphanIntakes(); }
+
+// Historische, nog-niet-gekoppelde ('nieuw:') intakes zichtbaar maken in de Intake-
+// module (cluster D). Een intake die eerder is overgenomen toen de atleet nog niet in
+// FinalSurge bestond, mag niet 'verdwijnen': hier terugvindbaar + één tik naar het
+// dossier waar de coach hem (met voorgestelde match) kan koppelen. Geen nieuwe store,
+// geen duplicatie — puur een read op de bestaande roster (/api/atleten, nieuw=true).
+async function laadOrphanIntakes() {
+  const box = $("#i-orphans"); if (!box) return;
+  const r = await api("/api/atleten").catch(() => null);
+  const orphans = (r && r.atleten || []).filter(a => a.nieuw && !a.user_key);
+  if (!orphans.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `<p class="sec-label">Losse intakes — nog niet gekoppeld</p>
+    <p class="hint">Overgenomen toen de atleet nog niet in FinalSurge stond. Koppel hem aan het FinalSurge-account zodra die bestaat — daarna gebruikt Schema de intake.</p>
+    <section class="lijst">${orphans.map(a => `
+      <button class="listcard" data-orphan="${esc(a.id)}">
+        <span class="avatar">${initialen(a.naam)}</span>
+        <span class="lc-body"><span class="lc-title">${esc(a.naam)}</span>
+          <span class="lc-sub">losse intake · koppelen</span></span>${ic("chevron")}</button>`).join("")}</section>`;
+  box.querySelectorAll("[data-orphan]").forEach(b =>
+    b.addEventListener("click", () => openAthleteModule("dossier", b.dataset.orphan)));
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENTEN — template-PDF's (AI-intro's zodra de sleutel gezet is)
@@ -3041,7 +3101,7 @@ function sbRenderHerijking() {
     <button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
     ${sbModeBar("verlengen")}
     <div class="sb-context"><div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
-      <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Verlengen · herijking</p></div></div></div>
+      <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Verlengen · herijking</p></div>${athleteNav("schema", sbState.key)}</div></div>
     ${sbVorigBlokHtml(vb)}
     <p class="sb-herijk-intro">${ic("brain")} BeBetter heeft dit herijkt — controleer alleen wat veranderd of onzeker is.</p>
     <div class="sb-nieuweperiode" id="sb-nieuweperiode">
@@ -3297,7 +3357,7 @@ function sbRenderConfig() {
     <button class="btn ghost back" id="sb-terug">${ic("back")} Alle atleten</button>
     ${sbModeBar("nieuw")}
     <div class="sb-context"><div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
-      <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Nieuw schema · instellingen</p></div></div></div>
+      <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Nieuw schema · instellingen</p></div>${athleteNav("schema", sbState.key)}</div></div>
     <div class="sb-cfg">
       <div class="sb-cfg-grid">
         <div><label class="lbl">Doel</label><textarea id="cfg-doel" rows="2" placeholder="bijv. 10km in sub 50">${esc(c.doel)}</textarea></div>
@@ -3386,6 +3446,7 @@ function sbRenderPlan() {
     <div class="sb-context"><div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
       <div><h2 class="d-naam">${esc(sbState.naam)}</h2>
         <p class="muted klein">${esc(doel)}${sbState.planEdited ? " · handmatig aangepast" : ""}</p></div>
+      ${athleteNav("schema", sbState.key)}
       <button class="btn primary" id="sb-build">${ic("check")} Bouw schema</button></div></div>
     <div class="sb-plan-grid">
       <div class="sb-plan-col">
@@ -3576,7 +3637,7 @@ function sbRenderPublish() {
   $("#sb-werk").innerHTML = `
     <button class="btn ghost back" id="sb-pub-back">${ic("back")} Terug naar schema</button>
     <div class="sb-context"><div class="sb-ctx-head"><span class="avatar big">${initialen(sbState.naam)}</span>
-      <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Publiceren naar FinalSurge</p></div></div>
+      <div><h2 class="d-naam">${esc(sbState.naam)}</h2><p class="muted klein">Publiceren naar FinalSurge</p></div>${athleteNav("schema", sbState.key)}</div>
       <div class="sb-chips">
         <span class="sb-chip">${c.included || 0} publiceren</span>
         ${c.excluded ? `<span class="sb-chip">${c.excluded} uitgesloten</span>` : ""}
@@ -3845,7 +3906,7 @@ window.addEventListener("resize", () => {
   const f = $("#sb-focus");
   if (f) { if (d) { f.hidden = true; f.innerHTML = ""; } else if (sbState.openRow) sbRenderFocus(); }
 });
-$("#sb-refresh").addEventListener("click", () => { geladen.schema = true; laadSchema(); });
+bindRefresh("sb-refresh", () => { geladen.schema = true; return laadSchema(); });
 
 // ════════════════════════════════════════════════════════════════════════════
 // RACES — aankomende races + race-wens plaatsen (WRITE via post_comment)
@@ -3898,7 +3959,7 @@ function raceItem(it) {
   });
   return el;
 }
-$("#rc-refresh").addEventListener("click", () => { geladen.races = true; laadRaces(); });
+bindRefresh("rc-refresh", () => { geladen.races = true; return laadRaces(); });
 
 // ════════════════════════════════════════════════════════════════════════════
 // SCHEMA-VERLOOP — wie loopt bijna zonder schema (puur lezend)
@@ -3945,7 +4006,7 @@ function svItem(it) {
     () => openAthleteModule("schema", it.user_key));
   return el;
 }
-$("#sv-refresh").addEventListener("click", () => { geladen["schema-verloop"] = true; laadSchemaVerloop(); });
+bindRefresh("sv-refresh", () => { geladen["schema-verloop"] = true; return laadSchemaVerloop(); });
 
 // ════════════════════════════════════════════════════════════════════════════
 // TEAMPULS — belasting-signalen (gezien/dossier) + AI-weekbriefing
@@ -3959,8 +4020,13 @@ async function laadTeampuls(force = false) {
   if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
   if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
   const items = r.items || [];
-  info.innerHTML = `Signalen uit volume, gevoel, RPE en notities — geen diagnose, wel een seintje. `
-    + (items.length ? `<b>${r.hoog || 0}</b> hoog · <b>${items.length}</b> in beeld · ${esc(r.datum || "")}` : `alles binnen de marge · ${esc(r.datum || "")}`);
+  // Semantiek-contract (cluster E): Teampuls = teambrede BELASTING-monitoring (volume/
+  // gevoel/RPE) — een andere projectie dan de Home-prioriteit (actielijst). 'Hoog' hier
+  // betekent hoge trainingsbelasting, niet automatisch een openstaande Home-actie: Home
+  // bundelt óók compliance + aflopend schema en verbergt wat je al afvinkte (gezien/later),
+  // terwijl Teampuls het hele team blijft tonen. Daarom kan een 'hoog' hier ontbreken op Home.
+  info.innerHTML = `Belasting-monitoring uit volume, gevoel, RPE en notities — teambreed, los van je Home-actielijst. `
+    + (items.length ? `<b>${r.hoog || 0}</b> hoge belasting · <b>${items.length}</b> in beeld · ${esc(r.datum || "")}` : `alles binnen de marge · ${esc(r.datum || "")}`);
   box.innerHTML = "";
   if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen belasting-signalen — iedereen binnen de marge.</p></div>`; }
   else items.forEach(it => box.appendChild(pulsItem(it)));
@@ -4029,7 +4095,7 @@ function briefHtml(t) {
   if (inUl) out += "</ul>";
   return out;
 }
-$("#tp-refresh").addEventListener("click", () => laadTeampuls(true));
+bindRefresh("tp-refresh", () => laadTeampuls(true));
 
 // ════════════════════════════════════════════════════════════════════════════
 // ADMINISTRATIE — financiële cockpit (pincode-gate, puur lezend)
@@ -4060,7 +4126,7 @@ async function ontgrendelAdmin() {
   $("#ad-gate").hidden = true; $("#ad-body").hidden = false; $("#ad-refresh").hidden = false;
   tekenAdmin(r);
 }
-$("#ad-refresh")?.addEventListener("click", async () => {
+bindRefresh("ad-refresh", async () => {
   if (!adminPin) return;
   const r = await jpost("/api/admin/overzicht", { pin: adminPin }).catch(() => null);
   if (r && r.ok) tekenAdmin(r);
@@ -4145,6 +4211,8 @@ const _DC_KIND_IC = { complaint: "alert", load_signal: "pulse", possible_relatio
 function dcToonLijst() {
   $("#dc-lijst").hidden = false;
   if (isDesktop()) { if (!dcSel) $("#dc-detail").hidden = true; }
+  // Telefoon: open cockpit (dcSel) blijft leidend — late roster-render niet clobberen.
+  else if (dcSel) { $(".view[data-view='dossier'] .md-list").hidden = true; $("#dc-detail").hidden = false; }
   else { $(".view[data-view='dossier'] .md-list").hidden = false; $("#dc-detail").hidden = true; }
 }
 
@@ -4172,8 +4240,7 @@ async function laadDossierCockpit() {
   if (dcOpenPending) { const p = dcOpenPending; dcOpenPending = ""; openDossierCockpit(p); }
 }
 
-const _dcRefBtn = $("#dc-refresh");
-if (_dcRefBtn) _dcRefBtn.addEventListener("click", () => { geladen.dossier = true; laadDossierCockpit(); });
+bindRefresh("dc-refresh", () => { geladen.dossier = true; return laadDossierCockpit(); });
 
 async function openDossierCockpit(ident) {
   // roster nog niet geladen? → onthoud en open zodra laadDossierCockpit klaar is

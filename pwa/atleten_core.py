@@ -92,6 +92,22 @@ def _match_store_key(user_key: str, naam: str) -> str | None:
     return None
 
 
+def _fs_suggestie(naam: str) -> dict | None:
+    """Voorgestelde FinalSurge-match voor een losse (orphan) intake op naam.
+
+    Geeft de coach een KANDIDAAT om te koppelen — geen automatische koppeling.
+    De koppel-write gebeurt pas na expliciete bevestiging (coach-confirm). Alleen
+    een eenduidige naam-match telt: bij 0 of >1 kandidaten geen suggestie (dan kiest
+    de coach zelf uit de volledige lijst)."""
+    if not fs_core.heeft_token() or not naam:
+        return None
+    treffers = [a for a in fs_core.roster() if _norm(a.get("naam")) == _norm(naam)]
+    if len(treffers) != 1:
+        return None
+    a = treffers[0]
+    return {"user_key": a["user_key"], "naam": a["naam"], "groep": a.get("groep", "")}
+
+
 def detail(ident: str) -> dict | None:
     """Detail voor één atleet. `ident` = FS user_key OF een store-key.
 
@@ -129,4 +145,8 @@ def detail(ident: str) -> dict | None:
         "groep": fs_rows.get(ident, {}).get("groep", ""),
         "training": training,
         "dossier": dossier,          # None als er nog geen store-data is
+        # Orphan-intake (nog niet gekoppeld): bied een eenduidige FS-naam-match als
+        # KANDIDAAT aan (coach bevestigt zelf; geen blind auto-match). Alleen zinvol
+        # voor een puur store-atleet die nog geen FS-user_key heeft.
+        "suggestie": _fs_suggestie(naam) if (ident not in fs_rows and dossier and dossier.get("nieuw")) else None,
     }
