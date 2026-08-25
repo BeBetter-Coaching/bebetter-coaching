@@ -4446,6 +4446,14 @@ function dcRender(wrap, vm) {
   } else {
     h += `<p class="dc-calm">Geen actiepunten — geen actieve klacht of signaal bekend${rel.level === "green" ? " (bronnen vers)" : ""}.</p>`;
   }
+  // Belasting-observatie (Teampuls-coherentie): toon de belasting óók als hij geen open
+  // actie (meer) is — een 'hoog+niet-afgehandeld' zit al als kaart hierboven; hier vullen
+  // we de afgehandelde/let-op-observatie aan mét de reden waarom er geen Home-actie staat.
+  const lo = vm.load_observation;
+  if (lo && (lo.afgehandeld || lo.ernst === "let_op")) {
+    const reden = lo.afgehandeld ? "eerder afgehandeld — geen open Home-actie" : "monitoring — nog geen coachactie";
+    h += `<p class="dc-loadobs">${ic("pulse")} Belasting ${esc(lo.ernst === "hoog" ? "hoog" : "let op")}${lo.signalen ? ": " + esc(lo.signalen) : ""} <span class="muted klein">· ${esc(reden)} (Teampuls)</span></p>`;
+  }
   h += `</section>`;
 
   // Z2 — Recent veranderd (alleen bij échte recency; anders afwezig)
@@ -4453,6 +4461,14 @@ function dcRender(wrap, vm) {
   if (changes.length) {
     h += `<section class="dc-sec dc-changes"><h3>Recent veranderd</h3><ul class="dc-chlist">` +
       changes.map(c => `<li><span class="dc-ch-t">${esc(c.title)}</span>${c.effective_at ? `<span class="dc-ch-d">${esc(c.effective_at)}</span>` : ""}</li>`).join("") +
+      `</ul></section>`;
+  }
+
+  // Z2b — Doelen & planning (compact, canonical: goal-evidence + laatst geconfigureerd blok)
+  const plan = vm.planning || { rows: [] };
+  if (plan.rows && plan.rows.length) {
+    h += `<section class="dc-sec dc-planning"><h3>Doelen &amp; planning</h3><ul class="dc-plan">` +
+      plan.rows.map(r => `<li><span class="dc-lbl">${esc(r.label)}</span><span class="dc-val">${esc(r.value)}</span></li>`).join("") +
       `</ul></section>`;
   }
 

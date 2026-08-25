@@ -29,6 +29,8 @@ except Exception:                                    # pragma: no cover
 
 def _area(label: str) -> str:
     """Normaliseer een klachtlabel naar een gebied ('pijn (knie)' → 'knie')."""
+    if not isinstance(label, str):
+        label = ""                                       # defensief: nooit re.search op non-str
     m = re.search(r"\(([^)]+)\)", label or "")
     if m:
         return m.group(1).strip().lower()
@@ -77,7 +79,12 @@ def _mentions(raw: dict, athlete_key: str, today: date) -> list:
     ik_klacht = (ik.get("huidige_klachten") or "").strip()
     if ik_klacht:
         datum = str(raw.get("intake_ts") or "")[:10]
-        for lab in (_vind(ik_klacht) or [{"": ""}]):
+        # Herkent `_vind` geen gelabelde klacht in de vrije intaketekst, dan tóch één
+        # 'onbekend'-melding met de ruwe tekst als label (sentinel "" — NIET een dict:
+        # dat brak `_area(re.search(...))` met een TypeError → hele complaints-stage viel
+        # om → onterecht "interne fout" + klacht onzichtbaar in Dossier terwijl Home hem
+        # wél toont). Zo blijft een athlete-gemelde klacht altijd zichtbaar.
+        for lab in (_vind(ik_klacht) or [""]):
             ms.append({"area": _area(lab) if lab else "onbekend",
                        "label": lab or ik_klacht[:60], "datum": datum,
                        "reporter": "athlete", "source": "intake", "workout_key": "",
