@@ -134,6 +134,56 @@ def store(tmp_path, monkeypatch):
     return intake_store
 
 
+# ══ Identity-guard: `nieuw:` is geen app-brede athlete-context (externe review) ══
+# Een pre-link route (#atleten/nieuw:Naam) opent wél het orphan-detail voor de koppel-
+# flow, maar mag NOOIT cross-module worden meegenomen (globale sidebar → Schema/Dossier),
+# want die verwachten een canonical FS user_key. Alleen na koppelen werkt athlete-first.
+class TestOrphanIdentityGuard:
+    def test_g1_active_key_negeert_nieuw_prefix(self):
+        body = _fn("activeAthleteKey")
+        assert 'ident.startsWith("nieuw:")' in body
+        assert "return \"\"" in body
+
+    def test_g2_orphan_detail_blijft_via_route_consume(self):
+        # applyRoute opent openDossier(ident) voor een atleten-route — óók een nieuw:-orphan
+        # (de guard zit in activeAthleteKey, niet in de route-consume).
+        body = _fn("applyRoute")
+        assert 'if (view === "atleten" && ident) openDossier(ident)' in body
+
+    def test_g3_sidebar_adapter_leunt_op_active_key(self):
+        # Zonder canonical active key (nieuw: → "") valt openModuleFromNav terug op de
+        # gewone module-entry → geen #schema/nieuw:... .
+        body = _fn("openModuleFromNav")
+        assert "activeAthleteKey()" in body
+        assert "else toonView(view)" in body
+
+    def test_g4_geen_key_of_globale_view_valt_terug(self):
+        body = _fn("openAthleteModule")
+        assert "if (!user_key || !_ATHLETE_VIEWS.has(view))" in body
+
+    def test_g5_active_key_behaviour_matrix(self):
+        # Deterministische her-implementatie van de guard-logica, gedreven door dezelfde
+        # regels als de JS (route wint; nieuw: telt niet; alleen athlete-views).
+        ATH = {"atleten", "schema", "dossier"}
+
+        def active(hash_):
+            raw = hash_.lstrip("#")
+            i = raw.find("/")
+            if i == -1:
+                return ""
+            view, ident = raw[:i], raw[i + 1:]
+            if ident.startswith("nieuw:"):
+                return ""
+            return ident if (view in ATH and ident) else ""
+
+        assert active("#atleten/nieuw:Dominique Slooff") == ""     # orphan → geen context
+        assert active("#schema/nieuw:X") == ""                     # orphan → geen context
+        assert active("#atleten/uk-dom") == "uk-dom"               # canonical → context
+        assert active("#schema/uk-dom") == "uk-dom"                # canonical → context
+        assert active("#races") == ""                              # globale view → geen context
+        assert active("#home") == ""
+
+
 class TestOrphanParityBackend:
     def test_13_orphan_intakes_toont_nieuw_ondanks_fs_namesake(self, store, monkeypatch):
         # De Dominique-case: orphan blijft zichtbaar ook al bestaat er nu een FS-namesake

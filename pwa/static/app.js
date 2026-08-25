@@ -218,6 +218,13 @@ function activeAthleteKey() {
   const i = raw.indexOf("/");
   if (i === -1) return "";
   const view = raw.slice(0, i), ident = raw.slice(i + 1);
+  // Identity-guard: `nieuw:` is UITSLUITEND pre-link intake-identity. Zo'n route mag het
+  // orphan-detail in Atleten openen (koppel-flow), maar mag NOOIT als app-brede athlete-
+  // context fungeren — alleen een echte FinalSurge user_key mag cross-module meegenomen
+  // worden. Anders zou de globale sidebar `nieuw:` naar Schema/Dossier/Cockpit dragen,
+  // modules die een canonical user_key verwachten. Na koppelen (echte user_key) werkt de
+  // athlete-first navigatie gewoon.
+  if (ident.startsWith("nieuw:")) return "";
   return (_ATHLETE_VIEWS.has(view) && ident) ? ident : "";
 }
 // Open een specifieke atleet (canonical `user_key`) in een athlete-view, zonder
