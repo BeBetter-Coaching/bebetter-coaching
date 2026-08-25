@@ -3296,11 +3296,15 @@ function sbDagenNaarString() { return [...$("#cfg-dagen").querySelectorAll(".sb-
 function sbAfspraken(c) {
   const dagen = sbDagenUitString(c.trainingsdagen || ""), out = [];
   if (c.doel) out.push("Doel: " + c.doel);
-  if (c.weken) out.push(`Periode: ${c.weken} weken · start ${c.startdatum || "?"}`);
+  if (c.weken) out.push(`Periode: ${c.weken} weken · ${c.startdatum || "?"}${c.schema_einddatum ? " → " + c.schema_einddatum : ""}`);
+  if (c.wedstrijddatum) out.push("Hoofddoel: " + c.wedstrijddatum);
   out.push(dagen.length ? `Trainingsdagen (${dagen.length}/week): ${dagen.map(i => SB_DAG_NL[i]).join(", ")}`
                         : "Trainingsdagen: nog niet gekozen — de AI kiest ze zelf");
+  if (c.sessies_per_week) out.push("Sessies/week: " + c.sessies_per_week);
+  out.push("Plannen op: " + (c.op_tijd ? "tijd (minuten)" : "afstand (km)"));
   out.push(`Zones (${c.zone_type || "tempo"}): ${c.zones ? "ingesteld" : "—"}`);
   if (c.huidig_volume) out.push("Huidig volume: " + c.huidig_volume);
+  if (c.tijd_per_training) out.push("Tijd/training: " + c.tijd_per_training);
   if (c.race_prioriteit) out.push("Race: " + c.race_prioriteit);
   if (c.coach_notitie) out.push("Coachinstructie: " + c.coach_notitie.split("\n")[0]);
   out.push("Variatie verplicht; op elke trainingsdag een training.");
@@ -3328,10 +3332,50 @@ function sbUpdateGate() {
 function sbSyncConfig() {
   const c = sbState.config;
   c.doel = $("#cfg-doel").value; c.startdatum = $("#cfg-start").value; c.weken = $("#cfg-weken").value;
-  c.trainingsdagen = sbDagenNaarString(); c.huidig_volume = $("#cfg-vol").value;
+  c.schema_einddatum = ($("#cfg-eind") || {}).value || "";        // nu een echt bewerkbaar veld
+  c.wedstrijddatum = ($("#cfg-race-datum") || {}).value || "";
+  c.trainingsdagen = sbDagenNaarString(); c.sessies_per_week = ($("#cfg-sessies") || {}).value || "";
+  c.huidig_volume = $("#cfg-vol").value; c.tijd_per_training = ($("#cfg-tijd") || {}).value || "";
   c.race_prioriteit = $("#cfg-race").value; c.coach_notitie = $("#cfg-notitie").value;
-  c.schema_einddatum = "";                       // server herberekent uit start+weken
+  // op_tijd wordt door de segment-knop gezet (sbWireUitvoer); hier niet overschrijven.
   sbDebouncedSave();
+}
+
+// Compacte NL-datum (voor de periode-samenvatting). Geen tweede date-engine: puur weergave.
+function sbDatumKort(iso) {
+  const d = sbParseDate(iso); if (!d) return esc(iso || "");
+  const mnd = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
+  return `${d.getDate()} ${mnd[d.getMonth()]}`;
+}
+// Wedstrijddatum ≠ schema-einddatum (§8): ligt de hoofddoel-race ná het schema-einde, toon
+// dat als coherente info (geen foutmelding). Beide dezelfde-dag of leeg → geen regel.
+function sbPeriodeGap(c) {
+  if (!c.wedstrijddatum || !c.schema_einddatum || c.wedstrijddatum <= c.schema_einddatum) return "";
+  return `<p class="sb-periode-gap">${ic("flag")} Dit blok eindigt ${sbDatumKort(c.schema_einddatum)} · hoofddoel ${sbDatumKort(c.wedstrijddatum)}</p>`;
+}
+function sbRefreshPeriodeGap() {
+  const el = $("#cfg-periode-gap"); if (el) el.innerHTML = sbPeriodeGap(sbState.config);
+}
+// Canonieke periode via de server (§6): één bron `_bereken_periode`, geen frontend-date-
+// engine. `leading` bepaalt welk laatst-bewerkte veld leidt: "eind" → server berekent weken
+// uit de einddatum; anders (weken/start) → einddatum uit de weken. Beide velden blijven zo
+// altijd coherent, zonder stille tegenstrijdige waarden.
+async function sbRecalcPeriode(leading) {
+  if (!sbState) return;
+  const start = ($("#cfg-start") || {}).value || "", weken = ($("#cfg-weken") || {}).value || "",
+    eind = ($("#cfg-eind") || {}).value || "";
+  const qs = leading === "eind"
+    ? `start=${encodeURIComponent(start)}&einddatum=${encodeURIComponent(eind)}`
+    : `start=${encodeURIComponent(start)}&weken=${encodeURIComponent(weken)}`;
+  const r = await api("/api/schema/periode?" + qs).catch(() => null);
+  if (!r || !r.ok || !sbState) return;
+  const c = sbState.config;
+  c.weken = String(r.weken); c.schema_einddatum = r.einddatum;
+  const wIn = $("#cfg-weken"), eIn = $("#cfg-eind");
+  if (wIn && leading !== "weken") wIn.value = c.weken;   // niet het veld dat de coach net typt overschrijven
+  if (eIn && leading === "weken") eIn.value = c.einddatum || r.einddatum;
+  if (eIn && leading !== "eind") eIn.value = r.einddatum;
+  sbRefreshPeriodeGap(); sbRefreshAfspraken(); sbUpdateGate(); sbDebouncedSave();
 }
 
 // ── PF-2 — expliciete zone-refresh + bronstatus ──────────────────────────────
@@ -3389,14 +3433,37 @@ function sbRenderConfig() {
     <div class="sb-cfg">
       <div class="sb-cfg-grid">
         <div><label class="lbl">Doel</label><textarea id="cfg-doel" rows="2" placeholder="bijv. 10km in sub 50">${esc(c.doel)}</textarea></div>
-        <div class="sb-cfg-row2">
+
+        <p class="sb-cfg-sec">Periode</p>
+        <div class="sb-cfg-row3">
           <div><label class="lbl">Startdatum</label><input type="date" id="cfg-start" value="${esc(c.startdatum)}"></div>
-          <div><label class="lbl">Weken</label><input type="number" id="cfg-weken" min="1" max="52" value="${esc(c.weken)}"></div></div>
+          <div><label class="lbl">Weken</label><input type="number" id="cfg-weken" min="1" max="52" value="${esc(c.weken)}"></div>
+          <div><label class="lbl">Einddatum</label><input type="date" id="cfg-eind" value="${esc(c.schema_einddatum || "")}"></div></div>
+
+        <p class="sb-cfg-sec">Hoofddoel <span class="muted klein">— mag ná het schema-einde liggen</span></p>
+        <div class="sb-cfg-row2">
+          <div><label class="lbl">Wedstrijddatum <span class="muted klein">(doeldatum)</span></label><input type="date" id="cfg-race-datum" value="${esc(c.wedstrijddatum || "")}"></div>
+          <div><label class="lbl">Race-prioriteit</label><input type="text" id="cfg-race" placeholder="bijv. A-race" value="${esc(c.race_prioriteit)}"></div></div>
+        <div id="cfg-periode-gap">${sbPeriodeGap(c)}</div>
+
+        <p class="sb-cfg-sec">Beschikbaarheid <span class="muted klein">— dagen ≠ sessies/week</span></p>
         <div><label class="lbl">Trainingsdagen</label>
           <div class="sb-dagen" id="cfg-dagen">${SB_DAG.map((d, i) => `<button type="button" class="sb-dag ${sel.includes(i) ? "on" : ""}" data-d="${i}">${d[0].toUpperCase() + d.slice(1)}</button>`).join("")}</div></div>
         <div class="sb-cfg-row2">
+          <div><label class="lbl">Sessies per week <span class="muted klein">(optioneel)</span></label><input type="number" id="cfg-sessies" min="1" max="14" placeholder="bijv. 4" value="${esc(c.sessies_per_week || "")}"></div>
+          <div></div></div>
+
+        <p class="sb-cfg-sec">Belastbaarheid</p>
+        <div class="sb-cfg-row2">
           <div><label class="lbl">Huidig volume</label><input type="text" id="cfg-vol" placeholder="bijv. 25-30 km/week" value="${esc(c.huidig_volume)}"></div>
-          <div><label class="lbl">Race-prioriteit</label><input type="text" id="cfg-race" placeholder="bijv. A-race" value="${esc(c.race_prioriteit)}"></div></div>
+          <div><label class="lbl">Tijd per training</label><input type="text" id="cfg-tijd" placeholder="bijv. 45-60 min" value="${esc(c.tijd_per_training || "")}"></div></div>
+
+        <p class="sb-cfg-sec">Uitvoerwijze</p>
+        <div><label class="lbl">Trainingen plannen op</label>
+          <div class="seg sb-uitvoer" id="cfg-uitvoer" data-value="${c.op_tijd ? "tijd" : "afstand"}">
+            <button type="button" data-v="afstand" class="${c.op_tijd ? "" : "on"}">Afstand (km)</button>
+            <button type="button" data-v="tijd" class="${c.op_tijd ? "on" : ""}">Tijd (minuten)</button></div></div>
+
         <div><label class="lbl">Coachinstructies</label><textarea id="cfg-notitie" rows="2" placeholder="bijv. rustig opbouwen; meer tempowerk richting 10km">${esc(c.coach_notitie)}</textarea></div>
         <div class="sb-zones"><span class="lbl">Zones · ${esc(c.zone_type || "tempo")} (uit FinalSurge — enige intensiteitsbron) ${sbZoneStatusHtml()}</span>
           <pre class="sb-zonebox">${esc(c.zones || "geen zones gevonden in FinalSurge")}</pre></div>
@@ -3417,7 +3484,19 @@ function sbRenderConfig() {
   sbWireModeBar();
   $("#scroller").scrollTo({ top: 0 });
   $("#cfg-dagen").querySelectorAll(".sb-dag").forEach(b => b.addEventListener("click", () => { b.classList.toggle("on"); sbSyncConfig(); sbRefreshAfspraken(); sbUpdateGate(); }));
-  ["cfg-doel", "cfg-start", "cfg-weken", "cfg-vol", "cfg-race", "cfg-notitie"].forEach(id => $("#" + id).addEventListener("input", () => { sbSyncConfig(); sbRefreshAfspraken(); sbUpdateGate(); }));
+  // Gewone velden: sync + afspraken + gate.
+  ["cfg-doel", "cfg-race-datum", "cfg-race", "cfg-sessies", "cfg-vol", "cfg-tijd", "cfg-notitie"].forEach(id =>
+    $("#" + id).addEventListener("input", () => { sbSyncConfig(); sbRefreshAfspraken(); sbRefreshPeriodeGap(); sbUpdateGate(); }));
+  // Periode (§6): één canonieke server-berekening; het laatst-bewerkte veld leidt.
+  $("#cfg-start").addEventListener("input", () => { sbSyncConfig(); sbRecalcPeriode("weken"); });   // start wijzigt → einddatum uit weken
+  $("#cfg-weken").addEventListener("input", () => { sbSyncConfig(); sbRecalcPeriode("weken"); });   // weken leidt → einddatum
+  $("#cfg-eind").addEventListener("input", () => { sbSyncConfig(); sbRecalcPeriode("eind"); });     // einddatum leidt → weken
+  // Uitvoerwijze km/min (§7): zet op_tijd; bestaande build/publish-logica gebruikt dit.
+  $("#cfg-uitvoer").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    const seg = $("#cfg-uitvoer"); seg.dataset.value = b.dataset.v;
+    seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    sbState.config.op_tijd = (b.dataset.v === "tijd"); sbSyncConfig(); sbRefreshAfspraken();
+  }));
   $("#cfg-gen").addEventListener("click", sbGenPlan);
   sbWireZoneRefresh();                      // PF-2: expliciete verse zone-read
   sbUpdateGate();                          // begintoestand: knop uit tot verplichte velden kloppen

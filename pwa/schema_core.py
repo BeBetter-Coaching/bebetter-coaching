@@ -470,6 +470,10 @@ def config_prefill(key: str) -> dict:
         "referentie_prestatie": base.get("referentie_prestatie", ""),
         "blessurehistorie": base.get("blessurehistorie", ""),
         "andere_sporten": base.get("andere_sporten", ""), "op_tijd": base.get("op_tijd", False),
+        # sessies/week ≠ beschikbare dagen: aparte planning-input. Brein projecteert dit veld
+        # niet, dus lezen we het (net als op_tijd) uit de opgeslagen intake — geen tweede
+        # planning-truth náást v2, want v2 claimt dit veld niet.
+        "sessies_per_week": base.get("sessies_per_week", ""),
         "_context": "",   # zware actuele context — pas bij plan-generatie gevuld
     }
     return {"config": config, "context": context_config(config), "afspraken": afspraken(config),
