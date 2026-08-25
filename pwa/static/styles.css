@@ -1094,6 +1094,7 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
 .sb-uitvoer button{flex:1 1 0}
 .sb-periode-gap{display:flex;align-items:center;gap:6px;margin:2px 0 0;font-size:12.5px;color:var(--muted)}
 .sb-periode-gap .ic{width:14px;height:14px}
+.sb-periode-gap.warn{color:var(--red,#e5484d);font-weight:600}
 @media(max-width:560px){.sb-cfg-row3{grid-template-columns:1fr}}
 .sb-dagen{display:flex;gap:6px;flex-wrap:wrap}
 .sb-dag{flex:0 0 auto;min-width:46px;min-height:42px;background:var(--card2);border:1px solid var(--border);

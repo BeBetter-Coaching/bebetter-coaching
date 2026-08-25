@@ -327,6 +327,27 @@ def _intake_ts(record: dict | None) -> str:
     return (record.get("updated_at") or (record.get("_opgeslagen") or "")[:10] or "")
 
 
+def _intake_recency(record: dict | None) -> str:
+    """VOLLEDIGE-PRECISIE recency-sleutel voor `nieuwste_intake` (niet voor display).
+
+    `_intake_ts` knipt op de DATUM af — prima voor weergave, maar dan wint bij een
+    gelijke datum altijd de intake-module en kan een builder-snapshot die LATER op
+    diezelfde dag is opgeslagen niet meer normaal recency-authority krijgen. Hier
+    vergelijken we daarom op de fijnst beschikbare tijdstempel:
+      • expliciete authority-stamp (`_updated_ts`, gezet bij o.a. koppelen) of de
+        builder-`_opgeslagen` (ISO datetime) → vol datetime;
+      • anders de datum (`updated_at`) op begin-van-dag, zodat een date-only intake
+        eerlijk vergelijkt met een datetime-snapshot (geen kunstmatige tie-win).
+    """
+    if not record:
+        return ""
+    full = record.get("_updated_ts") or record.get("_opgeslagen")
+    if full:
+        return str(full)
+    d = record.get("updated_at") or ""
+    return (d + "T00:00:00") if d else ""
+
+
 def nieuwste_intake(intake_module: dict | None, bouwer_snapshot: dict | None) -> dict | None:
     """Geef het MEEST RECENTE van twee intake-records terug (of wat er bestaat).
 
@@ -335,6 +356,8 @@ def nieuwste_intake(intake_module: dict | None, bouwer_snapshot: dict | None) ->
     ('intakes.json' vs 'laatste_intakes.json') de laatste versie belandde, zodat
     'de intake bestaat wél maar verschijnt niet' niet meer voorkomt. Geeft het
     hele nieuwste record terug (geen veld-voor-veld-menging → voorspelbaar).
+    Recency op volledige precisie (`_intake_recency`): bij exacte gelijkheid wint
+    de intake-module; een strikt latere builder-snapshot wint normaal.
     """
     if intake_module and not bouwer_snapshot:
         return intake_module
@@ -342,7 +365,7 @@ def nieuwste_intake(intake_module: dict | None, bouwer_snapshot: dict | None) ->
         return bouwer_snapshot
     if not intake_module and not bouwer_snapshot:
         return None
-    return (intake_module if _intake_ts(intake_module) >= _intake_ts(bouwer_snapshot)
+    return (intake_module if _intake_recency(intake_module) >= _intake_recency(bouwer_snapshot)
             else bouwer_snapshot)
 
 

@@ -130,7 +130,7 @@ class TestPeriode:
 
     def test_8_endpoint_bestaat_en_gebruikt_canonical(self):
         assert '@app.get("/api/schema/periode")' in _API
-        assert "_bereken_periode(start" in _API
+        assert "periode_status(start" in _API        # wrapt de canonieke _bereken_periode + validatie
 
     def test_9_wedstrijddatum_mag_na_einddatum(self):
         # Geen automatische gelijktrekking: een hoofddoel-race mag ná het schema-einde.
@@ -182,6 +182,70 @@ class TestConfigUI:
         body = _fn("sbRenderConfig")
         assert 'sbRecalcPeriode("weken")' in body   # weken/start leidt
         assert 'sbRecalcPeriode("eind")' in body    # einddatum leidt
+
+
+# ══ Correctness-fix 1 — ongeldige periode blokkeren (externe review) ═══════
+class TestPeriodeValidatie:
+    def test_18_einddatum_voor_start_is_ongeldig(self):
+        r = schema_core.periode_status("2026-09-07", "12", "2026-08-01")
+        assert r["geldig"] is False and r["err"]
+        assert r["weken"] == 0                       # geen stille min-1-correctie
+
+    def test_19_einddatum_gelijk_of_na_start_is_geldig(self):
+        assert schema_core.periode_status("2026-09-07", "", "2026-09-07")["geldig"] is True
+        assert schema_core.periode_status("2026-09-07", "", "2026-11-29")["geldig"] is True
+
+    def test_20_geldige_roundtrip_blijft_intact(self):
+        r = schema_core.periode_status("2026-09-07", "12", "")
+        assert r["geldig"] is True and r["weken"] == 12 and r["einddatum"] == "2026-11-29"
+
+    def test_21_wedstrijddatum_na_einddatum_blijft_toegestaan(self):
+        # periode-validatie gaat over start↔einddatum; een latere race is een aparte relatie.
+        r = schema_core.periode_status("2026-09-07", "12", "2026-11-29")
+        assert r["geldig"] is True
+        assert "2026-12-20" > r["einddatum"]         # race ná einde = toegestaan (geen fout)
+
+    def test_22_endpoint_gebruikt_validatie(self):
+        assert "periode_status(start" in _API
+
+    def test_23_frontend_gate_blokkeert_bij_ongeldige_periode(self):
+        assert "_periode_invalid" in _fn("sbConfigValid")
+        rc = _fn("sbRecalcPeriode")
+        assert "r.geldig === false" in rc and "_periode_invalid = true" in rc
+        assert "_periode_invalid" in _fn("sbPeriodeGap")
+
+
+# ══ Correctness-fix 2 — linking-authority niet datum-tie-afhankelijk ═══════
+class TestLinkingRecency:
+    def test_24_recency_is_volledige_precisie(self):
+        # date-only vs datetime dezelfde dag: de datetime (later op de dag) is groter.
+        assert intake_store._intake_recency({"updated_at": "2026-02-01"}) == "2026-02-01T00:00:00"
+        assert intake_store._intake_recency({"_opgeslagen": "2026-02-01T14:00:00"}) == "2026-02-01T14:00:00"
+        assert intake_store._intake_recency({"_updated_ts": "2026-02-01T10:00:00"}) == "2026-02-01T10:00:00"
+
+    def test_25_oude_orphan_plus_oudere_stale_builder_link_wint(self, store):
+        store.save_intakes({"nieuw:Dom": {"athlete_name": "Dom", "doel": "HM", "updated_at": "2026-01-10"}})
+        store.save_laatste_intake("uk", {"athlete_name": "Dom", "_opgeslagen": "2026-02-01T09:00:00"})
+        intake_core.link_intake("nieuw:Dom", "uk")
+        win = store.nieuwste_intake(store.load_intakes().get("uk"), store.load_laatste_intakes().get("uk"))
+        assert win.get("doel") == "HM"               # gekoppelde intake (authority-stamp 'nu') wint
+
+    def test_26_later_diezelfde_dag_opgeslagen_builder_wint(self, store):
+        # Simuleer: gekoppelde intake met authority-stamp T10:00; daarna builder T14:00.
+        linked = {"athlete_name": "Dom", "doel": "HM", "updated_at": "2026-08-25",
+                  "_updated_ts": "2026-08-25T10:00:00"}
+        later_builder = {"athlete_name": "Dom", "doel": "10k (nieuw plan)", "_opgeslagen": "2026-08-25T14:00:00"}
+        win = store.nieuwste_intake(linked, later_builder)
+        assert win.get("doel") == "10k (nieuw plan)"  # latere builder krijgt weer authority
+
+    def test_27_geen_builder_linked_wint(self, store):
+        linked = {"athlete_name": "Dom", "doel": "HM", "_updated_ts": "2026-08-25T10:00:00"}
+        assert store.nieuwste_intake(linked, None).get("doel") == "HM"
+
+    def test_28_oudere_builder_blijft_verliezen(self, store):
+        linked = {"doel": "HM", "_updated_ts": "2026-08-25T10:00:00"}
+        older_builder = {"doel": "oud", "_opgeslagen": "2026-08-20T09:00:00"}
+        assert store.nieuwste_intake(linked, older_builder).get("doel") == "HM"
 
 
 # ══ Nieuw/Verlengen ongemoeid (regressie) ══════════════════════════════════

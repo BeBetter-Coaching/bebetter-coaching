@@ -3319,6 +3319,7 @@ function sbConfigValid(c) {
   if (!sbDagenUitString(c.trainingsdagen || "").length) m.push("trainingsdagen");
   if (!(c.startdatum || "").trim()) m.push("startdatum");
   if (!(parseInt(c.weken, 10) > 0)) m.push("weken");
+  if (c._periode_invalid) m.push("geldige einddatum");   // einddatum vóór start → plan-gate dicht
   return m;
 }
 function sbUpdateGate() {
@@ -3350,6 +3351,7 @@ function sbDatumKort(iso) {
 // Wedstrijddatum ≠ schema-einddatum (§8): ligt de hoofddoel-race ná het schema-einde, toon
 // dat als coherente info (geen foutmelding). Beide dezelfde-dag of leeg → geen regel.
 function sbPeriodeGap(c) {
+  if (c._periode_invalid) return `<p class="sb-periode-gap warn">${ic("alert")} ${esc(c._periode_err || "De einddatum ligt vóór de startdatum.")}</p>`;
   if (!c.wedstrijddatum || !c.schema_einddatum || c.wedstrijddatum <= c.schema_einddatum) return "";
   return `<p class="sb-periode-gap">${ic("flag")} Dit blok eindigt ${sbDatumKort(c.schema_einddatum)} · hoofddoel ${sbDatumKort(c.wedstrijddatum)}</p>`;
 }
@@ -3370,6 +3372,14 @@ async function sbRecalcPeriode(leading) {
   const r = await api("/api/schema/periode?" + qs).catch(() => null);
   if (!r || !r.ok || !sbState) return;
   const c = sbState.config;
+  // Ongeldige periode (einddatum vóór start): NIET stil corrigeren — markeer, toon de fout,
+  // blokkeer de plan-gate, en laat de coach-invoer staan zodat hij hem kan herstellen.
+  if (r.geldig === false) {
+    c._periode_invalid = true; c._periode_err = r.err || "Ongeldige periode.";
+    sbRefreshPeriodeGap(); sbRefreshAfspraken(); sbUpdateGate(); sbDebouncedSave();
+    return;
+  }
+  c._periode_invalid = false; c._periode_err = "";
   c.weken = String(r.weken); c.schema_einddatum = r.einddatum;
   const wIn = $("#cfg-weken"), eIn = $("#cfg-eind");
   if (wIn && leading !== "weken") wIn.value = c.weken;   // niet het veld dat de coach net typt overschrijven

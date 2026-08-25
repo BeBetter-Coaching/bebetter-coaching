@@ -282,6 +282,25 @@ def _bereken_periode(startdatum: str, weken, schema_einddatum: str) -> tuple:
     return (weken_int, end.isoformat())
 
 
+def periode_status(startdatum: str, weken, schema_einddatum: str) -> dict:
+    """Canonieke periode MET validatie. Een einddatum die vóór de startdatum ligt is
+    expliciet ONGELDIG — nooit stil corrigeren naar minimaal 1 week (dat verborg een
+    coach-fout). Geldig → dezelfde (weken, einddatum) als `_bereken_periode`. Een
+    wedstrijddatum ná de einddatum blijft toegestaan (dat is een aparte veld-relatie).
+    Geeft {geldig, weken, einddatum, err}."""
+    if schema_einddatum:
+        try:
+            s = date.fromisoformat(startdatum)
+            e = date.fromisoformat(schema_einddatum)
+        except Exception:
+            s = e = None
+        if s and e and e < s:
+            return {"geldig": False, "weken": 0, "einddatum": schema_einddatum,
+                    "err": "De einddatum ligt vóór de startdatum."}
+    weken_int, eind = _bereken_periode(startdatum, weken or "8", schema_einddatum or "")
+    return {"geldig": True, "weken": weken_int, "einddatum": eind, "err": ""}
+
+
 def context_config(config: dict) -> dict:
     """Workbench-/header-context afgeleid van de (bewerkte) coach-config."""
     zt = (config or {}).get("zone_type")

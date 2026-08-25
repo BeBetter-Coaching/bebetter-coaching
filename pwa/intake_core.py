@@ -211,16 +211,19 @@ def link_intake(nieuw_key: str, user_key: str) -> tuple[bool, str, str]:
     if intakes.get(user_key):
         intake_store.archiveer_intake(user_key, intakes.get(user_key),
                                       reden="vervangen_bij_koppelen")
-    # Koppelen is een coach-actie die DEZE intake canoniek maakt voor de user_key: stempel
-    # 'updated_at' op vandaag. Anders behield de gekoppelde intake de (oude) orphan-datum,
-    # waardoor een stale/lege bouwer-snapshot in laatste_intakes hem kon overschaduwen in
-    # nieuwste_intake → Schema-prefill (doel/trainingsdagen) bleef leeg. De originele
-    # intakedatum blijft bewaard als '_intake_datum' (transparantie, geen truth-verlies).
+    # Koppelen is een coach-actie die DEZE intake canoniek/current maakt voor de user_key.
+    # We zetten een expliciete VOLLE-PRECISIE authority-stamp (`_updated_ts`, 'nu') zodat de
+    # gekoppelde intake een stale/oudere bouwer-snapshot verslaat in nieuwste_intake — maar
+    # een builder-snapshot die HIERNA wordt opgeslagen (strikt later `_opgeslagen`) krijgt
+    # gewoon weer recency-authority. Geen datum-tie-afhankelijkheid meer. `updated_at`
+    # (datum) blijft voor weergave; de originele intakedatum blijft als `_intake_datum`.
+    from datetime import datetime as _dt
     intakes[user_key] = {
         **bron,
         "_intake_datum": bron.get("updated_at") or bron.get("_intake_datum") or "",
         "gekoppeld_op": date.today().isoformat(),
         "updated_at": date.today().isoformat(),
+        "_updated_ts": _dt.now().isoformat(timespec="seconds"),
     }
     intakes.pop(nieuw_key, None)
     ok, err = intake_store.save_intakes(intakes)

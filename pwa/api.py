@@ -597,8 +597,7 @@ def schema_periode(start: str = "", weken: str = "", einddatum: str = ""):
     de weken. Zo blijven frontend en backend byte-consistent (geen off-by-one, geen tweede
     date-engine met afwijkende semantics)."""
     try:
-        weken_int, eind = schema_core._bereken_periode(start, weken or "8", einddatum or "")
-        return {"ok": True, "weken": weken_int, "einddatum": eind}
+        return {"ok": True, **schema_core.periode_status(start, weken or "8", einddatum or "")}
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"Periode mislukt: {e}"}, status_code=500)
 
