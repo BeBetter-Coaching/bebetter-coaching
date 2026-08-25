@@ -793,6 +793,14 @@ def intake_inbox():
     return {"inbox": intake.inbox_list()}
 
 
+@app.get("/api/intake/orphans")
+def intake_orphans():
+    """Losse ('nieuw:') intakes die nog niet aan een FinalSurge-account hangen —
+    pariteit met de Streamlit 'wachtende intakes'-lijst (verdwijnt niet door een
+    naam-merge in de roster). Per orphan een eventuele voorgestelde FS-match."""
+    return {"orphans": intake.orphan_intakes()}
+
+
 @app.post("/api/intake/inbox/{iid}/take")
 def intake_inbox_take(iid: str):
     ok, err, naam = intake.inbox_take(iid)
