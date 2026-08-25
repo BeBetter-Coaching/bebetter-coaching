@@ -282,6 +282,25 @@ def _bereken_periode(startdatum: str, weken, schema_einddatum: str) -> tuple:
     return (weken_int, end.isoformat())
 
 
+def periode_status(startdatum: str, weken, schema_einddatum: str) -> dict:
+    """Canonieke periode MET validatie. Een einddatum die vóór de startdatum ligt is
+    expliciet ONGELDIG — nooit stil corrigeren naar minimaal 1 week (dat verborg een
+    coach-fout). Geldig → dezelfde (weken, einddatum) als `_bereken_periode`. Een
+    wedstrijddatum ná de einddatum blijft toegestaan (dat is een aparte veld-relatie).
+    Geeft {geldig, weken, einddatum, err}."""
+    if schema_einddatum:
+        try:
+            s = date.fromisoformat(startdatum)
+            e = date.fromisoformat(schema_einddatum)
+        except Exception:
+            s = e = None
+        if s and e and e < s:
+            return {"geldig": False, "weken": 0, "einddatum": schema_einddatum,
+                    "err": "De einddatum ligt vóór de startdatum."}
+    weken_int, eind = _bereken_periode(startdatum, weken or "8", schema_einddatum or "")
+    return {"geldig": True, "weken": weken_int, "einddatum": eind, "err": ""}
+
+
 def context_config(config: dict) -> dict:
     """Workbench-/header-context afgeleid van de (bewerkte) coach-config."""
     zt = (config or {}).get("zone_type")
@@ -470,6 +489,10 @@ def config_prefill(key: str) -> dict:
         "referentie_prestatie": base.get("referentie_prestatie", ""),
         "blessurehistorie": base.get("blessurehistorie", ""),
         "andere_sporten": base.get("andere_sporten", ""), "op_tijd": base.get("op_tijd", False),
+        # sessies/week ≠ beschikbare dagen: aparte planning-input. Brein projecteert dit veld
+        # niet, dus lezen we het (net als op_tijd) uit de opgeslagen intake — geen tweede
+        # planning-truth náást v2, want v2 claimt dit veld niet.
+        "sessies_per_week": base.get("sessies_per_week", ""),
         "_context": "",   # zware actuele context — pas bij plan-generatie gevuld
     }
     return {"config": config, "context": context_config(config), "afspraken": afspraken(config),

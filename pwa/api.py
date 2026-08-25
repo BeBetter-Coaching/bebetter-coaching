@@ -590,6 +590,18 @@ def schema_config(key: str = ""):
         return JSONResponse({"ok": False, "err": f"Config mislukt: {e}"}, status_code=500)
 
 
+@app.get("/api/schema/periode")           # canonieke start↔weken↔einddatum (één bron, geen frontend-date-engine)
+def schema_periode(start: str = "", weken: str = "", einddatum: str = ""):
+    """Canonieke periodeberekening (maandag-uitgelijnd, identiek aan de bouwer). `leidend`:
+    is een einddatum meegegeven, dan berekent de server de weken; anders de einddatum uit
+    de weken. Zo blijven frontend en backend byte-consistent (geen off-by-one, geen tweede
+    date-engine met afwijkende semantics)."""
+    try:
+        return {"ok": True, **schema_core.periode_status(start, weken or "8", einddatum or "")}
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Periode mislukt: {e}"}, status_code=500)
+
+
 @app.get("/api/schema/zones")             # PF-2: expliciete coach-refresh — verse zone-read + bronstatus
 def schema_zones(key: str = ""):
     try:

@@ -246,4 +246,8 @@ class TestPrioriteitSemantiek:
 # ══ Service worker versie opgehoogd (nieuwe shell live) ════════════════════
 class TestServiceWorker:
     def test_28_sw_versie_opgehoogd(self):
-        assert 'bebetter-shell-v89' in _SW
+        # SW-versie loopt door met elke shell-wijziging; borg dat hij vooruit is (≥ v88,
+        # de versie waarin dit contract landde) i.p.v. een exacte pin die elke milestone breekt.
+        import re
+        m = re.search(r"bebetter-shell-v(\d+)", _SW)
+        assert m and int(m.group(1)) >= 88
