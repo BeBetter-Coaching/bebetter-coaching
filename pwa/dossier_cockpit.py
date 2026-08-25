@@ -21,6 +21,7 @@ from brain import projections as _proj
 from brain import state as _state
 from brain import history as _history
 from brain import history_store as _hstore
+from brain import recency as _recency
 from brain.models import (ACTIVE, ATTENTION, CONFLICT, GOOD, HIGH, INSUFFICIENT_DATA,
                           MEDIUM, RECENT, RECURRING, STABLE, STALE)
 
@@ -226,6 +227,77 @@ def _change(title, eff, ev, transition, entity):
             "source": "state", "derived_from": "state"}
 
 
+# ── Doelen & planning (compacte projectie, §Doelen) ─────────────────────────
+# Projecteert BESTAANDE canonical truth: doel/race uit AthleteState goal-evidence,
+# schema-blok/uitvoerwijze uit de reeds geladen intake (laatst geconfigureerde blok).
+# GEEN nieuwe schema-state, GEEN extra FS-call — puur zichtbaar maken wat er al is.
+def _schema_status(eind: str, today: date) -> str:
+    if not eind:
+        return ""
+    try:
+        e = date.fromisoformat(str(eind)[:10])
+    except Exception:
+        return ""
+    d = (e - today).days
+    return f"loopt — nog {d} dag{'en' if d != 1 else ''}" if d >= 0 \
+        else f"afgelopen — {abs(d)} dag{'en' if abs(d) != 1 else ''} geleden"
+
+
+def _planning(dossier_evs: list, raw: dict, today: date) -> dict:
+    ev = {e["key"]: e for e in dossier_evs}
+
+    def gval(k):
+        e = ev.get(k)
+        return _value_text(e) if e else ""
+
+    ik = (raw or {}).get("intake") or {}
+    rows = []
+    doel = gval("goal.doel") or (ik.get("doel") or "")
+    if doel:
+        rows.append({"label": "Hoofddoel", "value": str(doel)})
+    race = gval("goal.race") or (ik.get("wedstrijddatum") or "")
+    if race:
+        rows.append({"label": "Wedstrijddatum", "value": str(race)})
+    prio = gval("goal.race_priority")
+    if prio:
+        rows.append({"label": "Race-prioriteit", "value": str(prio)})
+    start, eind = (ik.get("startdatum") or ""), (ik.get("schema_einddatum") or "")
+    if start or eind:
+        rows.append({"label": "Schema-blok (laatst geconfigureerd)",
+                     "value": f"{start or '?'} → {eind or '?'}"})
+        st = _schema_status(eind, today)
+        if st:
+            rows.append({"label": "Schema-status", "value": st})
+        if start or eind or doel:
+            rows.append({"label": "Uitvoerwijze",
+                         "value": "tijd (minuten)" if ik.get("op_tijd") else "afstand (km)"})
+    return {"rows": rows, "onbekend": not rows}
+
+
+# ── Belasting-observatie (Teampuls-coherentie, §Journey B) ───────────────────
+# Zelfde stored stand als Teampuls/Home (geen recompute, geen nieuwe engine). Maakt de
+# belastingobservatie zichtbaar in Dossier — óók als hij al is afgehandeld — mét het
+# 'afgehandeld'-feit, zodat Dossier het verschil met de Home-actielijst kan verklaren
+# (waarom een atleet wél in Teampuls staat maar geen open Home-actie heeft). None = geen
+# (relevant) signaal. Verzint niets: leest alleen `raw["belasting"]`.
+def _load_observation(raw: dict, today: date) -> dict | None:
+    bel = (raw or {}).get("belasting") or {}
+    ernst = bel.get("ernst")
+    if ernst not in ("hoog", "let_op"):
+        return None
+    # ZELFDE freshness-guard als `load.signal` (state.py, `recency.LOAD_SIGNAL_FRESH`):
+    # een verouderde belastingstand is GEEN actuele Teampuls-observatie en mag niet
+    # bovenaan Dossier blijven staan. Geen datum bekend → behandel als vers (bewezen
+    # gedrag van load.signal).
+    sd = str(bel.get("_stand_datum") or "")[:10]
+    if sd and not _recency.within(sd, today, _recency.LOAD_SIGNAL_FRESH):
+        return None
+    return {"ernst": ernst,
+            "signalen": "; ".join((bel.get("signalen") or [])[:3]),
+            "afgehandeld": bool(bel.get("_afgehandeld")),
+            "datum": sd}
+
+
 # ── Domeinkaarten (Z3) ───────────────────────────────────────────────────────
 def _domains(dossier_evs: list, open_cards: set) -> list:
     cards = []
@@ -301,6 +373,8 @@ def cockpit(key: str, today: date | None = None) -> dict:
             break
 
     changes = _changes(state_obj, today)
+    planning = _planning(dossier_evs, raw, today)
+    load_observation = _load_observation(raw, today)
     domains = _domains(dossier_evs, open_cards)
 
     # Zone 4 — tijdlijn (capture OFF → eerlijke empty-state)
@@ -316,7 +390,9 @@ def cockpit(key: str, today: date | None = None) -> dict:
                    "reliability": _reliability(state_obj)},
         "attention": attention,
         "attention_domains": sorted(open_cards),
+        "load_observation": load_observation,
         "changes": changes,
+        "planning": planning,
         "domains": domains,
         "timeline": timeline,
         "source_health": _sources(state_obj),

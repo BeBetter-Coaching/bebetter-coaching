@@ -94,7 +94,18 @@ def gather(user_key: str, today: date | None = None) -> tuple[dict, list]:
         if res:
             res = dict(res)
             res["_stand_datum"] = stand.get("datum")
-            res["_afgehandeld"] = user_key in (stand.get("afgehandeld") or {})
+            # Effectieve handled-status via de GEDEELDE visibility-semantiek
+            # (`belasting.zichtbare_resultaten`: `tot >= vandaag` + escalatie let_op→hoog),
+            # NIET kale membership in `stand["afgehandeld"]`. Zo interpreteren Teampuls,
+            # Home én Dossier 'afgehandeld' identiek: een verlopen afhandeling of een naar
+            # `hoog` geëscaleerd signaal telt weer als actief. Faalt de eval → val terug op
+            # membership (nooit fataal; brain blijft geïsoleerd).
+            try:
+                import belasting                          # pure functie; module bestaat server-side
+                _zichtbaar = {r.get("user_key") for r in belasting.zichtbare_resultaten(stand)}
+                res["_afgehandeld"] = user_key not in _zichtbaar
+            except Exception:
+                res["_afgehandeld"] = user_key in (stand.get("afgehandeld") or {})
         raw["belasting"] = res
         health.append(_ok("belasting", res or {}, coverage=(stand.get("datum", ""), stand.get("datum", "")))[1])
     except Exception as e:
