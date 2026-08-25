@@ -143,8 +143,11 @@ class TestHomeDirect:
         assert 'deepAtleet("schema-verloop"' not in block        # niet meer de algemene lijst
 
     def test_dossier_signaal_blijft_direct_de_atleet_openen(self):
+        # Live-repair: Home→Dossier via het GEDEELDE contract (geen caller-specific
+        # openDossier-hack meer), zodat de reload-safe consume-route wordt gebruikt.
         block = _APP[_APP.index("function prioDoe"):_APP.index("function prioDoe") + 1200]
-        assert 'deepAtleet("atleten", it.user_key, () => openDossier(it.user_key))' in block
+        assert 'openAthleteModule("dossier", it.user_key)' in block
+        assert 'deepAtleet("atleten", it.user_key, () => openDossier(it.user_key))' not in block
 
 
 # ── 8. Athlete picker gating (§11) — behoud short-circuit bij bekende key ─────
