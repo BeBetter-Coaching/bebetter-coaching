@@ -173,7 +173,7 @@ function toonView(view) {
   if (laders[view] && !geladen[view]) { geladen[view] = true; laders[view](); }
   pushRoute(view);
 }
-$$("[data-open-view]").forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+$$("[data-open-view]").forEach(b => b.addEventListener("click", () => openModuleFromNav(b.dataset.openView)));
 
 // ── Deep-link routing: view + geselecteerde atleet overleven een refresh (#C) ─
 // De PWA had géén URL-state; elke refresh viel terug op Home + de volledige lijst.
@@ -202,39 +202,66 @@ function applyRoute() {
 }
 window.addEventListener("popstate", applyRoute);
 
-// ── Coach Workflow Cohesion v1 — één canoniek athlete-navigatiecontract ──────
-// Eén helper om DEZELFDE atleet (canonical `user_key`) in een andere module te
-// openen, zonder opnieuw te zoeken/selecteren. Generaliseert het bestaande
-// `dcGoSchema`-patroon (hash schrijven + applyRoute) tot alle athlete-modules, en
-// blijft daarmee de bestaande deep-link-routing hergebruiken (geen tweede laag,
-// geen nieuwe store). De ROUTE-`user_key` is leidend: applyRoute her-dispatcht uit
-// de hash, dus stale in-memory UI-state kan nooit winnen van de expliciete route.
-const _AM_ROUTES = { dossier: "atleten", schema: "schema", cockpit: "dossier" };
-function openAthleteModule(module, user_key) {
-  const view = _AM_ROUTES[module] || module;
-  if (!user_key) { toonView(view); return; }               // geen key → gewone module-entry (picker)
-  // Draft-veiligheid (§9 / PF-1): verlaat je de schema-workbench, flush dan eerst de
+// ── Coach Workflow Cohesion v1 (FINAL) — athlete-first navigatie-shell ────────
+// ÉÉN contract, op VIEW-namen (de route is de enige waarheid; geen module-alias-map
+// meer, geen tweede navigatielaag, geen store). Kernonderscheid:
+//   • active athlete = navigation/workflow-context (leeft ALLEEN in de route-hash);
+//   • athlete facts  = server/canonical truth (`user_key`).
+// Zodra de route een athlete-view + `user_key` draagt, is DIE atleet de actieve
+// context; athlete-aware navigatie (chips én globale sidebar) neemt 'm mee tot de
+// coach bewust een andere atleet kiest of naar een globale view gaat.
+const _ATHLETE_VIEWS = new Set(["atleten", "schema", "dossier"]);   // views die een athlete-context dragen
+// De atleet uit de HUIDIGE route (of "" als er geen athlete-context is). Route wint
+// altijd van in-memory UI-state — precies daarom lezen we 'm hier uit de hash.
+function activeAthleteKey() {
+  const raw = decodeURIComponent((location.hash || "").replace(/^#/, ""));
+  const i = raw.indexOf("/");
+  if (i === -1) return "";
+  const view = raw.slice(0, i), ident = raw.slice(i + 1);
+  // Identity-guard: `nieuw:` is UITSLUITEND pre-link intake-identity. Zo'n route mag het
+  // orphan-detail in Atleten openen (koppel-flow), maar mag NOOIT als app-brede athlete-
+  // context fungeren — alleen een echte FinalSurge user_key mag cross-module meegenomen
+  // worden. Anders zou de globale sidebar `nieuw:` naar Schema/Dossier/Cockpit dragen,
+  // modules die een canonical user_key verwachten. Na koppelen (echte user_key) werkt de
+  // athlete-first navigatie gewoon.
+  if (ident.startsWith("nieuw:")) return "";
+  return (_ATHLETE_VIEWS.has(view) && ident) ? ident : "";
+}
+// Open een specifieke atleet (canonical `user_key`) in een athlete-view, zonder
+// opnieuw te zoeken. Schrijft de route en laat applyRoute via de bestaande consume-
+// paden laden. Geen key of globale view → gewone module-entry (picker/lijst).
+function openAthleteModule(view, user_key) {
+  if (!user_key || !_ATHLETE_VIEWS.has(view)) { toonView(view); return; }
+  // Draft-veiligheid (PF-1): verlaat je de schema-workbench, flush dan eerst de
   // coach-draft zodat in-memory edits niet verloren gaan bij het wegnavigeren.
   if (huidigeView === "schema" && view !== "schema" && typeof sbDraftSave === "function" && sbState) {
     try { sbDraftSave(); } catch {}
   }
   const h = "#" + view + "/" + encodeURIComponent(user_key);
   if (location.hash !== h) { try { history.pushState(null, "", h); } catch {} }
-  applyRoute();                                             // laadt via de bestaande consume-paden
+  applyRoute();
 }
-// Gedeelde, compacte athlete-context navigatie (§5): toont de OVERIGE athlete-tools
-// als chips naast de bestaande naam-kop. Eén component, hergebruikt over modules —
-// geen per-module duplicatie, geen tweede athlete-picker. `activeView` = huidige
-// route-view (atleten|schema|dossier) zodat de actieve tool niet dubbel verschijnt.
+// Globale nav-adapter (sidebar/bottomnav/'meer'/home-kaarten): is de doel-view
+// athlete-aware ÉN is er een actieve atleet in de route → open die atleet; anders
+// gewone (globale) module-entry. Zo blijft de sidebar athlete-aware zonder verborgen
+// contextwissels: globale views (home/races/admin/…) laten de context bewust los.
+function openModuleFromNav(view) {
+  const key = activeAthleteKey();
+  if (key && _ATHLETE_VIEWS.has(view)) openAthleteModule(view, key);
+  else toonView(view);
+}
+// Gedeelde, compacte athlete-context navigatie (chips): de OVERIGE athlete-tools naast
+// de naam-kop. Eén component, view-gekeyd (zelfde vocabulaire als de shell), zodat de
+// actieve tool niet dubbel verschijnt. `activeView` = huidige route-view.
 function athleteNav(activeView, user_key) {
   if (!user_key) return "";
   const opts = [
-    { m: "dossier", view: "atleten", label: "Dossier" },
-    { m: "schema", view: "schema", label: "Schema" },
-    { m: "cockpit", view: "dossier", label: "Cockpit" },
+    { view: "atleten", label: "Dossier" },
+    { view: "schema", label: "Schema" },
+    { view: "dossier", label: "Cockpit" },
   ];
   const chips = opts.filter(o => o.view !== activeView).map(o =>
-    `<button type="button" class="anav-chip" onclick="openAthleteModule('${o.m}','${esc(user_key)}')">${esc(o.label)}</button>`).join("");
+    `<button type="button" class="anav-chip" onclick="openAthleteModule('${o.view}','${esc(user_key)}')">${esc(o.label)}</button>`).join("");
   return chips ? `<div class="anav" role="group" aria-label="Ga naar voor deze atleet">${chips}</div>` : "";
 }
 
@@ -366,7 +393,7 @@ async function renderHome() {
     <div id="home-info"></div>
     <div id="home-ook"></div>`;
   box.dataset.done = "1";
-  $$("[data-open-view]", box).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+  $$("[data-open-view]", box).forEach(b => b.addEventListener("click", () => openModuleFromNav(b.dataset.openView)));
   laadHeroFoto();
 
   // 2) Cockpit-snapshot (direct) → hero-telling/status, feedback, prioriteit.
@@ -401,7 +428,7 @@ async function renderHome() {
     const ook = $("#home-ook");
     if (ook) {
       ook.innerHTML = items.length ? `<p class="sec-label">Ook nog</p>${items.join("")}` : "";
-      $$("[data-open-view]", ook).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+      $$("[data-open-view]", ook).forEach(b => b.addEventListener("click", () => openModuleFromNav(b.dataset.openView)));
     }
     bronStatus(kaarten.cloud);
   });
@@ -618,7 +645,7 @@ function vulCockpit(s, fresh) {
     inf.innerHTML = info.races
       ? `<div class="info-strip"><button class="info-chip" data-open-view="races">${ic("flag")} ${info.races} race${info.races === 1 ? "" : "s"} komende 7 dgn</button></div>`
       : "";
-    $$("[data-open-view]", inf).forEach(b => b.addEventListener("click", () => toonView(b.dataset.openView)));
+    $$("[data-open-view]", inf).forEach(b => b.addEventListener("click", () => openModuleFromNav(b.dataset.openView)));
   }
 }
 
@@ -898,7 +925,7 @@ function prioDoe(wrap, act, dagen, soort) {
   const it = wrap._it;
   // Cohesion: één gedeeld athlete-contract (geen caller-specific openDossier-hack).
   // openAthleteModule → #atleten/<uk> → reload-safe consume (pending-patroon).
-  if (act === "dossier") { prioHerstelUk = prioOpenUk; openAthleteModule("dossier", it.user_key); return; }
+  if (act === "dossier") { prioHerstelUk = prioOpenUk; openAthleteModule("atleten", it.user_key); return; }
   if (act === "teampuls") { deepAtleet("teampuls", it.user_key); return; }
   // Cohesion (§6): een schema-signaal is 'schema loopt af' → primaire actie is de
   // Schema-workbench van DEZE atleet openen (verlengen/openen), niet eerst de
@@ -1933,24 +1960,25 @@ bindRefresh("i-refresh", laadInbox);
 function laadIntake() { laadIntakeLink(); laadInbox(); laadOrphanIntakes(); }
 
 // Historische, nog-niet-gekoppelde ('nieuw:') intakes zichtbaar maken in de Intake-
-// module (cluster D). Een intake die eerder is overgenomen toen de atleet nog niet in
-// FinalSurge bestond, mag niet 'verdwijnen': hier terugvindbaar + één tik naar het
-// dossier waar de coach hem (met voorgestelde match) kan koppelen. Geen nieuwe store,
-// geen duplicatie — puur een read op de bestaande roster (/api/atleten, nieuw=true).
+// module — pariteit met de Streamlit 'wachtende intakes'-lijst (§9). Bron =
+// /api/intake/orphans, dat de intakes RECHTSTREEKS uit de store leest (niet via de
+// verenigde roster, die een orphan bij een FS-namesake weg-mergt). Zo blijft een
+// historische intake (bv. Dominique) zichtbaar en één tik van koppelen — met een
+// eventuele voorgestelde FS-match. Geen nieuwe store, geen duplicatie.
 async function laadOrphanIntakes() {
   const box = $("#i-orphans"); if (!box) return;
-  const r = await api("/api/atleten").catch(() => null);
-  const orphans = (r && r.atleten || []).filter(a => a.nieuw && !a.user_key);
+  const r = await api("/api/intake/orphans").catch(() => null);
+  const orphans = (r && r.orphans) || [];
   if (!orphans.length) { box.innerHTML = ""; return; }
   box.innerHTML = `<p class="sec-label">Losse intakes — nog niet gekoppeld</p>
-    <p class="hint">Overgenomen toen de atleet nog niet in FinalSurge stond. Koppel hem aan het FinalSurge-account zodra die bestaat — daarna gebruikt Schema de intake.</p>
+    <p class="hint">Overgenomen toen de atleet nog niet in FinalSurge stond (zichtbaar zolang ze los staan, net als in Streamlit). Koppel aan het FinalSurge-account zodra dat bestaat — daarna gebruikt Schema de intake.</p>
     <section class="lijst">${orphans.map(a => `
-      <button class="listcard" data-orphan="${esc(a.id)}">
+      <button class="listcard" data-orphan="${esc(a.key)}">
         <span class="avatar">${initialen(a.naam)}</span>
         <span class="lc-body"><span class="lc-title">${esc(a.naam)}</span>
-          <span class="lc-sub">losse intake · koppelen</span></span>${ic("chevron")}</button>`).join("")}</section>`;
+          <span class="lc-sub">${a.suggestie ? "voorgestelde match: " + esc(a.suggestie.naam) : "losse intake · koppelen"}</span></span>${ic("chevron")}</button>`).join("")}</section>`;
   box.querySelectorAll("[data-orphan]").forEach(b =>
-    b.addEventListener("click", () => openAthleteModule("dossier", b.dataset.orphan)));
+    b.addEventListener("click", () => openAthleteModule("atleten", b.dataset.orphan)));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3906,7 +3934,19 @@ window.addEventListener("resize", () => {
   const f = $("#sb-focus");
   if (f) { if (d) { f.hidden = true; f.innerHTML = ""; } else if (sbState.openRow) sbRenderFocus(); }
 });
-bindRefresh("sb-refresh", () => { geladen.schema = true; return laadSchema(); });
+// Schema-refresh behoudt de ACTIEVE atleet + workbench (live-fix #9): ververst de
+// roster, maar heropent daarna dezelfde athlete-workbench in dezelfde modus met de
+// draft intact (PF-1). Geen actieve workbench → gewoon de lijst verversen.
+bindRefresh("sb-refresh", async () => {
+  const st = sbState;
+  if (st && st.key) sbDraftSave();                 // flush vóór reload (PF-1)
+  geladen.schema = true;
+  await laadSchema();
+  if (st && st.key) {
+    const a = (schemaAtleten || []).find(x => x.key === st.key);
+    if (a) schemaWerk(a, st.mode);                  // zelfde atleet + modus terug, draft-restore
+  }
+});
 
 // ════════════════════════════════════════════════════════════════════════════
 // RACES — aankomende races + race-wens plaatsen (WRITE via post_comment)
@@ -4020,12 +4060,14 @@ async function laadTeampuls(force = false) {
   if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
   if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
   const items = r.items || [];
-  // Semantiek-contract (cluster E): Teampuls = teambrede BELASTING-monitoring (volume/
-  // gevoel/RPE) — een andere projectie dan de Home-prioriteit (actielijst). 'Hoog' hier
-  // betekent hoge trainingsbelasting, niet automatisch een openstaande Home-actie: Home
-  // bundelt óók compliance + aflopend schema en verbergt wat je al afvinkte (gezien/later),
-  // terwijl Teampuls het hele team blijft tonen. Daarom kan een 'hoog' hier ontbreken op Home.
-  info.innerHTML = `Belasting-monitoring uit volume, gevoel, RPE en notities — teambreed, los van je Home-actielijst. `
+  // ÉÉN productcontract Teampuls vs Home (§8 / finding #5 — geen twee waarheden, wél
+  // twee projecties): TEAMPULS = observatie/monitoring van trainingsBELASTING over het
+  // HELE team (volume/gevoel/RPE/notities), toont ook wat je al zag. HOME = jouw actuele
+  // ACTIElijst (compliance + aflopend schema + belasting) en verbergt wat je afvinkte
+  // (gezien/later). Daarom kan een atleet met hoge belasting hier staan zonder op Home te
+  // staan: óf het is geen Home-actiebron (bv. losse klacht), óf je handelde het al af.
+  // De brug van observatie → actie is de 'Dossier →'-knop per kaart (zelfde atleet).
+  info.innerHTML = `Belasting-monitoring — teambrede observatie uit volume, gevoel, RPE en notities. Dit is niet je Home-actielijst: een atleet kan hier staan zonder een openstaande Home-actie (al afgehandeld, of geen actiebron). Handel af via <b>Dossier →</b>. `
     + (items.length ? `<b>${r.hoog || 0}</b> hoge belasting · <b>${items.length}</b> in beeld · ${esc(r.datum || "")}` : `alles binnen de marge · ${esc(r.datum || "")}`);
   box.innerHTML = "";
   if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen belasting-signalen — iedereen binnen de marge.</p></div>`; }
@@ -4063,7 +4105,7 @@ function pulsItem(it) {
   });
   // Cohesion-fix: open het dossier van DEZE atleet i.p.v. de algemene atletenlijst
   // (de user_key was al bekend maar werd weggegooid). Via het canonieke contract.
-  el.querySelector("[data-dossier]").addEventListener("click", () => openAthleteModule("dossier", it.user_key));
+  el.querySelector("[data-dossier]").addEventListener("click", () => openAthleteModule("atleten", it.user_key));
   return el;
 }
 

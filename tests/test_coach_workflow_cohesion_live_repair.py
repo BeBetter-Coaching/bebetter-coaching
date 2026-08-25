@@ -82,14 +82,14 @@ class TestDossierRouteConsume:
         assert 'let atletenOpenPending = ""' in _APP
 
     def test_6_home_dossier_via_gedeeld_contract(self):
-        # geen caller-specific openDossier-hack meer
+        # geen caller-specific openDossier-hack meer; view-gekeyd contract
         body = _fn("prioDoe")
-        assert 'openAthleteModule("dossier", it.user_key)' in body
+        assert 'openAthleteModule("atleten", it.user_key)' in body
         assert "() => openDossier(it.user_key)" not in body
 
     def test_7_teampuls_dossier_via_gedeeld_contract(self):
-        # Teampuls-kaart 'Dossier' → openAthleteModule (blijft), user_key behouden
-        assert 'openAthleteModule("dossier", it.user_key)' in _APP
+        # Teampuls-kaart 'Dossier' → openAthleteModule("atleten", …), user_key behouden
+        assert 'openAthleteModule("atleten", it.user_key)' in _APP
 
     def test_8_applyRoute_consumeert_atleten_ident_direct(self):
         body = _fn("applyRoute")
@@ -99,7 +99,7 @@ class TestDossierRouteConsume:
         body = _fn("openAthleteModule")
         assert "history.pushState" in body
         assert "applyRoute()" in body
-        assert "if (!user_key)" in body        # geen key → gewone module-entry
+        assert "if (!user_key || !_ATHLETE_VIEWS.has(view))" in body   # geen/globale view → gewone entry
 
 
 # ══ Schema-cohesie — athlete-nav in ELKE stage ═════════════════════════════
@@ -149,10 +149,12 @@ class TestOrphanIntakeFrontend:
         assert "function laadOrphanIntakes(" in _APP
         assert "laadOrphanIntakes()" in _fn("laadIntake")
 
-    def test_18_orphans_gefilterd_op_ongekoppeld(self):
+    def test_18_orphans_via_pariteit_endpoint(self):
+        # FINAL: leest rechtstreeks uit de store (/api/intake/orphans), niet via de
+        # roster die een orphan bij een FS-namesake weg-mergt (§9 pariteit).
         body = _fn("laadOrphanIntakes")
-        assert "a.nieuw && !a.user_key" in body
-        assert 'openAthleteModule("dossier"' in body     # één tik naar het koppel-dossier
+        assert "/api/intake/orphans" in body
+        assert 'openAthleteModule("atleten"' in body     # één tik naar het koppel-dossier
 
     def test_19_koppel_ui_biedt_voorgestelde_match_confirm_gated(self):
         # d.suggestie → kp-suggest knop; klik = confirm (geen auto-link)
@@ -227,7 +229,8 @@ class TestPrioriteitSemantiek:
     def test_25_teampuls_maakt_belasting_monitoring_expliciet(self):
         body = _fn("laadTeampuls")
         assert "Belasting-monitoring" in body
-        assert "los van je Home-actielijst" in body
+        assert "niet je Home-actielijst" in body
+        assert "Dossier &rarr;" in body or "Dossier →" in body        # actionable bridge benoemd
 
     def test_26_teampuls_label_is_hoge_belasting_niet_kaal_hoog(self):
         body = _fn("laadTeampuls")
@@ -237,10 +240,10 @@ class TestPrioriteitSemantiek:
         # Het bewuste verschil (monitoring vs actielijst) staat als contract in de bron,
         # zodat een latere wijziging het niet stil 'gelijk' trekt.
         body = _fn("laadTeampuls")
-        assert "Semantiek-contract" in body
+        assert "productcontract" in body
 
 
 # ══ Service worker versie opgehoogd (nieuwe shell live) ════════════════════
 class TestServiceWorker:
     def test_28_sw_versie_opgehoogd(self):
-        assert 'bebetter-shell-v88' in _SW
+        assert 'bebetter-shell-v89' in _SW

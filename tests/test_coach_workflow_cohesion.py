@@ -39,8 +39,10 @@ class TestNavigationContract:
         assert "function athleteNav" in _APP
 
     def test_route_map_dekt_de_drie_athlete_views(self):
-        # dossier→atleten (klassiek dossier), schema→schema, cockpit→dossier (Masterbrein-cockpit).
-        assert '_AM_ROUTES = { dossier: "atleten", schema: "schema", cockpit: "dossier" }' in _APP
+        # FINAL: view-gekeyd contract (geen module-alias-map meer). De drie athlete-views
+        # + een route-lezer die de actieve atleet uit de hash haalt.
+        assert '_ATHLETE_VIEWS = new Set(["atleten", "schema", "dossier"])' in _APP
+        assert "function activeAthleteKey" in _APP
 
     def test_contract_schrijft_userkey_in_de_hash(self):
         body = _fn("openAthleteModule")
@@ -56,7 +58,7 @@ class TestNavigationContract:
 
     def test_geen_key_valt_terug_op_gewone_module_entry(self):
         body = _fn("openAthleteModule")
-        assert "if (!user_key)" in body and "toonView(view)" in body
+        assert "if (!user_key || !_ATHLETE_VIEWS.has(view))" in body and "toonView(view)" in body
 
     def test_schema_draft_flush_voor_wegnavigeren(self):
         # §9/PF-1: verlaten van de schema-workbench flush't eerst de coach-draft.
@@ -98,7 +100,7 @@ class TestTeampulsDossier:
     def test_dossier_knop_opent_de_atleet_niet_de_lijst(self):
         # Was: toonView("atleten") (key weggegooid). Nu: canonieke deep-link.
         block = _APP[_APP.index("function pulsItem"):_APP.index("function pulsItem") + 2400]
-        assert 'openAthleteModule("dossier", it.user_key)' in block
+        assert 'openAthleteModule("atleten", it.user_key)' in block          # view-gekeyd contract
         assert '"[data-dossier]").addEventListener("click", () => toonView("atleten")' not in _APP
 
 
@@ -146,7 +148,7 @@ class TestHomeDirect:
         # Live-repair: Home→Dossier via het GEDEELDE contract (geen caller-specific
         # openDossier-hack meer), zodat de reload-safe consume-route wordt gebruikt.
         block = _APP[_APP.index("function prioDoe"):_APP.index("function prioDoe") + 1200]
-        assert 'openAthleteModule("dossier", it.user_key)' in block
+        assert 'openAthleteModule("atleten", it.user_key)' in block          # view-gekeyd contract
         assert 'deepAtleet("atleten", it.user_key, () => openDossier(it.user_key))' not in block
 
 

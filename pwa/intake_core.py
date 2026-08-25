@@ -223,6 +223,28 @@ def link_intake(nieuw_key: str, user_key: str) -> tuple[bool, str, str]:
     return True, "", naam
 
 
+def orphan_intakes() -> list[dict]:
+    """Alle losse ('nieuw:') intakes RECHTSTREEKS uit de duurzame store — pariteit met
+    de Streamlit 'wachtende intakes'-lijst (main.py: `_wachtend = {k: v ... if k.startswith('nieuw:')}`).
+
+    Cruciaal: dit leest NIET via de verenigde roster. Die matcht een orphan op naam aan
+    een FinalSurge-account en laat 'm dan uit de losse lijst verdwijnen zodra er een FS-
+    namesake bestaat — terwijl de intake nog steeds op `nieuw:` gesleuteld staat (Schema/
+    Masterbrein zien 'm dus niet). Zo bleef een historische intake (bv. Dominique Slooff)
+    onzichtbaar in de PWA terwijl Streamlit 'm wél toont. Hier tonen we 'm altijd, met een
+    eenduidige FS-match als KANDIDAAT (coach-confirm, geen auto-link)."""
+    import atleten_core  # lui: vermijdt circulaire import op moduleniveau
+    out = []
+    for key, ik in (intake_store.load_intakes() or {}).items():
+        if not key.startswith("nieuw:"):
+            continue
+        ik = ik if isinstance(ik, dict) else {}
+        naam = (ik.get("athlete_name") or key.split("nieuw:", 1)[-1]).strip()
+        out.append({"key": key, "naam": naam, "suggestie": atleten_core._fs_suggestie(naam)})
+    out.sort(key=lambda x: (x["naam"] or "").lower())
+    return out
+
+
 def inbox_delete(iid: str) -> tuple[bool, str]:
     try:
         inbox = intake_store.load_intake_inbox()
