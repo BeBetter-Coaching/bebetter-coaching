@@ -21,6 +21,7 @@ from brain import projections as _proj
 from brain import state as _state
 from brain import history as _history
 from brain import history_store as _hstore
+from brain import recency as _recency
 from brain.models import (ACTIVE, ATTENTION, CONFLICT, GOOD, HIGH, INSUFFICIENT_DATA,
                           MEDIUM, RECENT, RECURRING, STABLE, STALE)
 
@@ -279,15 +280,22 @@ def _planning(dossier_evs: list, raw: dict, today: date) -> dict:
 # 'afgehandeld'-feit, zodat Dossier het verschil met de Home-actielijst kan verklaren
 # (waarom een atleet wél in Teampuls staat maar geen open Home-actie heeft). None = geen
 # (relevant) signaal. Verzint niets: leest alleen `raw["belasting"]`.
-def _load_observation(raw: dict) -> dict | None:
+def _load_observation(raw: dict, today: date) -> dict | None:
     bel = (raw or {}).get("belasting") or {}
     ernst = bel.get("ernst")
     if ernst not in ("hoog", "let_op"):
         return None
+    # ZELFDE freshness-guard als `load.signal` (state.py, `recency.LOAD_SIGNAL_FRESH`):
+    # een verouderde belastingstand is GEEN actuele Teampuls-observatie en mag niet
+    # bovenaan Dossier blijven staan. Geen datum bekend → behandel als vers (bewezen
+    # gedrag van load.signal).
+    sd = str(bel.get("_stand_datum") or "")[:10]
+    if sd and not _recency.within(sd, today, _recency.LOAD_SIGNAL_FRESH):
+        return None
     return {"ernst": ernst,
             "signalen": "; ".join((bel.get("signalen") or [])[:3]),
             "afgehandeld": bool(bel.get("_afgehandeld")),
-            "datum": bel.get("_stand_datum") or ""}
+            "datum": sd}
 
 
 # ── Domeinkaarten (Z3) ───────────────────────────────────────────────────────
@@ -366,7 +374,7 @@ def cockpit(key: str, today: date | None = None) -> dict:
 
     changes = _changes(state_obj, today)
     planning = _planning(dossier_evs, raw, today)
-    load_observation = _load_observation(raw)
+    load_observation = _load_observation(raw, today)
     domains = _domains(dossier_evs, open_cards)
 
     # Zone 4 — tijdlijn (capture OFF → eerlijke empty-state)

@@ -20,7 +20,7 @@ belasting-stand en intake. Kernpunten van deze milestone:
 """
 import os
 import sys
-from datetime import date
+from datetime import date, timedelta
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -131,22 +131,85 @@ class TestPlanning:
         assert p["onbekend"] is True and p["rows"] == []
 
 
-# ══ Belasting-observatie (Teampuls-coherentie) ═════════════════════════════
+# ══ Belasting-observatie (Teampuls-coherentie) + freshness ════════════════
 class TestLoadObservation:
     def test_12_afgehandelde_hoge_belasting_zichtbaar_met_reden(self):
         raw = {"belasting": {"ernst": "hoog", "signalen": ["+32% t.o.v. referentie"],
-                             "_afgehandeld": True, "_stand_datum": "2026-08-25"}}
-        lo = _dc._load_observation(raw)
+                             "_afgehandeld": True, "_stand_datum": TODAY.isoformat()}}
+        lo = _dc._load_observation(raw, TODAY)
         assert lo and lo["ernst"] == "hoog" and lo["afgehandeld"] is True
         assert "referentie" in lo["signalen"]
 
     def test_13_let_op_belasting_is_observatie(self):
-        lo = _dc._load_observation({"belasting": {"ernst": "let_op", "signalen": []}})
+        raw = {"belasting": {"ernst": "let_op", "signalen": [], "_stand_datum": TODAY.isoformat()}}
+        lo = _dc._load_observation(raw, TODAY)
         assert lo and lo["ernst"] == "let_op" and lo["afgehandeld"] is False
 
     def test_14_geen_belasting_geen_observatie(self):
-        assert _dc._load_observation({}) is None
-        assert _dc._load_observation({"belasting": {"ernst": "geen"}}) is None
+        assert _dc._load_observation({}, TODAY) is None
+        assert _dc._load_observation({"belasting": {"ernst": "geen"}}, TODAY) is None
+
+    def test_15_verouderde_stand_is_geen_actuele_observatie(self):
+        # Freshness-guard (zelfde als load.signal): een verlopen stand → geen observatie.
+        oud = (TODAY - timedelta(days=10)).isoformat()
+        raw = {"belasting": {"ernst": "hoog", "signalen": ["x"], "_stand_datum": oud}}
+        assert _dc._load_observation(raw, TODAY) is None
+        vers = (TODAY - timedelta(days=1)).isoformat()
+        raw2 = {"belasting": {"ernst": "hoog", "signalen": ["x"], "_stand_datum": vers}}
+        assert _dc._load_observation(raw2, TODAY) is not None
+
+
+# ══ Effectieve handled-status (gedeelde visibility-semantiek, externe review) ══
+# `_afgehandeld` mag GEEN kale membership zijn: Teampuls/Home/Dossier moeten dezelfde
+# `belasting.zichtbare_resultaten`-semantiek (tot>=vandaag + escalatie let_op→hoog)
+# gebruiken. Getest via `sources.gather` (dat de brain-raw bouwt).
+import belasting as _bel                        # noqa: E402
+from brain import sources as _sources           # noqa: E402
+
+
+def _stand(uk, ernst, handled=None):
+    d = {"datum": date.today().isoformat(),
+         "resultaten": [{"user_key": uk, "ernst": ernst, "signalen": ["x"]}],
+         "afgehandeld": {}}
+    if handled:
+        d["afgehandeld"][uk] = handled
+    return d
+
+
+class TestEffectiveHandled:
+    def _afgehandeld(self, monkeypatch, stand, uk="uk"):
+        monkeypatch.setattr(_sources.intake_store, "load_belasting", lambda: stand)
+        raw, _ = _sources.gather(uk, TODAY)
+        return (raw.get("belasting") or {}).get("_afgehandeld")
+
+    def test_20_geldig_afgehandeld_telt_als_afgehandeld(self, monkeypatch):
+        morgen = (date.today() + timedelta(days=1)).isoformat()
+        st = _stand("uk", "hoog", handled={"tot": morgen, "ernst": "hoog"})
+        assert self._afgehandeld(monkeypatch, st) is True
+
+    def test_21_verlopen_afhandeling_telt_niet_meer(self, monkeypatch):
+        gisteren = (date.today() - timedelta(days=1)).isoformat()
+        st = _stand("uk", "hoog", handled={"tot": gisteren, "ernst": "hoog"})
+        assert self._afgehandeld(monkeypatch, st) is False   # verlopen → weer actief
+
+    def test_22_escalatie_let_op_naar_hoog_maakt_actief(self, monkeypatch):
+        morgen = (date.today() + timedelta(days=1)).isoformat()
+        # afgehandeld als let_op, maar signaal is nu hoog → escalatie → weer actief
+        st = _stand("uk", "hoog", handled={"tot": morgen, "ernst": "let_op"})
+        assert self._afgehandeld(monkeypatch, st) is False
+
+    def test_23_niet_afgehandeld_blijft_actief(self, monkeypatch):
+        st = _stand("uk", "hoog")
+        assert self._afgehandeld(monkeypatch, st) is False
+
+    def test_24_semantiek_is_die_van_zichtbare_resultaten(self):
+        # Borgt dat we DE gedeelde functie gebruiken (geen kopie): een geëscaleerd
+        # signaal is zichtbaar; een geldig-afgehandeld gelijk signaal niet.
+        morgen = (date.today() + timedelta(days=1)).isoformat()
+        esc = _stand("uk", "hoog", handled={"tot": morgen, "ernst": "let_op"})
+        assert any(r["user_key"] == "uk" for r in _bel.zichtbare_resultaten(esc))
+        same = _stand("uk", "hoog", handled={"tot": morgen, "ernst": "hoog"})
+        assert not any(r["user_key"] == "uk" for r in _bel.zichtbare_resultaten(same))
 
 
 # ══ Frontend cockpit-hiërarchie + partial banner ═══════════════════════════
