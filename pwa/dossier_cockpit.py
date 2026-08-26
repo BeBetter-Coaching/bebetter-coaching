@@ -276,10 +276,18 @@ def _planning(dossier_evs: list, raw: dict, today: date) -> dict:
 
 # ── Belasting-observatie (Teampuls-coherentie, §Journey B) ───────────────────
 # Zelfde stored stand als Teampuls/Home (geen recompute, geen nieuwe engine). Maakt de
-# belastingobservatie zichtbaar in Dossier — óók als hij al is afgehandeld — mét het
-# 'afgehandeld'-feit, zodat Dossier het verschil met de Home-actielijst kan verklaren
-# (waarom een atleet wél in Teampuls staat maar geen open Home-actie heeft). None = geen
-# (relevant) signaal. Verzint niets: leest alleen `raw["belasting"]`.
+# belastingobservatie zichtbaar in Dossier voor ELKE relevante toestand:
+#   • actief-hoog + open Home-actie  → de reden achter een rode Home-trigger (+200%);
+#   • afgehandeld                    → verklaart waarom er géén open Home-actie is;
+#   • let_op                         → monitoring, nog geen coachactie.
+# Dit is de canonieke, altijd-aanwezige verklaringsregel: eerder toonde de UI de
+# actief-hoge case NIET (die leunde alleen op de attention-kaart), waardoor de reden
+# van een rode Home/Teampuls-trigger in Dossier kon verdwijnen. None = geen (relevant)
+# signaal. Verzint niets: leest alleen `raw["belasting"]` (dezelfde stand als Home/Teampuls).
+#   • home_action = canonieke 'open Home-actie' = zichtbaar in `zichtbare_resultaten`
+#     = precies `not _afgehandeld` (escalatie/expiry al ingebakken in `_afgehandeld`);
+#   • delta_pct   = het percentage boven de referentie uit `metrics.ratio` (bv. +200%),
+#     alléén als de stand die canonieke waarde draagt — nooit verzonnen.
 def _load_observation(raw: dict, today: date) -> dict | None:
     bel = (raw or {}).get("belasting") or {}
     ernst = bel.get("ernst")
@@ -292,9 +300,14 @@ def _load_observation(raw: dict, today: date) -> dict | None:
     sd = str(bel.get("_stand_datum") or "")[:10]
     if sd and not _recency.within(sd, today, _recency.LOAD_SIGNAL_FRESH):
         return None
+    afgehandeld = bool(bel.get("_afgehandeld"))
+    ratio = (bel.get("metrics") or {}).get("ratio")
+    delta_pct = round((ratio - 1) * 100) if isinstance(ratio, (int, float)) and ratio > 1 else None
     return {"ernst": ernst,
             "signalen": "; ".join((bel.get("signalen") or [])[:3]),
-            "afgehandeld": bool(bel.get("_afgehandeld")),
+            "afgehandeld": afgehandeld,
+            "home_action": not afgehandeld,
+            "delta_pct": delta_pct,
             "datum": sd}
 
 

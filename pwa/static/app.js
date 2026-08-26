@@ -4446,13 +4446,25 @@ function dcRender(wrap, vm) {
   } else {
     h += `<p class="dc-calm">Geen actiepunten — geen actieve klacht of signaal bekend${rel.level === "green" ? " (bronnen vers)" : ""}.</p>`;
   }
-  // Belasting-observatie (Teampuls-coherentie): toon de belasting óók als hij geen open
-  // actie (meer) is — een 'hoog+niet-afgehandeld' zit al als kaart hierboven; hier vullen
-  // we de afgehandelde/let-op-observatie aan mét de reden waarom er geen Home-actie staat.
+  // Belasting-observatie (Teampuls-coherentie): de canonieke, ALTIJD-aanwezige
+  // verklaringsregel voor de belastingobservatie — óók bij actief-hoog met open
+  // Home-actie (de reden achter een rode Home/Teampuls-trigger, bv. +200%). Voorheen
+  // toonde de UI die case niet, waardoor de reden in Dossier kon verdwijnen. Dossier
+  // schreeuwt niet rood, maar de reden mag niet ontbreken.
   const lo = vm.load_observation;
-  if (lo && (lo.afgehandeld || lo.ernst === "let_op")) {
-    const reden = lo.afgehandeld ? "eerder afgehandeld — geen open Home-actie" : "monitoring — nog geen coachactie";
-    h += `<p class="dc-loadobs">${ic("pulse")} Belasting ${esc(lo.ernst === "hoog" ? "hoog" : "let op")}${lo.signalen ? ": " + esc(lo.signalen) : ""} <span class="muted klein">· ${esc(reden)} (Teampuls)</span></p>`;
+  if (lo) {
+    const sev = lo.ernst === "hoog" ? "hoog" : "let op";
+    const delta = (lo.delta_pct != null) ? ` · +${lo.delta_pct}% t.o.v. referentie` : "";
+    // Home-actie-semantiek is canonical (home_action = zichtbaar in de Home-actielijst).
+    let reden;
+    if (lo.afgehandeld) reden = "eerder afgehandeld — geen open Home-actie";
+    else if (lo.home_action && lo.ernst === "hoog") reden = "open Home-actie";
+    else reden = "monitoring — nog geen coachactie";
+    // Proza niet dubbel tonen: staat de load al als attention-kaart, dan hier alleen
+    // de compacte delta + Home-actie-duiding die de kaart mist (geen 2e alarmdashboard).
+    const loadCarded = attn.some(c => c.kind === "load_signal");
+    const sig = (lo.signalen && !loadCarded) ? ": " + esc(lo.signalen) : "";
+    h += `<p class="dc-loadobs">${ic("pulse")} Belasting ${esc(sev)}${delta}${sig} <span class="muted klein">· ${esc(reden)} (Teampuls)</span></p>`;
   }
   h += `</section>`;
 
