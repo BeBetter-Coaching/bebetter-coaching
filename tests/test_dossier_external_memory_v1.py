@@ -158,6 +158,47 @@ class TestLoadObservation:
         raw2 = {"belasting": {"ernst": "hoog", "signalen": ["x"], "_stand_datum": vers}}
         assert _dc._load_observation(raw2, TODAY) is not None
 
+    # ── LIVE-CLOSE: actuele rode Home-trigger mag in Dossier niet verdwijnen ──
+    def test_25_actief_hoog_open_home_actie_is_observatie(self):
+        # Case A: verse hoge belasting, NIET afgehandeld = de rode Home-trigger.
+        # Moet een observatie opleveren mét open-Home-actie-duiding (voorheen viel de
+        # UI-render hierop terug op niets → reden verdween).
+        raw = {"belasting": {"ernst": "hoog", "signalen": ["Volume +200% deze week"],
+                             "metrics": {"ratio": 3.0}, "_afgehandeld": False,
+                             "_stand_datum": TODAY.isoformat()}}
+        lo = _dc._load_observation(raw, TODAY)
+        assert lo and lo["ernst"] == "hoog"
+        assert lo["afgehandeld"] is False and lo["home_action"] is True
+
+    def test_26_percentage_delta_blijft_behouden(self):
+        # +200%-achtige case: metrics.ratio → canonical delta zichtbaar (niet verzonnen).
+        raw = {"belasting": {"ernst": "hoog", "signalen": ["x"],
+                             "metrics": {"ratio": 3.0}, "_stand_datum": TODAY.isoformat()}}
+        assert _dc._load_observation(raw, TODAY)["delta_pct"] == 200
+        # +32% → 32
+        raw2 = {"belasting": {"ernst": "let_op", "signalen": ["x"],
+                              "metrics": {"ratio": 1.32}, "_stand_datum": TODAY.isoformat()}}
+        assert _dc._load_observation(raw2, TODAY)["delta_pct"] == 32
+        # geen ratio (klacht/rpe-signaal) → geen verzonnen delta
+        raw3 = {"belasting": {"ernst": "hoog", "signalen": ["Noemt: knie"],
+                              "metrics": {"ratio": None}, "_stand_datum": TODAY.isoformat()}}
+        assert _dc._load_observation(raw3, TODAY)["delta_pct"] is None
+
+    def test_27_afgehandeld_geen_open_home_actie(self):
+        # Case B: handled load → home_action False (verklaart 'wél Teampuls, geen Home').
+        raw = {"belasting": {"ernst": "hoog", "signalen": ["x"], "metrics": {"ratio": 2.0},
+                             "_afgehandeld": True, "_stand_datum": TODAY.isoformat()}}
+        lo = _dc._load_observation(raw, TODAY)
+        assert lo["afgehandeld"] is True and lo["home_action"] is False
+        assert lo["delta_pct"] == 100
+
+    def test_28_home_action_volgt_afgehandeld_canonical(self):
+        # home_action is exact de inverse van _afgehandeld (= zichtbare_resultaten-membership).
+        for handled in (True, False):
+            raw = {"belasting": {"ernst": "hoog", "signalen": ["x"],
+                                 "_afgehandeld": handled, "_stand_datum": TODAY.isoformat()}}
+            assert _dc._load_observation(raw, TODAY)["home_action"] is (not handled)
+
 
 # ══ Effectieve handled-status (gedeelde visibility-semantiek, externe review) ══
 # `_afgehandeld` mag GEEN kale membership zijn: Teampuls/Home/Dossier moeten dezelfde
@@ -211,6 +252,35 @@ class TestEffectiveHandled:
         same = _stand("uk", "hoog", handled={"tot": morgen, "ernst": "hoog"})
         assert not any(r["user_key"] == "uk" for r in _bel.zichtbare_resultaten(same))
 
+    def test_25_dossier_home_actie_matcht_home_actielijst(self, monkeypatch):
+        # Case A/B end-to-end: Home/Teampuls/Dossier delen ÉÉN belastingtruth. De
+        # Dossier-observatie 'open Home-actie' (home_action) is exact de Home-actielijst
+        # (= zichtbare_resultaten-membership), afgeleid uit dezelfde stand.
+        today = date.today()
+
+        def obs(stand):
+            monkeypatch.setattr(_sources.intake_store, "load_belasting", lambda: stand)
+            raw, _ = _sources.gather("uk", today)
+            return _dc._load_observation(raw, today)
+
+        # actief (niet afgehandeld) → op Home-actielijst → home_action True
+        st_actief = _stand("uk", "hoog")
+        assert any(r["user_key"] == "uk" for r in _bel.zichtbare_resultaten(st_actief))
+        assert obs(st_actief)["home_action"] is True
+        # geldig afgehandeld → NIET op Home-actielijst → home_action False, wél observatie
+        morgen = (today + timedelta(days=1)).isoformat()
+        st_hand = _stand("uk", "hoog", handled={"tot": morgen, "ernst": "hoog"})
+        assert not any(r["user_key"] == "uk" for r in _bel.zichtbare_resultaten(st_hand))
+        lo = obs(st_hand)
+        assert lo is not None and lo["home_action"] is False
+
+    def test_26_compliance_only_is_geen_load_observatie(self):
+        # Case D: een Home-alert wegens gemiste trainingen (compliance) is GEEN
+        # belastingsignaal — Dossier mag dat niet foutief als load-observatie tonen.
+        # Zonder belasting-ernst in de stand → geen observatie (geen projectie-menging).
+        assert _dc._load_observation({"belasting": None}, date.today()) is None
+        assert _dc._load_observation({"belasting": {"ernst": "geen"}}, date.today()) is None
+
 
 # ══ Frontend cockpit-hiërarchie + partial banner ═══════════════════════════
 class TestCockpitFrontend:
@@ -223,6 +293,19 @@ class TestCockpitFrontend:
         body = _fn("dcRender")
         assert "vm.load_observation" in body
         assert "eerder afgehandeld" in body and "geen open Home-actie" in body
+
+    def test_16b_load_observatie_altijd_gerenderd_niet_gegate(self):
+        # LIVE-CLOSE: de load-observatie is niet meer beperkt tot afgehandeld/let_op —
+        # de actief-hoge (open Home-actie) case MOET ook renderen, met delta + duiding.
+        body = _fn("dcRender")
+        i = body.index("vm.load_observation")
+        rest = body[i:]
+        assert "if (lo) {" in rest                     # ongegate render (geen afgehandeld/let_op-gate meer)
+        assert "open Home-actie" in rest               # active-high duiding
+        assert "t.o.v. referentie" in rest             # canonical delta zichtbaar
+        assert "lo.delta_pct" in rest and "lo.home_action" in rest
+        # de oude gate-conditie is weg
+        assert "lo.afgehandeld || lo.ernst" not in rest
 
     def test_17_diag_banner_is_stage_lokaal_niet_alles_of_niets(self):
         # De per-stage diag is een banner die de andere secties NIET gate; attention/
