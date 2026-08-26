@@ -227,19 +227,21 @@ class TestOrphanLinkNonDestructief:
 # ══ E — expliciet semantiek-contract Teampuls ≠ Home ═══════════════════════
 class TestPrioriteitSemantiek:
     def test_25_teampuls_maakt_belasting_monitoring_expliciet(self):
-        body = _fn("laadTeampuls")
+        # Contract-tekst leeft nu in de gedeelde renderer tpRenderSignalen (Coach Read
+        # Performance v1 splitste render uit laadTeampuls voor de fast-read/reconcile).
+        body = _fn("tpRenderSignalen")
         assert "Belasting-monitoring" in body
         assert "niet je Home-actielijst" in body
         assert "Dossier &rarr;" in body or "Dossier →" in body        # actionable bridge benoemd
 
     def test_26_teampuls_label_is_hoge_belasting_niet_kaal_hoog(self):
-        body = _fn("laadTeampuls")
+        body = _fn("tpRenderSignalen")
         assert "hoge belasting" in body
 
     def test_27_contract_gedocumenteerd_in_de_code(self):
         # Het bewuste verschil (monitoring vs actielijst) staat als contract in de bron,
         # zodat een latere wijziging het niet stil 'gelijk' trekt.
-        body = _fn("laadTeampuls")
+        body = _fn("tpRenderSignalen")
         assert "productcontract" in body
 
 

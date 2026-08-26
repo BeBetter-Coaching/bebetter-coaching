@@ -31,6 +31,7 @@ for _m in ("streamlit", "pandas"):
 
 import fs_client as FS
 import feedback_core                                   # _filter_skipped (geen streamlit)
+from perf import Timer                                 # opt-in timing (no-op tenzij gated)
 
 try:
     import intake_store
@@ -138,12 +139,14 @@ def _belasting_vandaag(atleten: list) -> list:
     except Exception:
         return []
     try:
-        if belasting.laad_stand().get("datum") != date.today().isoformat():
+        stand = belasting.laad_stand()
+        if stand.get("datum") != date.today().isoformat():
             try:
                 belasting.dagelijkse_check(atleten)     # berekent + slaat op (per dag gecachet)
+                stand = belasting.laad_stand()          # verse stand ná recompute
             except Exception:
-                pass                                     # val terug op opgeslagen stand
-        return belasting.zichtbare_resultaten(belasting.laad_stand())
+                pass                                     # val terug op de al geladen stand
+        return belasting.zichtbare_resultaten(stand)
     except Exception:
         return []
 
@@ -396,41 +399,51 @@ def _bereken() -> dict:
         _handled = {}
     _vandaag = date.today()
 
-    # ── Sweeps (serieel, betrouwbaar) ──
+    # ── Sweeps (serieel, betrouwbaar; roster nu gememoiseerd → geen ~7× refetch) ──
+    # SERIEEL blijft bewust: elke sweep parallelt intern al 8-breed over de roster;
+    # vier tegelijk → FinalSurge-throttling/transiënte nullen. De winst zit in de
+    # roster-memo (fs_client) + de niet-blokkerende fast-read, niet in méér FS-concurrency.
+    _t = Timer()
     wachten = gepost = 0
     try:
-        wk, stats = FS.get_workouts_needing_feedback(7, None, False, True,
-                                                     {"los schema"}, True,
-                                                     include_unplanned_reactions=True)
+        with _t.step("feedback_needing"):
+            wk, stats = FS.get_workouts_needing_feedback(7, None, False, True,
+                                                         {"los schema"}, True,
+                                                         include_unplanned_reactions=True)
         wachten = len(feedback_core._filter_skipped(wk))
         gepost = stats.get("posted_today", 0)
     except Exception:
         pass
     try:
-        alerts = FS.get_compliance_alerts(7, on_hold, {"los schema"})
+        with _t.step("compliance"):
+            alerts = FS.get_compliance_alerts(7, on_hold, {"los schema"})
     except Exception:
         alerts = []
     try:
-        schema_rows = FS.get_schema_end_dates(60, on_hold)
+        with _t.step("schema_end_dates"):
+            schema_rows = FS.get_schema_end_dates(60, on_hold)
     except Exception:
         schema_rows = []
     try:
-        races = sum(1 for r in FS.get_upcoming_races(7) if not r.get("wish_given"))
+        with _t.step("upcoming_races"):
+            races = sum(1 for r in FS.get_upcoming_races(7) if not r.get("wish_given"))
     except Exception:
         races = 0
-    atleten_objs = _atleten_objs()
-    try:
-        atleten = len(FS.get_athletes())
-    except Exception:
-        atleten = len(atleten_objs)
-    groepen = 0
-    try:
-        groepen = len(FS.get_athletes_by_group())
-    except Exception:
-        pass
+    with _t.step("roster"):
+        atleten_objs = _atleten_objs()
+        try:
+            atleten = len(FS.get_athletes())
+        except Exception:
+            atleten = len(atleten_objs)
+        groepen = 0
+        try:
+            groepen = len(FS.get_athletes_by_group())
+        except Exception:
+            pass
 
     # Belasting-signalen van vandaag — berekend als de dagstand ontbreekt (los van Teampuls)
-    bel = _belasting_vandaag(atleten_objs)
+    with _t.step("belasting"):
+        bel = _belasting_vandaag(atleten_objs)
     bel_hoog = sum(1 for b in bel if b.get("ernst") == "hoog")
 
     # ── Prioriteit vandaag: ÉÉN atleet = ÉÉN rij ──────────────────────────────
@@ -526,7 +539,7 @@ def _bereken() -> dict:
     totaal = wachten + gepost
     pct = int(gepost / totaal * 100) if totaal else 100
 
-    return {
+    out = {
         "fs": True,
         "atleten": atleten,
         "groepen": groepen,
@@ -539,6 +552,10 @@ def _bereken() -> dict:
         "berekend": datetime.now().isoformat(timespec="seconds"),
         "datum": date.today().isoformat(),
     }
+    _timing = _t.result()                           # None tenzij BEBETTER_PERF_TIMING aan
+    if _timing:
+        out["_timing"] = _timing
+    return out
 
 
 # ── Werklijst-actie: één generieke Gezien/Later per atleet ───────────────────

@@ -320,13 +320,23 @@ def dagelijkse_check(athletes: list[dict], forceer: bool = False) -> dict:
         on_hold=_veilig(intake_store.load_on_hold),
         admin_clients=_veilig(intake_store.load_admin_clients),
     )
-    for r in resultaten:
+
+    # AI-duiding per gevlagde atleet PARALLEL (Coach Read Performance v1). Dit zijn
+    # onafhankelijke Anthropic-calls (geen FinalSurge → geen throttle-risico van de
+    # seriële FS-sweeps elders); serieel was dit de dominante hap uit de 45-60s.
+    # Elke thread muteert alleen zijn eigen `r` → thread-safe.
+    def _duid(r: dict) -> None:
         try:
             r["duiding"] = ai_feedback.belasting_duiding(
                 r["naam"], r["signalen"], r.get("notities", ""))
         except Exception:
             r["duiding"] = ""
         r.pop("notities", None)  # niet nodig in de opslag
+
+    if resultaten:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(8, len(resultaten))) as _ex:
+            list(_ex.map(_duid, resultaten))
 
     data = {"datum": vandaag, "resultaten": resultaten,
             "afgehandeld": data.get("afgehandeld", {})}

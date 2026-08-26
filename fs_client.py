@@ -23,6 +23,17 @@ _MAX_WORKERS = 8
 _token: Optional[str] = None
 _coach_key: Optional[str] = None
 
+# Roster-memo (Coach Read Performance v1): TeamAthleteList is dezelfde data voor
+# élke sweep binnen één coach-read, maar werd ~7× per Home-load en 2-3× per Teampuls-
+# open opnieuw over het netwerk gehaald (geen cache). Eén korte in-proces memo dedupt
+# dat binnen de request-lifecycle — ZELFDE bewezen patroon als `_coach_key` en
+# `_COACH_ATHLETE_MAP` (één FinalSurge-identiteit per proces). Geen nieuwe truth/store:
+# alleen een read-dedup met een korte TTL, zodat een roster-mutatie snel doorkomt.
+_roster_cache: Optional[list] = None
+_roster_ts: float = 0.0
+_ROSTER_TTL_SEC = 90
+_roster_lock = threading.Lock()
+
 # Gedeelde sessie: hergebruikt TCP/TLS-verbindingen (sneller) en is thread-safe
 _session = requests.Session()
 _session.mount("https://", requests.adapters.HTTPAdapter(
@@ -296,8 +307,25 @@ def _extract_athlete(a: dict, group_name: str, seen: set) -> Optional[dict]:
     }
 
 
-def get_athletes() -> list[dict]:
-    """Geeft alle atleten terug als platte lijst, met groepsnaam erbij."""
+def reset_roster_cache() -> None:
+    """Maak de roster-memo leeg (voor tests en na een expliciete roster-mutatie)."""
+    global _roster_cache, _roster_ts
+    with _roster_lock:
+        _roster_cache = None
+        _roster_ts = 0.0
+
+
+def get_athletes(refresh: bool = False) -> list[dict]:
+    """Geeft alle atleten terug als platte lijst, met groepsnaam erbij.
+
+    Korte in-proces memo (ROSTER_TTL): binnen één coach-read (of een paar seconden)
+    hergebruiken alle sweeps dezelfde roster i.p.v. TeamAthleteList telkens opnieuw
+    op te halen. `refresh=True` omzeilt de memo. Nooit een lege/mislukte fetch cachen."""
+    global _roster_cache, _roster_ts
+    if not refresh:
+        with _roster_lock:
+            if _roster_cache is not None and (time.monotonic() - _roster_ts) < _ROSTER_TTL_SEC:
+                return list(_roster_cache)          # eigen lijst-kopie; dicts gedeeld (bestaand gedrag)
     data = _get("TeamAthleteList")
     top_groups = data.get("data") or []
     seen = set()
@@ -331,7 +359,13 @@ def get_athletes() -> list[dict]:
     for a in result:
         a["all_groups"] = alle_groepen.get(a["user_key"], [a.get("group", "")])
 
-    return result
+    # Alleen een écht gevulde roster memoiseren — een lege/transiënte fetch nooit
+    # cachen (dan retryt de volgende call), analoog aan het `_valid`-principe elders.
+    if result:
+        with _roster_lock:
+            _roster_cache = result
+            _roster_ts = time.monotonic()
+    return list(result)
 
 
 def is_executed_workout(w: dict) -> bool:
