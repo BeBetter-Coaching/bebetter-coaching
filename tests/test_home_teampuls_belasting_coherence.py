@@ -209,3 +209,26 @@ class TestProjectionOnlyDifferences:
         assert "a" not in _home_bel(home)
         # De onderliggende load truth is nog steeds die van de gedeelde stand:
         assert _tp_bel(_tp.signalen(force=False)) == {"a": "hoog"}
+
+
+class TestTallyEndProjection:
+    def test_10_team_tallies_volgen_post_home_handled(self, monkeypatch):
+        # _reconcile volgorde = belasting → home_handled → feedback. De eind-tallies
+        # moeten de ZICHTBARE eindprojectie ná home_handled tonen, niet het
+        # tussenresultaat van alleen de belasting-overlay.
+        live = _stand(TODAY, [_res("a", "Anna", "hoog"), _res("b", "Bram", "hoog")])
+        snap = _snap([_res("a", "Anna", "hoog"), _res("b", "Bram", "hoog")], atleten=10)
+        morgen = (date.today() + timedelta(days=1)).isoformat()
+        handled = {"a|belasting": {"status": "gezien", "tier": "actie", "tot": morgen}}
+        _wire(monkeypatch, live, handled=handled)
+        monkeypatch.setattr(_home, "_current", lambda: snap)
+
+        home = _home.cockpit(refresh=False)
+        # 'a' gedempt → zichtbare werklijst = alleen 'b'. Tallies volgen de EINDprojectie.
+        assert _home_bel(home) == {"b": "hoog"}
+        assert home["team"]["actie"] == 1                        # niet 2 (belasting-tussenstand)
+        assert home["prioriteit_totaal"] == 1
+        assert home["team"]["rustig"] == 10 - 1
+        # De belasting-METER spiegelt de rauwe stand (zoals Teampuls), pre-home_handled:
+        assert home["belasting"]["totaal"] == 2 and home["belasting"]["hoog"] == 2
+        assert _tp_bel(_tp.signalen(force=False)) == {"a": "hoog", "b": "hoog"}
