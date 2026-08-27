@@ -117,6 +117,36 @@ def _bouw_item(uk: str, naam: str, voornaam: str, zichtbaar: list) -> dict | Non
     }
 
 
+def _belasting_signal(b: dict) -> dict:
+    """Projecteer één belasting-resultaat (uit belasting.zichtbare_resultaten) naar het
+    Home-signaaldict. ÉÉN projectieregel, gedeeld door `_bereken` (bake) én
+    `_apply_belasting_overlay` (live reconcile) zodat ernst/km%/reden identiek zijn
+    ongeacht via welk pad de belasting-signaal in Home belandt."""
+    hoog = b.get("ernst") == "hoog"
+    reden = (b.get("signalen") or ["belasting-signaal"])[0]
+    m = b.get("metrics") or {}
+    km_r, km_b = m.get("km_recent"), m.get("km_basis_week")
+    pct = None
+    try:
+        if km_r is not None and km_b:
+            pct = round((float(km_r) / float(km_b) - 1) * 100)
+    except (TypeError, ValueError, ZeroDivisionError):
+        pct = None
+    det = {
+        "ernst": b.get("ernst", ""),
+        "signalen": b.get("signalen") or [],
+        "groep": b.get("group", ""),
+        "km_recent": km_r, "km_basis": km_b, "pct": pct,
+        "gevoel_recent": m.get("gevoel_recent"), "gevoel_basis": m.get("gevoel_basis"),
+        "rpe_recent": m.get("rpe_recent"), "rpe_basis": m.get("rpe_basis"),
+        "runs": (m.get("runs_recent") or [])[:5],
+    }
+    return {"soort": "belasting", "tier": "actie" if hoog else "aandacht",
+            "reden": reden, "kort": reden, "fingerprint": f"b{b.get('ernst', '')}",
+            "severity": 2 if hoog else 1, "detail": det,
+            "context": [{"act": "teampuls", "label": "Teampuls", "icon": "pulse"}]}
+
+
 def _atleten_objs() -> list:
     """Vlakke atletenlijst (met all_groups) — voor belasting.check_alle."""
     try:
@@ -318,6 +348,79 @@ def _apply_handled_overlay(snap: dict) -> dict:
     return {**snap, "prioriteit": items, "prioriteit_totaal": len(items), "team": team}
 
 
+def _apply_belasting_overlay(snap: dict) -> dict:
+    """Reconcilieer de belasting-signalen in de Home-snapshot met de LIVE gedeelde
+    belasting-stand (belasting.json) — exact dezelfde bron + zichtbaarheidsregel als
+    Teampuls (`laad_stand` + `zichtbare_resultaten`). Zonder deze overlay toont Home op
+    de fast-read de bij zijn laatste `_bereken` BEVROREN belasting-cohort, terwijl
+    Teampuls de live stand leest → verschillende namen/km% (de coherence-blocker). Met de
+    overlay consumeren beide bij dezelfde opgeslagen stand ALTIJD dezelfde load truth;
+    verschillen komen daarna alleen uit Home's eigen projectieregels (home_handled-
+    suppressie, groepering met schema/compliance) — nooit uit een ander snapshot/moment.
+
+    Transient-null-veilig: zonder stored stand (`datum` ontbreekt — koud/onbereikbaar)
+    blijft de snapshot ONGEMOEID (nooit bekende belasting wegvegen op een lege read).
+    Geen nieuwe store: leest exact dezelfde belasting.json als Teampuls."""
+    if not snap or snap.get("prioriteit") is None:
+        return snap
+    try:
+        import belasting
+        stand = belasting.laad_stand() or {}
+        if not stand.get("datum"):
+            return snap                                  # geen actuele stand → niet wegvegen
+        zichtbaar = belasting.zichtbare_resultaten(stand)
+    except Exception:
+        return snap                                      # bron onbereikbaar → snapshot ongemoeid
+
+    live = {b["user_key"]: _belasting_signal(b)
+            for b in zichtbaar if b.get("user_key")}
+    live_naam = {b["user_key"]: b.get("naam", "")
+                 for b in zichtbaar if b.get("user_key")}
+    live_datum = stand.get("datum")
+
+    items, seen = [], set()
+    for it in snap.get("prioriteit", []):
+        uk = it.get("user_key")
+        seen.add(uk)
+        # vervang het bevroren belasting-signaal door het live signaal (of laat weg)
+        rest = [s for s in it.get("signalen", []) if s.get("soort") != "belasting"]
+        if uk in live:
+            rest.append(live[uk])
+        herbouwd = _bouw_item(uk, it.get("naam", ""), it.get("voornaam", ""), rest)
+        if herbouwd:
+            items.append(herbouwd)
+    # Atleten die NIEUW in de live belasting-stand staan maar (nog) geen snapshot-rij
+    # hebben → toevoegen, zodat Home niet achterloopt op Teampuls.
+    for uk, sig in live.items():
+        if uk in seen:
+            continue
+        naam = live_naam.get(uk, "")
+        herbouwd = _bouw_item(uk, naam, _voornaam(naam, ""), [sig])
+        if herbouwd:
+            items.append(herbouwd)
+
+    items.sort(key=lambda i: (_TIER_RANK.get(i["tier"], 9), -i["n_signalen"],
+                              -i["_score"], _norm_naam(i["naam"])))
+    n_actie = sum(1 for i in items if i["tier"] == "actie")
+    n_aandacht = sum(1 for i in items if i["tier"] == "aandacht")
+    team = dict(snap.get("team") or {})
+    team["actie"] = n_actie
+    team["aandacht"] = n_aandacht
+    team["rustig"] = max(snap.get("atleten", 0) - n_actie - n_aandacht, 0)
+    hoog = sum(1 for s in live.values() if s.get("tier") == "actie")
+    return {**snap, "prioriteit": items, "prioriteit_totaal": len(items), "team": team,
+            "belasting": {"totaal": len(live), "hoog": hoog, "datum": live_datum,
+                          "vers": live_datum == date.today().isoformat()}}
+
+
+def _reconcile(snap: dict, allow_stale: bool = True) -> dict:
+    """Alle canonieke read-overlays op één plek, in vaste volgorde: eerst de belasting-
+    cohort live-reconcilen (zelfde stand als Teampuls), dan home_handled-suppressie, dan
+    de feedbacktegel. Zo is elk Home-leespad coherent met Teampuls/Feedback."""
+    return _apply_feedback_overlay(
+        _apply_handled_overlay(_apply_belasting_overlay(snap)), allow_stale=allow_stale)
+
+
 def cockpit(refresh: bool = False) -> dict:
     """Home-cockpit. Standaard direct uit de cache (geheugen→store); refresh=True
     herbouwt (single-flight) en behoudt bij mislukking de laatst geldige snapshot.
@@ -329,8 +432,9 @@ def cockpit(refresh: bool = False) -> dict:
     if not refresh:
         snap = _current()
         if snap:
-            # PF-3: reconcilieer de feedbacktegel canoniek (skip+post) op elke fast-read.
-            return {**_apply_feedback_overlay(_apply_handled_overlay(snap)), "cached": True}
+            # PF-3 + belasting-coherentie: reconcilieer belasting (live stand) + feedbacktegel
+            # (skip+post) + home_handled canoniek op elke fast-read.
+            return {**_reconcile(snap), "cached": True}
         # Nog nooit opgebouwd (eerste-ooit): geen zware sweep in het renderpad.
         # Client toont shell + skeletons en triggert de achtergrond-refresh.
         return {"fs": True, "prioriteit": None, "pending": True, "cached": False,
@@ -346,8 +450,7 @@ def cockpit(refresh: bool = False) -> dict:
         # Er draait al een refresh op deze instance → geen tweede zware sweep.
         snap = _current()
         if snap:
-            return {**_apply_feedback_overlay(_apply_handled_overlay(snap)),
-                    "cached": True, "verversen_bezig": True}
+            return {**_reconcile(snap), "cached": True, "verversen_bezig": True}
         return {"fs": True, "prioriteit": None, "pending": True, "cached": False}
 
     try:
@@ -358,15 +461,14 @@ def cockpit(refresh: bool = False) -> dict:
             # Feedbacktegel: canoniek uit de open-set (FRESH); is de queue op deze instance
             # niet geldig, dan is de zojuist VERS berekende `_bereken`-telling actueel →
             # allow_stale=False laat die staan (geen valse 'bijwerken…' na een echte sweep).
-            data = _apply_feedback_overlay(_apply_handled_overlay(data), allow_stale=False)
+            data = _reconcile(data, allow_stale=False)
             data["cached"] = False
             _persist(data)
             return data
         # Mislukte/incomplete refresh → gooi bruikbare oude data niet weg.
         oud = _current()
         if oud:
-            return {**_apply_feedback_overlay(_apply_handled_overlay(oud)),
-                    "cached": True, "refresh_mislukt": True}
+            return {**_reconcile(oud), "cached": True, "refresh_mislukt": True}
         return {**data, "cached": False}
     finally:
         with _FLAG_LOCK:
@@ -492,31 +594,12 @@ def _bereken() -> dict:
                  "schema", "aandacht", f"schema loopt af over {d} dag{'en' if d != 1 else ''}",
                  f"schema nog {d}d", f"s{r.get('last_date')}:a", 1, det, ctx)
 
-    # Belasting (hoog = actie/severity 2, let op = aandacht/severity 1) — escalatie = erger
+    # Belasting (hoog = actie/severity 2, let op = aandacht/severity 1) — escalatie = erger.
+    # Zelfde projectieregel (_belasting_signal) als de live-reconcile-overlay op het leespad.
     for b in bel:
-        hoog = b.get("ernst") == "hoog"
-        tier = "actie" if hoog else "aandacht"
-        reden = (b.get("signalen") or ["belasting-signaal"])[0]
-        m = b.get("metrics") or {}
-        km_r, km_b = m.get("km_recent"), m.get("km_basis_week")
-        pct = None
-        try:
-            if km_r is not None and km_b:
-                pct = round((float(km_r) / float(km_b) - 1) * 100)
-        except (TypeError, ValueError, ZeroDivisionError):
-            pct = None
-        det = {
-            "ernst": b.get("ernst", ""),
-            "signalen": b.get("signalen") or [],
-            "groep": b.get("group", ""),
-            "km_recent": km_r, "km_basis": km_b, "pct": pct,
-            "gevoel_recent": m.get("gevoel_recent"), "gevoel_basis": m.get("gevoel_basis"),
-            "rpe_recent": m.get("rpe_recent"), "rpe_basis": m.get("rpe_basis"),
-            "runs": (m.get("runs_recent") or [])[:5],
-        }
-        _sig(b.get("user_key"), b.get("naam", ""), "", "belasting", tier, reden,
-             reden, f"b{b.get('ernst', '')}", 2 if hoog else 1, det,
-             [{"act": "teampuls", "label": "Teampuls", "icon": "pulse"}])
+        s = _belasting_signal(b)
+        _sig(b.get("user_key"), b.get("naam", ""), "", "belasting", s["tier"], s["reden"],
+             s["kort"], s["fingerprint"], s["severity"], s["detail"], s["context"])
 
     # ── Suppressie (severity-gated) + rij opbouwen ──
     items = []
