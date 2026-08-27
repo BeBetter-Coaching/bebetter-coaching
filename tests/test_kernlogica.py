@@ -541,12 +541,15 @@ class TestBelasting:
 
     def test_gezien_dempt_en_escalatie_doorbreekt(self, monkeypatch):
         import intake_store
-        monkeypatch.setattr(intake_store, "save_belasting", lambda d: (True, ""))
         from datetime import date, timedelta
         data = {"datum": date.today().isoformat(),
                 "resultaten": [{"user_key": "a", "naam": "X", "ernst": "let_op",
                                 "signalen": ["s"], "codes": ["volume"]}],
                 "afgehandeld": {}}
+        # markeer_gezien leest nu coach-authority-veilig de VERSE stand uit de store
+        # (i.p.v. de meegegeven dict) → lever die in-memory stand via load_belasting.
+        monkeypatch.setattr(intake_store, "load_belasting", lambda: data)
+        monkeypatch.setattr(intake_store, "save_belasting", lambda d: (True, ""))
         # markeer gezien → onzichtbaar
         data = belasting.markeer_gezien(data, "a", "let_op")
         assert belasting.zichtbare_resultaten(data) == []

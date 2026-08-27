@@ -4144,10 +4144,33 @@ async function laadTeampuls(force = false) {
   const box = $("#tp-signalen"), info = $("#tp-info");
   info.textContent = force ? "Belasting-signalen herberekenen (alle atleten)…" : "Belasting-signalen laden…";
   skeleton(box, 3);
-  const brief = $("#tp-briefing"); brief.innerHTML = `<div class="skel-card"><div class="skel skel-line w60"></div></div>`;
+  // Coach Read Performance v1: briefing PARALLEL starten (onafhankelijk van signalen —
+  // niet serieel erna) en signalen als FAST READ tonen (bestaande stand direct, geen
+  // 30-45s recompute op page-open). Is de stand STALE-but-valid of nog niet berekend,
+  // dan haalt de client de verse stand op de achtergrond op en reconcilieert.
+  laadBriefing(force);
   const r = await api(`/api/teampuls/signalen${force ? "?force=true" : ""}`).catch(() => null);
-  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
-  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
+  if (!tpRenderSignalen(r, force)) return;
+  if (!force && r && (r.stale || r.pending)) {
+    api("/api/teampuls/signalen?force=true")
+      .then(fresh => { if (fresh && fresh.fs) tpRenderSignalen(fresh, true); })
+      .catch(() => {});
+  }
+}
+
+// Rendert de signalen-lijst + info-kop uit een payload; herbruikbaar voor de fast-read
+// én de achtergrond-reconcile. Geeft false terug bij een terminale toestand (geen
+// verbinding / niet gekoppeld) zodat de aanroeper stopt.
+function tpRenderSignalen(r, isFresh) {
+  const box = $("#tp-signalen"), info = $("#tp-info");
+  if (!box || !info) return false;
+  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return false; }
+  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return false; }
+  if (r.pending && !isFresh) {
+    // Nog geen opgeslagen stand → laat de skeletons staan; de force-reconcile vult ze.
+    info.textContent = "Belasting-signalen worden voor het eerst berekend…";
+    return true;
+  }
   const items = r.items || [];
   // ÉÉN productcontract Teampuls vs Home (§8 / finding #5 — geen twee waarheden, wél
   // twee projecties): TEAMPULS = observatie/monitoring van trainingsBELASTING over het
@@ -4156,12 +4179,13 @@ async function laadTeampuls(force = false) {
   // (gezien/later). Daarom kan een atleet met hoge belasting hier staan zonder op Home te
   // staan: óf het is geen Home-actiebron (bv. losse klacht), óf je handelde het al af.
   // De brug van observatie → actie is de 'Dossier →'-knop per kaart (zelfde atleet).
+  const versLabel = (!r.vers && r.datum) ? ` · <span class="muted klein">stand ${esc(r.datum)} · verversen…</span>` : "";
   info.innerHTML = `Belasting-monitoring — teambrede observatie uit volume, gevoel, RPE en notities. Dit is niet je Home-actielijst: een atleet kan hier staan zonder een openstaande Home-actie (al afgehandeld, of geen actiebron). Handel af via <b>Dossier →</b>. `
-    + (items.length ? `<b>${r.hoog || 0}</b> hoge belasting · <b>${items.length}</b> in beeld · ${esc(r.datum || "")}` : `alles binnen de marge · ${esc(r.datum || "")}`);
+    + (items.length ? `<b>${r.hoog || 0}</b> hoge belasting · <b>${items.length}</b> in beeld · ${esc(r.datum || "")}${versLabel}` : `alles binnen de marge · ${esc(r.datum || "")}${versLabel}`);
   box.innerHTML = "";
   if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen belasting-signalen — iedereen binnen de marge.</p></div>`; }
   else items.forEach(it => box.appendChild(pulsItem(it)));
-  laadBriefing();
+  return true;
 }
 
 function pulsItem(it) {
