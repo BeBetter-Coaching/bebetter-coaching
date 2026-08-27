@@ -603,14 +603,11 @@ def _dual_write(user_key: str, naam: str, soort: str, sig: dict, tot: str, undo:
     elif soort == "belasting":
         try:
             import belasting
-            data = belasting.laad_stand()
-            afg = data.setdefault("afgehandeld", {})
-            if undo:
-                afg.pop(user_key, None)
-            else:
-                ernst = (sig.get("detail") or {}).get("ernst") or "let_op"
-                afg[user_key] = {"tot": tot, "ernst": ernst}        # zichtbare_resultaten honoreert tot + escalatie
-            intake_store.save_belasting(data)
+            ernst = (sig.get("detail") or {}).get("ernst") or "let_op"
+            # Coach-authority-veilig onder de gedeelde stand-lock: her-leest de verse
+            # stand en overschrijft nooit een gelijktijdige recompute. tot = echte
+            # einddatum (3/7/14 dg); zichtbare_resultaten honoreert tot + escalatie.
+            belasting.markeer_gezien(None, user_key, ernst, undo=undo, tot=tot)
         except Exception:
             pass
 

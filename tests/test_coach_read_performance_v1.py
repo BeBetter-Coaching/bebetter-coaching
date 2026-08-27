@@ -296,3 +296,181 @@ class TestContractGuards:
         sw = open(os.path.join(_ROOT, "pwa", "static", "sw.js")).read()
         m = re.search(r"bebetter-shell-v(\d+)", sw)
         assert m and int(m.group(1)) >= 94
+
+
+# ══ Correctness delta (externe review) — 3 fixes vóór merge ════════════════
+import copy as _copy       # noqa: E402
+import time as _time       # noqa: E402
+
+
+def _mem_store(monkeypatch, start):
+    """In-memory belasting-store (deepcopy bij load = echte disk-isolatie)."""
+    store = {"data": start}
+
+    def _load():
+        return _copy.deepcopy(store["data"])
+
+    def _save(d):
+        store["data"] = _copy.deepcopy(d)
+        return (True, "")
+
+    monkeypatch.setattr(_bel.intake_store, "load_belasting", _load)
+    monkeypatch.setattr(_bel.intake_store, "save_belasting", _save)
+    monkeypatch.setattr(_bel.intake_store, "load_on_hold", lambda: {})
+    monkeypatch.setattr(_bel.intake_store, "load_admin_clients", lambda: {})
+    return store
+
+
+class TestCoachAuthorityRace:
+    """Fix 1 — een achtergrond-recompute mag een coachactie die TIJDENS de sweep
+    gebeurt nooit terugdraaien (en een coachactie mag geen verse resultaten wissen)."""
+
+    def test_24_recompute_behoudt_markeer_tijdens_sweep(self, monkeypatch):
+        import ai_feedback
+        store = _mem_store(monkeypatch, {"datum": YESTERDAY, "resultaten": [],
+                                         "afgehandeld": {}})
+        monkeypatch.setattr(ai_feedback, "belasting_duiding", lambda *a, **k: "d")
+
+        # De trage sweep: middenin dempt een coach een atleet (markeer_gezien).
+        def slow_check(*a, **k):
+            _bel.markeer_gezien(None, "coachactie", "hoog")
+            return [{"user_key": "x", "naam": "X", "ernst": "let_op",
+                     "signalen": ["s"], "codes": ["volume"]}]
+        monkeypatch.setattr(_bel, "check_alle", slow_check)
+
+        out = _bel.dagelijkse_check([], forceer=True)
+        # coachactie overleeft de recompute-commit, én de verse resultaten staan er
+        assert "coachactie" in out["afgehandeld"]
+        assert "coachactie" in store["data"]["afgehandeld"]
+        assert [r["user_key"] for r in out["resultaten"]] == ["x"]
+
+    def test_25_recompute_resurrectt_undone_actie_niet(self, monkeypatch):
+        import ai_feedback
+        morgen = (date.today() + timedelta(days=1)).isoformat()
+        _mem_store(monkeypatch, {"datum": YESTERDAY, "resultaten": [],
+                                 "afgehandeld": {"x": {"tot": morgen, "ernst": "hoog"}}})
+        monkeypatch.setattr(ai_feedback, "belasting_duiding", lambda *a, **k: "d")
+
+        # Middenin de sweep heft de coach de demping op (undo).
+        def slow_check(*a, **k):
+            _bel.markeer_gezien(None, "x", "hoog", undo=True)
+            return [{"user_key": "x", "naam": "X", "ernst": "hoog",
+                     "signalen": ["s"], "codes": ["volume", "klachten"]}]
+        monkeypatch.setattr(_bel, "check_alle", slow_check)
+
+        out = _bel.dagelijkse_check([], forceer=True)
+        assert "x" not in out["afgehandeld"]                      # niet teruggedraaid
+
+    def test_26_coachactie_wist_verse_resultaten_niet(self, monkeypatch):
+        # Omgekeerde race: een recompute heeft net verse resultaten opgeslagen;
+        # een daaropvolgende markeer_gezien mag die niet met oude resultaten
+        # overschrijven (markeer leest de VERSE stand her).
+        store = _mem_store(monkeypatch, {"datum": TODAY,
+                                         "resultaten": [{"user_key": "vers"}],
+                                         "afgehandeld": {}})
+        # caller geeft een VEROUDERD dict mee (lege resultaten)
+        oud = {"datum": TODAY, "resultaten": [], "afgehandeld": {}}
+        _bel.markeer_gezien(oud, "vers", "hoog")
+        assert [r["user_key"] for r in store["data"]["resultaten"]] == ["vers"]
+        assert "vers" in store["data"]["afgehandeld"]
+
+
+class TestSharedSingleFlight:
+    """Fix 2 — Home en Teampuls delen één zware recompute; de tweede caller start
+    geen tweede check_alle/43d-sweep en krijgt dezelfde eindstand."""
+
+    def test_27_twee_callers_een_sweep_consistente_stand(self, monkeypatch):
+        import ai_feedback
+        _mem_store(monkeypatch, {"datum": YESTERDAY, "resultaten": [],
+                                 "afgehandeld": {}})
+        monkeypatch.setattr(ai_feedback, "belasting_duiding", lambda *a, **k: "d")
+
+        loads = {"n": 0}
+        _orig_load = _bel.intake_store.load_belasting
+        def _counting_load():
+            loads["n"] += 1
+            return _orig_load()
+        monkeypatch.setattr(_bel.intake_store, "load_belasting", _counting_load)
+
+        calls = {"n": 0}
+        def slow_check(*a, **k):
+            calls["n"] += 1
+            # wacht tot de 2e caller óók de fast-path-top passeerde → volger wordt
+            for _ in range(400):
+                if loads["n"] >= 2:
+                    break
+                _time.sleep(0.005)
+            _time.sleep(0.03)                                     # volger betreedt single-flight
+            return [{"user_key": "x", "naam": "X", "ernst": "hoog",
+                     "signalen": ["s"], "codes": ["volume", "klachten"]}]
+        monkeypatch.setattr(_bel, "check_alle", slow_check)
+
+        results = {}
+        def home():
+            results["home"] = _bel.dagelijkse_check([], forceer=False)
+        def teampuls():
+            results["tp"] = _bel.dagelijkse_check([], forceer=True)
+
+        t1 = threading.Thread(target=home); t1.start()
+        t2 = threading.Thread(target=teampuls)
+        # start de 2e pas als de leider echt binnen check_alle zit
+        for _ in range(400):
+            if calls["n"] >= 1:
+                break
+            _time.sleep(0.005)
+        t2.start()
+        t1.join(timeout=6); t2.join(timeout=6)
+
+        assert calls["n"] == 1                                    # exact ÉÉN zware sweep
+        assert results["home"]["datum"] == TODAY
+        assert results["home"]["resultaten"] == results["tp"]["resultaten"]
+        assert results["home"]["afgehandeld"] == results["tp"]["afgehandeld"]
+
+    def test_28_forceer_recomputet_ook_bij_verse_stand(self, monkeypatch):
+        # Single-flight mag de forceer=True-semantiek niet breken: bij een verse
+        # stand en geen lopende recompute rekent forceer alsnog opnieuw.
+        import ai_feedback
+        _mem_store(monkeypatch, {"datum": TODAY, "resultaten": [], "afgehandeld": {}})
+        monkeypatch.setattr(ai_feedback, "belasting_duiding", lambda *a, **k: "d")
+        calls = {"n": 0}
+        def _check(*a, **k):
+            calls["n"] += 1
+            return [{"user_key": "x", "naam": "X", "ernst": "hoog",
+                     "signalen": ["s"], "codes": ["volume", "klachten"]}]
+        monkeypatch.setattr(_bel, "check_alle", _check)
+        out = _bel.dagelijkse_check([], forceer=True)
+        assert calls["n"] == 1 and [r["user_key"] for r in out["resultaten"]] == ["x"]
+
+
+class TestRosterMemoAuthInvalidatie:
+    """Fix 3 — de roster-memo moet leeg bij auth/session-wissel (save_token /
+    reset_session), zodat een oude roster niet wordt hergebruikt."""
+
+    def _fake_get(self, counter):
+        def _get(path, *a, **k):
+            if path == "TeamAthleteList":
+                counter["n"] += 1
+                return {"data": [{"groups": [{"name": "A", "athletes": [
+                    {"user_key": "u1", "first_name": "X", "last_name": "Y"}]}]}]}
+            return {"data": {}}
+        return _get
+
+    def test_29_save_token_leegt_memo(self, monkeypatch, tmp_path):
+        _fs.reset_roster_cache()
+        monkeypatch.setattr(_fs, "TOKEN_FILE", str(tmp_path / "tok"))
+        c = {"n": 0}
+        monkeypatch.setattr(_fs, "_get", self._fake_get(c))
+        _fs.get_athletes()                                        # roster A gecachet
+        _fs.save_token("nieuw-token-abc-1234567890")             # auth wisselt
+        _fs.get_athletes()                                        # moet opnieuw fetchen
+        assert c["n"] == 2
+
+    def test_30_reset_session_leegt_memo(self, monkeypatch, tmp_path):
+        _fs.reset_roster_cache()
+        monkeypatch.setattr(_fs, "TOKEN_FILE", str(tmp_path / "tok"))
+        c = {"n": 0}
+        monkeypatch.setattr(_fs, "_get", self._fake_get(c))
+        _fs.get_athletes()
+        _fs.reset_session()                                       # sessie-reset
+        _fs.get_athletes()
+        assert c["n"] == 2

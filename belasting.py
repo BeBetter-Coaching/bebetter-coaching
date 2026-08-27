@@ -14,11 +14,31 @@ zodat beide coaches dezelfde stand zien zonder herberekening.
 from __future__ import annotations
 
 import re
+import threading
 from datetime import date, timedelta
 
 import fs_client
 import intake_store
 from dossier import _is_run, _run_km
+
+# ── Gedeelde in-process concurrency-guards (Coach Read Performance v1 — delta) ──
+# Puur in-geheugen, geen nieuwe persistent cache/store. Twee losse zorgen:
+#
+#  _STAND_LOCK  serialiseert elke READ-MODIFY-WRITE op de opgeslagen dagstand
+#               (coach-authority `afgehandeld` én de recompute-save). Zo kan een
+#               achtergrond-recompute nooit een coachactie (markeer_gezien/undo)
+#               overschrijven die tijdens die ~tientallen-seconden-sweep gebeurde,
+#               en andersom kan een coachactie nooit verse recompute-resultaten
+#               wegschrijven. Beide kanten her-lezen onder de lock de verse stand.
+#  Single-flight (_flight_*) zorgt dat maar ÉÉN zware recompute (check_alle + 43d
+#               sweep) tegelijk loopt, gedeeld tussen Home en Teampuls: een tweede
+#               gelijktijdige caller start geen tweede sweep maar krijgt dezelfde
+#               net-berekende eindstand.
+_STAND_LOCK = threading.RLock()
+
+_flight_lock = threading.Lock()
+_flight_event: "threading.Event | None" = None
+_flight_value: "dict | None" = None
 
 # Drempels (praktijkwaarden; bijstellen op basis van ervaring)
 VOLUME_RATIO_LET_OP = 1.30   # +30% t.o.v. 4-weeks gemiddelde
@@ -299,21 +319,11 @@ def laad_stand() -> dict:
         return {}
 
 
-def dagelijkse_check(athletes: list[dict], forceer: bool = False) -> dict:
-    """
-    Geef de belasting-stand van vandaag. Herberekent alleen als de opgeslagen
-    stand niet van vandaag is (of forceer=True); anders 1 goedkope opslag-load.
-    Structuur: {"datum": iso, "resultaten": [...], "afgehandeld": {user_key: {...}}}
-    """
+def _recompute_stand(athletes: list[dict], vandaag: str) -> dict:
+    """De ZWARE recompute (check_alle + 43d-sweep + parallelle AI-duiding), gevolgd
+    door een coach-authority-veilige save. Wordt altijd via `_recompute_single_flight`
+    aangeroepen zodat Home en Teampuls samen maar één sweep starten."""
     import ai_feedback
-
-    try:
-        data = intake_store.load_belasting()
-    except Exception:
-        data = {}
-    vandaag = date.today().isoformat()
-    if not forceer and data.get("datum") == vandaag:
-        return data
 
     resultaten = check_alle(
         athletes,
@@ -338,13 +348,86 @@ def dagelijkse_check(athletes: list[dict], forceer: bool = False) -> dict:
         with ThreadPoolExecutor(max_workers=min(8, len(resultaten))) as _ex:
             list(_ex.map(_duid, resultaten))
 
-    data = {"datum": vandaag, "resultaten": resultaten,
-            "afgehandeld": data.get("afgehandeld", {})}
-    try:
-        intake_store.save_belasting(data)
-    except Exception:
-        pass  # niet-opslaan = morgen opnieuw berekenen, geen blokkade
+    # Coach-authority guard: her-lees ONDER de gedeelde lock de ACTUELE afgehandeld.
+    # De recompute duurde tientallen seconden; een coach kan intussen markeer_gezien/
+    # undo hebben gedaan. De bij aanvang gelezen afgehandeld is dan verouderd — neem
+    # de verse coach-authority over zodat we die actie niet terugdraaien.
+    with _STAND_LOCK:
+        try:
+            huidig = intake_store.load_belasting() or {}
+        except Exception:
+            huidig = {}
+        data = {"datum": vandaag, "resultaten": resultaten,
+                "afgehandeld": huidig.get("afgehandeld", {})}
+        try:
+            intake_store.save_belasting(data)
+        except Exception:
+            pass  # niet-opslaan = morgen opnieuw berekenen, geen blokkade
     return data
+
+
+def _recompute_single_flight(compute) -> dict:
+    """Laat maar ÉÉN zware belasting-recompute tegelijk lopen (gedeeld Home+Teampuls).
+
+    De eerste caller (leider) draait `compute()`; een tweede gelijktijdige caller
+    start GEEN tweede check_alle/43d-sweep maar wacht tot de leider klaar is en krijgt
+    diens net-berekende eindstand. Puur in-process (geen nieuwe persistent cache).
+    De leider-exception propageert naar de leider-caller (bestaande try/except-fallback
+    blijft gelden); volgers vallen dan terug op de laatst opgeslagen stand."""
+    global _flight_event, _flight_value
+    with _flight_lock:
+        if _flight_event is not None:
+            ev, leider = _flight_event, False
+        else:
+            ev = _flight_event = threading.Event()
+            _flight_value = None
+            leider = True
+
+    if not leider:
+        ev.wait()
+        with _flight_lock:
+            val = _flight_value
+        if val is not None:
+            return val
+        try:
+            return intake_store.load_belasting() or {}
+        except Exception:
+            return {}
+
+    # Leider: reken BUITEN _flight_lock (zware sweep mag volgers niet blokkeren op de
+    # slot-lock zelf; die wachten op het event). Deel daarna het resultaat en wek ze.
+    try:
+        result = compute()
+    except BaseException:
+        with _flight_lock:
+            _flight_value = None
+            _flight_event = None
+            ev.set()
+        raise
+    with _flight_lock:
+        _flight_value = result
+        _flight_event = None
+        ev.set()
+    return result
+
+
+def dagelijkse_check(athletes: list[dict], forceer: bool = False) -> dict:
+    """
+    Geef de belasting-stand van vandaag. Herberekent alleen als de opgeslagen
+    stand niet van vandaag is (of forceer=True); anders 1 goedkope opslag-load.
+    Structuur: {"datum": iso, "resultaten": [...], "afgehandeld": {user_key: {...}}}
+    De zware recompute loopt achter een gedeelde single-flight (Home+Teampuls delen
+    één sweep); de goedkope same-day fast read passeert die guard niet.
+    """
+    try:
+        data = intake_store.load_belasting()
+    except Exception:
+        data = {}
+    vandaag = date.today().isoformat()
+    if not forceer and data.get("datum") == vandaag:
+        return data
+
+    return _recompute_single_flight(lambda: _recompute_stand(athletes, vandaag))
 
 
 def zichtbare_resultaten(data: dict) -> list[dict]:
@@ -361,21 +444,49 @@ def zichtbare_resultaten(data: dict) -> list[dict]:
     return zichtbaar
 
 
-def markeer_gezien(data: dict, user_key: str, ernst: str) -> dict:
-    """Demp een atleet 7 dagen; bij escalatie naar 'hoog' komt hij eerder terug."""
-    afg = data.setdefault("afgehandeld", {})
-    afg[user_key] = {"tot": (date.today() + timedelta(days=7)).isoformat(),
-                     "ernst": ernst}
-    # Verlopen vermeldingen opruimen
-    vandaag = date.today().isoformat()
-    for k in list(afg.keys()):
-        if afg[k].get("tot", "") < vandaag:
-            del afg[k]
-    try:
-        intake_store.save_belasting(data)
-    except Exception:
-        pass
-    return data
+def _muteer_afgehandeld(mutator) -> dict:
+    """Enige coach-authority-mutatie op de belasting-stand. Leest ONDER _STAND_LOCK
+    de VERSE stand (zodat een gelijktijdige recompute of tweede coachactie geen verse
+    resultaten of elkaars afgehandeld-mutatie overschrijft), laat `mutator(afgehandeld)`
+    alleen de afgehandeld-map aanpassen, ruimt verlopen vermeldingen op, en slaat op."""
+    with _STAND_LOCK:
+        try:
+            data = intake_store.load_belasting() or {}
+        except Exception:
+            data = {}
+        afg = data.setdefault("afgehandeld", {})
+        mutator(afg)
+        vandaag = date.today().isoformat()
+        for k in list(afg.keys()):
+            if afg[k].get("tot", "") < vandaag:
+                del afg[k]
+        try:
+            intake_store.save_belasting(data)
+        except Exception:
+            pass
+        return data
+
+
+def markeer_gezien(data: dict, user_key: str, ernst: str,
+                   undo: bool = False, tot: str | None = None) -> dict:
+    """Demp een atleet 7 dagen (of hef de demping op bij undo); bij escalatie naar
+    'hoog' komt hij eerder terug. Muteert alleen de afgehandeld-map, coach-authority-
+    veilig onder de gedeelde stand-lock (zie [[_muteer_afgehandeld]]). Geeft de verse
+    volledige stand terug (bestaande callers gebruiken de retour als sessiestand)."""
+    def _mut(afg: dict) -> None:
+        if undo:
+            afg.pop(user_key, None)
+        else:
+            afg[user_key] = {
+                "tot": tot or (date.today() + timedelta(days=7)).isoformat(),
+                "ernst": ernst}
+
+    nieuw = _muteer_afgehandeld(_mut)
+    if isinstance(data, dict):
+        # Houd het in-place-contract voor bestaande callers: hun dict weerspiegelt
+        # de verse afgehandeld-stand.
+        data["afgehandeld"] = dict(nieuw.get("afgehandeld", {}))
+    return nieuw
 
 
 def _veilig(fn):

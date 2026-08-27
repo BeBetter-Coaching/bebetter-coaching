@@ -156,14 +156,10 @@ def markeer_gezien(user_key: str, ernst: str, undo: bool = False) -> bool:
         data = belasting.laad_stand()
     except Exception:
         data = {}
-    if undo:
-        (data.get("afgehandeld") or {}).pop(user_key, None)
-        try:
-            intake_store.save_belasting(data)
-        except Exception:
-            pass
-    else:
-        belasting.markeer_gezien(data, user_key, ernst)
+    # Zowel demp als undo lopen via belasting.markeer_gezien → coach-authority-veilig
+    # onder de gedeelde stand-lock (her-leest de verse stand, overschrijft nooit een
+    # gelijktijdige recompute of tweede coachactie).
+    belasting.markeer_gezien(data, user_key, ernst, undo=undo)
     return True
 
 

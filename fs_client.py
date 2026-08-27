@@ -66,6 +66,7 @@ def save_token(token: str):
         pass
     global _token
     _token = token.strip()
+    reset_roster_cache()  # nieuw token → mogelijk andere coach/roster; memo weg
 
 
 def _read_streamlit_secret_token() -> Optional[str]:
@@ -105,6 +106,7 @@ def reset_session():
     global _token, _coach_key
     _token = None
     _coach_key = None
+    reset_roster_cache()  # sessie-reset → gecachete roster mag niet blijven hangen
     if os.path.exists(TOKEN_FILE):
         os.remove(TOKEN_FILE)
 
