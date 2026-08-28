@@ -97,7 +97,7 @@ class TestStatusSemantics:
 
 # ── 3. Gedeelde primitives bestaan en worden hergebruikt ────────────────────
 class TestPrimitives:
-    PRIMS = ["dsShell", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
+    PRIMS = ["dsStage", "dsFocal", "dsStat", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
              "dsKv", "dsStream", "dsAction", "dsEmpty", "dsSpark", "dsRing"]
 
     def test_8_alle_primitives_bestaan_eenmalig(self):
@@ -128,13 +128,17 @@ class TestPrimitives:
 # ── 4. Athlete Shell: één identiteit over drie views ────────────────────────
 class TestAthleteShell:
     def test_12_shell_bestaat_en_toont_identiteit_dominant(self):
-        body = _fn("dsShell")
-        for part in ("ds-med", "ds-shell-name", "initialen(", "ds-shell-sub"):
-            assert part in body, f"shell mist {part}"
+        body = _fn("dsStage")
+        for part in ("ds-med", "ds-stage-name", "initialen(", "ds-stage-sub", "dsFocal("):
+            assert part in body, f"stage mist {part}"
+        assert "function dsShell(" not in _APP          # geen tweede shell-primitive
 
     def test_13_workspace_en_dossier_gebruiken_dezelfde_shell(self):
-        assert "dsShell({" in _fn("wsRender")
-        assert "dsShell({" in _fn("dcRender")
+        # Beide views bouwen op DEZELFDE gedeelde athlete-stage (identiteit +
+        # primair signaal + metric-rail op één oppervlak).
+        assert "dsStage({" in _fn("wsRender")
+        assert "dsStage({" in _fn("dcRender")
+        assert _APP.count("function dsStage(") == 1
 
     def test_14_home_detail_deelt_de_attention_primitive(self):
         # Journey A/D: hetzelfde signaal ziet er op Home, Workspace en Dossier gelijk uit.
@@ -147,7 +151,7 @@ class TestAthleteShell:
         assert _APP.count("function athleteNav") == 1
         assert "function dsAthleteNav" not in _APP
         assert 'athleteNav("dossier", vm.key)' in _APP        # Cohesion-contract intact
-        assert ".ds-shell .anav-chip" in _DS                  # opgewaardeerd, niet vervangen
+        assert ".ds-stage .anav-chip" in _DS                  # opgewaardeerd, niet vervangen
 
     def test_16_athlete_views_krijgen_het_volle_canvas(self):
         # Root cause van het split-screen-gevoel: Workspace/Dossier misten de brede view.

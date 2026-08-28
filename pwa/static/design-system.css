@@ -115,16 +115,6 @@
    De gedeelde athlete-kop. De atleet is DOMINANT: groot medaillon met
    concentrische ring, grote naam, status + context-navigatie. Wordt gebruikt
    door Workspace, Dossier én Home-detail → één identiteit, drie views.      */
-.ds-shell{position:relative;border:1px solid var(--ds-border);border-radius:var(--ds-r-xl);
-  background:
-    radial-gradient(120% 150% at 8% 0%,rgba(94,230,235,.10),transparent 55%),
-    radial-gradient(90% 140% at 100% 0%,var(--tone-bg),transparent 60%),
-    linear-gradient(165deg,var(--ds-s2),var(--ds-s1));
-  padding:var(--ds-5) var(--ds-5) var(--ds-4);
-  display:flex;align-items:flex-start;gap:var(--ds-5);flex-wrap:wrap;
-  box-shadow:var(--ds-e2);overflow:hidden}
-.ds-shell::after{content:"";position:absolute;inset:auto 0 0;height:1px;
-  background:linear-gradient(90deg,transparent,var(--tone),transparent);opacity:.35}
 
 /* Medaillon: initialen met concentrische ring (geen fictieve foto). */
 .ds-med{position:relative;width:76px;height:76px;flex:0 0 auto;display:grid;place-items:center}
@@ -136,26 +126,19 @@
   font-size:20px;font-weight:700;letter-spacing:.02em;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
 
-.ds-shell-main{flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:var(--ds-2)}
-.ds-shell-top{display:flex;align-items:center;gap:var(--ds-3);flex-wrap:wrap}
-.ds-shell-name{margin:0;font-size:var(--ds-t-hero);font-weight:700;letter-spacing:-.01em;line-height:1.1}
-.ds-shell-sub{margin:0;font-size:var(--ds-t-sm);color:var(--ds-text-3);
-  display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap}
-.ds-shell-sub .sep{opacity:.4}
-.ds-shell-aside{flex:1 1 300px;min-width:0;display:flex;flex-direction:column;gap:var(--ds-2)}
 
 /* Contextnavigatie: ondersteunend, niet dominant.
    BEWUST GEEN nieuwe nav-component: de app heeft er al één gedeelde
    (`athleteNav()` → .anav/.anav-chip, één definitie, vaste call-contracten).
    Het design system waardeert díe op — een tweede nav-component zou precies de
    fragmentatie zijn die deze milestone opruimt. */
-.ds-shell .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap;margin-top:var(--ds-1)}
-.ds-shell .anav-chip{background:var(--ds-well);border:1px solid var(--ds-border);color:var(--ds-text-2);
+.ds-stage .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap;margin-top:var(--ds-1)}
+.ds-stage .anav-chip{background:var(--ds-well);border:1px solid var(--ds-border);color:var(--ds-text-2);
   border-radius:var(--ds-r-pill);padding:6px 13px;font-size:var(--ds-t-sm);font-weight:600;
   cursor:pointer;transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease),
     transform var(--ds-fast) var(--ds-ease)}
-.ds-shell .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text);transform:translateY(-1px)}
-.ds-shell .anav-chip:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.ds-stage .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text);transform:translateY(-1px)}
+.ds-stage .anav-chip:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
 
 /* ═══════ Primitive: attention card ═════════════════════════════════════ */
 .ds-attn{display:grid;gap:var(--ds-2)}
@@ -223,16 +206,16 @@
 /* ═══════ Primitive: quick actions ══════════════════════════════════════ */
 .ds-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:var(--ds-2)}
 .ds-action{display:flex;align-items:center;gap:var(--ds-3);text-align:left;width:100%;
-  background:var(--ds-well);border:1px solid var(--ds-border);border-radius:var(--ds-r-md);
+  background:none;border:1px solid transparent;border-radius:var(--ds-r-md);
   padding:var(--ds-3) var(--ds-4);color:var(--ds-text);cursor:pointer;font:inherit;
   transition:border-color var(--ds-fast) var(--ds-ease),transform var(--ds-fast) var(--ds-ease),
     background var(--ds-fast) var(--ds-ease)}
-.ds-action:hover{border-color:var(--ds-accent);transform:translateY(-1px);background:var(--ds-s2)}
+.ds-action:hover{border-color:var(--tone-bd,var(--ds-accent));background:rgba(94,230,235,.06);transform:translateY(-1px)}
 .ds-action:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
-.ds-action.ds-tone{border-color:var(--tone-bd)}
+.ds-action.ds-tone{background:var(--tone-bg)}
 .ds-action.ds-tone .ds-action-ic{color:var(--tone)}
 .ds-action-ic{color:var(--ds-accent);flex:0 0 auto;display:grid;place-items:center;
-  width:32px;height:32px;border-radius:var(--ds-r-sm);background:var(--ds-s1);border:1px solid var(--ds-border)}
+  width:30px;height:30px;border-radius:50%;background:var(--ds-accent-soft);border:0}
 .ds-action-ic .ic{width:17px;height:17px}
 .ds-action-b{min-width:0;display:flex;flex-direction:column;gap:1px}
 .ds-action-t{font-size:var(--ds-t-sm);font-weight:650;line-height:1.25}
@@ -273,7 +256,7 @@
 
 /* ═══════ Layout: cockpit ═══════════════════════════════════════════════ */
 .ds-cockpit{display:flex;flex-direction:column;gap:var(--ds-4)}
-.ds-grid{display:grid;gap:var(--ds-4);grid-template-columns:1fr}
+.ds-grid{display:grid;gap:var(--ds-4);grid-template-columns:1fr;align-items:start}
 .ds-section{display:flex;flex-direction:column;gap:var(--ds-3)}
 
 /* Sectie-entree: rustig, één keer, en uit bij reduced-motion. */
@@ -294,16 +277,12 @@
 @media (min-width:900px){
   .ds-grid.two{grid-template-columns:1fr 1fr}
   .ds-grid.side{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
-  .ds-shell{padding:var(--ds-6);gap:var(--ds-6)}
   .ds-med{width:88px;height:88px}
   .ds-med-in{width:70px;height:70px;font-size:23px}
-  .ds-shell-name{font-size:var(--ds-t-display)}
 }
 @media (max-width:560px){
-  .ds-shell{padding:var(--ds-4);gap:var(--ds-4)}
   .ds-med{width:58px;height:58px}
   .ds-med-in{width:48px;height:48px;font-size:17px}
-  .ds-shell-name{font-size:20px}
   .ds-metrics{grid-template-columns:1fr 1fr}
   .ds-metric{padding:var(--ds-3)}
   .ds-metric-v{font-size:22px}
@@ -360,3 +339,225 @@
 
 /* Home-detail: het signaalblok deelt de aandacht-primitive met Workspace/Dossier. */
 .pd-s-blok .ds-attn-card{margin-bottom:var(--ds-2)}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VISUAL COMPOSITION v1 — van "mooi dashboard" naar athlete command center
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. De rail treedt terug ───────────────────────────────────────────────
+   Was: 274px met omrande, volledig-contrast rijen (leest als database-lijst en
+   pakt de eerste fixatie). Nu: smaller, randloos, gedempt — en zodra er een
+   atleet openstaat zakt de rail naar de achtergrond. Hover/focus brengt 'm
+   terug. Puur presentatie: zelfde DOM, zelfde picker, zelfde routing.        */
+@media (min-width:900px){
+  .ds-view .md-split{grid-template-columns:228px minmax(0,1fr);gap:var(--ds-6)}
+  .ds-view .md-list{background:none;border:0;border-right:1px solid var(--ds-hairline);
+    border-radius:0;padding:0 var(--ds-5) 0 0;
+    opacity:.52;filter:saturate(.65);
+    transition:opacity var(--ds-base) var(--ds-ease),filter var(--ds-base) var(--ds-ease)}
+  .ds-view .md-list:hover,.ds-view .md-list:focus-within{opacity:1;filter:none}
+  /* geen open atleet → rail is gewoon de hoofdingang, dus volledig zichtbaar */
+  .ds-view:not(.has-athlete) .md-list{opacity:1;filter:none}
+}
+.ds-view .pk-roster{gap:1px}
+.ds-view .pk-row{height:42px;background:none;border:0;border-radius:var(--ds-r-sm);
+  padding:0 var(--ds-2);gap:var(--ds-2);position:relative}
+.ds-view .pk-row:hover{background:var(--ds-well)}
+.ds-view .pk-row.sel{background:var(--tone-bg);box-shadow:none;border:0}
+.ds-view .pk-row.sel::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;
+  border-radius:2px;background:var(--ds-accent)}
+.ds-view .pk-row.sel .pk-nm{color:var(--ds-accent)}
+.ds-view .pk-av{width:24px;height:24px;font-size:10px;border:0;background:var(--ds-s3);
+  color:var(--ds-text-3)}
+.ds-view .pk-row.sel .pk-av{background:var(--ds-accent-soft);color:var(--ds-accent)}
+.ds-view .pk-nm{font-size:13px;font-weight:550}
+.ds-view .pk-sub{font-size:10.5px;opacity:.6}
+.ds-view .pk-row>.ic:last-child{display:none}          /* chevrons weg: geen lijst-affordance */
+.ds-view .md-list .search{background:var(--ds-well);border:1px solid var(--ds-hairline)}
+.ds-view .pk-chips{opacity:.7}
+.ds-view .pk-grp{font-size:9.5px;letter-spacing:.1em;opacity:.55}
+
+/* ── 2. DE STAGE: identiteit + primair signaal + metrics op ÉÉN oppervlak ──
+   Was: hero-kaart + 3 losse metric-dozen + panelen = een raster van gelijke
+   rechthoeken. Nu: één doorlopend oppervlak waarin de atleet, het dominante
+   signaal en de kerncijfers samen één compositie vormen — met haarlijnen i.p.v.
+   kaartranden. Dat is het verschil tussen een dashboard en een cockpit.       */
+.ds-stage{position:relative;border-radius:var(--ds-r-xl);overflow:hidden;
+  border:1px solid var(--ds-border);
+  background:linear-gradient(168deg,var(--ds-s2),var(--ds-s1) 62%,var(--ds-canvas));
+  box-shadow:var(--ds-e3)}
+/* Ambient glow die de HUIDIGE status volgt: de sfeer van het scherm vertelt al
+   hoe het met deze atleet gaat, nog voor je een cijfer leest. */
+.ds-stage::before{content:"";position:absolute;inset:-40% 20% 40% -25%;pointer-events:none;
+  background:radial-gradient(50% 50% at 50% 50%,var(--tone-bg),transparent 70%);
+  opacity:.9;filter:blur(6px)}
+.ds-stage::after{content:"";position:absolute;inset:0 0 auto;height:1px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,var(--tone),transparent);opacity:.45}
+
+.ds-stage-top{position:relative;display:flex;align-items:center;gap:var(--ds-6);
+  padding:var(--ds-6) var(--ds-6) var(--ds-5);flex-wrap:wrap}
+.ds-stage-id{flex:1 1 260px;min-width:0;display:flex;flex-direction:column;gap:var(--ds-2)}
+.ds-stage-name{margin:0;font-size:clamp(26px,3.1vw,40px);font-weight:750;letter-spacing:-.025em;
+  line-height:1.02}
+.ds-stage-line{display:flex;align-items:center;gap:var(--ds-3);flex-wrap:wrap}
+.ds-stage-sub{margin:0;font-size:var(--ds-t-sm);color:var(--ds-text-3);
+  display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap}
+.ds-stage-sub .sep{opacity:.35}
+
+/* ── Het FOCAL POINT: één SCHIJF met het enige grote cijfer op het scherm ──
+   Een cirkel leest als focaal object; een rechthoek leest als container. Dit is
+   het verschil tussen "nog een kaart" en "hier moet je kijken". Claim-regel:
+   exact één element per scherm met een cijfer > 26px.                          */
+.ds-focal{flex:0 0 auto;margin:0;display:flex;flex-direction:column;align-items:center;
+  gap:var(--ds-2);max-width:250px}
+.ds-focal-disc{position:relative;width:196px;height:196px;border-radius:50%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  padding:0 26px;text-align:center;
+  background:radial-gradient(circle at 50% 38%,var(--tone-bg),transparent 72%),
+             radial-gradient(circle at 50% 50%,rgba(255,255,255,.035),transparent 60%);
+  border:1px solid var(--tone-bd);
+  box-shadow:0 0 0 7px rgba(255,255,255,.015),0 0 46px -8px var(--tone-bg),
+             inset 0 1px 0 rgba(255,255,255,.06)}
+/* concentrische buitenring — diepte zonder een tweede doos te tekenen */
+.ds-focal-disc::before{content:"";position:absolute;inset:-11px;border-radius:50%;
+  border:1px solid var(--tone-bd);opacity:.26}
+.ds-focal-l{font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--tone);opacity:.85;line-height:1.2}
+.ds-focal-v{font-size:clamp(40px,4.6vw,58px);font-weight:780;line-height:1;letter-spacing:-.04em;
+  color:var(--tone);font-variant-numeric:tabular-nums;
+  text-shadow:0 0 28px var(--tone-bg),0 0 64px var(--tone-bg)}
+.ds-focal-disc.lang .ds-focal-v{font-size:clamp(24px,2.6vw,32px);letter-spacing:-.02em}
+.ds-focal-v i{font-style:normal;font-size:.42em;font-weight:700;margin-left:1px;opacity:.75}
+.ds-focal-s{font-size:var(--ds-t-xs);color:var(--ds-text-3);line-height:1.4;text-align:center;
+  max-width:230px}
+.ds-focal-spark{display:block;width:104px;height:22px;margin-top:var(--ds-1);overflow:visible;
+  opacity:.85}
+
+/* ── De metric-rail: ÉÉN band, verticale haarlijnen i.p.v. losse dozen ──── */
+.ds-stage-rail{position:relative;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  border-top:1px solid var(--ds-hairline);background:rgba(4,12,26,.28)}
+.ds-stat{padding:var(--ds-4) var(--ds-5);min-width:0;position:relative;
+  display:flex;flex-direction:column;gap:2px}
+.ds-stat+.ds-stat::before{content:"";position:absolute;left:0;top:22%;bottom:22%;width:1px;
+  background:var(--ds-hairline)}
+.ds-stat-l{font-size:var(--ds-t-xs);font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ds-text-3);display:flex;align-items:center;gap:6px}
+.ds-stat-v{font-size:21px;font-weight:720;line-height:1.1;letter-spacing:-.015em;
+  color:var(--ds-text);font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:4px}
+.ds-stat.ds-tone .ds-stat-v{color:var(--tone)}
+.ds-stat-u{font-size:var(--ds-t-xs);font-weight:600;color:var(--ds-text-3)}
+.ds-stat-s{font-size:10.5px;color:var(--ds-text-3);line-height:1.35;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── 3. Secties grijpen in elkaar: minder zichtbare containergrenzen ────── */
+.ds-quiet{background:linear-gradient(168deg,rgba(17,43,84,.55),rgba(13,34,68,.35));
+  border:1px solid var(--ds-hairline);border-radius:var(--ds-r-lg);padding:var(--ds-5);
+  position:relative;overflow:hidden}
+/* Gestapelde secties binnen één oppervlak, gescheiden door een haarlijn. */
+.ds-stack{display:flex;flex-direction:column}
+.ds-stack>*+*{border-top:1px solid var(--ds-hairline);padding-top:var(--ds-5);margin-top:var(--ds-5)}
+
+/* Aandachtkaarten binnen een paneel: geen dubbele omranding meer. */
+.ds-quiet .ds-attn-card,.ds-panel .ds-attn-card{border-color:transparent;
+  background:linear-gradient(100deg,var(--tone-bg),transparent 88%);
+  border-left:2px solid var(--tone);border-radius:0 var(--ds-r-md) var(--ds-r-md) 0;
+  padding-left:var(--ds-4)}
+
+/* ── 4. Actieband: onderdeel van de compositie, geen los blok ───────────── */
+.ds-actionbar{display:flex;align-items:flex-start;gap:var(--ds-4);flex-wrap:wrap;
+  padding:var(--ds-4) var(--ds-5);border-radius:var(--ds-r-lg);
+  background:linear-gradient(100deg,rgba(94,230,235,.07),transparent 60%),rgba(4,12,26,.30);
+  border:1px solid var(--ds-hairline)}
+.ds-actionbar .ds-label{flex:0 0 100%;margin-bottom:var(--ds-1)}
+.ds-actionbar .ds-actions{flex:1 1 100%;grid-template-columns:repeat(auto-fit,minmax(158px,1fr))}
+.ds-actionbar .ds-action+.ds-action{box-shadow:-1px 0 0 var(--ds-hairline)}
+
+/* ── 5. Compositie: asymmetrisch maar rustig ────────────────────────────── */
+@media (min-width:1080px){
+  .ds-grid.story{grid-template-columns:minmax(0,1.78fr) minmax(0,1fr)}
+  .ds-view[data-view="dossier"] .ds-grid.story{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+}
+@media (max-width:760px){
+  .ds-stage-top{padding:var(--ds-5) var(--ds-4) var(--ds-4);gap:var(--ds-4)}
+  .ds-focal{width:100%;max-width:none}
+  .ds-focal-disc{width:152px;height:152px;padding:0 16px}
+  .ds-focal-disc .ds-focal-v{font-size:34px}
+  .ds-focal-spark{width:78px;height:16px}
+  .ds-stage-rail{grid-template-columns:1fr 1fr}
+  .ds-stat{padding:var(--ds-3) var(--ds-4)}
+}
+
+/* ── 6. Motion: context komt gecontroleerd naar voren ───────────────────── */
+.ds-stage{animation:ds-stage-in var(--ds-slow) var(--ds-ease) both}
+@keyframes ds-stage-in{from{opacity:0;transform:translateY(10px) scale(.994)}to{opacity:1;transform:none}}
+.ds-focal{animation:ds-focal-in 460ms var(--ds-ease) both 90ms}
+@keyframes ds-focal-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.ds-attn-card{animation:ds-in var(--ds-base) var(--ds-ease) both}
+.ds-attn .ds-attn-card:nth-child(2){animation-delay:60ms}
+.ds-attn .ds-attn-card:nth-child(3){animation-delay:120ms}
+@media (prefers-reduced-motion:reduce){
+  .ds-stage,.ds-focal,.ds-attn-card{animation:none}
+  .ds-view .md-list{transition:none}
+}
+
+/* ── 7. Home-detail treedt de productwereld binnen ─────────────────────────
+   Alleen een gedeelde aandachtkaart is niet genoeg: als de coach een atleet
+   vanuit Home opent moet de context onmiddellijk dezelfde wereld voelen als
+   Workspace/Dossier. Zelfde oppervlakken, zelfde ritmiek, zelfde acties.
+   Puur presentatie: dezelfde markup, dezelfde optimistic-write-flow.          */
+.prio-detail{background:linear-gradient(168deg,rgba(17,43,84,.5),rgba(13,34,68,.3));
+  border:1px solid var(--ds-hairline);border-radius:var(--ds-r-lg);
+  padding:var(--ds-4);margin-top:var(--ds-2)}
+.pd-signalen{display:flex;flex-direction:column;gap:var(--ds-4)}
+.pd-s-blok{background:none;border:0;border-radius:0;padding:0}
+.pd-s-blok+.pd-s-blok{border-top:1px solid var(--ds-hairline);padding-top:var(--ds-4)}
+.pd-s-body{font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.5;margin-top:var(--ds-1)}
+.pd-line{color:var(--ds-text-2)}
+.pd-metrics{background:var(--ds-well);border:1px solid var(--ds-hairline);
+  border-radius:var(--ds-r-md);padding:var(--ds-3) var(--ds-4);margin-top:var(--ds-2)}
+.pd-sig{color:var(--tone,var(--ds-attention));font-weight:650}
+.pd-sub{color:var(--ds-text-3);font-size:var(--ds-t-xs)}
+.pd-runs,.pd-sessies-lijst{margin:var(--ds-2) 0 0;padding:0;list-style:none;
+  display:grid;gap:2px;font-size:var(--ds-t-xs);color:var(--ds-text-3)}
+.pd-sessies{margin-top:var(--ds-2)}
+/* Werklijst-acties in DS-taal: rustige pillen i.p.v. bonte knoppen. */
+.pd-s-work{display:flex;align-items:center;gap:var(--ds-3);flex-wrap:wrap;margin-top:var(--ds-3)}
+.pd-wbtn{display:inline-flex;align-items:center;gap:6px;border-radius:var(--ds-r-pill);
+  padding:6px 14px;font-size:var(--ds-t-sm);font-weight:650;cursor:pointer;font:inherit;
+  background:var(--ds-success-bg);border:1px solid var(--ds-success-bd);color:var(--ds-success);
+  transition:transform var(--ds-fast) var(--ds-ease),background var(--ds-fast) var(--ds-ease)}
+.pd-wbtn:hover{transform:translateY(-1px);background:rgba(55,217,162,.18)}
+.pd-wbtn .ic{width:15px;height:15px}
+.pd-later{display:inline-flex;align-items:center;gap:5px;font-size:var(--ds-t-xs);color:var(--ds-text-3)}
+.pd-later button{background:none;border:1px solid var(--ds-hairline);color:var(--ds-text-3);
+  border-radius:var(--ds-r-pill);padding:4px 10px;font:inherit;font-size:var(--ds-t-xs);cursor:pointer;
+  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
+.pd-later button:hover{border-color:var(--ds-accent);color:var(--ds-accent)}
+/* Athlete-brede acties onderaan = dezelfde actierail als Workspace. */
+.pd-acts,.pd-s-acts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:var(--ds-2);margin-top:var(--ds-4);padding-top:var(--ds-3);
+  border-top:1px solid var(--ds-hairline)}
+.pd-acts .pa-btn,.pd-s-acts .pa-btn{display:flex;align-items:center;gap:var(--ds-2);
+  background:none;border:1px solid transparent;border-radius:var(--ds-r-md);
+  padding:var(--ds-2) var(--ds-3);color:var(--ds-text);font:inherit;font-size:var(--ds-t-sm);
+  font-weight:600;cursor:pointer;justify-content:center;
+  transition:border-color var(--ds-fast) var(--ds-ease),background var(--ds-fast) var(--ds-ease)}
+.pd-acts .pa-btn:hover,.pd-s-acts .pa-btn:hover{border-color:var(--ds-accent);
+  background:rgba(94,230,235,.06)}
+.pd-acts .pa-btn .ic,.pd-s-acts .pa-btn .ic{color:var(--ds-accent);width:16px;height:16px}
+.pd-s-st{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+
+/* Home-detail: de PRIMAIRE ACTIE mag het signaal niet overschreeuwen. De oude
+   volvlakke groene knop was het meest verzadigde element op het scherm; in dit
+   systeem is de aandacht het luidst en is de actie rustig-maar-duidelijk. */
+.prio-detail .pd-wbtn.gezien{background:var(--ds-success-bg);border:1px solid var(--ds-success-bd);
+  color:var(--ds-success);height:auto;padding:6px 15px;border-radius:var(--ds-r-pill);
+  font-size:var(--ds-t-sm);font-weight:650}
+.prio-detail .pd-wbtn.gezien:hover{background:rgba(55,217,162,.17)}
+/* Athlete-acties compact houden i.p.v. over de volle breedte uitgesmeerd. */
+.prio-detail .pd-acts,.prio-detail .pd-s-acts{display:flex;flex-wrap:wrap;gap:var(--ds-2);
+  justify-content:flex-start}
+.prio-detail .pd-acts .pa-btn,.prio-detail .pd-s-acts .pa-btn{flex:0 0 auto;min-width:0;
+  height:auto;background:none;border:1px solid var(--ds-hairline)}
+.prio-detail .pd-s-body{background:none}
