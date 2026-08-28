@@ -271,6 +271,160 @@ function athleteNav(activeView, user_key) {
   return all ? `<div class="anav" role="group" aria-label="Ga naar voor deze atleet">${all}</div>` : "";
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// Design System v1 — gedeelde UI-primitives (Workspace, Dossier, Home-detail)
+// --------------------------------------------------------------------------
+// ÉÉN visuele + interactionele taal. Deze functies geven HTML-strings terug en
+// zijn PUUR presentatie: ze lezen alleen wat de server al als waarheid levert en
+// verzinnen niets. Statussemantiek loopt via `dsTone()` — de enige plek waar een
+// betekenis (actie/aandacht/hoog/let_op/stale/…) een kleur krijgt, zodat dezelfde
+// betekenis nooit meer per module een andere kleur kan krijgen.
+// ══════════════════════════════════════════════════════════════════════════
+
+// DE statusmapping. Server-vocabulaires (tier, ernst, reliability-level,
+// freshness) → één set toon-klassen uit design-system.css.
+const _DS_TONE = {
+  actie: "is-critical", aandacht: "is-attention",
+  hoog: "is-critical", let_op: "is-attention",
+  critical: "is-critical", attention: "is-attention", calm: "is-calm",
+  success: "is-success", resolved: "is-success", ok: "is-calm",
+  stale: "is-stale", refreshing: "is-stale",
+  unknown: "is-unknown", partial: "is-unknown",
+  red: "is-critical", amber: "is-attention", green: "is-calm",
+  fresh: "is-calm",
+};
+function dsTone(v) { return _DS_TONE[String(v == null ? "" : v).toLowerCase()] || "is-calm"; }
+
+// Zwaarste toon uit een set (actie wint van aandacht wint van rustig).
+const _DS_RANK = { "is-critical": 3, "is-attention": 2, "is-stale": 1, "is-unknown": 1, "is-success": 0, "is-calm": 0 };
+function dsWorstTone(tones) {
+  return (tones || []).reduce((a, t) => (_DS_RANK[t] || 0) > (_DS_RANK[a] || 0) ? t : a, "is-calm");
+}
+
+function dsChip(text, tone) { return `<span class="ds-chip ${tone || "is-calm"}">${esc(text)}</span>`; }
+
+// Bron/versheid — één component voor Home, Workspace, Dossier en Teampuls.
+function dsFresh(state, text) {
+  const t = dsTone(state);
+  return `<span class="ds-fresh ${t}"><i class="ds-dot"></i>${esc(text)}</span>`;
+}
+
+// Sparkline uit ECHTE reeksen (bv. de recente runs uit de belasting-stand).
+// Geen library, geen canvas: één inline SVG-pad. Leeg bij < 2 punten — we
+// tekenen liever niets dan een verzonnen lijn.
+function dsSpark(vals) {
+  const v = (vals || []).map(Number).filter(n => isFinite(n));
+  if (v.length < 2) return "";
+  const w = 100, h = 30, min = Math.min(...v), max = Math.max(...v), span = (max - min) || 1;
+  const pts = v.map((n, i) => [(i / (v.length - 1)) * w, h - 3 - ((n - min) / span) * (h - 8)]);
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+  const last = pts[pts.length - 1];
+  return `<svg class="ds-metric-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+    <path class="ds-spark-area" d="${d} L ${w} ${h} L 0 ${h} Z"/>
+    <path class="ds-spark-line" d="${d}" vector-effect="non-scaling-stroke"/>
+    <circle class="ds-spark-dot" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.4"/></svg>`;
+}
+
+// Voortgangsring (bv. feedback-afhandeling). Alleen bij een echt percentage.
+function dsRing(pct, tone) {
+  if (pct == null || !isFinite(Number(pct))) return "";
+  const p = Math.max(0, Math.min(100, Math.round(Number(pct)))), r = 30, c = 2 * Math.PI * r;
+  return `<figure class="ds-ringwrap ${tone || "is-calm"}"><svg viewBox="0 0 76 76" aria-hidden="true">
+    <circle class="ds-ring-track" cx="38" cy="38" r="${r}"/>
+    <circle class="ds-ring-val" cx="38" cy="38" r="${r}" stroke-dasharray="${(c * p / 100).toFixed(1)} ${c.toFixed(1)}"/>
+    </svg><figcaption>${p}%</figcaption></figure>`;
+}
+
+// Metric-tegel: label, groot getal, eenheid, subregel en optionele sparkline.
+function dsMetric(m) {
+  const tone = m.tone ? ` ds-tone ${m.tone}` : "";
+  return `<div class="ds-metric${tone}">
+    <span class="ds-metric-l">${esc(m.label)}${m.badge ? `<span class="ds-chip ${m.tone || "is-calm"}">${esc(m.badge)}</span>` : ""}</span>
+    <span class="ds-metric-v">${esc(m.value)}${m.unit ? `<span class="ds-metric-u">${esc(m.unit)}</span>` : ""}</span>
+    ${m.sub ? `<span class="ds-metric-s">${esc(m.sub)}</span>` : ""}
+    ${m.spark || ""}</div>`;
+}
+
+// Aandachtkaart — DE manier waarop de app "dit vraagt nu aandacht" toont.
+function dsAttnCard(a) {
+  const tone = a.tone || "is-attention";
+  return `<div class="ds-attn-card ${tone}">
+    <span class="ds-attn-ic">${ic(a.icon || "alert")}</span>
+    <span class="ds-attn-body">
+      <p class="ds-attn-t">${esc(a.title)}</p>
+      ${a.why ? `<p class="ds-attn-w">${esc(a.why)}</p>` : ""}
+      ${a.meta ? `<p class="ds-attn-meta">${esc(a.meta)}</p>` : ""}
+    </span>
+    ${a.value ? `<span class="ds-attn-val">${esc(a.value)}</span>` : ""}</div>`;
+}
+
+// Paneel met sectiekop — vervangt de losse `*-sec h3`-varianten per module.
+function dsPanel(label, body, o) {
+  o = o || {};
+  const tone = o.tone ? ` ds-tone ${o.tone}` : "";
+  return `<section class="ds-panel${tone} ${o.cls || ""}">
+    <div class="ds-sechead"><h3 class="ds-label">${esc(label)}</h3>
+      ${o.note ? `<span class="ds-sechead-note">${esc(o.note)}</span>` : ""}</div>
+    ${body}</section>`;
+}
+
+// Leesbare feitenlijst (vervangt de kale label/value-<ul>'s).
+function dsKv(rows) {
+  const r = (rows || []).filter(x => x && x.label != null);
+  if (!r.length) return "";
+  return `<dl class="ds-kv">` + r.map(x =>
+    `<div><dt>${esc(x.label)}</dt><dd>${esc(x.value == null ? "—" : x.value)}</dd></div>`).join("") + `</dl>`;
+}
+
+// Compacte stream/tijdlijn (recent veranderd, historie).
+function dsStream(items) {
+  const it = (items || []).filter(Boolean);
+  if (!it.length) return "";
+  return `<ul class="ds-stream">` + it.map(x =>
+    `<li class="${x.tone || "is-calm"}">${x.date ? `<span class="ds-stream-d">${esc(x.date)}</span>` : ""}
+      <span class="ds-stream-t">${esc(x.text)}</span></li>`).join("") + `</ul>`;
+}
+
+// Snelle actie — bestaande routes/authority, alleen een gedeelde presentatie.
+function dsAction(a) {
+  const tone = a.tone ? ` ds-tone ${a.tone}` : "";
+  return `<button type="button" class="ds-action${tone}" onclick="${a.onclick}">
+    <span class="ds-action-ic">${ic(a.icon || "chevron")}</span>
+    <span class="ds-action-b"><span class="ds-action-t">${esc(a.title)}</span>
+      ${a.sub ? `<span class="ds-action-s">${esc(a.sub)}</span>` : ""}</span></button>`;
+}
+
+function dsEmpty(text, o) {
+  o = o || {};
+  return `<p class="ds-empty ${o.tone || ""}">${ic(o.icon || "check")}<span>${esc(text)}</span></p>`;
+}
+function dsSkeletonBlock(n) {
+  return `<div class="ds-panel">${Array.from({ length: n || 3 },
+    (_, i) => `<div class="ds-skel ${i % 2 ? "w60" : "w80"}"></div>`).join("")}</div>`;
+}
+
+// Athlete Shell — DE gedeelde atleetkop (Workspace, Dossier, Home-detail).
+// De atleet is dominant: medaillon + grote naam + status; navigatie ondersteunt.
+function dsShell(s) {
+  const tone = s.tone || "is-calm";
+  return `<header class="ds-shell ${tone}">
+    <div class="ds-med"><span class="ds-med-ring"></span><span class="ds-med-ring two"></span>
+      <span class="ds-med-in">${esc(initialen(s.naam || ""))}</span></div>
+    <div class="ds-shell-main">
+      <div class="ds-shell-top"><h2 class="ds-shell-name">${esc(s.naam || s.key || "")}</h2>
+        ${(s.chips || []).join("")}</div>
+      <p class="ds-shell-sub">${(s.sub || []).filter(Boolean).join('<span class="sep">·</span>')}</p>
+      ${s.nav || ""}
+    </div>
+    ${s.aside ? `<div class="ds-shell-aside">${s.aside}</div>` : ""}
+  </header>`;
+}
+
+// NB: contextnavigatie tussen athlete-views blijft de BESTAANDE gedeelde
+// `athleteNav()` (één definitie, vaste call-contracten). Het design system
+// vervangt die niet — het geeft 'm alleen de gedeelde shell-stijl (.anav /
+// .anav-chip worden in design-system.css opgewaardeerd). Eén nav-component.
+
 // ── Coach Read Model v2 — generation/freshness-coherentie ────────────────────
 // Eén gedeelde read-generation (server-side, inhoud-afgeleid) reist mee in elke
 // Home/Teampuls/Workspace-response. De client onthoudt de LAATST ontvangen generatie
@@ -868,9 +1022,11 @@ function prioToggle(wrap, force) {
 function prioDetailHtml(it) {
   const blokken = (it.signalen || []).map(s => {
     const ctxBtn = (s.context && s.context[0]) ? swBtn(s.context[0]) : "";
-    return `<div class="pd-s-blok" data-soort="${s.soort}">
-      <div class="pd-s-head"><span class="pd-s-ic ${s.tier}">${ic(SOORT_IC[s.soort] || "activity")}</span>
-        <b>${esc(s.reden)}</b></div>
+    // Home-detail gebruikt DEZELFDE aandacht-primitive als Workspace/Dossier:
+    // één signaal ziet er overal hetzelfde uit (zelfde toon, zelfde opbouw).
+    return `<div class="pd-s-blok ${dsTone(s.tier)}" data-soort="${s.soort}">
+      ${dsAttnCard({ tone: dsTone(s.tier), icon: SOORT_IC[s.soort] || "activity",
+                     title: s.reden, meta: s.kort && s.kort !== s.reden ? s.kort : "" })}
       <div class="pd-s-body">${prioSignaalBody(s)}</div>
       <div class="pd-s-work">
         <button class="pd-wbtn gezien" data-act="gezien" data-soort="${s.soort}" type="button">${ic("check")}<span>Gezien</span></button>
@@ -4499,21 +4655,34 @@ function dcProv(p) {
   return esc(parts.join(" · "));
 }
 
+// Zelfde provenance-keten als platte tekst (de DS-primitives escapen zelf).
+function dcProvText(p) {
+  if (!p) return "";
+  const parts = [];
+  if (p.truth_type) parts.push(_DC_TRUTH[p.truth_type] || p.truth_type);
+  if (p.source) parts.push(p.source);
+  if (p.observed_at) parts.push(p.observed_at);
+  if (p.status) parts.push(String(p.status).toLowerCase());
+  if (p.strength) parts.push(String(p.strength).toLowerCase());
+  return parts.join(" · ");
+}
+
 function dcRender(wrap, vm) {
   const st = vm.status || {}, rel = st.reliability || {};
   const relTxt = rel.level === "green" ? "bronnen vers"
     : rel.core_gap ? "kernbron uitgevallen — oordeel onzeker"
     : "let op: bron(nen) verouderd of onvolledig";
-  // Z0 — statuskop
-  let h = `<div class="dc-head">
-    <div class="dc-id"><span class="dc-ava">${esc(initialen(vm.naam))}</span>
-      <div><h2>${esc(vm.naam || vm.key)}</h2>${vm.groep ? `<p class="dc-grp">${esc(vm.groep)}</p>` : ""}</div></div>
-    <div class="dc-statuswrap">
-      <span class="dc-badge dc-${(st.overall || "").toLowerCase()}">${esc(_DC_OVERALL[st.overall] || st.overall || "—")}</span>
-      <span class="dc-rel dc-rel-${esc(rel.level || "")}" title="${esc(relTxt)}"><i></i>${esc(relTxt)}</span>
-    </div>
-    <div class="dc-actions">${athleteNav("dossier", vm.key)}</div>
-  </div>`;
+  // Z0 — statuskop: DEZELFDE Athlete Shell als Workspace/Home-detail. Dossier is
+  // verdiepend, niet alarmgericht → de shell-toon volgt de betrouwbaarheid, niet
+  // de zwaarte van het signaal.
+  const relTone = dsTone(rel.level || "unknown");
+  let h = `<div class="ds-cockpit">` + dsShell({
+    naam: vm.naam || vm.key, key: vm.key, tone: relTone,
+    chips: [dsChip(_DC_OVERALL[st.overall] || st.overall || "—", relTone)],
+    sub: [vm.groep ? esc(vm.groep) : "", esc("Dossier · geheugen & verantwoording"),
+          dsFresh(rel.level || "unknown", relTxt)],
+    nav: athleteNav("dossier", vm.key),
+  });
 
   // Partial-truth diagnostic: één build-stage faalde → alleen dát stuk mist, de rest klopt.
   const diag = vm.build_diagnostic || [];
@@ -4521,20 +4690,21 @@ function dcRender(wrap, vm) {
     h += `<div class="dc-diag">${ic("alert")}<span>Enkele onderdelen konden niet worden berekend (${esc(diag.map(d => d.stage).join(", "))}). De overige bekende kennis hieronder klopt — dit is een interne fout, <b>geen</b> bronfout.</span></div>`;
   }
 
-  // Z1 — Aandacht nu
+  // Z1 — Aandacht nu (gedeelde attention-primitive; Dossier duidt, schreeuwt niet)
   const attn = vm.attention || [];
-  h += `<section class="dc-sec dc-attn"><h3>Aandacht nu</h3>`;
+  h += `<section class="ds-panel dc-sec dc-attn">
+    <div class="ds-sechead"><h3 class="ds-label">Aandacht nu</h3></div>`;
   if (attn.length) {
-    h += `<div class="dc-cards">` + attn.map(c => `
-      <div class="dc-card dc-k-${esc(c.kind)}">
-        <p class="dc-card-t">${ic(_DC_KIND_IC[c.kind] || "alert")}${esc(c.title)}</p>
-        <p class="dc-card-w">${esc(c.why || "")}</p>
-        ${c.prov ? `<p class="dc-prov">${dcProv(c.prov)}</p>` : ""}
-      </div>`).join("") + `</div>`;
+    h += `<div class="ds-attn dc-cards">` + attn.map(c => dsAttnCard({
+      tone: dsTone("aandacht"), icon: _DC_KIND_IC[c.kind] || "alert",
+      title: c.title, why: c.why || "", meta: c.prov ? dcProvText(c.prov) : "",
+    })).join("") + `</div>`;
   } else if (st.insufficient) {
-    h += `<p class="dc-calm dc-calm-warn">Te weinig data voor een oordeel — geen betrouwbare actiepunten.</p>`;
+    h += dsEmpty("Te weinig data voor een oordeel — geen betrouwbare actiepunten.",
+                 { icon: "alert", tone: "is-unknown" });
   } else {
-    h += `<p class="dc-calm">Geen actiepunten — geen actieve klacht of signaal bekend${rel.level === "green" ? " (bronnen vers)" : ""}.</p>`;
+    h += dsEmpty(`Geen actiepunten — geen actieve klacht of signaal bekend${rel.level === "green" ? " (bronnen vers)" : ""}.`,
+                 { icon: "check" });
   }
   // Belasting-observatie (Teampuls-coherentie): de canonieke, ALTIJD-aanwezige
   // verklaringsregel voor de belastingobservatie — óók bij actief-hoog met open
@@ -4558,56 +4728,64 @@ function dcRender(wrap, vm) {
   }
   h += `</section>`;
 
+  // ── Verhaal-kolom: wat veranderde + waar we naartoe werken, naast elkaar ──
+  h += `<div class="ds-grid two">`;
+
   // Z2 — Recent veranderd (alleen bij échte recency; anders afwezig)
   const changes = vm.changes || [];
   if (changes.length) {
-    h += `<section class="dc-sec dc-changes"><h3>Recent veranderd</h3><ul class="dc-chlist">` +
-      changes.map(c => `<li><span class="dc-ch-t">${esc(c.title)}</span>${c.effective_at ? `<span class="dc-ch-d">${esc(c.effective_at)}</span>` : ""}</li>`).join("") +
-      `</ul></section>`;
+    h += `<section class="ds-panel dc-sec dc-changes">
+      <div class="ds-sechead"><h3 class="ds-label">Recent veranderd</h3></div>` +
+      dsStream(changes.map(c => ({ date: c.effective_at || "", text: c.title, tone: "is-calm" }))) +
+      `</section>`;
   }
 
   // Z2b — Doelen & planning (compact, canonical: goal-evidence + laatst geconfigureerd blok)
   const plan = vm.planning || { rows: [] };
   if (plan.rows && plan.rows.length) {
-    h += `<section class="dc-sec dc-planning"><h3>Doelen &amp; planning</h3><ul class="dc-plan">` +
-      plan.rows.map(r => `<li><span class="dc-lbl">${esc(r.label)}</span><span class="dc-val">${esc(r.value)}</span></li>`).join("") +
-      `</ul></section>`;
+    h += `<section class="ds-panel dc-sec dc-planning">
+      <div class="ds-sechead"><h3 class="ds-label">Doelen &amp; planning</h3></div>` +
+      dsKv(plan.rows) + `</section>`;
   }
+  h += `</div>`;
 
-  // Z3 — Domeinkaarten (dynamisch open o.b.v. aandacht)
-  h += `<section class="dc-sec dc-domains">` + (vm.domains || []).map(d => `
-    <details class="dc-dom${d.onbekend ? " leeg" : ""}"${d.open ? " open" : ""}>
+  // Z3 — Domeinkaarten (progressive disclosure: samenvatting eerst, detail op verzoek)
+  h += `<section class="dc-sec dc-domains ds-grid two">` + (vm.domains || []).map(d => `
+    <details class="ds-disc dc-dom${d.onbekend ? " leeg" : ""}"${d.open ? " open" : ""}>
       <summary>${esc(d.titel)}${d.onbekend ? ` <span class="muted klein">— onbekend</span>` : ""}</summary>
-      ${d.onbekend ? "" : `<ul class="dc-reg">` + d.regels.map(r => `
+      ${d.onbekend ? "" : `<div class="ds-disc-body"><ul class="dc-reg">` + d.regels.map(r => `
         <li>
           <div class="dc-reg-main"><span class="dc-lbl">${esc(r.label)}</span><span class="dc-val">${esc(r.value)}</span></div>
           <div class="dc-reg-meta">${r.prov ? `<span class="dc-prov">${dcProv(r.prov)}</span>` : ""}
             ${r.evidence_id ? `<button class="dc-why" data-id="${esc(r.evidence_id)}" data-key="${esc(vm.key)}">Waarom?</button>` : ""}</div>
-        </li>`).join("") + `</ul>`}
+        </li>`).join("") + `</ul></div>`}
     </details>`).join("") + `</section>`;
 
   // Z4 — Tijdlijn (capture OFF → eerlijke empty-state)
   const tl = vm.timeline || {};
-  h += `<section class="dc-sec dc-timeline"><h3>Longitudinale tijdlijn</h3>`;
+  h += `<section class="ds-panel dc-sec dc-timeline">
+    <div class="ds-sechead"><h3 class="ds-label">Longitudinale tijdlijn</h3></div>`;
   if (tl.empty_reason) {
     h += `<p class="dc-empty-tl">Er is nog geen longitudinale tijdlijn vastgelegd. BeBetter bouwt de historie op vanaf het moment dat history-capture wordt geactiveerd (vanaf-nu; geen terugwerkende reconstructie). <b>‘Geen events’ betekent hier niet ‘geen historie’</b> — alleen dat er nog niets is vastgelegd.</p>`;
   } else {
-    h += `<ul class="dc-tl">` + (tl.events || []).map(e => `
-      <li><span class="dc-tl-d">${esc(e.effective_at || e.recorded_at || "")}</span>
-        <span class="dc-tl-t">${esc(e.title || e.event_type)}</span></li>`).join("") + `</ul>`;
+    h += dsStream((tl.events || []).map(e => ({
+      date: e.effective_at || e.recorded_at || "", text: e.title || e.event_type, tone: "is-calm",
+    })));
   }
   h += `</section>`;
 
-  // Z5 — Bronnen & betrouwbaarheid (drill-down)
+  // Z5 — Bronnen & betrouwbaarheid (drill-down, gedeelde disclosure-primitive)
   const src = vm.source_health || [];
   if (src.length) {
-    h += `<details class="dc-sec dc-src"><summary>Bronnen &amp; betrouwbaarheid</summary><ul class="dc-srclist">` +
+    h += `<details class="ds-disc dc-sec dc-src"><summary>Bronnen &amp; betrouwbaarheid</summary>
+      <div class="ds-disc-body"><ul class="dc-srclist">` +
       src.map(s => `<li><span class="dc-src-n">${esc(s.source)}</span>
         <span class="dc-src-s ${s.available ? (s.stale ? "warn" : "ok") : "bad"}">${s.available ? (s.stale ? "verouderd" : "vers") : "uitgevallen"}</span>
         ${s.error ? `<span class="muted klein">${esc(s.error)}</span>` : ""}</li>`).join("") +
-      `</ul></details>`;
+      `</ul></div></details>`;
   }
 
+  h += `</div>`;                                     // /ds-cockpit
   wrap.innerHTML = h;
   wrap.querySelectorAll(".dc-why").forEach(b => b.addEventListener("click", () => dcWaarom(b)));
 }
@@ -4710,71 +4888,124 @@ async function wsShow(ident) {
   wsLoadDeep(wrap, ident);                                  // rijke context lazy + parallel
 }
 
-function wsChip(tier) { return tier === "actie" ? "ws-actie" : "ws-aandacht"; }
-
+// Workspace = de primaire "coach now"-view, opgebouwd uit de gedeelde Design
+// System-primitives (Athlete Shell → metric strip → aandacht/context → acties).
+// Zelfde data, zelfde routes, zelfde authority — alleen één gedeelde presentatie.
 function wsRender(wrap, vm) {
   noteGeneration(vm.generation);                           // adopteer generatie vóór eigen banner
   const key = vm.key, naam = vm.naam || key;
   const bel = vm.belasting || {}, fb = vm.feedback || {}, sc = vm.schema;
   const attn = vm.attention || [];
+  const gen = vm.generation || {}, gfr = gen.freshness || {};
+
+  // Toon van de hele shell = het zwaarste openstaande signaal (één semantiek).
+  const shellTone = dsWorstTone(attn.map(a => dsTone(a.tier)));
+
+  // ── Athlete Shell: de atleet is de actieve wereld ──
+  const chips = [];
+  if (attn.length) chips.push(dsChip(shellTone === "is-critical" ? "actie" : "aandacht", shellTone));
+  else chips.push(dsChip("rustig", "is-calm"));
+  const sub = [esc("Workspace · wat speelt er nu")];   // raw-html array → zelf escapen
+  if (bel.datum) sub.push(dsFresh(gfr.belasting || "unknown", `belasting ${gfr.belasting === "fresh" ? "vers" : "stand " + bel.datum}`));
+
+  // De belangrijkste aandachtkaarten staan IN de kop: "wat speelt" is het eerste
+  // wat je ziet, niet iets waar je naartoe scrolt.
+  const aside = attn.length
+    ? `<div class="ds-attn">` + attn.slice(0, 2).map(a => dsAttnCard({
+        tone: dsTone(a.tier), icon: SOORT_IC[a.soort] || "alert",
+        title: a.kort || a.soort || "", value: a.pct != null ? `+${a.pct}%` : "",
+      })).join("") + `</div>`
+    : dsEmpty("Geen open actiepunt uit belasting, compliance, schema of feedback.", { icon: "check" });
+
   let h = genBanner(vm.generation);
-  h += `<div class="dc-head">
-    <div class="dc-id"><span class="dc-ava">${esc(initialen(naam))}</span>
-      <div><h2>${esc(naam)}</h2><p class="dc-grp">Workspace · wat speelt er nu</p></div></div>
-    <div class="dc-actions">${athleteNav("workspace", key)}</div>
-  </div>`;
+  h += `<div class="ds-cockpit">`;
+  h += dsShell({ naam, key, tone: shellTone, chips, sub, nav: athleteNav("workspace", key), aside });
 
-  // 1 — Aandacht nu
-  h += `<section class="dc-sec ws-sec"><h3>Aandacht nu</h3>`;
-  if (attn.length) {
-    h += `<div class="ws-attn">` + attn.map(a => `
-      <span class="ws-tag ${wsChip(a.tier)}">${esc(a.kort || a.soort || "")}${a.pct != null ? ` · +${a.pct}%` : ""}</span>`).join("") + `</div>`;
-  } else {
-    h += `<p class="dc-calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`;
+  // ── Metric strip: de harde getallen, groot en vergelijkbaar ──
+  const mets = [];
+  if (bel.actief || bel.km_recent != null) {
+    const tone = dsTone(bel.ernst || "calm");
+    mets.push(dsMetric({
+      label: "Belasting", value: bel.km_recent != null ? bel.km_recent : "—", unit: "km",
+      sub: bel.km_basis_week != null ? `deze week · referentie ${bel.km_basis_week} km/wk` : "deze week",
+      tone, badge: bel.ernst === "hoog" ? "hoog" : (bel.actief ? "let op" : ""),
+      spark: dsSpark((bel.runs || []).map(r => r.km)),
+    }));
+    if (bel.pct != null) mets.push(dsMetric({
+      label: "Verschil", value: (bel.pct > 0 ? "+" : "") + bel.pct, unit: "%",
+      sub: "volume t.o.v. referentie", tone,
+    }));
   }
-  h += `</section>`;
+  if (sc) mets.push(dsMetric({
+    label: "Schema", value: sc.days_left != null ? Math.abs(sc.days_left) : "—",
+    unit: sc.days_left != null && sc.days_left < 0 ? "d over" : "d",
+    sub: sc.einddatum ? `t/m ${sc.einddatum}` : (sc.kort || ""), tone: dsTone(sc.tier),
+  }));
+  mets.push(dsMetric({
+    label: "Feedback", value: fb.status === "unknown" ? "—" : (fb.open || 0),
+    unit: fb.status === "unknown" ? "" : "open",
+    sub: fb.status === "unknown" ? "wordt bijgewerkt…" : (fb.open ? "wacht op reactie" : "alles beantwoord"),
+    tone: fb.status === "unknown" ? "is-unknown" : (fb.open ? "is-attention" : "is-success"),
+  }));
+  if (mets.length) h += `<div class="ds-metrics">` + mets.join("") + `</div>`;
 
-  // 2 — Belasting (live, gedeelde stand)
-  h += `<section class="dc-sec ws-sec"><h3>Belasting</h3>`;
+  // ── Hoofdgrid: waarom (links) naast plan/context (rechts) ──
+  h += `<div class="ds-grid side">`;
+
+  // Belasting — waarom dit signaal er is; details progressief.
+  let belBody;
   if (bel.actief) {
     const sev = bel.ernst === "hoog" ? "hoog" : "let op";
     const delta = (bel.pct != null && bel.pct > 0) ? ` · +${bel.pct}% t.o.v. referentie` : "";
-    h += `<p class="ws-line ws-${bel.ernst === "hoog" ? "actie" : "aandacht"}"><b>${esc(sev)}</b>${delta}</p>`;
-    if (bel.reden) h += `<p class="muted klein">${esc(bel.reden)}</p>`;
+    const tone = dsTone(bel.ernst);
+    belBody = dsAttnCard({
+      tone, icon: "pulse", title: `Belasting ${sev}${delta}`, why: bel.reden || "",
+      meta: bel.datum ? `stand ${bel.datum}` : "",
+    });
+    const rest = (bel.signalen || []).slice(1);
+    if (rest.length) {
+      belBody += `<button type="button" class="ds-more" onclick="dsFoldToggle(this)">Alle signalen (${rest.length})</button>
+        <div class="ds-fold"><div>${dsStream(rest.map(s => ({ text: s, tone })))}</div></div>`;
+    }
   } else {
-    h += `<p class="dc-calm">Binnen de marge${bel.datum ? ` · stand ${esc(bel.datum)}` : ""}.</p>`;
+    belBody = dsEmpty(`Binnen de marge${bel.datum ? ` · stand ${bel.datum}` : ""}.`, { icon: "check" });
   }
-  h += `</section>`;
+  h += `<div class="ds-section">` + dsPanel("Belasting", belBody);
+  // Klachten & context (lazy uit /api/cockpit)
+  h += dsPanel("Klachten & context",
+    `<div id="ws-context" class="ws-deep-slot">${dsSkeletonBlock(2)}</div>`) + `</div>`;
 
-  // 3 — Schema / doel  (doel + huidig blok vullen we lazy uit de deep-sectie)
-  h += `<section class="dc-sec ws-sec"><h3>Schema &amp; doel</h3>`;
-  if (sc) {
-    h += `<p class="ws-line ws-${sc.tier === "actie" ? "actie" : "aandacht"}">${esc(sc.kort || "schema-signaal")}${sc.einddatum ? ` · t/m ${esc(sc.einddatum)}` : ""}</p>`;
-  }
-  h += `<div id="ws-plan" class="ws-deep-slot"><p class="muted klein">Doel &amp; planning laden…</p></div></section>`;
+  // Schema & doel (signaal nu, planning lazy)
+  let planBody = "";
+  if (sc) planBody += dsAttnCard({
+    tone: dsTone(sc.tier), icon: "clock",
+    title: sc.kort || "schema-signaal", why: sc.einddatum ? `t/m ${sc.einddatum}` : "",
+  });
+  planBody += `<div id="ws-plan" class="ws-deep-slot">${dsSkeletonBlock(3)}</div>`;
+  h += `<div class="ds-section">` + dsPanel("Schema & doel", planBody) + `</div>`;
+  h += `</div>`;
 
-  // 4 — Feedback-status
-  h += `<section class="dc-sec ws-sec"><h3>Feedback</h3>`;
-  if (fb.status === "unknown") h += `<p class="muted klein">Feedback-status wordt bijgewerkt…</p>`;
-  else if (fb.open) h += `<p class="ws-line ws-aandacht"><b>${fb.open}</b> open reactie${fb.open !== 1 ? "s" : ""}</p>`;
-  else h += `<p class="dc-calm">Geen open reacties.</p>`;
-  h += `</section>`;
+  // ── Snelle acties: bestaande routes/authority, geen duplicate write-logica ──
+  const acts = [
+    dsAction({ icon: "brain", title: "Schema openen", sub: "bouwen of verlengen", onclick: `openAthleteModule('schema','${esc(key)}')` }),
+    dsAction({ icon: "user-plus", title: "Dossier", sub: "profiel & notities", onclick: `openAthleteModule('atleten','${esc(key)}')` }),
+    dsAction({ icon: "brain", title: "Cockpit", sub: "context & geheugen", onclick: `openAthleteModule('dossier','${esc(key)}')` }),
+    dsAction({ icon: "pulse", title: "Teampuls", sub: "teammonitoring", onclick: `deepAtleet('teampuls','${esc(key)}')` }),
+  ];
+  if (bel.actief) acts.push(dsAction({
+    icon: "check", title: "Belasting gezien", sub: "dempt 7 dagen", tone: dsTone(bel.ernst),
+    onclick: `wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')`,
+  }));
+  h += dsPanel("Snelle acties", `<div class="ds-actions">${acts.join("")}</div>`);
 
-  // 5 — Klachten/context (lazy uit /api/cockpit)
-  h += `<section class="dc-sec ws-sec"><h3>Klachten &amp; context</h3>
-    <div id="ws-context" class="ws-deep-slot"><p class="muted klein">Context laden…</p></div></section>`;
-
-  // 6 — Snelle acties (bestaande routes/authority; geen duplicate write-logica)
-  h += `<section class="dc-sec ws-acties">
-    <button class="btn ghost" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button>
-    <button class="btn ghost" onclick="openAthleteModule('atleten','${esc(key)}')">Dossier</button>
-    <button class="btn ghost" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit</button>
-    <button class="btn ghost" onclick="deepAtleet('teampuls','${esc(key)}')">Teampuls</button>`;
-  if (bel.actief) {
-    h += `<button class="btn ghost" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">Belasting gezien</button>`;
-  }
-  h += `</section>`;
+  h += `</div>`;
   wrap.innerHTML = h;
+}
+
+// Progressive disclosure: klap het blok NA de knop open/dicht (CSS grid-rows).
+function dsFoldToggle(btn) {
+  const f = btn.nextElementSibling;
+  if (f && f.classList.contains("ds-fold")) f.classList.toggle("open");
 }
 
 // Rijke context lazy + parallel uit het bestaande cockpit-endpoint. Faalt/traag → de
@@ -4786,23 +5017,25 @@ async function wsLoadDeep(wrap, ident) {
   if (!wrap || wsSel !== ident) return;                    // leak guard
   const plan = $("#ws-plan"), ctx = $("#ws-context");
   if (!r || !r.ok) {
-    if (plan) plan.innerHTML = `<p class="muted klein">Doel &amp; planning nu niet beschikbaar.</p>`;
-    if (ctx) ctx.innerHTML = `<p class="muted klein">Context nu niet beschikbaar.</p>`;
+    if (plan) plan.innerHTML = dsEmpty("Doel & planning nu niet beschikbaar.", { icon: "alert", tone: "is-unknown" });
+    if (ctx) ctx.innerHTML = dsEmpty("Context nu niet beschikbaar.", { icon: "alert", tone: "is-unknown" });
     return;
   }
   if (plan) {
     const rows = (r.planning && r.planning.rows) || [];
-    plan.innerHTML = rows.length
-      ? `<dl class="ws-dl">` + rows.map(x => `<div><dt>${esc(x.label)}</dt><dd>${esc(x.value)}</dd></div>`).join("") + `</dl>`
-      : `<p class="muted klein">Geen doel/planning bekend.</p>`;
+    plan.innerHTML = rows.length ? dsKv(rows)
+      : dsEmpty("Geen doel/planning bekend.", { icon: "flag", tone: "is-unknown" });
   }
   if (ctx) {
     const attn = (r.attention || []).filter(c => c.kind === "complaint" || c.kind === "contradiction");
     const lo = r.load_observation;
     let c = "";
-    if (attn.length) c += attn.map(a => `<p class="ws-line ws-aandacht">${esc(a.title || "")}${a.why ? ` — ${esc(a.why)}` : ""}</p>`).join("");
-    if (lo && lo.signalen) c += `<p class="muted klein">Belasting-observatie: ${esc(lo.signalen)}</p>`;
-    ctx.innerHTML = c || `<p class="dc-calm">Geen actieve klacht of tegenstrijdigheid bekend.</p>`;
+    if (attn.length) c += `<div class="ds-attn">` + attn.map(a => dsAttnCard({
+      tone: dsTone("aandacht"), icon: _DC_KIND_IC[a.kind] || "alert",
+      title: a.title || "", why: a.why || "",
+    })).join("") + `</div>`;
+    if (lo && lo.signalen) c += dsStream([{ text: `Belasting-observatie: ${lo.signalen}`, tone: dsTone(lo.ernst) }]);
+    ctx.innerHTML = c || dsEmpty("Geen actieve klacht of tegenstrijdigheid bekend.", { icon: "check" });
   }
 }
 

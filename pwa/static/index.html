@@ -7,7 +7,8 @@
   <title>BeBetter Coaching</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=98f">
+  <link rel="stylesheet" href="/static/design-system.css?v=98f">
 </head>
 <body>
   <!-- Iconen-sprite (lijn-iconen, werken offline) -->
@@ -114,7 +115,7 @@
     </section>
 
     <!-- ════════ DOSSIER (read-only Masterbrein-cockpit) ════════ -->
-    <section class="view" data-view="dossier">
+    <section class="view ds-view" data-view="dossier">
       <header class="appbar"><h1>Dossier</h1>
         <button class="iconbtn" id="dc-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
       </header>
@@ -128,7 +129,7 @@
     </section>
 
     <!-- ════════ WORKSPACE (Athlete Workspace / Coach Cockpit v2) ════════ -->
-    <section class="view" data-view="workspace">
+    <section class="view ds-view" data-view="workspace">
       <header class="appbar"><h1>Workspace</h1>
         <button class="iconbtn" id="ws-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
       </header>
@@ -421,6 +422,6 @@
     </article>
   </template>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=98f"></script>
 </body>
 </html>

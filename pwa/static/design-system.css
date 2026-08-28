@@ -1,0 +1,362 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   BeBetter — App-wide Design System v1
+   ---------------------------------------------------------------------------
+   ÉÉN gedeelde visuele + interactionele taal voor Workspace, Dossier en
+   Home-detail (en later Teampuls/Feedback/Schema zonder herontwerp).
+
+   Uitgangspunten
+   • Additief: dit bestand voegt een TOKEN-laag + gedeelde primitives toe.
+     `styles.css` blijft bestaan; bestaande module-classes blijven werken en
+     worden stap voor stap door `ds-*` primitives vervangen.
+   • Eén statusdialect: `is-calm | is-attention | is-critical | is-success |
+     is-stale | is-unknown` zetten `--tone/--tone-bg/--tone-bd`. Componenten
+     lezen ALLEEN die drie variabelen → dezelfde betekenis kan nooit meer per
+     module een andere kleur krijgen.
+   • Alleen CSS/SVG. Geen animatieframework, geen WebGL/canvas, geen runtime-
+     zware effecten — het performance-contract (fast-read, background refresh)
+     blijft leidend.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* ── Surfaces: 4 lagen diepte i.p.v. één vlakke kaartkleur ─────────────── */
+  --ds-canvas:#081527;
+  --ds-s1:#0D2244;            /* panel / rail            */
+  --ds-s2:#112B54;            /* card                    */
+  --ds-s3:#16346A;            /* raised / inner well     */
+  --ds-well:rgba(4,12,26,.45);/* verdiepte 'inzet'       */
+  --ds-border:#1E3A66;
+  --ds-border-soft:rgba(94,230,235,.13);
+  --ds-hairline:rgba(255,255,255,.05);
+
+  /* ── Tekst ─────────────────────────────────────────────────────────────── */
+  --ds-text:#EAF2FF;
+  --ds-text-2:#B4C7E6;
+  --ds-text-3:#7F97BC;
+
+  /* ── Accent ────────────────────────────────────────────────────────────── */
+  --ds-accent:#5EE6EB;
+  --ds-accent-soft:rgba(94,230,235,.12);
+
+  /* ── Statussemantiek (ÉÉN taal, app-breed) ─────────────────────────────── */
+  --ds-calm:#5EE6EB;       --ds-calm-bg:rgba(94,230,235,.10);   --ds-calm-bd:rgba(94,230,235,.36);
+  --ds-attention:#F0A62B;  --ds-attention-bg:rgba(240,166,43,.12); --ds-attention-bd:rgba(240,166,43,.46);
+  --ds-critical:#F4744C;   --ds-critical-bg:rgba(244,116,76,.12);  --ds-critical-bd:rgba(244,116,76,.50);
+  --ds-success:#37D9A2;    --ds-success-bg:rgba(55,217,162,.10);   --ds-success-bd:rgba(55,217,162,.38);
+  --ds-stale:#8098BC;      --ds-stale-bg:rgba(128,152,188,.10);    --ds-stale-bd:rgba(128,152,188,.34);
+  --ds-unknown:#61789E;    --ds-unknown-bg:rgba(97,120,158,.09);   --ds-unknown-bd:rgba(97,120,158,.30);
+
+  /* ── Spacing (4px basis) ───────────────────────────────────────────────── */
+  --ds-1:4px;  --ds-2:8px;  --ds-3:12px; --ds-4:16px;
+  --ds-5:20px; --ds-6:24px; --ds-8:32px; --ds-10:40px;
+
+  /* ── Typografie ────────────────────────────────────────────────────────── */
+  --ds-t-display:30px; --ds-t-hero:24px; --ds-t-title:17px;
+  --ds-t-body:14px;    --ds-t-sm:12.5px; --ds-t-xs:11px;
+  --ds-t-metric:27px;  --ds-t-metric-xl:40px;
+
+  /* ── Radii ─────────────────────────────────────────────────────────────── */
+  --ds-r-sm:10px; --ds-r-md:14px; --ds-r-lg:18px; --ds-r-xl:22px; --ds-r-pill:999px;
+
+  /* ── Elevatie ──────────────────────────────────────────────────────────── */
+  --ds-e1:0 1px 2px rgba(0,0,0,.28);
+  --ds-e2:0 6px 20px rgba(0,0,0,.34);
+  --ds-e3:0 18px 46px rgba(0,0,0,.44);
+
+  /* ── Motion ────────────────────────────────────────────────────────────── */
+  --ds-fast:120ms; --ds-base:200ms; --ds-slow:340ms;
+  --ds-ease:cubic-bezier(.2,.7,.3,1);
+
+  /* Default tone = calm; elk `is-*`-blok overschrijft deze drie. */
+  --tone:var(--ds-calm); --tone-bg:var(--ds-calm-bg); --tone-bd:var(--ds-calm-bd);
+}
+
+/* ── DE statusklassen. Alles wat kleur nodig heeft leest var(--tone*). ───── */
+.is-calm     {--tone:var(--ds-calm);     --tone-bg:var(--ds-calm-bg);     --tone-bd:var(--ds-calm-bd)}
+.is-attention{--tone:var(--ds-attention);--tone-bg:var(--ds-attention-bg);--tone-bd:var(--ds-attention-bd)}
+.is-critical {--tone:var(--ds-critical); --tone-bg:var(--ds-critical-bg); --tone-bd:var(--ds-critical-bd)}
+.is-success  {--tone:var(--ds-success);  --tone-bg:var(--ds-success-bg);  --tone-bd:var(--ds-success-bd)}
+.is-stale    {--tone:var(--ds-stale);    --tone-bg:var(--ds-stale-bg);    --tone-bd:var(--ds-stale-bd)}
+.is-unknown  {--tone:var(--ds-unknown);  --tone-bg:var(--ds-unknown-bg);  --tone-bd:var(--ds-unknown-bd)}
+
+/* ═══════ Primitive: sectiekop ═══════════════════════════════════════════ */
+.ds-label{font-size:var(--ds-t-xs);font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ds-text-3);margin:0}
+.ds-sechead{display:flex;align-items:baseline;justify-content:space-between;gap:var(--ds-3);
+  margin:0 0 var(--ds-3)}
+.ds-sechead .ds-label{flex:0 0 auto}
+.ds-sechead-note{font-size:var(--ds-t-xs);color:var(--ds-text-3)}
+
+/* ═══════ Primitive: panel (DE kaartlaag) ═══════════════════════════════ */
+.ds-panel{background:linear-gradient(168deg,var(--ds-s2),var(--ds-s1));
+  border:1px solid var(--ds-border);border-radius:var(--ds-r-lg);
+  padding:var(--ds-5);box-shadow:var(--ds-e1);position:relative;overflow:hidden}
+/* Subtiele lichtrand bovenaan: geeft diepte zonder zware schaduw. */
+.ds-panel::before{content:"";position:absolute;inset:0 0 auto;height:1px;
+  background:linear-gradient(90deg,transparent,var(--ds-border-soft),transparent)}
+.ds-panel.ds-tone{border-color:var(--tone-bd)}
+.ds-panel.ds-tone::before{background:linear-gradient(90deg,transparent,var(--tone),transparent);opacity:.5}
+
+/* ═══════ Primitive: chip / status ══════════════════════════════════════ */
+.ds-chip{display:inline-flex;align-items:center;gap:var(--ds-1);padding:4px 11px;
+  border-radius:var(--ds-r-pill);font-size:var(--ds-t-xs);font-weight:700;letter-spacing:.03em;
+  text-transform:uppercase;color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd);
+  white-space:nowrap}
+.ds-dot{width:7px;height:7px;border-radius:50%;background:var(--tone);flex:0 0 auto;
+  box-shadow:0 0 0 3px var(--tone-bg)}
+
+/* Freshness-indicator (bron/versheid) — één component, app-breed. */
+.ds-fresh{display:inline-flex;align-items:center;gap:6px;font-size:var(--ds-t-xs);
+  color:var(--tone);white-space:nowrap}
+.ds-fresh .ds-dot{width:6px;height:6px}
+.ds-fresh.is-stale .ds-dot{animation:ds-pulse 1.8s ease-in-out infinite}
+@keyframes ds-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* ═══════ Primitive: Athlete Shell ══════════════════════════════════════
+   De gedeelde athlete-kop. De atleet is DOMINANT: groot medaillon met
+   concentrische ring, grote naam, status + context-navigatie. Wordt gebruikt
+   door Workspace, Dossier én Home-detail → één identiteit, drie views.      */
+.ds-shell{position:relative;border:1px solid var(--ds-border);border-radius:var(--ds-r-xl);
+  background:
+    radial-gradient(120% 150% at 8% 0%,rgba(94,230,235,.10),transparent 55%),
+    radial-gradient(90% 140% at 100% 0%,var(--tone-bg),transparent 60%),
+    linear-gradient(165deg,var(--ds-s2),var(--ds-s1));
+  padding:var(--ds-5) var(--ds-5) var(--ds-4);
+  display:flex;align-items:flex-start;gap:var(--ds-5);flex-wrap:wrap;
+  box-shadow:var(--ds-e2);overflow:hidden}
+.ds-shell::after{content:"";position:absolute;inset:auto 0 0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--tone),transparent);opacity:.35}
+
+/* Medaillon: initialen met concentrische ring (geen fictieve foto). */
+.ds-med{position:relative;width:76px;height:76px;flex:0 0 auto;display:grid;place-items:center}
+.ds-med-ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--tone-bd);opacity:.75}
+.ds-med-ring.two{inset:-7px;border-color:var(--tone-bd);opacity:.30}
+.ds-med-in{width:60px;height:60px;border-radius:50%;display:grid;place-items:center;
+  background:radial-gradient(circle at 32% 28%,var(--ds-s3),var(--ds-s1));
+  border:1px solid var(--tone-bd);color:var(--tone);
+  font-size:20px;font-weight:700;letter-spacing:.02em;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+
+.ds-shell-main{flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:var(--ds-2)}
+.ds-shell-top{display:flex;align-items:center;gap:var(--ds-3);flex-wrap:wrap}
+.ds-shell-name{margin:0;font-size:var(--ds-t-hero);font-weight:700;letter-spacing:-.01em;line-height:1.1}
+.ds-shell-sub{margin:0;font-size:var(--ds-t-sm);color:var(--ds-text-3);
+  display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap}
+.ds-shell-sub .sep{opacity:.4}
+.ds-shell-aside{flex:1 1 300px;min-width:0;display:flex;flex-direction:column;gap:var(--ds-2)}
+
+/* Contextnavigatie: ondersteunend, niet dominant.
+   BEWUST GEEN nieuwe nav-component: de app heeft er al één gedeelde
+   (`athleteNav()` → .anav/.anav-chip, één definitie, vaste call-contracten).
+   Het design system waardeert díe op — een tweede nav-component zou precies de
+   fragmentatie zijn die deze milestone opruimt. */
+.ds-shell .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap;margin-top:var(--ds-1)}
+.ds-shell .anav-chip{background:var(--ds-well);border:1px solid var(--ds-border);color:var(--ds-text-2);
+  border-radius:var(--ds-r-pill);padding:6px 13px;font-size:var(--ds-t-sm);font-weight:600;
+  cursor:pointer;transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease),
+    transform var(--ds-fast) var(--ds-ease)}
+.ds-shell .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text);transform:translateY(-1px)}
+.ds-shell .anav-chip:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+
+/* ═══════ Primitive: attention card ═════════════════════════════════════ */
+.ds-attn{display:grid;gap:var(--ds-2)}
+.ds-attn-card{display:flex;gap:var(--ds-3);align-items:flex-start;padding:var(--ds-3) var(--ds-4);
+  border-radius:var(--ds-r-md);background:var(--tone-bg);border:1px solid var(--tone-bd);
+  transition:transform var(--ds-fast) var(--ds-ease)}
+.ds-attn-card:hover{transform:translateY(-1px)}
+.ds-attn-ic{color:var(--tone);flex:0 0 auto;margin-top:1px}
+.ds-attn-ic .ic{width:17px;height:17px}
+.ds-attn-body{min-width:0;flex:1}
+.ds-attn-t{margin:0;font-size:var(--ds-t-body);font-weight:650;color:var(--ds-text);line-height:1.35}
+.ds-attn-w{margin:3px 0 0;font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.45}
+.ds-attn-meta{margin:5px 0 0;font-size:var(--ds-t-xs);color:var(--ds-text-3)}
+.ds-attn-val{flex:0 0 auto;font-size:var(--ds-t-title);font-weight:750;color:var(--tone);
+  font-variant-numeric:tabular-nums;align-self:center}
+
+/* ═══════ Primitive: metric strip ═══════════════════════════════════════ */
+.ds-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--ds-3)}
+.ds-metric{background:linear-gradient(168deg,var(--ds-s2),var(--ds-s1));
+  border:1px solid var(--ds-border);border-radius:var(--ds-r-lg);padding:var(--ds-4);
+  display:flex;flex-direction:column;gap:var(--ds-1);min-width:0;position:relative;overflow:hidden}
+.ds-metric.ds-tone{border-color:var(--tone-bd)}
+.ds-metric-l{font-size:var(--ds-t-xs);font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ds-text-3);display:flex;align-items:center;justify-content:space-between;gap:var(--ds-2)}
+.ds-metric-v{font-size:var(--ds-t-metric);font-weight:750;line-height:1.05;letter-spacing:-.02em;
+  color:var(--ds-text);font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px}
+.ds-metric.ds-tone .ds-metric-v{color:var(--tone)}
+.ds-metric-u{font-size:var(--ds-t-sm);font-weight:600;color:var(--ds-text-3);letter-spacing:0}
+.ds-metric-s{font-size:var(--ds-t-xs);color:var(--ds-text-3);line-height:1.4}
+.ds-metric-spark{margin-top:var(--ds-1);height:32px;width:100%;display:block;overflow:visible}
+
+/* ═══════ Primitive: sparkline / ring (inline SVG, geen library) ════════ */
+.ds-spark-line{fill:none;stroke:var(--tone);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ds-spark-area{fill:var(--tone);opacity:.12}
+.ds-spark-dot{fill:var(--tone)}
+.ds-spark-base{fill:none;stroke:var(--ds-text-3);stroke-width:1.2;opacity:.45;stroke-dasharray:3 3}
+.ds-ring-track{fill:none;stroke:var(--ds-border);stroke-width:6}
+.ds-ring-val{fill:none;stroke:var(--tone);stroke-width:6;stroke-linecap:round;
+  transform:rotate(-90deg);transform-origin:50% 50%;
+  transition:stroke-dasharray var(--ds-slow) var(--ds-ease)}
+.ds-ringwrap{position:relative;width:76px;height:76px;flex:0 0 auto}
+.ds-ringwrap figcaption{position:absolute;inset:0;display:grid;place-items:center;
+  font-size:var(--ds-t-title);font-weight:750;color:var(--tone);font-variant-numeric:tabular-nums}
+
+/* ═══════ Primitive: key/value (leesbaar, niet administratief) ══════════ */
+.ds-kv{margin:0;display:grid;gap:0}
+.ds-kv>div{display:flex;align-items:baseline;justify-content:space-between;gap:var(--ds-4);
+  padding:9px 0;border-bottom:1px solid var(--ds-hairline)}
+.ds-kv>div:last-child{border-bottom:0;padding-bottom:0}
+.ds-kv dt{margin:0;font-size:var(--ds-t-sm);color:var(--ds-text-3);flex:0 1 auto}
+.ds-kv dd{margin:0;font-size:var(--ds-t-body);color:var(--ds-text);text-align:right;font-weight:600;
+  min-width:0;overflow-wrap:anywhere}
+
+/* ═══════ Primitive: stream / compacte tijdlijn ═════════════════════════ */
+.ds-stream{list-style:none;margin:0;padding:0;position:relative}
+.ds-stream::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;
+  background:linear-gradient(180deg,var(--ds-border-soft),transparent)}
+.ds-stream li{position:relative;padding:0 0 var(--ds-3) var(--ds-5);font-size:var(--ds-t-sm)}
+.ds-stream li:last-child{padding-bottom:0}
+.ds-stream li::before{content:"";position:absolute;left:0;top:5px;width:11px;height:11px;
+  border-radius:50%;background:var(--ds-s1);border:1.5px solid var(--tone)}
+.ds-stream-d{display:block;font-size:var(--ds-t-xs);color:var(--ds-text-3);margin-bottom:1px}
+.ds-stream-t{color:var(--ds-text)}
+
+/* ═══════ Primitive: quick actions ══════════════════════════════════════ */
+.ds-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:var(--ds-2)}
+.ds-action{display:flex;align-items:center;gap:var(--ds-3);text-align:left;width:100%;
+  background:var(--ds-well);border:1px solid var(--ds-border);border-radius:var(--ds-r-md);
+  padding:var(--ds-3) var(--ds-4);color:var(--ds-text);cursor:pointer;font:inherit;
+  transition:border-color var(--ds-fast) var(--ds-ease),transform var(--ds-fast) var(--ds-ease),
+    background var(--ds-fast) var(--ds-ease)}
+.ds-action:hover{border-color:var(--ds-accent);transform:translateY(-1px);background:var(--ds-s2)}
+.ds-action:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.ds-action.ds-tone{border-color:var(--tone-bd)}
+.ds-action.ds-tone .ds-action-ic{color:var(--tone)}
+.ds-action-ic{color:var(--ds-accent);flex:0 0 auto;display:grid;place-items:center;
+  width:32px;height:32px;border-radius:var(--ds-r-sm);background:var(--ds-s1);border:1px solid var(--ds-border)}
+.ds-action-ic .ic{width:17px;height:17px}
+.ds-action-b{min-width:0;display:flex;flex-direction:column;gap:1px}
+.ds-action-t{font-size:var(--ds-t-sm);font-weight:650;line-height:1.25}
+.ds-action-s{font-size:var(--ds-t-xs);color:var(--ds-text-3);line-height:1.3}
+
+/* ═══════ Primitive: empty / loading ════════════════════════════════════ */
+.ds-empty{display:flex;align-items:center;gap:var(--ds-3);padding:var(--ds-4);
+  border:1px dashed var(--ds-border);border-radius:var(--ds-r-md);color:var(--ds-text-3);
+  font-size:var(--ds-t-sm);line-height:1.45;background:var(--ds-well)}
+.ds-empty .ic{width:19px;height:19px;flex:0 0 auto;opacity:.8}
+.ds-empty.is-attention{border-style:solid;border-color:var(--tone-bd);background:var(--tone-bg);color:var(--ds-text-2)}
+.ds-skel{background:linear-gradient(100deg,var(--ds-s2) 30%,var(--ds-s3) 50%,var(--ds-s2) 70%);
+  background-size:200% 100%;animation:ds-shim 1.4s linear infinite;border-radius:var(--ds-r-sm);
+  height:12px;margin:7px 0}
+@keyframes ds-shim{from{background-position:200% 0}to{background-position:-200% 0}}
+.ds-skel.w40{width:40%} .ds-skel.w60{width:60%} .ds-skel.w80{width:80%}
+.ds-skel-panel{height:118px;border-radius:var(--ds-r-lg);margin:0}
+
+/* ═══════ Primitive: progressive disclosure ═════════════════════════════ */
+.ds-more{border:0;background:none;color:var(--ds-accent);font:inherit;font-size:var(--ds-t-sm);
+  font-weight:650;cursor:pointer;padding:var(--ds-2) 0 0;display:inline-flex;align-items:center;gap:5px}
+.ds-more:hover{text-decoration:underline}
+.ds-more:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.ds-fold{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--ds-base) var(--ds-ease)}
+.ds-fold>div{overflow:hidden;min-height:0}
+.ds-fold.open{grid-template-rows:1fr}
+.ds-disc{border:1px solid var(--ds-border);border-radius:var(--ds-r-md);background:var(--ds-well);
+  overflow:hidden}
+.ds-disc>summary{cursor:pointer;padding:var(--ds-3) var(--ds-4);font-size:var(--ds-t-sm);font-weight:650;
+  list-style:none;display:flex;align-items:center;justify-content:space-between;gap:var(--ds-2);
+  color:var(--ds-text-2);transition:color var(--ds-fast) var(--ds-ease)}
+.ds-disc>summary::-webkit-details-marker{display:none}
+.ds-disc>summary::after{content:"›";transform:rotate(90deg);transition:transform var(--ds-base) var(--ds-ease);
+  color:var(--ds-text-3);font-size:16px;line-height:1}
+.ds-disc[open]>summary::after{transform:rotate(-90deg)}
+.ds-disc>summary:hover{color:var(--ds-text)}
+.ds-disc-body{padding:0 var(--ds-4) var(--ds-4)}
+
+/* ═══════ Layout: cockpit ═══════════════════════════════════════════════ */
+.ds-cockpit{display:flex;flex-direction:column;gap:var(--ds-4)}
+.ds-grid{display:grid;gap:var(--ds-4);grid-template-columns:1fr}
+.ds-section{display:flex;flex-direction:column;gap:var(--ds-3)}
+
+/* Sectie-entree: rustig, één keer, en uit bij reduced-motion. */
+.ds-enter{animation:ds-in var(--ds-slow) var(--ds-ease) both}
+@keyframes ds-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.ds-cockpit>*:nth-child(2){animation-delay:40ms}
+.ds-cockpit>*:nth-child(3){animation-delay:80ms}
+.ds-cockpit>*:nth-child(4){animation-delay:120ms}
+
+@media (prefers-reduced-motion:reduce){
+  .ds-enter{animation:none}
+  .ds-fresh.is-stale .ds-dot{animation:none}
+  .ds-skel{animation:none}
+  .ds-nav-chip,.ds-action,.ds-attn-card{transition:none}
+}
+
+/* ═══════ Responsive ════════════════════════════════════════════════════ */
+@media (min-width:900px){
+  .ds-grid.two{grid-template-columns:1fr 1fr}
+  .ds-grid.side{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
+  .ds-shell{padding:var(--ds-6);gap:var(--ds-6)}
+  .ds-med{width:88px;height:88px}
+  .ds-med-in{width:70px;height:70px;font-size:23px}
+  .ds-shell-name{font-size:var(--ds-t-display)}
+}
+@media (max-width:560px){
+  .ds-shell{padding:var(--ds-4);gap:var(--ds-4)}
+  .ds-med{width:58px;height:58px}
+  .ds-med-in{width:48px;height:48px;font-size:17px}
+  .ds-shell-name{font-size:20px}
+  .ds-metrics{grid-template-columns:1fr 1fr}
+  .ds-metric{padding:var(--ds-3)}
+  .ds-metric-v{font-size:22px}
+}
+
+/* ═══════ Athlete-rail: de lijst wordt ONDERSTEUNEND, niet dominant ══════
+   De master-detail blijft (routing/tests ongemoeid), maar de rail krijgt
+   minder visueel gewicht zodat de gekozen atleet de actieve wereld is.     */
+@media (min-width:900px){
+  /* Athlete-views krijgen het volle canvas. Voorheen vielen Workspace/Dossier
+     terug op `.view{max-width:860px}` mét een 342px lijst → een detailpaneel van
+     ~500px: precies het "split-screen paneel"-gevoel. */
+  .view.ds-view{max-width:1320px}
+  .ds-view .md-split{grid-template-columns:274px minmax(0,1fr);gap:var(--ds-6)}
+  .ds-view .md-list{background:var(--ds-well);border:1px solid var(--ds-border);
+    border-radius:var(--ds-r-lg);padding:var(--ds-3);max-height:calc(100vh - 116px);
+    overflow-y:auto;overscroll-behavior:contain}
+  .ds-view .md-list .search{margin-top:0}
+}
+
+/* ═══════ Opwaardering van de resterende module-internals ═══════════════
+   Deze selectors bestaan nog (semantische hooks + testcontracten), maar krijgen
+   nu de gedeelde ritmiek/typografie i.p.v. eigen module-styling. Stap 2 van de
+   uitrol vervangt ze door `ds-*`-primitives.                                 */
+.ds-view .dc-sec{margin:0}
+.ds-view .dc-domains{gap:var(--ds-4)}
+.ds-view .dc-dom>summary{font-size:var(--ds-t-sm)}
+.ds-view .dc-reg{list-style:none;margin:0;padding:0}
+.ds-view .dc-reg>li{padding:10px 0;border-bottom:1px solid var(--ds-hairline)}
+.ds-view .dc-reg>li:last-child{border-bottom:0;padding-bottom:0}
+.ds-view .dc-reg-main{display:flex;align-items:baseline;justify-content:space-between;gap:var(--ds-4)}
+.ds-view .dc-lbl{font-size:var(--ds-t-sm);color:var(--ds-text-3)}
+.ds-view .dc-val{font-size:var(--ds-t-body);font-weight:600;text-align:right;overflow-wrap:anywhere}
+.ds-view .dc-reg-meta{display:flex;align-items:center;gap:var(--ds-2);margin-top:3px;flex-wrap:wrap}
+.ds-view .dc-prov{font-size:var(--ds-t-xs);color:var(--ds-text-3);margin:0}
+.ds-view .dc-why{background:none;border:0;color:var(--ds-accent);font:inherit;font-size:var(--ds-t-xs);
+  font-weight:650;cursor:pointer;padding:0}
+.ds-view .dc-why:hover{text-decoration:underline}
+.ds-view .dc-loadobs{display:flex;align-items:center;gap:var(--ds-2);margin:var(--ds-3) 0 0;
+  padding:var(--ds-3) var(--ds-4);border-radius:var(--ds-r-md);background:var(--ds-well);
+  border:1px solid var(--ds-border);font-size:var(--ds-t-sm);color:var(--ds-text-2)}
+.ds-view .dc-loadobs .ic{color:var(--ds-attention);flex:0 0 auto}
+.ds-view .dc-empty-tl{margin:0;font-size:var(--ds-t-sm);color:var(--ds-text-3);line-height:1.55}
+.ds-view .dc-diag{display:flex;gap:var(--ds-3);align-items:flex-start;padding:var(--ds-3) var(--ds-4);
+  border-radius:var(--ds-r-md);background:var(--ds-unknown-bg);border:1px solid var(--ds-unknown-bd);
+  font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.45}
+.ds-view .dc-srclist{list-style:none;margin:0;padding:0;display:grid;gap:var(--ds-2)}
+.ds-view .dc-srclist li{display:flex;align-items:center;gap:var(--ds-2);font-size:var(--ds-t-sm)}
+.ds-view .dc-src-n{flex:1;color:var(--ds-text-2)}
+.ds-view .dc-src-s{font-size:var(--ds-t-xs);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.ds-view .dc-src-s.ok{color:var(--ds-calm)} .ds-view .dc-src-s.warn{color:var(--ds-attention)}
+.ds-view .dc-src-s.bad{color:var(--ds-critical)}
+.ds-view .dc-load,.ds-view .dc-err{padding:var(--ds-6);text-align:center;color:var(--ds-text-3)}
+
+/* Home-detail: het signaalblok deelt de aandacht-primitive met Workspace/Dossier. */
+.pd-s-blok .ds-attn-card{margin-bottom:var(--ds-2)}
