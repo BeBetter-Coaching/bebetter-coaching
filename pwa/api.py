@@ -39,6 +39,7 @@ import schema_verloop_core as schema_verloop
 import teampuls_core as teampuls
 import admin_core
 import home_core
+import coach_read
 import webauthn_core
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -738,6 +739,20 @@ def import_commit(body: ImportCommit):
 
 # ── API: Dossier Fase B — read-only Masterbrein-cockpit view-model ───────────
 # Los prefix (/api/cockpit) om routebotsing met /api/dossier/{key} te vermijden.
+@app.get("/api/workspace/{key}")          # Athlete Workspace v2 — fast-read shell
+def workspace(key: str = ""):
+    """Coach Read Model shell voor één atleet: aandacht-nu · live belasting · schema-
+    signaal · feedback-status · generation. Alleen goedkope stores (geen FS/AI-sweep).
+    De rijke context (klachten/planning/doel/timeline) haalt de client lazy en parallel
+    uit `/api/cockpit` (deep-sectie), zodat een trage refresh de shell niet blokkeert."""
+    if not home_core._heeft_token():
+        return {"ok": False, "fs": False}
+    try:
+        return coach_read.athlete(key)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Workspace mislukt: {e}"}, status_code=500)
+
+
 @app.get("/api/cockpit")
 def cockpit(key: str = ""):
     try:

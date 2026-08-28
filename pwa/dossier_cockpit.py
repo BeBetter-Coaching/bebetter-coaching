@@ -301,8 +301,12 @@ def _load_observation(raw: dict, today: date) -> dict | None:
     if sd and not _recency.within(sd, today, _recency.LOAD_SIGNAL_FRESH):
         return None
     afgehandeld = bool(bel.get("_afgehandeld"))
-    ratio = (bel.get("metrics") or {}).get("ratio")
-    delta_pct = round((ratio - 1) * 100) if isinstance(ratio, (int, float)) and ratio > 1 else None
+    # v2: +X% via de ENE gedeelde load-metric-projectie (coach_read), zodat Dossier
+    # exact dezelfde delta toont als Home/Teampuls. Alleen een positieve volume-sprong
+    # is een 'delta' (klacht/rpe-signaal zonder volume → geen verzonnen percentage).
+    import coach_read
+    _p = coach_read.load_metric(bel)["pct"]
+    delta_pct = _p if isinstance(_p, int) and _p > 0 else None
     return {"ernst": ernst,
             "signalen": "; ".join((bel.get("signalen") or [])[:3]),
             "afgehandeld": afgehandeld,

@@ -31,6 +31,7 @@ for _m in ("streamlit", "pandas"):
 
 import fs_client as FS
 import feedback_core                                   # _filter_skipped (geen streamlit)
+import coach_read                                      # v2: gedeelde load_metric + generation
 from perf import Timer                                 # opt-in timing (no-op tenzij gated)
 
 try:
@@ -123,15 +124,13 @@ def _belasting_signal(b: dict) -> dict:
     `_apply_belasting_overlay` (live reconcile) zodat ernst/km%/reden identiek zijn
     ongeacht via welk pad de belasting-signaal in Home belandt."""
     hoog = b.get("ernst") == "hoog"
-    reden = (b.get("signalen") or ["belasting-signaal"])[0]
+    # De %/km-berekening loopt via de ENE gedeelde load-metric-projectie (coach_read),
+    # zodat Home/Teampuls/Dossier exact dezelfde +X% tonen (v2 consolidatie). Byte-
+    # identiek aan het oude km-pad; alleen niet langer een tweede lokale formule.
+    lm = coach_read.load_metric(b)
+    reden = lm["reden"]
     m = b.get("metrics") or {}
-    km_r, km_b = m.get("km_recent"), m.get("km_basis_week")
-    pct = None
-    try:
-        if km_r is not None and km_b:
-            pct = round((float(km_r) / float(km_b) - 1) * 100)
-    except (TypeError, ValueError, ZeroDivisionError):
-        pct = None
+    km_r, km_b, pct = lm["km_recent"], lm["km_basis_week"], lm["pct"]
     det = {
         "ernst": b.get("ernst", ""),
         "signalen": b.get("signalen") or [],
@@ -409,8 +408,13 @@ def _apply_belasting_overlay(snap: dict) -> dict:
     team["rustig"] = max(snap.get("atleten", 0) - n_actie - n_aandacht, 0)
     hoog = sum(1 for s in live.values() if s.get("tier") == "actie")
     return {**snap, "prioriteit": items, "prioriteit_totaal": len(items), "team": team,
+            # `sig`/`prod` = de exacte belasting-bronversie die deze overlay TOONDE, zodat
+            # het generation-stempel aan diezelfde captured stand gebonden is (review-fix #1)
+            # en `generation_at` monotoon is (review-fix #2). Additief; overige lezers negeren.
             "belasting": {"totaal": len(live), "hoog": hoog, "datum": live_datum,
-                          "vers": live_datum == date.today().isoformat()}}
+                          "vers": live_datum == date.today().isoformat(),
+                          "sig": coach_read._belasting_sig(stand),
+                          "prod": stand.get("_produced_at")}}
 
 
 def _reconcile(snap: dict, allow_stale: bool = True) -> dict:
@@ -422,6 +426,24 @@ def _reconcile(snap: dict, allow_stale: bool = True) -> dict:
 
 
 def cockpit(refresh: bool = False) -> dict:
+    """Home-cockpit met v2 generation-stempel. De feitelijke samenstelling gebeurt in
+    `_cockpit`; deze wrapper hangt op ELKE geserveerde response de gedeelde
+    `coach_read.generation()` (ephemeral, NIET gepersisteerd) zodat Home en Teampuls
+    dezelfde generation dragen bij dezelfde stand → de client ziet 'zelfde state' vs
+    'nieuwere state beschikbaar' i.p.v. verborgen gemengde generaties."""
+    out = _cockpit(refresh=refresh)
+    if isinstance(out, dict) and out.get("fs") is not False:
+        try:
+            # Bind aan de CAPTURED payload: generation leest de belasting-versie uit
+            # `out['belasting']` (sig/prod die de overlay TOONDE) en home-`berekend` +
+            # feedback-tegel uit dezelfde `out` — geen tweede source-read (review-fix #1).
+            out = {**out, "generation": coach_read.generation(snap=out)}
+        except Exception:
+            pass
+    return out
+
+
+def _cockpit(refresh: bool = False) -> dict:
     """Home-cockpit. Standaard direct uit de cache (geheugen→store); refresh=True
     herbouwt (single-flight) en behoudt bij mislukking de laatst geldige snapshot.
     Elk leespad past de home_handled-overlay toe → afgehandelde signalen blijven

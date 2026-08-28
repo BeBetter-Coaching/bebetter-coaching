@@ -55,11 +55,14 @@ def _atleten() -> list:
 
 def _norm(r: dict) -> dict:
     mx = r.get("metrics") or {}
+    import coach_read
     return {
         "user_key": r.get("user_key", ""),
         "naam": r.get("naam", ""),
         "groep": r.get("group", ""),
         "ernst": r.get("ernst", ""),               # "hoog" | "let_op"
+        # v2: +X% via de ENE gedeelde load-metric-projectie → identiek aan Home/Dossier.
+        "pct": coach_read.load_metric(r)["pct"],
         "signalen": r.get("signalen") or [],
         "duiding": r.get("duiding") or "",
         "metrics": {
@@ -92,6 +95,14 @@ def _stand_payload(data: dict, belasting) -> dict:
                "totaal": len(items), "vers": vers, "stale": bool(datum) and not vers}
     if data.get("_err"):
         payload["_err"] = data["_err"]
+    # v2 + review-fix #1: bind de generation aan EXACT de stand waaruit de items komen
+    # (`data`), niet aan een tweede `laad_stand()` — zo dragen items uit stand A nooit de
+    # generation van een intussen weggeschreven stand B.
+    try:
+        import coach_read
+        payload["generation"] = coach_read.generation(stand=data)
+    except Exception:
+        pass
     return payload
 
 
@@ -119,8 +130,14 @@ def signalen(force: bool = False) -> dict:
             return _stand_payload(data, belasting)
         # Nog geen stand (koud/eerste keer) → geen zware recompute in het renderpad;
         # client toont skeletons en triggert force-refresh op de achtergrond.
-        return {"fs": True, "items": [], "datum": None, "hoog": 0, "totaal": 0,
-                "vers": False, "stale": False, "pending": True}
+        _pend = {"fs": True, "items": [], "datum": None, "hoog": 0, "totaal": 0,
+                 "vers": False, "stale": False, "pending": True}
+        try:
+            import coach_read
+            _pend["generation"] = coach_read.generation(stand={})   # geen stand → unknown
+        except Exception:
+            pass
+        return _pend
 
     try:
         data = belasting.dagelijkse_check(_atleten(), forceer=True)

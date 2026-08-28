@@ -198,6 +198,7 @@ function applyRoute() {
     if (view === "atleten" && ident) openDossier(ident);   // synchrone prefix draait nog binnen de guard
     else if (view === "schema") { if (ident) openSchemaAthlete(ident); else { schemaOpenPending = ""; sbToonLijst(); } }
     else if (view === "dossier") { if (ident) openDossierCockpit(ident); else { dcOpenPending = ""; dcToonLijst(); } }
+    else if (view === "workspace") { if (ident) openWorkspace(ident); else { wsOpenPending = ""; wsToonLijst(); } }
   } finally { _routing = false; }
 }
 window.addEventListener("popstate", applyRoute);
@@ -262,7 +263,62 @@ function athleteNav(activeView, user_key) {
   ];
   const chips = opts.filter(o => o.view !== activeView).map(o =>
     `<button type="button" class="anav-chip" onclick="openAthleteModule('${o.view}','${esc(user_key)}')">${esc(o.label)}</button>`).join("");
-  return chips ? `<div class="anav" role="group" aria-label="Ga naar voor deze atleet">${chips}</div>` : "";
+  // Workspace is athlete-aware maar bewust NIET in _ATHLETE_VIEWS (Cohesion-contract
+  // byte-identiek): een eigen chip die direct openWorkspace(key) aanroept.
+  const ws = activeView === "workspace" ? "" :
+    `<button type="button" class="anav-chip" onclick="openWorkspace('${esc(user_key)}')">Workspace</button>`;
+  const all = ws + chips;
+  return all ? `<div class="anav" role="group" aria-label="Ga naar voor deze atleet">${all}</div>` : "";
+}
+
+// ── Coach Read Model v2 — generation/freshness-coherentie ────────────────────
+// Eén gedeelde read-generation (server-side, inhoud-afgeleid) reist mee in elke
+// Home/Teampuls/Workspace-response. De client onthoudt de LAATST ontvangen generatie
+// en markeert elke nog-zichtbare view die een OUDERE generatie toont — zo zie je nooit
+// meer `46%` naast `64%` als co-actueel, maar netjes "nieuwe state beschikbaar" zonder
+// dat de lijst onder je verspringt. Puur presentatie-state; geen truth, geen cache.
+const _bbGen = { id: "", at: "", sv: {} };
+// Vector/version-dominance over de per-source versie-vector (belasting/home/feedback).
+// `max(generation_at)` alleen is GEEN volledige ordening: twee composites kunnen dezelfde
+// max delen terwijl één source-versie verschilt. Harde invariant: een generatie vervangt de
+// bekende latest ALLEEN als hij op geen enkele source ouder is én op minstens één nieuwer.
+// Een response die op één source terugloopt (bv. nieuwere feedback maar oudere belasting)
+// wordt nooit stil de latest → geen sluipende load-terugval, geen arrival-order als waarheid.
+function _genDominates(nv, cv) {
+  const keys = new Set([...Object.keys(nv || {}), ...Object.keys(cv || {})]);
+  let newer = false, older = false;
+  keys.forEach(k => {
+    const a = (nv && nv[k]) || "", b = (cv && cv[k]) || "";
+    if (a > b) newer = true; else if (a < b) older = true;
+  });
+  return newer && !older;                                  // dominance: nieuwer op ≥1, ouder op geen
+}
+function noteGeneration(gen) {
+  const id = gen && gen.generation_id;
+  if (!id) return;
+  if (id === _bbGen.id) return;                            // zelfde bekende state → no-op
+  const nv = gen.source_versions || {};
+  if (_bbGen.id && !_genDominates(nv, _bbGen.sv)) return;  // niet-dominant → nooit latest
+  _bbGen.id = id; _bbGen.at = gen.generation_at || ""; _bbGen.sv = nv; bbGenSync();
+}
+function bbGenSync() {
+  document.querySelectorAll(".gen-banner[data-gen]").forEach(el => {
+    el.classList.toggle("on", el.dataset.gen && el.dataset.gen !== _bbGen.id);
+  });
+}
+function genBanner(gen) {
+  const id = (gen && gen.generation_id) || "";
+  const at = ((gen && gen.generated_at) || "").slice(11, 16);
+  const old = !!(id && _bbGen.id && id !== _bbGen.id);
+  return `<div class="gen-banner${old ? " on" : ""}" data-gen="${esc(id)}">Bijgewerkt ${esc(at)} · nieuwe state beschikbaar</div>`;
+}
+// Stempel een dedicated slot (Home/Teampuls). ADOPTEER eerst de generatie (zodat deze
+// verse response de nieuwe 'latest' wordt en oudere views geflipt worden), render dan
+// de eigen banner (die dus zelf niet 'oud' is).
+function genMount(sel, gen) {
+  noteGeneration(gen);
+  const el = $(sel);
+  if (el) el.innerHTML = gen && gen.generation_id ? genBanner(gen) : "";
 }
 
 // ── Gedeelde refresh-feedback (Cohesion live-repair, cluster C) ──────────────
@@ -354,6 +410,7 @@ async function renderHome() {
     // staleness (nieuwe dag / TTL) op de achtergrond.
     api("/api/home/stats").then(s => {
       if (!s || !s.fs) return;
+      genMount("#home-genbar", s.generation);              // v2: gedeelde generation-coherentie
       renderFeedbackStrip(s.feedback, true);
       if (s.feedback && s.feedback.stale) feedbackQueueWarm();
       cockpitVersen(s);
@@ -399,6 +456,7 @@ async function renderHome() {
   // 2) Cockpit-snapshot (direct) → hero-telling/status, feedback, prioriteit.
   //    Verouderd? Dan op de achtergrond verversen (stale-while-revalidate).
   api("/api/home/stats").then(s => {
+    if (s) genMount("#home-genbar", s.generation);         // v2: gedeelde generation-coherentie
     // Eerste-ooit (pending): laat de skeletons staan en bouw op de achtergrond op.
     if (s && s.pending) { cockpitVersen(s); return; }
     vulCockpit(s); cockpitVersen(s);
@@ -476,10 +534,14 @@ function cockpitVersen(s) {
     if (!fresh || fresh.pending) return;     // nog niet klaar → skeletons blijven
     const box = $("#home-prio");
     const heeftLijst = box && box.querySelector(".prio-item, .prio-leeg");
-    if (!heeftLijst) { vulCockpit(fresh, true); return; }   // eerste build → direct tonen (autoritatief)
+    if (!heeftLijst) { vulCockpit(fresh, true); genMount("#home-genbar", fresh.generation); return; }   // eerste build → direct tonen (autoritatief)
     // Feedbacktegel convergeert altijd naar de canonieke sweep (los van de lijst-diff),
     // zodat een post/skip-invalidatie de telling ook in diff-modus bijwerkt.
     renderFeedbackStrip(fresh.feedback, true);
+    // v2: de refresh maakte generatie B, maar de ACTIEVE lijst verspringt bewust niet.
+    // Adopteer B als 'latest' (→ de Home-banner flipt naar 'nieuwe state beschikbaar')
+    // zonder de banner als actueel te herstempelen — dus geen verborgen mix A/B.
+    noteGeneration(fresh.generation);
     cockpitDiffToon(fresh);                            // actieve lijst → NIET verspringen
   }).catch(() => { markVersen(false); if (note) note.dataset.busy = ""; prioTekenStatus(); });
 }
@@ -525,6 +587,7 @@ function cockpitToepassen() {
   const snap = pendingSnap; pendingSnap = null;
   cockpitNieuwBalkWeg();
   vulCockpit(snap, true);                     // toegepaste verse snapshot = autoritatief
+  genMount("#home-genbar", snap.generation);  // v2: toegepaste generatie → banner weer actueel
   requestAnimationFrame(() => { if (sc) sc.scrollTo({ top: y }); });   // geen scrollsprong (#12)
 }
 function markVersen(on) {
@@ -820,8 +883,9 @@ function prioDetailHtml(it) {
       ${ctxBtn ? `<div class="pd-s-acts">${ctxBtn}</div>` : ""}
     </div>`;
   }).join("");
-  const dossier = `<div class="pd-acts">${swBtn({ act: "dossier", label: "Dossier", icon: "user-plus" })}</div>`;
-  return `<div class="pd-signalen">${blokken}</div>${dossier}`;
+  // Athlete-brede acties: Workspace (v2 — 'wat speelt er nu' voor deze atleet) naast Dossier.
+  const acts = `<div class="pd-acts">${swBtn({ act: "workspace", label: "Workspace", icon: "brain" })}${swBtn({ act: "dossier", label: "Dossier", icon: "user-plus" })}</div>`;
+  return `<div class="pd-signalen">${blokken}</div>${acts}`;
 }
 
 // Type-specifiek detail per signaal (uit de snapshot; compliance-sessies lazy).
@@ -926,6 +990,7 @@ function prioDoe(wrap, act, dagen, soort) {
   // Cohesion: één gedeeld athlete-contract (geen caller-specific openDossier-hack).
   // openAthleteModule → #atleten/<uk> → reload-safe consume (pending-patroon).
   if (act === "dossier") { prioHerstelUk = prioOpenUk; openAthleteModule("atleten", it.user_key); return; }
+  if (act === "workspace") { prioHerstelUk = prioOpenUk; openWorkspace(it.user_key); return; }
   if (act === "teampuls") { deepAtleet("teampuls", it.user_key); return; }
   // Cohesion (§6): een schema-signaal is 'schema loopt af' → primaire actie is de
   // Schema-workbench van DEZE atleet openen (verlengen/openen), niet eerst de
@@ -4166,6 +4231,7 @@ function tpRenderSignalen(r, isFresh) {
   if (!box || !info) return false;
   if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return false; }
   if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return false; }
+  genMount("#tp-genbar", r.generation);                    // v2: gedeelde generation-coherentie
   if (r.pending && !isFresh) {
     // Nog geen opgeslagen stand → laat de skeletons staan; de force-reconcile vult ze.
     info.textContent = "Belasting-signalen worden voor het eerst berekend…";
@@ -4571,9 +4637,189 @@ async function dcWaarom(btn) {
   btn._open = true;
 }
 
+// ══════════ Athlete Workspace (Coach Cockpit v2) ══════════════════════════════
+// De centrale dagelijkse athlete-werkplek. Fast-read shell (/api/workspace/{key} —
+// alleen goedkope stores) toont direct: aandacht nu · live belasting · schema-signaal ·
+// feedback-status · snelle acties (bestaande routes/authority). De rijke context
+// (doel/planning/klachten) komt LAZY en parallel uit het bestaande /api/cockpit, zodat
+// een trage load-/feedback-refresh de shell of de andere secties nooit blokkeert.
+let wsSel = "", wsPicker = null, wsOpenPending = "", wsCache = [];
+
+function wsToonLijst() {
+  $("#ws-lijst").hidden = false;
+  if (isDesktop()) { if (!wsSel) $("#ws-detail").hidden = true; }
+  else if (wsSel) { $(".view[data-view='workspace'] .md-list").hidden = true; $("#ws-detail").hidden = false; }
+  else { $(".view[data-view='workspace'] .md-list").hidden = false; $("#ws-detail").hidden = true; }
+}
+
+async function laadWorkspace() {
+  const box = $("#ws-lijst");
+  if (!wsPicker) skeleton(box, 6);
+  let data;
+  try { data = await api("/api/atleten"); }
+  catch { if (!wsPicker) box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  wsCache = data.atleten || [];
+  const items = wsCache.map(a => ({ ...a, key: a.id }));
+  if (!items.length && !wsPicker) {
+    box.innerHTML = `<div class="leeg">${ic("users")}<p>Geen atleten.</p></div>`; wsToonLijst(); return;
+  }
+  if (wsPicker) { wsPicker.setItems(items); }
+  else {
+    wsPicker = renderPicker({
+      mount: box, searchEl: $("#ws-zoek"), items, groupOrder: data.groep_volgorde || [],
+      selectedKey: wsSel || "", mode: "navigate", emptyText: "Geen atleet gevonden.",
+      secondary: a => (a.heeft_intake && a.doel) ? esc(a.doel) : "",
+      onActivate: a => openWorkspace(a.key),
+    });
+  }
+  wsToonLijst();
+  if (wsOpenPending) { const p = wsOpenPending; wsOpenPending = ""; openWorkspace(p); }
+}
+bindRefresh("ws-refresh", () => { if (wsSel) return wsShow(wsSel); geladen.workspace = true; return laadWorkspace(); });
+
+// Entry point — athlete-aware maar bewust BUITEN _ATHLETE_VIEWS (Cohesion-contract
+// byte-identiek). Schrijft de route en laadt de shell via wsShow.
+function openWorkspace(user_key) {
+  if (!user_key) { toonView("workspace"); return; }
+  if (huidigeView !== "workspace") toonView("workspace");
+  const h = "#workspace/" + encodeURIComponent(user_key);
+  if (location.hash !== h) { try { history.pushState(null, "", h); } catch {} }
+  wsShow(user_key);
+}
+
+async function wsShow(ident) {
+  if (!wsPicker) { wsOpenPending = ident; if (!geladen.workspace) { geladen.workspace = true; laadWorkspace(); } return; }
+  wsSel = ident;
+  wsPicker.setSelected(ident);
+  pushRoute("workspace", ident);
+  const wrap = $("#ws-detail");
+  if (!isDesktop()) { $(".view[data-view='workspace'] .md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }
+  wrap.hidden = false;
+  wrap.innerHTML = '<div class="dc-load"><p class="muted center">Workspace laden…</p></div>';
+  let r;
+  try { r = await api("/api/workspace/" + encodeURIComponent(ident)); }
+  catch { r = null; }
+  if (!wrap || wsSel !== ident) return;                    // leak guard: andere atleet gekozen
+  if (!r || r.fs === false) { wrap.innerHTML = `<p class="muted center">FinalSurge nog niet gekoppeld.</p>`; return; }
+  if (!r.ok) {
+    wrap.innerHTML = `<div class="dc-err">${ic("alert")}<p>De workspace kon nu niet worden opgebouwd (interne fout — geen bronfout).</p>
+      <button class="btn ghost" onclick="openWorkspace('${esc(ident)}')">Opnieuw</button></div>`;
+    return;
+  }
+  wsRender(wrap, r);
+  wsLoadDeep(wrap, ident);                                  // rijke context lazy + parallel
+}
+
+function wsChip(tier) { return tier === "actie" ? "ws-actie" : "ws-aandacht"; }
+
+function wsRender(wrap, vm) {
+  noteGeneration(vm.generation);                           // adopteer generatie vóór eigen banner
+  const key = vm.key, naam = vm.naam || key;
+  const bel = vm.belasting || {}, fb = vm.feedback || {}, sc = vm.schema;
+  const attn = vm.attention || [];
+  let h = genBanner(vm.generation);
+  h += `<div class="dc-head">
+    <div class="dc-id"><span class="dc-ava">${esc(initialen(naam))}</span>
+      <div><h2>${esc(naam)}</h2><p class="dc-grp">Workspace · wat speelt er nu</p></div></div>
+    <div class="dc-actions">${athleteNav("workspace", key)}</div>
+  </div>`;
+
+  // 1 — Aandacht nu
+  h += `<section class="dc-sec ws-sec"><h3>Aandacht nu</h3>`;
+  if (attn.length) {
+    h += `<div class="ws-attn">` + attn.map(a => `
+      <span class="ws-tag ${wsChip(a.tier)}">${esc(a.kort || a.soort || "")}${a.pct != null ? ` · +${a.pct}%` : ""}</span>`).join("") + `</div>`;
+  } else {
+    h += `<p class="dc-calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`;
+  }
+  h += `</section>`;
+
+  // 2 — Belasting (live, gedeelde stand)
+  h += `<section class="dc-sec ws-sec"><h3>Belasting</h3>`;
+  if (bel.actief) {
+    const sev = bel.ernst === "hoog" ? "hoog" : "let op";
+    const delta = (bel.pct != null && bel.pct > 0) ? ` · +${bel.pct}% t.o.v. referentie` : "";
+    h += `<p class="ws-line ws-${bel.ernst === "hoog" ? "actie" : "aandacht"}"><b>${esc(sev)}</b>${delta}</p>`;
+    if (bel.reden) h += `<p class="muted klein">${esc(bel.reden)}</p>`;
+  } else {
+    h += `<p class="dc-calm">Binnen de marge${bel.datum ? ` · stand ${esc(bel.datum)}` : ""}.</p>`;
+  }
+  h += `</section>`;
+
+  // 3 — Schema / doel  (doel + huidig blok vullen we lazy uit de deep-sectie)
+  h += `<section class="dc-sec ws-sec"><h3>Schema &amp; doel</h3>`;
+  if (sc) {
+    h += `<p class="ws-line ws-${sc.tier === "actie" ? "actie" : "aandacht"}">${esc(sc.kort || "schema-signaal")}${sc.einddatum ? ` · t/m ${esc(sc.einddatum)}` : ""}</p>`;
+  }
+  h += `<div id="ws-plan" class="ws-deep-slot"><p class="muted klein">Doel &amp; planning laden…</p></div></section>`;
+
+  // 4 — Feedback-status
+  h += `<section class="dc-sec ws-sec"><h3>Feedback</h3>`;
+  if (fb.status === "unknown") h += `<p class="muted klein">Feedback-status wordt bijgewerkt…</p>`;
+  else if (fb.open) h += `<p class="ws-line ws-aandacht"><b>${fb.open}</b> open reactie${fb.open !== 1 ? "s" : ""}</p>`;
+  else h += `<p class="dc-calm">Geen open reacties.</p>`;
+  h += `</section>`;
+
+  // 5 — Klachten/context (lazy uit /api/cockpit)
+  h += `<section class="dc-sec ws-sec"><h3>Klachten &amp; context</h3>
+    <div id="ws-context" class="ws-deep-slot"><p class="muted klein">Context laden…</p></div></section>`;
+
+  // 6 — Snelle acties (bestaande routes/authority; geen duplicate write-logica)
+  h += `<section class="dc-sec ws-acties">
+    <button class="btn ghost" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button>
+    <button class="btn ghost" onclick="openAthleteModule('atleten','${esc(key)}')">Dossier</button>
+    <button class="btn ghost" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit</button>
+    <button class="btn ghost" onclick="deepAtleet('teampuls','${esc(key)}')">Teampuls</button>`;
+  if (bel.actief) {
+    h += `<button class="btn ghost" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">Belasting gezien</button>`;
+  }
+  h += `</section>`;
+  wrap.innerHTML = h;
+}
+
+// Rijke context lazy + parallel uit het bestaande cockpit-endpoint. Faalt/traag → de
+// shell blijft staan; alleen deze twee slots tonen een nette fallback.
+async function wsLoadDeep(wrap, ident) {
+  let r;
+  try { r = await api("/api/cockpit?key=" + encodeURIComponent(ident)); }
+  catch { r = null; }
+  if (!wrap || wsSel !== ident) return;                    // leak guard
+  const plan = $("#ws-plan"), ctx = $("#ws-context");
+  if (!r || !r.ok) {
+    if (plan) plan.innerHTML = `<p class="muted klein">Doel &amp; planning nu niet beschikbaar.</p>`;
+    if (ctx) ctx.innerHTML = `<p class="muted klein">Context nu niet beschikbaar.</p>`;
+    return;
+  }
+  if (plan) {
+    const rows = (r.planning && r.planning.rows) || [];
+    plan.innerHTML = rows.length
+      ? `<dl class="ws-dl">` + rows.map(x => `<div><dt>${esc(x.label)}</dt><dd>${esc(x.value)}</dd></div>`).join("") + `</dl>`
+      : `<p class="muted klein">Geen doel/planning bekend.</p>`;
+  }
+  if (ctx) {
+    const attn = (r.attention || []).filter(c => c.kind === "complaint" || c.kind === "contradiction");
+    const lo = r.load_observation;
+    let c = "";
+    if (attn.length) c += attn.map(a => `<p class="ws-line ws-aandacht">${esc(a.title || "")}${a.why ? ` — ${esc(a.why)}` : ""}</p>`).join("");
+    if (lo && lo.signalen) c += `<p class="muted klein">Belasting-observatie: ${esc(lo.signalen)}</p>`;
+    ctx.innerHTML = c || `<p class="dc-calm">Geen actieve klacht of tegenstrijdigheid bekend.</p>`;
+  }
+}
+
+// Snelle actie 'Belasting gezien' — dezelfde canonieke authority als Teampuls
+// (/api/teampuls/gezien → belasting.markeer_gezien onder de stand-lock). Geen nieuwe write.
+async function wsMarkeerGezien(key, ernst) {
+  try {
+    await jpost("/api/teampuls/gezien", { user_key: key, ernst });
+    melding("Belasting-signaal gezien");
+    if (wsSel === key) wsShow(key);                        // shell herladen (verse generatie)
+  } catch { melding("Kon niet opslaan", true); }
+}
+
 laders.strippen = laad;
 laders.atleten = laadDossierLijst;
 laders.dossier = laadDossierCockpit;
+laders.workspace = laadWorkspace;
 laders.intake = laadIntake;
 laders.documenten = laadDocs;
 laders.feedback = fbEnter;

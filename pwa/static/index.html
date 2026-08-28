@@ -74,6 +74,7 @@
       <button class="nav-item on" data-open-view="home"><svg class="ic"><use href="#ic-home"/></svg><span>Home</span></button>
       <button class="nav-item" data-open-view="feedback"><svg class="ic"><use href="#ic-message"/></svg><span>Feedback</span></button>
       <button class="nav-item" data-open-view="atleten"><svg class="ic"><use href="#ic-users"/></svg><span>Atleten</span></button>
+      <button class="nav-item" data-open-view="workspace"><svg class="ic"><use href="#ic-brain"/></svg><span>Workspace</span></button>
       <button class="nav-item" data-open-view="dossier"><svg class="ic"><use href="#ic-brain"/></svg><span>Dossier</span></button>
       <button class="nav-item" data-open-view="teampuls"><svg class="ic"><use href="#ic-pulse"/></svg><span>Teampuls</span></button>
       <p class="sb-label">Plannen</p>
@@ -94,6 +95,7 @@
   <main id="scroller">
     <!-- ════════ HOME (dashboard) ════════ -->
     <section class="view on" data-view="home">
+      <div id="home-genbar" class="genbar-slot"></div>
       <div id="home-body"></div>
     </section>
 
@@ -122,6 +124,20 @@
           <section id="dc-lijst" class="lijst"></section>
         </div>
         <div id="dc-detail" class="md-detail" hidden></div>
+      </div>
+    </section>
+
+    <!-- ════════ WORKSPACE (Athlete Workspace / Coach Cockpit v2) ════════ -->
+    <section class="view" data-view="workspace">
+      <header class="appbar"><h1>Workspace</h1>
+        <button class="iconbtn" id="ws-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+      </header>
+      <div class="md-split">
+        <div class="md-list">
+          <div class="search"><svg class="ic"><use href="#ic-search"/></svg><input id="ws-zoek" placeholder="Zoek atleet"></div>
+          <section id="ws-lijst" class="lijst"></section>
+        </div>
+        <div id="ws-detail" class="md-detail" hidden></div>
       </div>
     </section>
 
@@ -262,6 +278,7 @@
       <header class="appbar"><h1>Teampuls</h1>
         <button class="iconbtn" id="tp-refresh" aria-label="Herbereken"><svg class="ic"><use href="#ic-refresh"/></svg></button>
       </header>
+      <div id="tp-genbar" class="genbar-slot"></div>
       <p class="hint" id="tp-info">laden…</p>
       <section id="tp-signalen" class="lijst"></section>
       <p class="sec-label" style="margin-top:22px">Weekbriefing</p>
@@ -290,6 +307,12 @@
       <header class="appbar"><h1>Meer</h1></header>
 
       <p class="sec-label">Plannen</p>
+      <button class="listcard" data-open-view="workspace">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-brain"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Workspace</span>
+          <span class="lc-sub">Wat speelt er nu met deze atleet — dagelijkse werkplek</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
       <button class="listcard" data-open-view="dossier">
         <span class="lc-ic"><svg class="ic"><use href="#ic-brain"/></svg></span>
         <span class="lc-body"><span class="lc-title">Dossier</span>
