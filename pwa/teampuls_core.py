@@ -95,10 +95,12 @@ def _stand_payload(data: dict, belasting) -> dict:
                "totaal": len(items), "vers": vers, "stale": bool(datum) and not vers}
     if data.get("_err"):
         payload["_err"] = data["_err"]
-    # v2: dezelfde gedeelde generation als Home → 'zelfde state' vs 'nieuwere state'.
+    # v2 + review-fix #1: bind de generation aan EXACT de stand waaruit de items komen
+    # (`data`), niet aan een tweede `laad_stand()` — zo dragen items uit stand A nooit de
+    # generation van een intussen weggeschreven stand B.
     try:
         import coach_read
-        payload["generation"] = coach_read.generation()
+        payload["generation"] = coach_read.generation(stand=data)
     except Exception:
         pass
     return payload
@@ -132,7 +134,7 @@ def signalen(force: bool = False) -> dict:
                  "vers": False, "stale": False, "pending": True}
         try:
             import coach_read
-            _pend["generation"] = coach_read.generation()
+            _pend["generation"] = coach_read.generation(stand={})   # geen stand → unknown
         except Exception:
             pass
         return _pend

@@ -408,8 +408,13 @@ def _apply_belasting_overlay(snap: dict) -> dict:
     team["rustig"] = max(snap.get("atleten", 0) - n_actie - n_aandacht, 0)
     hoog = sum(1 for s in live.values() if s.get("tier") == "actie")
     return {**snap, "prioriteit": items, "prioriteit_totaal": len(items), "team": team,
+            # `sig`/`prod` = de exacte belasting-bronversie die deze overlay TOONDE, zodat
+            # het generation-stempel aan diezelfde captured stand gebonden is (review-fix #1)
+            # en `generation_at` monotoon is (review-fix #2). Additief; overige lezers negeren.
             "belasting": {"totaal": len(live), "hoog": hoog, "datum": live_datum,
-                          "vers": live_datum == date.today().isoformat()}}
+                          "vers": live_datum == date.today().isoformat(),
+                          "sig": coach_read._belasting_sig(stand),
+                          "prod": stand.get("_produced_at")}}
 
 
 def _reconcile(snap: dict, allow_stale: bool = True) -> dict:
@@ -429,7 +434,10 @@ def cockpit(refresh: bool = False) -> dict:
     out = _cockpit(refresh=refresh)
     if isinstance(out, dict) and out.get("fs") is not False:
         try:
-            out = {**out, "generation": coach_read.generation()}
+            # Bind aan de CAPTURED payload: generation leest de belasting-versie uit
+            # `out['belasting']` (sig/prod die de overlay TOONDE) en home-`berekend` +
+            # feedback-tegel uit dezelfde `out` — geen tweede source-read (review-fix #1).
+            out = {**out, "generation": coach_read.generation(snap=out)}
         except Exception:
             pass
     return out

@@ -277,11 +277,18 @@ function athleteNav(activeView, user_key) {
 // en markeert elke nog-zichtbare view die een OUDERE generatie toont — zo zie je nooit
 // meer `46%` naast `64%` als co-actueel, maar netjes "nieuwe state beschikbaar" zonder
 // dat de lijst onder je verspringt. Puur presentatie-state; geen truth, geen cache.
-const _bbGen = { id: "" };
+const _bbGen = { id: "", at: "" };
 function noteGeneration(gen) {
   const id = gen && gen.generation_id;
   if (!id) return;
-  if (id !== _bbGen.id) { _bbGen.id = id; bbGenSync(); }   // nieuwere generatie geadopteerd
+  if (id === _bbGen.id) return;                            // zelfde bekende state
+  const at = gen.generation_at || "";
+  // review-fix #2: content-hashes hebben GEEN ordening → vergelijk op de MONOTONE,
+  // productie-tijd afgeleide generation_at (niet de leestijd, niet de arrival-order).
+  // Een oudere read-state die later arriveert mag de reeds bekende nieuwere NOOIT
+  // vervangen; alleen een nieuwere (of eerste/lateraal-gelijke) wordt 'latest'.
+  if (_bbGen.id && _bbGen.at && at && at < _bbGen.at) return;   // strikt ouder → negeren
+  _bbGen.id = id; _bbGen.at = at; bbGenSync();
 }
 function bbGenSync() {
   document.querySelectorAll(".gen-banner[data-gen]").forEach(el => {

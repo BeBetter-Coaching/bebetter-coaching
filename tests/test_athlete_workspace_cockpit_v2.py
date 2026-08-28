@@ -255,3 +255,111 @@ class TestClientWiring:
         assert "openAthleteModule('schema'" in body
         assert "openAthleteModule('atleten'" in body
         assert "openAthleteModule('dossier'" in body
+
+
+# ═══════════ External-review correctness delta — generation-contract ═════════
+
+def _stand_at(datum, results, prod):
+    s = _stand(datum, results)
+    s["_produced_at"] = prod
+    return s
+
+
+# ── Fix #1: generation gebonden aan EXACT de captured payload ────────────────
+class TestGenerationBoundToCapturedPayload:
+    def test_teampuls_items_A_never_carry_generation_B(self, monkeypatch):
+        A = _stand_at(TODAY, [_res("u1", "Tom", "hoog", 64, 20)], TODAY + "T10:00:00")
+        B = _stand_at(TODAY, [_res("u1", "Tom", "let_op", 30, 20)], TODAY + "T10:05:00")
+        calls = {"n": 0}
+
+        def _laad():
+            calls["n"] += 1
+            return A if calls["n"] == 1 else B          # 1e read = A; elke latere read = B
+
+        monkeypatch.setattr(_bel, "laad_stand", _laad)
+        monkeypatch.setattr(_tp, "heeft_token", lambda: True)
+        pay = _tp.signalen(force=False)
+        # De getoonde items komen uit A → de generation MOET A's belasting-sig dragen,
+        # nooit die van een intussen weggeschreven B.
+        assert pay["items"][0]["ernst"] == "hoog"
+        assert pay["generation"]["sources"]["belasting_sig"] == _cr._belasting_sig(A)
+        assert pay["generation"]["sources"]["belasting_sig"] != _cr._belasting_sig(B)
+
+    def test_workspace_load_and_generation_from_same_captured_stand(self, monkeypatch):
+        A = _stand_at(TODAY, [_res("u1", "Tom", "hoog", 64, 20)], TODAY + "T10:00:00")
+        B = _stand_at(TODAY, [_res("u1", "Tom", "let_op", 30, 20)], TODAY + "T10:05:00")
+        calls = {"n": 0}
+
+        def _laad():
+            calls["n"] += 1
+            return A if calls["n"] == 1 else B
+
+        monkeypatch.setattr(_bel, "laad_stand", _laad)
+        monkeypatch.setattr(_home, "_current", lambda: {"fs": True, "prioriteit": []})
+        monkeypatch.setattr(_cr, "_roster_naam", lambda uk: "Tom")
+        out = _cr.athlete("u1")
+        assert out["belasting"]["pct"] == 220                         # uit A (64/20 → +220%)
+        assert out["generation"]["sources"]["belasting_sig"] == _cr._belasting_sig(A)
+
+    def test_home_generation_binds_to_overlay_stand(self, monkeypatch):
+        A = _stand_at(TODAY, [_res("u1", "Tom", "hoog", 64, 20)], TODAY + "T10:00:00")
+        B = _stand_at(TODAY, [_res("u1", "Tom", "let_op", 30, 20)], TODAY + "T10:05:00")
+        calls = {"n": 0}
+
+        def _laad():
+            calls["n"] += 1
+            return A if calls["n"] == 1 else B
+
+        monkeypatch.setattr(_home, "_heeft_token", lambda: True)
+        monkeypatch.setattr(_bel, "laad_stand", _laad)
+        monkeypatch.setattr(_home.intake_store, "load_home_handled", lambda: {})
+        snap = {"fs": True, "atleten": 5, "prioriteit": [], "feedback": None,
+                "berekend": None, "team": {}}
+        monkeypatch.setattr(_home, "_current", lambda: snap)
+        out = _home.cockpit(refresh=False)
+        # De belasting-overlay TOONDE A; het generation-stempel bindt aan diezelfde sig.
+        assert out["belasting"]["sig"] == _cr._belasting_sig(A)
+        assert out["generation"]["sources"]["belasting_sig"] == out["belasting"]["sig"]
+
+
+# ── Fix #2: monotone, expliciet vergelijkbare generation_at ──────────────────
+class TestGenerationMonotone:
+    def test_generation_at_is_production_time_monotone(self, monkeypatch):
+        A = _stand_at(TODAY, [_res("u1", "Tom", "let_op", 46, 40)], TODAY + "T09:00:00")
+        B = _stand_at(TODAY, [_res("u1", "Tom", "hoog", 64, 40)], TODAY + "T09:05:00")
+        monkeypatch.setattr(_home, "_current", lambda: {})           # isoleer de home-component
+        monkeypatch.setattr(_bel, "laad_stand", lambda: A)
+        ga = _cr.generation()
+        monkeypatch.setattr(_bel, "laad_stand", lambda: B)
+        gb = _cr.generation()
+        assert ga["generation_at"] < gb["generation_at"]              # nieuwer = later geproduceerd
+        assert ga["generation_id"] != gb["generation_id"]
+
+    def test_generation_at_not_read_time(self, monkeypatch):
+        # Oudere persisted state, twee keer gelezen → zelfde generation_at (NIET now()).
+        A = _stand_at(TODAY, [_res("u1", "Tom", "hoog", 64, 40)], TODAY + "T08:00:00")
+        monkeypatch.setattr(_home, "_current", lambda: {})           # isoleer de home-component
+        monkeypatch.setattr(_bel, "laad_stand", lambda: A)
+        g1, g2 = _cr.generation(), _cr.generation()
+        assert g1["generation_at"] == g2["generation_at"] == TODAY + "T08:00:00"
+        assert g1["generation_id"] == g2["generation_id"]
+
+    def test_belasting_recompute_bumps_produced_at(self, monkeypatch):
+        # Een echte recompute schrijft een monotone productie-tijd op de stand.
+        saved = {}
+        monkeypatch.setattr(_bel.intake_store, "save_belasting", lambda d: saved.update(d))
+        monkeypatch.setattr(_bel.intake_store, "load_belasting", lambda: {})
+        monkeypatch.setattr(_bel, "check_alle", lambda *a, **k: [])
+        _bel._recompute_stand([], TODAY)
+        assert "_produced_at" in saved and saved["_produced_at"] >= TODAY
+
+    def test_client_uses_generation_at_and_never_regresses(self):
+        body = _fn("noteGeneration")
+        assert "generation_at" in body                                # vergelijkt op productie-tijd
+        assert "at < _bbGen.at" in body                               # strikt-ouder → negeren
+        assert "_bbGen.id = id" in body
+
+    def test_client_banner_still_from_id(self):
+        # Banner 'oud?' blijft op generation_id (equality), niet op arrival-order.
+        body = _fn("genBanner")
+        assert "_bbGen.id" in body and "generation_id" in body

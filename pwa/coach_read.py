@@ -100,56 +100,97 @@ def _belasting_stand() -> dict:
         return {}
 
 
-def generation() -> dict:
-    """DE ene read-generation over de canonieke bronnen. `generation_id` is inhoud-
-    afgeleid (zelfde bekende state → zelfde id; nieuwere state → ander id). `generated_at`
-    is louter een label. `freshness` markeert per component wat vers/stale/unknown is
-    zodat een trage belasting-refresh de schema-/klacht-context niet als stale meesleept."""
-    today = date.today().isoformat()
-
-    # belasting-stand (goedkope store-read)
-    stand = _belasting_stand()
-    b_datum = str(stand.get("datum") or "")
-    b_sig = _belasting_sig(stand)
-    b_fresh = bool(b_datum) and b_datum == today
-
-    # Home-snapshot berekend-moment (geen sweep; leest _MEM/durable)
-    h_ber = ""
-    h_fresh = False
+def _home_berekend() -> str:
+    """Productie-tijd (`berekend`) van de Home-snapshot — géén sweep (leest _MEM/durable)."""
     try:
         import home_core
-        snap = home_core._current() or {}
-        h_ber = str(snap.get("berekend") or "")
-        h_fresh = home_core._snap_recent(snap)
+        return str((home_core._current() or {}).get("berekend") or "")
     except Exception:
-        pass
+        return ""
 
-    # Feedback open-set (canoniek; geen FS-sweep)
-    f_status = "UNKNOWN"
-    f_sig = ""
+
+def _feedback_marker() -> tuple:
+    """Feedback-openset-marker (status + wachten|gepost) — canoniek, geen FS-sweep. Zowel
+    Home (uit de getoonde tegel) als Teampuls/Workspace leiden dezelfde marker af, zodat de
+    generation-id cross-view gelijk is bij dezelfde state."""
     try:
         import feedback_core
         t = feedback_core.canonical_open_actions()
-        f_status = str(t.get("status") or "UNKNOWN")
-        ids = t.get("open_ids") or []
-        f_sig = _sha(f_status, "|".join(sorted(map(str, ids))), str(t.get("gepost")))
+        return (str(t.get("status") or "UNKNOWN"), f"{t.get('wachten')}|{t.get('gepost')}")
     except Exception:
-        pass
+        return ("UNKNOWN", "")
 
-    gen_id = _sha(b_datum, b_sig, h_ber, f_sig)
+
+def _bel_markers(stand: dict) -> tuple:
+    """(datum, sig, produced_at) van een belasting-stand — de bron-versie van de belasting."""
+    return (str(stand.get("datum") or ""), _belasting_sig(stand),
+            str(stand.get("_produced_at") or ""))
+
+
+def _compose_generation(b_datum: str, b_sig: str, b_prod: str,
+                        h_ber: str, f_status: str, f_marker: str) -> dict:
+    """Bouw het generation-stempel PUUR uit reeds-gelezen markers (geen tweede source-read).
+
+    - `generation_id` = inhoud-afgeleide identiteit (zelfde bekende state → zelfde id).
+    - `generation_at` = MONOTONE, productie-tijd afgeleide bronversie (max van de per-
+      component productie-tijden). Hiermee is 'ouder vs nieuwer' deterministisch
+      vergelijkbaar: een component-versie beweegt alleen vooruit (recompute/suppressie
+      schrijven `now()`), dus het maximum is monotoon niet-dalend. NOOIT de leestijd:
+      een oude persisted state die nu gelezen wordt houdt zijn oude `generation_at`.
+    - `generated_at` = louter leeslabel; NIET voor ordering (zie boven).
+    """
+    today = date.today().isoformat()
+    gen_id = _sha(b_datum, b_sig, h_ber, f_marker)
+    gen_at = max([x for x in (b_prod or b_datum, h_ber) if x] or [""])
     return {
         "generation_id": gen_id,
+        "generation_at": gen_at,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "source_versions": {"belasting": b_prod or b_datum, "home": h_ber},
         "freshness": {
-            "belasting": "fresh" if b_fresh else ("stale" if b_datum else "unknown"),
-            "home": "fresh" if h_fresh else ("stale" if h_ber else "unknown"),
-            "feedback": f_status.lower(),
+            "belasting": "fresh" if (b_datum and b_datum == today)
+                         else ("stale" if b_datum else "unknown"),
+            "home": "fresh" if h_ber else "unknown",
+            "feedback": (f_status or "UNKNOWN").lower(),
         },
-        "sources": {
-            "belasting_datum": b_datum, "belasting_sig": b_sig,
-            "home_berekend": h_ber, "feedback_status": f_status,
-        },
+        "sources": {"belasting_datum": b_datum, "belasting_sig": b_sig,
+                    "home_berekend": h_ber, "feedback_status": f_status},
     }
+
+
+def generation(stand: dict | None = None, snap: dict | None = None) -> dict:
+    """DE ene read-generation, gebonden aan de CAPTURED payload.
+
+    Belangrijk (external-review fix #1): de belasting-component wordt afgeleid uit exact
+    dezelfde stand die de response toont — NIET uit een tweede `laad_stand()`:
+      - `snap` met een reeds gereconcilieerd belasting-blok (Home: `snap['belasting']` draagt
+        `sig`/`prod`) → gebruik díe markers (bind aan wat de overlay toonde);
+      - anders `stand` (Teampuls/Workspace geven hun reeds-gelezen stand mee);
+      - alleen als beide ontbreken lezen we de stand één keer (convenience/tests).
+    Home-`berekend` komt uit `snap` (de gerenderde snapshot) indien meegegeven; feedback uit
+    het getoonde tegel-blok (`snap['feedback']`) of anders één canonieke openset-read."""
+    bel = (snap or {}).get("belasting") if isinstance(snap, dict) else None
+    if isinstance(bel, dict) and bel.get("sig") is not None:
+        b_datum, b_sig, b_prod = str(bel.get("datum") or ""), bel.get("sig") or "", str(bel.get("prod") or "")
+    else:
+        if stand is None:
+            stand = _belasting_stand()
+        b_datum, b_sig, b_prod = _bel_markers(stand)
+
+    if isinstance(snap, dict) and snap.get("berekend") is not None:
+        h_ber = str(snap.get("berekend") or "")
+    elif isinstance(snap, dict) and "berekend" in snap:
+        h_ber = ""
+    else:
+        h_ber = _home_berekend()
+
+    fb = (snap or {}).get("feedback") if isinstance(snap, dict) else None
+    if isinstance(fb, dict) and ("wachten" in fb):
+        f_status, f_marker = "SNAP", f"{fb.get('wachten')}|{fb.get('gepost')}"
+    else:
+        f_status, f_marker = _feedback_marker()
+
+    return _compose_generation(b_datum, b_sig, b_prod, h_ber, f_status, f_marker)
 
 
 # ── 3. Team-niveau compositie (Home + Teampuls stempelen hiermee) ────────────
@@ -201,10 +242,13 @@ def _roster_naam(user_key: str) -> str:
     return ""
 
 
-def _athlete_belasting(user_key: str) -> dict:
+def _athlete_belasting(user_key: str, stand: dict | None = None) -> dict:
     """Live belasting voor één atleet via de gedeelde stand + `load_metric`. Zelfde
-    zichtbaarheidsregel als Teampuls/Home (`zichtbare_resultaten`)."""
-    stand = _belasting_stand()
+    zichtbaarheidsregel als Teampuls/Home (`zichtbare_resultaten`). `stand` kan worden
+    meegegeven zodat de Workspace-shell en zijn generation exact dezelfde captured stand
+    delen (review-fix #1)."""
+    if stand is None:
+        stand = _belasting_stand()
     try:
         import belasting
         zichtbaar = belasting.zichtbare_resultaten(stand)
@@ -291,10 +335,11 @@ def athlete(user_key: str) -> dict:
     trage load-/feedback-refresh de shell of de andere secties niet blokkeert."""
     if not user_key:
         return {"ok": False, "err": "geen atleet"}
-    gen = generation()
+    stand = _belasting_stand()                               # capture ÉÉN keer (review-fix #1)
+    gen = generation(stand=stand)                            # generation ⇄ zelfde captured stand
     row = _home_row(user_key)
     naam = (row or {}).get("naam") or _roster_naam(user_key)
-    bel = _athlete_belasting(user_key)
+    bel = _athlete_belasting(user_key, stand=stand)          # load metric uit diezelfde stand
     fb = _athlete_feedback(user_key, naam)
     return {
         "ok": True,

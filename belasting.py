@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import fs_client
 import intake_store
@@ -358,7 +358,12 @@ def _recompute_stand(athletes: list[dict], vandaag: str) -> dict:
         except Exception:
             huidig = {}
         data = {"datum": vandaag, "resultaten": resultaten,
-                "afgehandeld": huidig.get("afgehandeld", {})}
+                "afgehandeld": huidig.get("afgehandeld", {}),
+                # Monotone bronversie (productie-tijd) — géén nieuwe store, een versiemarker
+                # op de bestaande stand. Het Coach Read Model leidt hieruit `generation_at`
+                # af zodat een oudere read-state nooit een nieuwere kan vervangen. NIET de
+                # leestijd: dit is het moment waarop DEZE stand-versie werd geproduceerd.
+                "_produced_at": datetime.now().isoformat(timespec="seconds")}
         try:
             intake_store.save_belasting(data)
         except Exception:
@@ -460,6 +465,9 @@ def _muteer_afgehandeld(mutator) -> dict:
         for k in list(afg.keys()):
             if afg[k].get("tot", "") < vandaag:
                 del afg[k]
+        # Coach-suppressie is óók een nieuwe stand-versie → productie-tijd vooruit
+        # (monotone generation_at; de content-signatuur verandert sowieso al).
+        data["_produced_at"] = datetime.now().isoformat(timespec="seconds")
         try:
             intake_store.save_belasting(data)
         except Exception:
