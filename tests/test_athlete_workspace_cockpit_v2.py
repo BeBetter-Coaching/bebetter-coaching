@@ -265,6 +265,21 @@ def _stand_at(datum, results, prod):
     return s
 
 
+def _dominates(nv, cv):
+    """Python-spiegel van de client `_genDominates`: nieuwer op ≥1 source, ouder op geen.
+    Test het ORDENING-contract dat de server-vectoren moeten respecteren (de client-JS
+    gebruikt exact dezelfde regel; source-guard + live-check dekken de JS-kant)."""
+    keys = set(nv) | set(cv)
+    newer = older = False
+    for k in keys:
+        a, b = nv.get(k, ""), cv.get(k, "")
+        if a > b:
+            newer = True
+        elif a < b:
+            older = True
+    return newer and not older
+
+
 # ── Fix #1: generation gebonden aan EXACT de captured payload ────────────────
 class TestGenerationBoundToCapturedPayload:
     def test_teampuls_items_A_never_carry_generation_B(self, monkeypatch):
@@ -328,6 +343,7 @@ class TestGenerationMonotone:
         A = _stand_at(TODAY, [_res("u1", "Tom", "let_op", 46, 40)], TODAY + "T09:00:00")
         B = _stand_at(TODAY, [_res("u1", "Tom", "hoog", 64, 40)], TODAY + "T09:05:00")
         monkeypatch.setattr(_home, "_current", lambda: {})           # isoleer de home-component
+        monkeypatch.setattr(_cr, "_feedback_marker", lambda: ("UNKNOWN", "", ""))  # isoleer feedback
         monkeypatch.setattr(_bel, "laad_stand", lambda: A)
         ga = _cr.generation()
         monkeypatch.setattr(_bel, "laad_stand", lambda: B)
@@ -339,6 +355,7 @@ class TestGenerationMonotone:
         # Oudere persisted state, twee keer gelezen → zelfde generation_at (NIET now()).
         A = _stand_at(TODAY, [_res("u1", "Tom", "hoog", 64, 40)], TODAY + "T08:00:00")
         monkeypatch.setattr(_home, "_current", lambda: {})           # isoleer de home-component
+        monkeypatch.setattr(_cr, "_feedback_marker", lambda: ("UNKNOWN", "", ""))  # isoleer feedback
         monkeypatch.setattr(_bel, "laad_stand", lambda: A)
         g1, g2 = _cr.generation(), _cr.generation()
         assert g1["generation_at"] == g2["generation_at"] == TODAY + "T08:00:00"
@@ -353,13 +370,54 @@ class TestGenerationMonotone:
         _bel._recompute_stand([], TODAY)
         assert "_produced_at" in saved and saved["_produced_at"] >= TODAY
 
-    def test_client_uses_generation_at_and_never_regresses(self):
-        body = _fn("noteGeneration")
-        assert "generation_at" in body                                # vergelijkt op productie-tijd
-        assert "at < _bbGen.at" in body                               # strikt-ouder → negeren
-        assert "_bbGen.id = id" in body
+    def test_client_uses_vector_dominance_not_max(self):
+        note = _fn("noteGeneration")
+        dom = _fn("_genDominates")
+        assert "_genDominates(nv, _bbGen.sv)" in note                 # vergelijkt de versie-vector
+        assert "source_versions" in note
+        assert "newer && !older" in dom                              # dominance-invariant
+        assert "if (id === _bbGen.id) return" in note                # zelfde generation → no-op
 
     def test_client_banner_still_from_id(self):
         # Banner 'oud?' blijft op generation_id (equality), niet op arrival-order.
         body = _fn("genBanner")
         assert "_bbGen.id" in body and "generation_id" in body
+
+
+# ── Fix #3: volledige ordening via per-source version-dominance ──────────────
+class TestGenerationVectorOrdering:
+    def test_source_versions_is_a_per_source_vector(self, monkeypatch):
+        A = _stand_at(TODAY, [_res("u1", "Tom", "hoog", 64, 40)], TODAY + "T09:00:00")
+        monkeypatch.setattr(_home, "_current", lambda: {"berekend": TODAY + "T11:00:00"})
+        monkeypatch.setattr(_bel, "laad_stand", lambda: A)
+        sv = _cr.generation()["source_versions"]
+        assert set(sv.keys()) == {"belasting", "home", "feedback"}
+        assert sv["belasting"] == TODAY + "T09:00:00"
+        assert sv["home"] == TODAY + "T11:00:00"
+
+    def test_same_max_at_but_newer_belasting_is_a_distinct_version(self, monkeypatch):
+        # home = 11:00 domineert de max; load A=10:58 vs B=10:59 → zelfde generation_at,
+        # maar de belasting-versie in de vector verschilt → deterministisch te ordenen.
+        monkeypatch.setattr(_home, "_current", lambda: {"berekend": TODAY + "T11:00:00"})
+        monkeypatch.setattr(_cr, "_feedback_marker", lambda: ("UNKNOWN", "", ""))  # isoleer feedback
+        A = _stand_at(TODAY, [_res("u1", "Tom", "let_op", 45, 40)], TODAY + "T10:58:00")
+        B = _stand_at(TODAY, [_res("u1", "Tom", "hoog", 64, 40)], TODAY + "T10:59:00")
+        monkeypatch.setattr(_bel, "laad_stand", lambda: A)
+        ga = _cr.generation()
+        monkeypatch.setattr(_bel, "laad_stand", lambda: B)
+        gb = _cr.generation()
+        assert ga["generation_at"] == gb["generation_at"] == TODAY + "T11:00:00"   # zelfde max
+        assert gb["source_versions"]["belasting"] > ga["source_versions"]["belasting"]  # B nieuwer op belasting
+        assert ga["source_versions"]["home"] == gb["source_versions"]["home"]          # home gelijk
+        # B domineert A (nieuwer op belasting, nergens ouder); A domineert B niet.
+        assert _dominates(gb["source_versions"], ga["source_versions"])
+        assert not _dominates(ga["source_versions"], gb["source_versions"])
+
+    def test_newer_feedback_older_belasting_is_concurrent_not_dominant(self):
+        # C: nieuwere feedback maar OUDERE belasting → domineert NIET (mag load niet terugdraaien).
+        latest = {"belasting": TODAY + "T10:59:00", "home": TODAY + "T11:00:00",
+                  "feedback": TODAY + "T10:00:00"}
+        incoming = {"belasting": TODAY + "T10:58:00", "home": TODAY + "T11:00:00",
+                    "feedback": TODAY + "T10:30:00"}                       # feedback nieuwer, belasting ouder
+        assert not _dominates(incoming, latest)                           # niet als volledige latest
+        assert not _dominates(latest, incoming)                           # (concurrent, geen van beide domineert)

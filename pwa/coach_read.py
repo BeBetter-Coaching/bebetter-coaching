@@ -110,15 +110,26 @@ def _home_berekend() -> str:
 
 
 def _feedback_marker() -> tuple:
-    """Feedback-openset-marker (status + wachten|gepost) — canoniek, geen FS-sweep. Zowel
-    Home (uit de getoonde tegel) als Teampuls/Workspace leiden dezelfde marker af, zodat de
-    generation-id cross-view gelijk is bij dezelfde state."""
+    """Feedback-openset-marker: (status, content, version).
+
+    - `content` = wachten|gepost → gaat in de content-afgeleide `generation_id` (cross-view
+      gelijk bij dezelfde state).
+    - `version` = productie-tijd van de openset (queue-snapshot `berekend`) → een MONOTONE
+      per-source versie voor de vector-ordering (geen tellersprong, maar tijd vooruit)."""
     try:
         import feedback_core
         t = feedback_core.canonical_open_actions()
-        return (str(t.get("status") or "UNKNOWN"), f"{t.get('wachten')}|{t.get('gepost')}")
+        status = str(t.get("status") or "UNKNOWN")
+        content = f"{t.get('wachten')}|{t.get('gepost')}"
+        ver = ""
+        try:
+            snap = feedback_core._queue_current()
+            ver = str((snap or {}).get("berekend") or "")
+        except Exception:
+            pass
+        return (status, content, ver)
     except Exception:
-        return ("UNKNOWN", "")
+        return ("UNKNOWN", "", "")
 
 
 def _bel_markers(stand: dict) -> tuple:
@@ -127,26 +138,29 @@ def _bel_markers(stand: dict) -> tuple:
             str(stand.get("_produced_at") or ""))
 
 
-def _compose_generation(b_datum: str, b_sig: str, b_prod: str,
-                        h_ber: str, f_status: str, f_marker: str) -> dict:
+def _compose_generation(b_datum: str, b_sig: str, b_prod: str, h_ber: str,
+                        f_status: str, f_content: str, f_ver: str) -> dict:
     """Bouw het generation-stempel PUUR uit reeds-gelezen markers (geen tweede source-read).
 
     - `generation_id` = inhoud-afgeleide identiteit (zelfde bekende state → zelfde id).
-    - `generation_at` = MONOTONE, productie-tijd afgeleide bronversie (max van de per-
-      component productie-tijden). Hiermee is 'ouder vs nieuwer' deterministisch
-      vergelijkbaar: een component-versie beweegt alleen vooruit (recompute/suppressie
-      schrijven `now()`), dus het maximum is monotoon niet-dalend. NOOIT de leestijd:
-      een oude persisted state die nu gelezen wordt houdt zijn oude `generation_at`.
-    - `generated_at` = louter leeslabel; NIET voor ordering (zie boven).
+    - `source_versions` = een PER-SOURCE versie-vector (belasting/home/feedback), elk een
+      MONOTONE productie-tijd. Dit is het ordering-contract: een generatie is 'nieuwer' dan
+      een andere alléén als hij op geen enkele source ouder is en op minstens één nieuwer
+      (vector/version-dominance). `max(...)` alleen is GEEN volledige ordening (twee
+      composites kunnen dezelfde max delen terwijl hun belasting-versie verschilt).
+    - `generation_at` = `max` van de vector — behouden als leeslabel/back-compat; de
+      client vergelijkt op de vector, niet op dit maximum.
+    - `generated_at` = leestijd-label; NOOIT voor ordering.
     """
     today = date.today().isoformat()
-    gen_id = _sha(b_datum, b_sig, h_ber, f_marker)
-    gen_at = max([x for x in (b_prod or b_datum, h_ber) if x] or [""])
+    gen_id = _sha(b_datum, b_sig, h_ber, f_content)
+    versions = {"belasting": b_prod or b_datum, "home": h_ber, "feedback": f_ver}
+    gen_at = max([x for x in versions.values() if x] or [""])
     return {
         "generation_id": gen_id,
         "generation_at": gen_at,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "source_versions": {"belasting": b_prod or b_datum, "home": h_ber},
+        "source_versions": versions,
         "freshness": {
             "belasting": "fresh" if (b_datum and b_datum == today)
                          else ("stale" if b_datum else "unknown"),
@@ -184,13 +198,12 @@ def generation(stand: dict | None = None, snap: dict | None = None) -> dict:
     else:
         h_ber = _home_berekend()
 
-    fb = (snap or {}).get("feedback") if isinstance(snap, dict) else None
-    if isinstance(fb, dict) and ("wachten" in fb):
-        f_status, f_marker = "SNAP", f"{fb.get('wachten')}|{fb.get('gepost')}"
-    else:
-        f_status, f_marker = _feedback_marker()
+    # Feedback-marker (content + monotone versie) altijd uit één canonieke openset-read:
+    # de content voedt de generation_id, de versie de ordering-vector. Feedback is niet de
+    # aan-de-getoonde-belasting-gebonden component, dus één read volstaat.
+    f_status, f_content, f_ver = _feedback_marker()
 
-    return _compose_generation(b_datum, b_sig, b_prod, h_ber, f_status, f_marker)
+    return _compose_generation(b_datum, b_sig, b_prod, h_ber, f_status, f_content, f_ver)
 
 
 # ── 3. Team-niveau compositie (Home + Teampuls stempelen hiermee) ────────────

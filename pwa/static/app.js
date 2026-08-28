@@ -277,18 +277,29 @@ function athleteNav(activeView, user_key) {
 // en markeert elke nog-zichtbare view die een OUDERE generatie toont — zo zie je nooit
 // meer `46%` naast `64%` als co-actueel, maar netjes "nieuwe state beschikbaar" zonder
 // dat de lijst onder je verspringt. Puur presentatie-state; geen truth, geen cache.
-const _bbGen = { id: "", at: "" };
+const _bbGen = { id: "", at: "", sv: {} };
+// Vector/version-dominance over de per-source versie-vector (belasting/home/feedback).
+// `max(generation_at)` alleen is GEEN volledige ordening: twee composites kunnen dezelfde
+// max delen terwijl één source-versie verschilt. Harde invariant: een generatie vervangt de
+// bekende latest ALLEEN als hij op geen enkele source ouder is én op minstens één nieuwer.
+// Een response die op één source terugloopt (bv. nieuwere feedback maar oudere belasting)
+// wordt nooit stil de latest → geen sluipende load-terugval, geen arrival-order als waarheid.
+function _genDominates(nv, cv) {
+  const keys = new Set([...Object.keys(nv || {}), ...Object.keys(cv || {})]);
+  let newer = false, older = false;
+  keys.forEach(k => {
+    const a = (nv && nv[k]) || "", b = (cv && cv[k]) || "";
+    if (a > b) newer = true; else if (a < b) older = true;
+  });
+  return newer && !older;                                  // dominance: nieuwer op ≥1, ouder op geen
+}
 function noteGeneration(gen) {
   const id = gen && gen.generation_id;
   if (!id) return;
-  if (id === _bbGen.id) return;                            // zelfde bekende state
-  const at = gen.generation_at || "";
-  // review-fix #2: content-hashes hebben GEEN ordening → vergelijk op de MONOTONE,
-  // productie-tijd afgeleide generation_at (niet de leestijd, niet de arrival-order).
-  // Een oudere read-state die later arriveert mag de reeds bekende nieuwere NOOIT
-  // vervangen; alleen een nieuwere (of eerste/lateraal-gelijke) wordt 'latest'.
-  if (_bbGen.id && _bbGen.at && at && at < _bbGen.at) return;   // strikt ouder → negeren
-  _bbGen.id = id; _bbGen.at = at; bbGenSync();
+  if (id === _bbGen.id) return;                            // zelfde bekende state → no-op
+  const nv = gen.source_versions || {};
+  if (_bbGen.id && !_genDominates(nv, _bbGen.sv)) return;  // niet-dominant → nooit latest
+  _bbGen.id = id; _bbGen.at = gen.generation_at || ""; _bbGen.sv = nv; bbGenSync();
 }
 function bbGenSync() {
   document.querySelectorAll(".gen-banner[data-gen]").forEach(el => {
