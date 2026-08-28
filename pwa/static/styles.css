@@ -1345,3 +1345,27 @@ button.sb-ready:hover{filter:brightness(1.08)}
   .dc-val{text-align:left}
   .dc-chlist li{flex-direction:column;gap:2px}
 }
+
+/* ── Coach Read Model v2 — generation-banner + Athlete Workspace ─────────── */
+.genbar-slot{margin:0}
+.gen-banner{display:none;margin:8px 12px 0;padding:8px 12px;border-radius:var(--radius);
+  background:rgba(239,159,39,.12);border:1px solid var(--warn);color:var(--warn);
+  font-size:13px;font-weight:600}
+.gen-banner.on{display:block}
+.ws-sec{margin-top:14px}
+.ws-sec h3{font-size:13px;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.ws-attn{display:flex;flex-wrap:wrap;gap:6px}
+.ws-tag{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;
+  border:1px solid var(--border);background:var(--card2);color:var(--text)}
+.ws-tag.ws-actie{border-color:var(--danger);color:var(--danger);background:rgba(229,103,75,.10)}
+.ws-tag.ws-aandacht{border-color:var(--warn);color:var(--warn);background:rgba(239,159,39,.10)}
+.ws-line{margin:2px 0;font-size:14px}
+.ws-line.ws-actie{color:var(--danger)}
+.ws-line.ws-aandacht{color:var(--warn)}
+.ws-dl{margin:0;display:grid;gap:6px}
+.ws-dl>div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);padding-bottom:4px}
+.ws-dl dt{color:var(--muted);font-size:13px;margin:0}
+.ws-dl dd{margin:0;font-size:13px;text-align:right}
+.ws-deep-slot{min-height:18px}
+.ws-acties{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.ws-acties .btn{flex:0 1 auto}
