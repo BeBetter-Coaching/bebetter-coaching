@@ -97,7 +97,7 @@ class TestStatusSemantics:
 
 # ── 3. Gedeelde primitives bestaan en worden hergebruikt ────────────────────
 class TestPrimitives:
-    PRIMS = ["dsStage", "dsFocal", "dsStat", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
+    PRIMS = ["wsAnchor", "wsSignal", "wsLine", "dcNode", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
              "dsKv", "dsStream", "dsAction", "dsEmpty", "dsSpark", "dsRing"]
 
     def test_8_alle_primitives_bestaan_eenmalig(self):
@@ -127,38 +127,61 @@ class TestPrimitives:
 
 # ── 4. Athlete Shell: één identiteit over drie views ────────────────────────
 class TestAthleteShell:
-    def test_12_shell_bestaat_en_toont_identiteit_dominant(self):
-        body = _fn("dsStage")
-        for part in ("ds-med", "ds-stage-name", "initialen(", "ds-stage-sub", "dsFocal("):
-            assert part in body, f"stage mist {part}"
-        assert "function dsShell(" not in _APP          # geen tweede shell-primitive
+    def test_12_athlete_identiteit_is_dominant_in_beide_views(self):
+        # Workspace: canvas-anchor met ringen + medaillon. Dossier: dezelfde taal,
+        # eigen compositie. Beide leiden de identiteit af uit dezelfde bron.
+        ws = _fn("wsAnchor")
+        for part in ("ws-orb", "ws-name", "initialen("):
+            assert part in ws, f"anchor mist {part}"
+        dc = _fn("dcRender")
+        for part in ("dc-orb", "dc-name", "initialen("):
+            assert part in dc, f"dossier-kop mist {part}"
+        # opgeruimd: geen achtergelaten shell/stage-primitives naast de nieuwe compositie
+        for dead in ("function dsShell(", "function dsStage(", "function dsFocal(", "function dsStat("):
+            assert dead not in _APP, f"dode primitive {dead} nog aanwezig"
 
-    def test_13_workspace_en_dossier_gebruiken_dezelfde_shell(self):
-        # Beide views bouwen op DEZELFDE gedeelde athlete-stage (identiteit +
-        # primair signaal + metric-rail op één oppervlak).
-        assert "dsStage({" in _fn("wsRender")
-        assert "dsStage({" in _fn("dcRender")
-        assert _APP.count("function dsStage(") == 1
+    def test_13_workspace_en_dossier_delen_de_athlete_taal(self):
+        # Workspace is een canvas-scène (wsAnchor), Dossier een memory-compositie —
+        # verschillende layouts, maar DEZELFDE athlete-taal: zelfde identiteitsbron,
+        # zelfde statussemantiek, zelfde gedeelde nav. Geen tweede vocabulaire.
+        wsb, dcb = _fn("wsRender"), _fn("dcRender")
+        for body, view in ((wsb, "workspace"), (dcb, "dossier")):
+            assert "dsTone(" in body, f"{view} gebruikt de gedeelde statussemantiek niet"
+            assert f'athleteNav("{view}"' in body, f"{view} mist de gedeelde athlete-nav"
+        assert "wsAnchor(" in wsb and "wsSignal(" in wsb      # canvas-anchor + dominant signaal
+        assert _APP.count("function wsAnchor(") == 1
 
-    def test_14_home_detail_deelt_de_attention_primitive(self):
-        # Journey A/D: hetzelfde signaal ziet er op Home, Workspace en Dossier gelijk uit.
-        assert "dsAttnCard(" in _fn("prioDetailHtml")
-        assert "dsAttnCard(" in _fn("wsRender")
-        assert "dsAttnCard(" in _fn("dcRender")
+    def test_14_alle_athlete_views_spreken_hetzelfde_signaaldialect(self):
+        # Journey A/D: hetzelfde signaal krijgt op Home, Workspace en Dossier dezelfde
+        # toon uit dezelfde mapper — ongeacht welke presentatievorm de view kiest.
+        for fn in ("prioDetailHtml", "wsRender", "dcRender"):
+            assert "dsTone(" in _fn(fn), f"{fn} kiest zelf kleuren i.p.v. dsTone"
+        # Elke view kiest de presentatievorm die bij haar doel past, maar put uit
+        # dezelfde primitives-familie en dezelfde toon-mapper.
+        assert "dsAttnCard(" in _fn("prioDetailHtml")         # Home-detail: briefing-kaart
+        assert "dcNode(" in _fn("dcRender")                   # Dossier: knooppunt op de tijd-spine
+        assert "wsLine(" in _fn("wsRender")                   # Workspace: embedded regel op het canvas
 
     def test_15_geen_tweede_athlete_nav(self):
         # De bestaande gedeelde nav blijft de enige; het DS stijlt 'm alleen.
         assert _APP.count("function athleteNav") == 1
         assert "function dsAthleteNav" not in _APP
         assert 'athleteNav("dossier", vm.key)' in _APP        # Cohesion-contract intact
-        assert ".ds-stage .anav-chip" in _DS                  # opgewaardeerd, niet vervangen
+        assert ".ws-anchor .anav-chip" in _DS                 # opgewaardeerd, niet vervangen
+        assert ".dc-nav2 .anav-chip" in _DS
 
-    def test_16_athlete_views_krijgen_het_volle_canvas(self):
-        # Root cause van het split-screen-gevoel: Workspace/Dossier misten de brede view.
-        assert 'class="view ds-view" data-view="workspace"' in _HTML
-        assert 'class="view ds-view" data-view="dossier"' in _HTML
+    def test_16_workspace_heeft_geen_permanente_athlete_lijst_meer(self):
+        # De master/detail-rail was het fundament van het lijstgevoel. In een actieve
+        # athlete-context bestaat hij niet meer; wisselen gaat via een compacte switcher
+        # die de BESTAANDE overlay-picker hergebruikt (geen tweede navigatieconcept).
+        assert 'class="view ds-view ws-view" data-view="workspace"' in _HTML
+        assert 'id="ws-switch"' in _HTML                      # compacte switcher
+        assert 'class="ws-canvas"' in _HTML                   # canvas i.p.v. md-split
+        assert 'id="ws-lijst"' not in _HTML and 'id="ws-zoek"' not in _HTML
+        assert "md-split" not in _HTML.split('data-view="workspace"')[1].split("</section>")[0]
+        assert "openAthletePickerOverlay(" in _fn("wsOpenSwitcher")
         assert ".view.ds-view{max-width:" in _DS
-        assert ".ds-view .md-list" in _DS                     # lijst wordt ondersteunende rail
+        assert 'class="view ds-view" data-view="dossier"' in _HTML
 
 
 # ── 5. Gelockte functionaliteit blijft intact ───────────────────────────────
@@ -237,3 +260,91 @@ class TestBackendPresentationOnly:
         src = open(os.path.join(_ROOT, "pwa", "coach_read.py")).read()
         for bad in ("save_", "open(", "sqlite", "requests.post"):
             assert bad not in src, f"coach_read schrijft/opent iets: {bad}"
+
+
+# ══════════ Athlete Canvas — visuele hercompositie (presentation risks) ══════
+class TestAthleteCanvas:
+    """De hercompositie verving de master/detail-structuur. Deze tests bewaken de
+    functionele risico's die dáárdoor ontstaan: athlete-switch, deep-links, het
+    wegvallen van de rail, en het behoud van alle acties."""
+
+    def test_28_workspace_switch_werkt_zonder_lijst(self):
+        # Geen picker/rail meer in Workspace: wisselen loopt via de overlay-picker,
+        # die dezelfde renderPicker + onConfirm→openWorkspace gebruikt.
+        body = _fn("wsOpenSwitcher")
+        assert "openAthletePickerOverlay(" in body
+        assert "openWorkspace(a.key)" in body
+        assert "wsPicker" not in _APP                          # geen tweede picker-instantie
+
+    def test_29_workspace_deeplink_wacht_op_roster(self):
+        # #workspace/<key> vóór de roster binnen is mag niet stilvallen.
+        body = _fn("wsShow")
+        assert "wsOpenPending = ident" in body
+        assert "wsRosterKlaar" in body
+        assert "laadWorkspace()" in body
+        assert 'view === "workspace"' in _fn("applyRoute")     # routecontract intact
+
+    def test_30_dossier_rail_valt_weg_bij_open_atleet(self):
+        body = _fn("dcToonLijst")
+        assert "else if (dcSel)" in body                       # Cohesion-contract intact
+        assert '$("#dc-detail").hidden = false' in body
+        assert "lijst.hidden = true" in body                   # rail is geen fundament meer
+        assert ".ds-view.has-athlete .md-split" in _DS         # grid geeft de volle breedte
+
+    def test_31_alle_acties_blijven_bereikbaar(self):
+        ws = _fn("wsRender")
+        for call in ("openAthleteModule('schema'", "openAthleteModule('atleten'",
+                     "openAthleteModule('dossier'", "deepAtleet('teampuls'", "wsMarkeerGezien("):
+            assert call in ws, f"actie {call} verdwenen uit de canvas-compositie"
+        assert "/api/teampuls/gezien" in _fn("wsMarkeerGezien")   # bestaande authority
+
+    def test_32_focal_ladder_heeft_precies_een_eigenaar(self):
+        body = _fn("wsRender")
+        for owner in ('owner: "bel-pct"', 'owner: "bel-km"', 'owner: "attn"', 'owner: "rust"'):
+            assert owner in body, f"focal-ladder mist {owner}"
+        assert "const owns = s => focal.owner === s;" in body
+        # het dominante cijfer wordt downstream niet herhaald
+        assert 'owns("bel-pct") && a.soort === "belasting"' in body
+
+    def test_33_dossier_spine_maakt_tijd_ruimtelijk(self):
+        body = _fn("dcRender")
+        assert "dc-spine" in body and "dc-era" in body
+        assert "weight: 1" in body                              # vandaag = sterkste punt
+        assert "future: true" in body                           # planning ligt vóór ons
+        assert "Math.min(4, 2 + Math.floor(i / 4))" in body     # ouder = zwakker
+        # gewicht is ook echt visueel: contrast/schaal per niveau
+        for w in (".dc-node.w1", ".dc-node.w3", ".dc-node.w4"):
+            assert w in _DS, f"tijd-gewicht {w} niet gestyled"
+
+    def test_34_home_briefing_is_geen_uitgeklapt_paneel(self):
+        body = _fn("prioDetailHtml")
+        for part in ("pb-head", "pb-orb", "pb-naam", "pb-reden"):
+            assert part in body, f"briefing mist {part}"
+        assert "ds-fold" in body                                 # onderbouwing progressief
+        assert "swBtn({ act: \"workspace\"" in body              # route naar Workspace
+        assert "swBtn({ act: \"dossier\"" in body                # route naar Dossier
+        # per-signaal afhandeling blijft volledig intact
+        assert 'data-act="gezien"' in body and 'data-act="later"' in body
+
+    def test_35_freshness_en_generation_blijven_zichtbaar(self):
+        ws = _fn("wsRender")
+        assert "noteGeneration(vm.generation)" in ws
+        assert "genBanner(vm.generation)" in ws
+        assert "dsFresh(" in ws                                  # stale/fresh in de scène
+        assert "dsFresh(" in _fn("dcRender")
+
+    def test_36_geen_legacy_layout_resten(self):
+        # De vervangen presentatie is echt opgeruimd, niet overlaagd.
+        for dead in ("ws-detail\" class=\"md-detail", "id=\"ws-lijst\"", "id=\"ws-zoek\""):
+            assert dead not in _HTML, f"legacy markup {dead} nog aanwezig"
+        for dead in (".ws-tag{", ".ws-dl{", ".ws-sec{", ".dc-head{", ".dc-card{"):
+            assert dead not in _CSS, f"legacy CSS {dead} nog aanwezig"
+        assert "function wsToonLijst(" not in _APP               # rail-toggle is weg
+
+    def test_37_canvas_is_geen_dozenraster(self):
+        # Harde compositieregel: de scène tekent geen kaartcontainers meer.
+        for boxy in (".ws-field{", ".ws-line{"):
+            blok = _DS.split(boxy)[1][:220]
+            assert "border:1px solid" not in blok, f"{boxy} tekent weer een doos"
+        assert ".ws-amb{" in _DS                                  # diepte uit licht, niet uit randen
+        assert "prefers-reduced-motion" in _DS

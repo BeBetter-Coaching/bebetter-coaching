@@ -132,13 +132,13 @@
    (`athleteNav()` → .anav/.anav-chip, één definitie, vaste call-contracten).
    Het design system waardeert díe op — een tweede nav-component zou precies de
    fragmentatie zijn die deze milestone opruimt. */
-.ds-stage .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap;margin-top:var(--ds-1)}
-.ds-stage .anav-chip{background:var(--ds-well);border:1px solid var(--ds-border);color:var(--ds-text-2);
+.ws-anchor .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap;margin-top:var(--ds-1)}
+.ws-anchor .anav-chip{background:var(--ds-well);border:1px solid var(--ds-border);color:var(--ds-text-2);
   border-radius:var(--ds-r-pill);padding:6px 13px;font-size:var(--ds-t-sm);font-weight:600;
   cursor:pointer;transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease),
     transform var(--ds-fast) var(--ds-ease)}
-.ds-stage .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text);transform:translateY(-1px)}
-.ds-stage .anav-chip:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.ws-anchor .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text);transform:translateY(-1px)}
+.ws-anchor .anav-chip:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
 
 /* ═══════ Primitive: attention card ═════════════════════════════════════ */
 .ds-attn{display:grid;gap:var(--ds-2)}
@@ -351,6 +351,9 @@
    terug. Puur presentatie: zelfde DOM, zelfde picker, zelfde routing.        */
 @media (min-width:900px){
   .ds-view .md-split{grid-template-columns:228px minmax(0,1fr);gap:var(--ds-6)}
+  /* Met een open atleet valt de lijst weg → het dossier krijgt het volle canvas
+     (anders houdt de grid de eerste kolom gereserveerd en knijpt hij het verhaal). */
+  .ds-view.has-athlete .md-split{grid-template-columns:minmax(0,1fr);gap:0}
   .ds-view .md-list{background:none;border:0;border-right:1px solid var(--ds-hairline);
     border-radius:0;padding:0 var(--ds-5) 0 0;
     opacity:.52;filter:saturate(.65);
@@ -377,79 +380,6 @@
 .ds-view .pk-chips{opacity:.7}
 .ds-view .pk-grp{font-size:9.5px;letter-spacing:.1em;opacity:.55}
 
-/* ── 2. DE STAGE: identiteit + primair signaal + metrics op ÉÉN oppervlak ──
-   Was: hero-kaart + 3 losse metric-dozen + panelen = een raster van gelijke
-   rechthoeken. Nu: één doorlopend oppervlak waarin de atleet, het dominante
-   signaal en de kerncijfers samen één compositie vormen — met haarlijnen i.p.v.
-   kaartranden. Dat is het verschil tussen een dashboard en een cockpit.       */
-.ds-stage{position:relative;border-radius:var(--ds-r-xl);overflow:hidden;
-  border:1px solid var(--ds-border);
-  background:linear-gradient(168deg,var(--ds-s2),var(--ds-s1) 62%,var(--ds-canvas));
-  box-shadow:var(--ds-e3)}
-/* Ambient glow die de HUIDIGE status volgt: de sfeer van het scherm vertelt al
-   hoe het met deze atleet gaat, nog voor je een cijfer leest. */
-.ds-stage::before{content:"";position:absolute;inset:-40% 20% 40% -25%;pointer-events:none;
-  background:radial-gradient(50% 50% at 50% 50%,var(--tone-bg),transparent 70%);
-  opacity:.9;filter:blur(6px)}
-.ds-stage::after{content:"";position:absolute;inset:0 0 auto;height:1px;pointer-events:none;
-  background:linear-gradient(90deg,transparent,var(--tone),transparent);opacity:.45}
-
-.ds-stage-top{position:relative;display:flex;align-items:center;gap:var(--ds-6);
-  padding:var(--ds-6) var(--ds-6) var(--ds-5);flex-wrap:wrap}
-.ds-stage-id{flex:1 1 260px;min-width:0;display:flex;flex-direction:column;gap:var(--ds-2)}
-.ds-stage-name{margin:0;font-size:clamp(26px,3.1vw,40px);font-weight:750;letter-spacing:-.025em;
-  line-height:1.02}
-.ds-stage-line{display:flex;align-items:center;gap:var(--ds-3);flex-wrap:wrap}
-.ds-stage-sub{margin:0;font-size:var(--ds-t-sm);color:var(--ds-text-3);
-  display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap}
-.ds-stage-sub .sep{opacity:.35}
-
-/* ── Het FOCAL POINT: één SCHIJF met het enige grote cijfer op het scherm ──
-   Een cirkel leest als focaal object; een rechthoek leest als container. Dit is
-   het verschil tussen "nog een kaart" en "hier moet je kijken". Claim-regel:
-   exact één element per scherm met een cijfer > 26px.                          */
-.ds-focal{flex:0 0 auto;margin:0;display:flex;flex-direction:column;align-items:center;
-  gap:var(--ds-2);max-width:250px}
-.ds-focal-disc{position:relative;width:196px;height:196px;border-radius:50%;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
-  padding:0 26px;text-align:center;
-  background:radial-gradient(circle at 50% 38%,var(--tone-bg),transparent 72%),
-             radial-gradient(circle at 50% 50%,rgba(255,255,255,.035),transparent 60%);
-  border:1px solid var(--tone-bd);
-  box-shadow:0 0 0 7px rgba(255,255,255,.015),0 0 46px -8px var(--tone-bg),
-             inset 0 1px 0 rgba(255,255,255,.06)}
-/* concentrische buitenring — diepte zonder een tweede doos te tekenen */
-.ds-focal-disc::before{content:"";position:absolute;inset:-11px;border-radius:50%;
-  border:1px solid var(--tone-bd);opacity:.26}
-.ds-focal-l{font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
-  color:var(--tone);opacity:.85;line-height:1.2}
-.ds-focal-v{font-size:clamp(40px,4.6vw,58px);font-weight:780;line-height:1;letter-spacing:-.04em;
-  color:var(--tone);font-variant-numeric:tabular-nums;
-  text-shadow:0 0 28px var(--tone-bg),0 0 64px var(--tone-bg)}
-.ds-focal-disc.lang .ds-focal-v{font-size:clamp(24px,2.6vw,32px);letter-spacing:-.02em}
-.ds-focal-v i{font-style:normal;font-size:.42em;font-weight:700;margin-left:1px;opacity:.75}
-.ds-focal-s{font-size:var(--ds-t-xs);color:var(--ds-text-3);line-height:1.4;text-align:center;
-  max-width:230px}
-.ds-focal-spark{display:block;width:104px;height:22px;margin-top:var(--ds-1);overflow:visible;
-  opacity:.85}
-
-/* ── De metric-rail: ÉÉN band, verticale haarlijnen i.p.v. losse dozen ──── */
-.ds-stage-rail{position:relative;display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
-  border-top:1px solid var(--ds-hairline);background:rgba(4,12,26,.28)}
-.ds-stat{padding:var(--ds-4) var(--ds-5);min-width:0;position:relative;
-  display:flex;flex-direction:column;gap:2px}
-.ds-stat+.ds-stat::before{content:"";position:absolute;left:0;top:22%;bottom:22%;width:1px;
-  background:var(--ds-hairline)}
-.ds-stat-l{font-size:var(--ds-t-xs);font-weight:700;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--ds-text-3);display:flex;align-items:center;gap:6px}
-.ds-stat-v{font-size:21px;font-weight:720;line-height:1.1;letter-spacing:-.015em;
-  color:var(--ds-text);font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:4px}
-.ds-stat.ds-tone .ds-stat-v{color:var(--tone)}
-.ds-stat-u{font-size:var(--ds-t-xs);font-weight:600;color:var(--ds-text-3)}
-.ds-stat-s{font-size:10.5px;color:var(--ds-text-3);line-height:1.35;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
 /* ── 3. Secties grijpen in elkaar: minder zichtbare containergrenzen ────── */
 .ds-quiet{background:linear-gradient(168deg,rgba(17,43,84,.55),rgba(13,34,68,.35));
   border:1px solid var(--ds-hairline);border-radius:var(--ds-r-lg);padding:var(--ds-5);
@@ -464,40 +394,20 @@
   border-left:2px solid var(--tone);border-radius:0 var(--ds-r-md) var(--ds-r-md) 0;
   padding-left:var(--ds-4)}
 
-/* ── 4. Actieband: onderdeel van de compositie, geen los blok ───────────── */
-.ds-actionbar{display:flex;align-items:flex-start;gap:var(--ds-4);flex-wrap:wrap;
-  padding:var(--ds-4) var(--ds-5);border-radius:var(--ds-r-lg);
-  background:linear-gradient(100deg,rgba(94,230,235,.07),transparent 60%),rgba(4,12,26,.30);
-  border:1px solid var(--ds-hairline)}
-.ds-actionbar .ds-label{flex:0 0 100%;margin-bottom:var(--ds-1)}
-.ds-actionbar .ds-actions{flex:1 1 100%;grid-template-columns:repeat(auto-fit,minmax(158px,1fr))}
-.ds-actionbar .ds-action+.ds-action{box-shadow:-1px 0 0 var(--ds-hairline)}
-
 /* ── 5. Compositie: asymmetrisch maar rustig ────────────────────────────── */
 @media (min-width:1080px){
   .ds-grid.story{grid-template-columns:minmax(0,1.78fr) minmax(0,1fr)}
   .ds-view[data-view="dossier"] .ds-grid.story{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
 }
 @media (max-width:760px){
-  .ds-stage-top{padding:var(--ds-5) var(--ds-4) var(--ds-4);gap:var(--ds-4)}
-  .ds-focal{width:100%;max-width:none}
-  .ds-focal-disc{width:152px;height:152px;padding:0 16px}
-  .ds-focal-disc .ds-focal-v{font-size:34px}
-  .ds-focal-spark{width:78px;height:16px}
-  .ds-stage-rail{grid-template-columns:1fr 1fr}
-  .ds-stat{padding:var(--ds-3) var(--ds-4)}
 }
 
-/* ── 6. Motion: context komt gecontroleerd naar voren ───────────────────── */
-.ds-stage{animation:ds-stage-in var(--ds-slow) var(--ds-ease) both}
-@keyframes ds-stage-in{from{opacity:0;transform:translateY(10px) scale(.994)}to{opacity:1;transform:none}}
-.ds-focal{animation:ds-focal-in 460ms var(--ds-ease) both 90ms}
-@keyframes ds-focal-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* ── 6. Motion: context komt gecontroleerd naar voren ───────────────────── */}}
 .ds-attn-card{animation:ds-in var(--ds-base) var(--ds-ease) both}
 .ds-attn .ds-attn-card:nth-child(2){animation-delay:60ms}
 .ds-attn .ds-attn-card:nth-child(3){animation-delay:120ms}
 @media (prefers-reduced-motion:reduce){
-  .ds-stage,.ds-focal,.ds-attn-card{animation:none}
+  .ds-attn-card{animation:none}
   .ds-view .md-list{transition:none}
 }
 
@@ -561,3 +471,300 @@
 .prio-detail .pd-acts .pa-btn,.prio-detail .pd-s-acts .pa-btn{flex:0 0 auto;min-width:0;
   height:auto;background:none;border:1px solid var(--ds-hairline)}
 .prio-detail .pd-s-body{background:none}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ATHLETE CANVAS — Workspace als scène
+   ---------------------------------------------------------------------------
+   Drie visuele niveaus:
+     1 CANVAS   — donkere ruimte met een status-gestuurd ambient veld
+     2 SURFACES — alleen de anchor en het dominante signaal krijgen een oppervlak
+     3 EMBEDDED — contextzones leven rechtstreeks op het canvas: gegroepeerd door
+                  spacing, typografie en een tone-accentlijn, zonder kaartrand
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ws-view{max-width:1560px}
+.ws-bar{gap:var(--ds-4)}
+/* Compacte athlete-switcher i.p.v. een permanente lijst. */
+.ws-switch{display:flex;align-items:center;gap:var(--ds-3);background:var(--ds-well);
+  border:1px solid var(--ds-hairline);border-radius:var(--ds-r-pill);padding:6px 14px 6px 6px;
+  color:var(--ds-text);font:inherit;cursor:pointer;min-width:0;
+  transition:border-color var(--ds-fast) var(--ds-ease),background var(--ds-fast) var(--ds-ease)}
+.ws-switch:hover{border-color:var(--ds-accent);background:rgba(94,230,235,.06)}
+.ws-switch:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.ws-switch-av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  background:var(--ds-accent-soft);color:var(--ds-accent);font-size:12px;font-weight:700}
+.ws-switch-t{display:flex;flex-direction:column;min-width:0;text-align:left}
+.ws-switch-nm{font-size:14px;font-weight:650;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-switch-sub{font-size:10.5px;color:var(--ds-text-3);line-height:1.2}
+.ws-switch .ic{color:var(--ds-text-3);width:16px;height:16px;flex:0 0 auto}
+
+.ws-canvas{position:relative;min-height:60vh}
+.ws-loading{padding:var(--ds-8) 0}
+
+/* ── De scène ─────────────────────────────────────────────────────────────── */
+.ws-scene{position:relative;display:grid;gap:var(--ds-6);
+  grid-template-columns:1fr;padding:var(--ds-4) 0 var(--ds-10)}
+/* Ambient veld: één zachte, status-gekleurde lichtbron achter de anchor. Dit is de
+   diepte van het scherm — geen randen, geen dozen. */
+.ws-amb{position:absolute;inset:-8% -12% 20%;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(46% 42% at 50% 34%,var(--tone-bg),transparent 72%),
+    radial-gradient(70% 55% at 50% 30%,rgba(94,230,235,.055),transparent 78%);
+  filter:blur(2px)}
+.ws-scene>.ws-col{position:relative;z-index:1}
+
+.ws-col{display:flex;flex-direction:column;gap:var(--ds-8);min-width:0}
+.ws-col-c{align-items:center;text-align:center;gap:var(--ds-3)}
+
+/* ── Contextveld (niveau 3): geen rand, wel een rustige tone-accentlijn ─────── */
+.ws-field{position:relative;padding-left:var(--ds-4);min-width:0}
+.ws-field::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:1px;
+  background:linear-gradient(180deg,var(--tone,var(--ds-hairline)),transparent 85%);opacity:.55}
+.ws-field>.ds-label{margin-bottom:var(--ds-3)}
+.ws-field-b{display:flex;flex-direction:column;gap:var(--ds-2);min-width:0}
+.ws-calm{margin:0;font-size:var(--ds-t-sm);color:var(--ds-text-3);line-height:1.5}
+
+/* Contextregel: embedded, geen kaart. */
+.ws-line{display:flex;align-items:flex-start;gap:var(--ds-3);min-width:0}
+.ws-line-ic{color:var(--tone);flex:0 0 auto;margin-top:1px}
+.ws-line-ic .ic{width:16px;height:16px}
+.ws-line-b{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.ws-line-t{font-size:var(--ds-t-body);font-weight:600;color:var(--ds-text);line-height:1.35}
+.ws-line-s{font-size:var(--ds-t-xs);color:var(--ds-text-3)}
+.ws-line-v{font-size:var(--ds-t-sm);font-weight:700;color:var(--tone);flex:0 0 auto;
+  font-variant-numeric:tabular-nums}
+
+/* ── De athlete-anchor: concentrische statusringen + medaillon ──────────────── */
+.ws-anchor{display:flex;flex-direction:column;align-items:center;gap:var(--ds-2)}
+.ws-orb{position:relative;width:250px;height:250px;display:grid;place-items:center;margin-bottom:calc(var(--ds-2)*-1)}
+.ws-orb-rings{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.ws-ring{fill:none;stroke:var(--tone);stroke-width:1;opacity:.34}
+.ws-ring.r2{opacity:.22} .ws-ring.r3{opacity:.14}
+/* Eén oplichtende boog = de status; geen decoratie, wel richting. */
+.ws-ring-arc{fill:none;stroke:var(--tone);stroke-width:2;stroke-linecap:round;opacity:.85;
+  stroke-dasharray:150 554;transform:rotate(-108deg);transform-origin:50% 50%;
+  filter:drop-shadow(0 0 10px var(--tone-bg))}
+.ws-orb-in{position:relative;width:124px;height:124px;border-radius:50%;display:grid;place-items:center;
+  font-size:38px;font-weight:750;letter-spacing:.01em;color:var(--tone);
+  background:radial-gradient(circle at 50% 30%,rgba(255,255,255,.10),transparent 58%),
+             radial-gradient(circle at 50% 46%,var(--tone-bg),rgba(12,30,58,.85) 76%);
+  border:1px solid var(--tone-bd);
+  text-shadow:0 0 22px var(--tone-bg);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.10),0 0 46px -6px var(--tone-bg),
+             0 0 120px -30px var(--tone)}
+.ws-name{margin:0;font-size:clamp(30px,3.4vw,46px);font-weight:750;letter-spacing:-.03em;line-height:1}
+.ws-name-meta{display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap;justify-content:center;
+  font-size:var(--ds-t-sm);color:var(--ds-text-3)}
+.ws-name-meta .sep{opacity:.35}
+.ws-anchor .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap;justify-content:center;margin-top:var(--ds-1)}
+.ws-anchor .anav-chip{background:var(--ds-well);border:1px solid var(--ds-hairline);color:var(--ds-text-2);
+  border-radius:var(--ds-r-pill);padding:6px 14px;font-size:var(--ds-t-sm);font-weight:600;cursor:pointer;
+  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
+.ws-anchor .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text)}
+
+/* ── Het dominante signaal: de enige plaat in de scène ──────────────────────── */
+.ws-signal{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:var(--ds-5) var(--ds-6) var(--ds-2);max-width:440px}
+/* Geen kaart: alleen een lichtlijn die het signaal aan de anchor koppelt. */
+.ws-signal::before{content:"";position:absolute;inset:0 auto auto 50%;transform:translateX(-50%);
+  width:54%;height:1px;background:linear-gradient(90deg,transparent,var(--tone),transparent);opacity:.5}
+.ws-signal-l{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--tone);opacity:.9}
+.ws-signal-v{font-size:clamp(52px,6vw,80px);font-weight:800;line-height:1;letter-spacing:-.045em;
+  color:var(--tone);font-variant-numeric:tabular-nums;
+  text-shadow:0 0 34px var(--tone-bg),0 0 88px var(--tone-bg)}
+.ws-signal-v i{font-style:normal;font-size:.34em;font-weight:700;margin-left:2px;opacity:.7}
+.ws-signal-s{font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.45;max-width:330px}
+.ws-signal .ds-metric-spark{width:220px;height:34px;margin-top:var(--ds-2);opacity:.9}
+
+/* ── Belasting-veld: groot getal blijft ondergeschikt aan het signaal ───────── */
+.ws-load{display:flex;flex-direction:column;gap:var(--ds-2)}
+.ws-load-n{font-size:26px;font-weight:750;line-height:1;letter-spacing:-.02em;color:var(--tone);
+  font-variant-numeric:tabular-nums}
+.ws-load-n i{font-style:normal;font-size:.46em;font-weight:600;color:var(--ds-text-3);margin-left:3px}
+.ws-load-m{display:flex;flex-direction:column;gap:1px;font-size:var(--ds-t-xs);color:var(--ds-text-3)}
+.ws-load .ds-metric-spark{height:36px;margin-top:var(--ds-2)}
+
+/* ── Feedback-veld ─────────────────────────────────────────────────────────── */
+.ws-fb{display:flex;align-items:baseline;gap:var(--ds-2)}
+.ws-fb-n{font-size:26px;font-weight:750;color:var(--tone);line-height:1;font-variant-numeric:tabular-nums}
+.ws-fb-t{font-size:var(--ds-t-sm);color:var(--ds-text-3)}
+
+/* ── Acties: onderdeel van de centrale kolom, randloos ─────────────────────── */
+.ws-acts{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--ds-2);
+  max-width:470px;margin-top:var(--ds-3)}
+.ws-acts .ds-action{width:auto;flex:0 0 auto;gap:var(--ds-2);padding:7px 14px 7px 8px;
+  border-radius:var(--ds-r-pill);border-color:var(--ds-hairline)}
+.ws-acts .ds-action-ic{width:26px;height:26px}
+.ws-acts .ds-action-ic .ic{width:15px;height:15px}
+.ws-acts .ds-action-s{display:none}                 /* compacte cluster: alleen het werkwoord */
+.ws-acts .ds-action.ds-tone{background:none;border-color:var(--tone-bd)}
+.ws-acts .ds-action.ds-tone .ds-action-ic{background:var(--tone-bg)}
+
+/* ── Lege scène ───────────────────────────────────────────────────────────── */
+.ws-empty{display:flex;flex-direction:column;align-items:center;gap:var(--ds-3);
+  padding:var(--ds-10) var(--ds-4);text-align:center}
+.ws-empty-orb{width:150px;height:150px;border-radius:50%;margin-bottom:var(--ds-2);
+  background:radial-gradient(circle at 50% 38%,rgba(94,230,235,.14),transparent 68%);
+  box-shadow:inset 0 0 0 1px rgba(94,230,235,.16),0 0 70px -24px var(--ds-accent)}
+.ws-empty h2{margin:0;font-size:24px;font-weight:700}
+.ws-empty p{margin:0;max-width:420px;color:var(--ds-text-3);font-size:var(--ds-t-body);line-height:1.55}
+
+/* ── Ruimtelijke verdeling: asymmetrisch, met negatieve ruimte ──────────────── */
+@media (min-width:1120px){
+  .ws-scene{grid-template-columns:minmax(230px,.92fr) minmax(430px,1.42fr) minmax(230px,1fr);
+    gap:var(--ds-10);align-items:center}
+  /* Bewuste asymmetrie: links zakt iets, rechts stijgt iets t.o.v. de anchor. */
+  .ws-col-l{transform:translateY(26px)}
+  .ws-col-r{transform:translateY(-22px)}
+}
+@media (max-width:1119px){
+  .ws-col-c{order:-1}                       /* de atleet blijft bovenaan */
+  .ws-scene{gap:var(--ds-6)}
+}
+@media (max-width:760px){
+  .ws-orb{width:180px;height:180px}
+  .ws-orb-in{width:98px;height:98px;font-size:28px}
+  .ws-signal{padding:var(--ds-3) var(--ds-5) var(--ds-4);max-width:none;width:100%}
+  .ws-signal-v{font-size:46px}
+  .ws-signal .ds-metric-spark{width:170px}
+  .ws-col{gap:var(--ds-6)}
+}
+
+/* ── Motion: context komt rustig in beeld ──────────────────────────────────── */
+.ws-anchor{animation:ws-in 380ms var(--ds-ease) both}
+.ws-signal{animation:ws-in 380ms var(--ds-ease) both 90ms}
+.ws-col-l .ws-field{animation:ws-in 340ms var(--ds-ease) both 140ms}
+.ws-col-r .ws-field{animation:ws-in 340ms var(--ds-ease) both 190ms}
+.ws-amb{animation:ws-glow 520ms var(--ds-ease) both}
+@keyframes ws-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes ws-glow{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){
+  .ws-anchor,.ws-signal,.ws-field,.ws-amb{animation:none}
+  .ws-switch{transition:none}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DOSSIER — living memory. Tijd is het ruimtelijke principe: vandaag is het
+   sterkste punt op de lijn, ouder werk verzwakt naar achteren, planning ligt
+   gestippeld vóór ons. Zelfde design-DNA als Workspace, andere compositie.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.dc-memory{position:relative;padding:var(--ds-4) 0 var(--ds-10)}
+.dc-amb{position:absolute;inset:-6% -10% 55% -6%;pointer-events:none;z-index:0;
+  background:radial-gradient(42% 46% at 22% 20%,var(--tone-bg),transparent 72%),
+             radial-gradient(60% 40% at 60% 6%,rgba(94,230,235,.05),transparent 78%);
+  filter:blur(2px)}
+.dc-memory>*{position:relative;z-index:1}
+
+.dc-head2{display:flex;align-items:flex-start;gap:var(--ds-5);flex-wrap:wrap;margin-bottom:var(--ds-8)}
+.dc-id2{display:flex;align-items:center;gap:var(--ds-4);min-width:0}
+.dc-orb{width:74px;height:74px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  font-size:24px;font-weight:750;color:var(--tone);border:1px solid var(--tone-bd);
+  background:radial-gradient(circle at 50% 32%,rgba(255,255,255,.08),transparent 60%),
+             radial-gradient(circle at 50% 50%,var(--tone-bg),rgba(12,30,58,.8) 78%);
+  box-shadow:0 0 44px -12px var(--tone-bg)}
+.dc-name{margin:0;font-size:clamp(26px,2.8vw,36px);font-weight:750;letter-spacing:-.025em;line-height:1.05}
+.dc-sub{margin:5px 0 0;display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap;
+  font-size:var(--ds-t-sm);color:var(--ds-text-3)}
+.dc-sub .sep{opacity:.35}
+.dc-nav2{margin-top:var(--ds-3)}
+.dc-nav2 .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap}
+.dc-nav2 .anav-chip{background:var(--ds-well);border:1px solid var(--ds-hairline);color:var(--ds-text-2);
+  border-radius:var(--ds-r-pill);padding:6px 14px;font-size:var(--ds-t-sm);font-weight:600;cursor:pointer;
+  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
+.dc-nav2 .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text)}
+
+.dc-mem-grid{display:grid;grid-template-columns:1fr;gap:var(--ds-8);align-items:start}
+
+/* ── De spine: één doorlopende tijdlijn door alle era's heen ─────────────── */
+.dc-spine{position:relative;padding-left:var(--ds-6)}
+.dc-spine::before{content:"";position:absolute;left:5px;top:8px;bottom:0;width:1px;
+  background:linear-gradient(180deg,var(--tone) 0%,rgba(94,230,235,.28) 22%,
+             var(--ds-hairline) 62%,transparent 100%)}
+.dc-era{margin-bottom:var(--ds-8)}
+.dc-era:last-child{margin-bottom:0}
+.dc-era-l{margin:0 0 var(--ds-4);opacity:.9}
+.dc-spine-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--ds-4)}
+
+/* Knooppunt: gewicht bepaalt contrast en schaal → tijd wordt zichtbaar. */
+.dc-node{position:relative;padding-left:var(--ds-5);min-width:0}
+.dc-node-dot{position:absolute;left:calc(var(--ds-6)*-1 + 1px);top:5px;width:11px;height:11px;
+  border-radius:50%;background:var(--tone);box-shadow:0 0 0 4px var(--ds-canvas),0 0 16px var(--tone-bg)}
+.dc-node.is-future .dc-node-dot{background:none;border:1.5px dashed var(--tone);
+  box-shadow:0 0 0 4px var(--ds-canvas)}
+.dc-node-b{display:flex;flex-direction:column;gap:2px;min-width:0}
+.dc-node-when{font-size:var(--ds-t-xs);letter-spacing:.06em;color:var(--ds-text-3);
+  text-transform:uppercase;font-weight:650}
+.dc-node-t{font-size:var(--ds-t-body);font-weight:650;color:var(--ds-text);line-height:1.4}
+.dc-node-s{font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.5}
+.dc-node-m{font-size:var(--ds-t-xs);color:var(--ds-text-3)}
+/* Tijd-gewicht: nu = vol, verder terug = zachter en kleiner. */
+.dc-node.w1 .dc-node-t{font-size:16.5px;font-weight:700}
+.dc-node.w1 .dc-node-dot{width:13px;height:13px}
+.dc-node.w2{opacity:.92}
+.dc-node.w3{opacity:.74}
+.dc-node.w3 .dc-node-t{font-size:13.5px;font-weight:600}
+.dc-node.w4{opacity:.55}
+.dc-node.w4 .dc-node-t{font-size:13px;font-weight:600}
+.dc-node.w4 .dc-node-dot{width:8px;height:8px}
+.dc-now .dc-node-t{color:var(--ds-text)}
+.dc-ahead .dc-node{opacity:.8}
+.dc-ahead .dc-node-t{font-weight:600}
+.dc-empty-tl{margin:0 0 0 var(--ds-5);padding:0;background:none;border:0;
+  font-size:var(--ds-t-sm);color:var(--ds-text-3);line-height:1.55;max-width:62ch}
+
+/* ── Bewijs (domeinen/bronnen) staat naast het verhaal, niet erin ────────── */
+.dc-evidence{display:flex;flex-direction:column;gap:var(--ds-3);min-width:0;
+  opacity:.82;transition:opacity var(--ds-base) var(--ds-ease)}
+.dc-evidence:hover,.dc-evidence:focus-within{opacity:1}
+.dc-evidence .ds-disc{background:none;border-color:var(--ds-hairline)}
+.dc-evidence .ds-disc>summary{font-size:var(--ds-t-sm);color:var(--ds-text-3)}
+/* Bewijswaarden zijn lange strings (zones, provenance) → links uitlijnen leest beter. */
+.dc-evidence .dc-reg-main{flex-direction:column;align-items:flex-start;gap:1px}
+.dc-evidence .dc-val{text-align:left;font-size:var(--ds-t-sm)}
+.dc-evidence .dc-lbl{font-size:var(--ds-t-xs);letter-spacing:.04em;text-transform:uppercase}
+.dc-evidence .dc-domains{display:flex;flex-direction:column;gap:var(--ds-3)}
+
+@media (min-width:1100px){
+  .dc-mem-grid{grid-template-columns:minmax(0,1.35fr) minmax(300px,.85fr);gap:var(--ds-10)}
+}
+@media (max-width:760px){
+  .dc-head2{margin-bottom:var(--ds-6)}
+  .dc-orb{width:58px;height:58px;font-size:19px}
+  .dc-spine{padding-left:var(--ds-5)}
+  .dc-node{padding-left:var(--ds-4)}
+}
+/* Motion: het verhaal settelt rustig in. */
+.dc-era{animation:ws-in 360ms var(--ds-ease) both}
+.dc-era:nth-child(3){animation-delay:60ms}
+.dc-era:nth-child(4){animation-delay:110ms}
+.dc-era:nth-child(5){animation-delay:160ms}
+@media (prefers-reduced-motion:reduce){.dc-era{animation:none}}
+
+/* ── HOME ATHLETE BRIEFING ────────────────────────────────────────────────
+   Home blijft het team-/prioriteitenoverzicht. Opent de coach een atleet, dan
+   krijgt hij een BRIEFING: identiteit, reden, dominant signaal, ondersteunende
+   feiten en de volgende stap — dezelfde productwereld als Workspace/Dossier. */
+.prio-item.open .prio-row{border-color:transparent}
+.pb{position:relative;padding:var(--ds-5) var(--ds-5) var(--ds-4);overflow:hidden;
+  border-radius:var(--ds-r-lg)}
+.pb-amb{position:absolute;inset:-40% 30% 40% -20%;pointer-events:none;
+  background:radial-gradient(50% 50% at 30% 50%,var(--tone-bg),transparent 72%)}
+.pb>*{position:relative;z-index:1}
+.pb-head{display:flex;align-items:center;gap:var(--ds-4);margin-bottom:var(--ds-4)}
+.pb-orb{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  font-size:17px;font-weight:750;color:var(--tone);border:1px solid var(--tone-bd);
+  background:radial-gradient(circle at 50% 34%,rgba(255,255,255,.07),transparent 60%),
+             radial-gradient(circle at 50% 50%,var(--tone-bg),rgba(12,30,58,.7) 78%);
+  box-shadow:0 0 34px -12px var(--tone-bg)}
+.pb-id{flex:1;min-width:0}
+.pb-naam{margin:0;font-size:19px;font-weight:750;letter-spacing:-.015em}
+.pb-reden{margin:2px 0 0;font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.4}
+.pb-dom{flex:0 0 auto;display:flex;align-items:baseline;color:var(--tone);
+  font-variant-numeric:tabular-nums;text-shadow:0 0 22px var(--tone-bg)}
+.pb-dom b{font-size:34px;font-weight:780;letter-spacing:-.03em;line-height:1}
+.pb-dom i{font-style:normal;font-size:14px;font-weight:700;margin-left:1px;opacity:.75}
+.pb-acts{justify-content:flex-start}
+.pb-more{font-size:var(--ds-t-xs);color:var(--ds-text-3);font-weight:600;margin-top:var(--ds-1)}
+.pb-more:hover{color:var(--ds-accent)}
+.pb .pd-s-body{padding-top:var(--ds-2)}

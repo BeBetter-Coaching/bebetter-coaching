@@ -1294,8 +1294,6 @@ button.sb-ready:hover{filter:brightness(1.08)}
 .dc-why-chain li{padding:2px 0;border-top:1px dashed var(--border)}
 
 /* Z4 tijdlijn */
-.dc-empty-tl{margin:0;font-size:13px;color:var(--muted);line-height:1.5;
-  padding:12px;background:var(--card);border:1px dashed var(--border);border-radius:10px}
 
 /* Z5 bronnen */
 .dc-src>summary{cursor:pointer;font-size:13px;color:var(--muted);list-style:none}

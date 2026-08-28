@@ -403,57 +403,6 @@ function dsSkeletonBlock(n) {
     (_, i) => `<div class="ds-skel ${i % 2 ? "w60" : "w80"}"></div>`).join("")}</div>`;
 }
 
-// ── Stage-primitives: identiteit + primair signaal + metrics op ÉÉN vlak ──
-// De Athlete Shell in zijn "cockpit"-vorm. `dsStage` vervangt de losse hero +
-// metric-kaarten door één doorlopend oppervlak: dat is wat het verschil maakt
-// tussen een raster van kaarten en een command center.
-
-// Het dominante cijfer. Eén per scherm — als er niets speelt toont hij de
-// rustige stand (nooit een verzonnen waarde om de plek te vullen).
-function dsFocal(f) {
-  if (!f) return "";
-  // Een SCHIJF, geen kaart: een cirkel leest als focaal object, een rechthoek als
-  // container. Dit is het enige element op het scherm met een cijfer > 26px — de
-  // claim-regel die voorkomt dat er ooit een tweede focal ontstaat.
-  const lang = String(f.value).length > 5 ? " lang" : "";
-  return `<figure class="ds-focal ${f.tone || "is-calm"}">
-    <div class="ds-focal-disc${lang}">
-      <span class="ds-focal-l">${esc(f.label)}</span>
-      <span class="ds-focal-v">${esc(f.value)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
-      ${f.spark || ""}
-    </div>
-    ${f.sub ? `<figcaption class="ds-focal-s">${esc(f.sub)}</figcaption>` : ""}</figure>`;
-}
-
-// Eén cel van de metric-rail (haarlijn-gescheiden, geen eigen kaart).
-function dsStat(m) {
-  const tone = m.tone ? ` ds-tone ${m.tone}` : "";
-  return `<div class="ds-stat${tone}">
-    <span class="ds-stat-l">${esc(m.label)}</span>
-    <span class="ds-stat-v">${esc(m.value)}${m.unit ? `<span class="ds-stat-u">${esc(m.unit)}</span>` : ""}</span>
-    ${m.sub ? `<span class="ds-stat-s">${esc(m.sub)}</span>` : ""}</div>`;
-}
-
-// De stage: medaillon + naam + status + nav links, focal rechts, metric-rail onder.
-function dsStage(s) {
-  const tone = s.tone || "is-calm";
-  const rail = (s.stats || []).filter(Boolean);
-  return `<section class="ds-stage ${tone}">
-    <div class="ds-stage-top">
-      <div class="ds-med"><span class="ds-med-ring"></span><span class="ds-med-ring two"></span>
-        <span class="ds-med-in">${esc(initialen(s.naam || ""))}</span></div>
-      <div class="ds-stage-id">
-        <div class="ds-stage-line"><h2 class="ds-stage-name">${esc(s.naam || s.key || "")}</h2>
-          ${(s.chips || []).join("")}</div>
-        <p class="ds-stage-sub">${(s.sub || []).filter(Boolean).join('<span class="sep">·</span>')}</p>
-        ${s.nav || ""}
-      </div>
-      ${dsFocal(s.focal)}
-    </div>
-    ${rail.length ? `<div class="ds-stage-rail">${rail.join("")}</div>` : ""}
-  </section>`;
-}
-
 // NB: contextnavigatie tussen athlete-views blijft de BESTAANDE gedeelde
 // `athleteNav()` (één definitie, vaste call-contracten). Het design system
 // vervangt die niet — het geeft 'm alleen de gedeelde shell-stijl (.anav /
@@ -1053,15 +1002,40 @@ function prioToggle(wrap, force) {
 // Detail = alle signalen van deze atleet (totaalbeeld). ELK signaal heeft zijn EIGEN
 // Gezien/Later (per-signaal status) + eigen context-actie. Dossier is atleet-breed
 // (één keer, onderaan). Bulk gaat via de swipe, niet via het detail.
+// Home-detail = een ATHLETE BRIEFING, geen uitgeklapt legacy-paneel. Het toont
+// alleen wat je nu over deze atleet moet weten: identiteit, reden voor aandacht,
+// het dominante signaal, 2-3 ondersteunende feiten en de volgende coachactie.
+// Zelfde data, zelfde optimistic-write-flow, zelfde routes.
 function prioDetailHtml(it) {
-  const blokken = (it.signalen || []).map(s => {
+  const sigs = it.signalen || [];
+  const tone = dsWorstTone(sigs.map(s => dsTone(s.tier)));
+  // Dominant signaal = het zwaarste; de rest is ondersteunende context.
+  const hoofd = sigs.slice().sort((a, b) =>
+    (dsTone(a.tier) === "is-critical" ? 0 : 1) - (dsTone(b.tier) === "is-critical" ? 0 : 1))[0];
+  const bel = sigs.find(s => s.soort === "belasting");
+  const pct = bel && bel.detail && bel.detail.pct != null ? bel.detail.pct : null;
+
+  let h = `<div class="pb ${tone}">`;
+  h += `<div class="pb-amb" aria-hidden="true"></div>`;
+  // Identiteit + de reden dat deze atleet je aandacht vraagt.
+  h += `<header class="pb-head">
+    <span class="pb-orb">${esc(initialen(it.naam || ""))}</span>
+    <div class="pb-id"><h3 class="pb-naam">${esc(it.naam || "")}</h3>
+      <p class="pb-reden">${esc(hoofd ? hoofd.reden : "geen open signaal")}</p></div>
+    ${pct != null ? `<span class="pb-dom"><b>${pct > 0 ? "+" : ""}${esc(pct)}</b><i>%</i></span>` : ""}
+  </header>`;
+
+  // Ondersteunende feiten: elk signaal met zijn eigen afhandeling.
+  h += `<div class="pd-signalen">` + sigs.map((s, i) => {
     const ctxBtn = (s.context && s.context[0]) ? swBtn(s.context[0]) : "";
-    // Home-detail gebruikt DEZELFDE aandacht-primitive als Workspace/Dossier:
-    // één signaal ziet er overal hetzelfde uit (zelfde toon, zelfde opbouw).
+    // Briefing = compact: het onderbouwende detail staat achter progressive
+    // disclosure (open voor het dominante signaal), de acties blijven altijd zichtbaar.
+    const open = s === hoofd;
     return `<div class="pd-s-blok ${dsTone(s.tier)}" data-soort="${s.soort}">
       ${dsAttnCard({ tone: dsTone(s.tier), icon: SOORT_IC[s.soort] || "activity",
                      title: s.reden, meta: s.kort && s.kort !== s.reden ? s.kort : "" })}
-      <div class="pd-s-body">${prioSignaalBody(s)}</div>
+      <button type="button" class="ds-more pb-more" onclick="dsFoldToggle(this)">${open ? "Verberg" : "Toon"} onderbouwing</button>
+      <div class="ds-fold${open ? " open" : ""}"><div class="pd-s-body">${prioSignaalBody(s)}</div></div>
       <div class="pd-s-work">
         <button class="pd-wbtn gezien" data-act="gezien" data-soort="${s.soort}" type="button">${ic("check")}<span>Gezien</span></button>
         <div class="pd-later"><span>Later</span>
@@ -1072,11 +1046,14 @@ function prioDetailHtml(it) {
       </div>
       ${ctxBtn ? `<div class="pd-s-acts">${ctxBtn}</div>` : ""}
     </div>`;
-  }).join("");
-  // Athlete-brede acties: Workspace (v2 — 'wat speelt er nu' voor deze atleet) naast Dossier.
-  const acts = `<div class="pd-acts">${swBtn({ act: "workspace", label: "Workspace", icon: "brain" })}${swBtn({ act: "dossier", label: "Dossier", icon: "user-plus" })}</div>`;
-  return `<div class="pd-signalen">${blokken}</div>${acts}`;
+  }).join("") + `</div>`;
+
+  // Volgende stap: door naar de athlete-context (zelfde gedeelde routes).
+  h += `<div class="pd-acts pb-acts">${swBtn({ act: "workspace", label: "Open workspace", icon: "brain" })}${swBtn({ act: "dossier", label: "Dossier", icon: "user-plus" })}</div>`;
+  h += `</div>`;
+  return h;
 }
+
 
 // Type-specifiek detail per signaal (uit de snapshot; compliance-sessies lazy).
 function prioSignaalBody(s) {
@@ -4610,7 +4587,7 @@ function tekenAdmin(d) {
 // provenance + "Waarom?". Strikt read-only; geen writes, geen edits. Zie
 // dossier-fase-b-cockpit-design.md.
 // ════════════════════════════════════════════════════════════════════════════
-let dcPicker = null, dcCache = [], dcSel = "", dcOpenPending = "";
+let dcPicker = null, dcCache = [], dcSel = "", dcOpenPending = "", dcGroepVolgorde = [];
 const dcLog = (ev, data) => { try { console.debug("[dossier]", ev, data || ""); } catch {} };
 
 const _DC_OVERALL = { GOOD: "Goed", STABLE: "Stabiel", ATTENTION: "Aandacht", INSUFFICIENT_DATA: "Te weinig data" };
@@ -4620,13 +4597,28 @@ const _DC_KIND_IC = { complaint: "alert", load_signal: "pulse", possible_relatio
   zone_review: "brain", recovery_neg: "clock", conflict: "alert", source_gap: "alert" };
 
 function dcToonLijst() {
-  $('.view[data-view="dossier"]').classList.toggle("has-athlete", !!dcSel);
+  const v = $('.view[data-view="dossier"]');
+  if (v) v.classList.toggle("has-athlete", !!dcSel);
   $("#dc-lijst").hidden = false;
-  if (isDesktop()) { if (!dcSel) $("#dc-detail").hidden = true; }
-  // Telefoon: open cockpit (dcSel) blijft leidend — late roster-render niet clobberen.
-  else if (dcSel) { $(".view[data-view='dossier'] .md-list").hidden = true; $("#dc-detail").hidden = false; }
-  else { $(".view[data-view='dossier'] .md-list").hidden = false; $("#dc-detail").hidden = true; }
+  const lijst = $(".view[data-view='dossier'] .md-list");
+  // Met een open atleet is de athlete-lijst geen visueel fundament meer: het dossier
+  // vult het canvas en wisselen gaat via de compacte switcher. Zonder open atleet is
+  // de lijst juist de hoofdingang.
+  if (!dcPicker) { /* roster nog niet geladen — laat staan wat er staat */ }
+  else if (dcSel) { lijst.hidden = true; $("#dc-detail").hidden = false; }
+  else { lijst.hidden = false; $("#dc-detail").hidden = true; }
 }
+
+$("#dc-switch")?.addEventListener("click", () => dcOpenSwitcher());
+function dcOpenSwitcher() {
+  if (!dcCache.length) { laadDossierCockpit(); return; }
+  openAthletePickerOverlay({
+    title: "Wissel van atleet", confirmLabel: "Openen", placeholder: "Zoek atleet",
+    items: dcCache.map(a => ({ ...a, key: a.id })), groupOrder: dcGroepVolgorde,
+    onConfirm: a => openAthleteModule("dossier", a.key),
+  });
+}
+
 
 async function laadDossierCockpit() {
   const box = $("#dc-lijst");
@@ -4635,6 +4627,7 @@ async function laadDossierCockpit() {
   try { data = await api("/api/atleten"); }
   catch { if (!dcPicker) box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
   dcCache = data.atleten || [];
+  dcGroepVolgorde = data.groep_volgorde || [];
   const items = dcCache.map(a => ({ ...a, key: a.id }));
   if (!items.length && !dcPicker) {
     box.innerHTML = `<div class="leeg">${ic("users")}<p>Geen atleten.</p></div>`; dcToonLijst(); return;
@@ -4659,7 +4652,12 @@ async function openDossierCockpit(ident) {
   if (!dcPicker) { dcOpenPending = ident; if (!geladen.dossier) { geladen.dossier = true; laadDossierCockpit(); } return; }
   dcSel = ident;
   document.querySelector('.view[data-view="dossier"]').classList.add("has-athlete");
+  const _r = dcCache.find(a => a.id === ident);
+  if ($("#dc-switch-av")) $("#dc-switch-av").textContent = _r ? initialen(_r.naam) : "—";
+  if ($("#dc-switch-nm")) $("#dc-switch-nm").textContent = _r ? _r.naam : "Kies atleet";
+  if ($("#dc-switch-sub")) $("#dc-switch-sub").textContent = _r && _r.groep ? _r.groep : "Geheugen";
   dcPicker.setSelected(ident);
+  dcToonLijst();                       // met open atleet valt de lijst weg (canvas wint)
   pushRoute("dossier", ident);
   const wrap = $("#dc-detail");
   if (!isDesktop()) { $(".view[data-view='dossier'] .md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }
@@ -4703,50 +4701,50 @@ function dcProvText(p) {
   return parts.join(" · ");
 }
 
+// ── DOSSIER: living memory ───────────────────────────────────────────────────
+// Tijd is hier het ruimtelijke principe. Eén verticale geheugen-spine: VANDAAG is
+// het sterkste punt, ouder werk verzwakt naar achteren, en de planning ligt subtiel
+// vooruit (gestippeld). Geen document met history-rows, maar een kaart van hoe deze
+// atleet hier is gekomen.
+
+// Eén knooppunt op de spine. `weight` (1=nu … 4=ver terug) stuurt contrast/schaal;
+// `future` maakt het knooppunt vooruitkijkend (open ring i.p.v. gevulde stip).
+function dcNode(n) {
+  return `<li class="dc-node w${n.weight || 2}${n.future ? " is-future" : ""} ${n.tone || "is-calm"}">
+    <span class="dc-node-dot"></span>
+    <div class="dc-node-b">
+      ${n.when ? `<span class="dc-node-when">${esc(n.when)}</span>` : ""}
+      <span class="dc-node-t">${esc(n.title)}</span>
+      ${n.sub ? `<span class="dc-node-s">${esc(n.sub)}</span>` : ""}
+      ${n.meta ? `<span class="dc-node-m">${esc(n.meta)}</span>` : ""}
+    </div></li>`;
+}
+function dcEra(label, nodes, cls) {
+  return `<section class="dc-era ${cls || ""}">
+    <h3 class="ds-label dc-era-l">${esc(label)}</h3>
+    <ul class="dc-spine-list">${nodes}</ul></section>`;
+}
+
 function dcRender(wrap, vm) {
   const st = vm.status || {}, rel = st.reliability || {};
   const relTxt = rel.level === "green" ? "bronnen vers"
     : rel.core_gap ? "kernbron uitgevallen — oordeel onzeker"
     : "let op: bron(nen) verouderd of onvolledig";
-  // Z0 — DEZELFDE stage als Workspace: één identiteit, één compositie. Dossier is
-  // verdiepend, niet alarmgericht → de toon volgt de betrouwbaarheid van de bronnen,
-  // niet de zwaarte van het signaal. Het focal point is hier het VERHAAL: wat is de
-  // stand van deze atleet volgens het geheugen.
   const relTone = dsTone(rel.level || "unknown");
-  const lo0 = vm.load_observation, attn0 = vm.attention || [];
-  const chg = vm.changes || [], tlv = (vm.timeline || {}).events || [];
-  const srcs = vm.source_health || [];
-  const versBronnen = srcs.filter(x => x.available && !x.stale).length;
+  const attn = vm.attention || [], chg = vm.changes || [];
+  const tl = vm.timeline || {}, tlv = tl.events || [];
+  const plan = vm.planning || { rows: [] };
+  const lo = vm.load_observation;
+  const attnTone = attn.length ? dsTone("aandacht") : "is-calm";
 
-  let dcFocal;
-  if (lo0 && lo0.delta_pct != null) {
-    dcFocal = { tone: dsTone(lo0.ernst), label: "Belastingobservatie",
-      value: `+${lo0.delta_pct}`, unit: "%",
-      sub: `t.o.v. referentie · ${lo0.home_action ? "open Home-actie" : "eerder afgehandeld"}` };
-  } else {
-    dcFocal = { tone: relTone, label: "Beeld van deze atleet",
-      value: _DC_OVERALL[st.overall] || st.overall || "—",
-      sub: st.insufficient ? "te weinig data voor een oordeel" : relTxt };
-  }
-
-  const dcStats = [
-    dsStat({ label: "Aandacht", value: attn0.length, unit: attn0.length === 1 ? "punt" : "punten",
-             sub: attn0.length ? "actieve signalen" : "niets open",
-             tone: attn0.length ? "is-attention" : "is-success" }),
-    dsStat({ label: "Recent veranderd", value: chg.length, unit: chg.length === 1 ? "item" : "items",
-             sub: chg.length ? (chg[0].effective_at || "") : "geen recente wijziging" }),
-    dsStat({ label: "Historie", value: tlv.length || "—", unit: tlv.length ? "events" : "",
-             sub: tlv.length ? "vastgelegd" : "capture nog uit", tone: tlv.length ? "" : "is-unknown" }),
-    dsStat({ label: "Bronnen", value: `${versBronnen}/${srcs.length || 0}`, unit: "vers",
-             sub: relTxt, tone: relTone }),
-  ];
-
-  let h = `<div class="ds-cockpit">` + dsStage({
-    naam: vm.naam || vm.key, key: vm.key, tone: relTone, focal: dcFocal, stats: dcStats,
-    chips: [dsChip(_DC_OVERALL[st.overall] || st.overall || "—", relTone)],
-    sub: [vm.groep ? esc(vm.groep) : "", esc("Dossier · geheugen & verantwoording")],
-    nav: athleteNav("dossier", vm.key),
-  });
+  let h = `<div class="dc-memory ${attn.length ? attnTone : relTone}">`;
+  h += `<div class="dc-amb" aria-hidden="true"></div>`;
+  h += `<header class="dc-head2">
+    <div class="dc-id2"><span class="dc-orb">${esc(initialen(vm.naam || vm.key))}</span>
+      <div><h2 class="dc-name">${esc(vm.naam || vm.key)}</h2>
+        <p class="dc-sub">${vm.groep ? esc(vm.groep) + '<span class="sep">·</span>' : ""}${dsChip(_DC_OVERALL[st.overall] || st.overall || "—", relTone)}${dsFresh(rel.level || "unknown", relTxt)}</p>
+        <div class="dc-nav2">${athleteNav("dossier", vm.key)}</div></div></div>
+  </header>`;
 
   // Partial-truth diagnostic: één build-stage faalde → alleen dát stuk mist, de rest klopt.
   const diag = vm.build_diagnostic || [];
@@ -4754,90 +4752,59 @@ function dcRender(wrap, vm) {
     h += `<div class="dc-diag">${ic("alert")}<span>Enkele onderdelen konden niet worden berekend (${esc(diag.map(d => d.stage).join(", "))}). De overige bekende kennis hieronder klopt — dit is een interne fout, <b>geen</b> bronfout.</span></div>`;
   }
 
-  // ── HET VERHAAL: één doorlopende spine (aandacht → wat veranderde → historie)
-  // naast compacte context. Dossier mag niet lezen als master/detail-database maar
-  // als het geheugen van deze atleet: één kolom die het verhaal vertelt.
-  // Bronvolgorde blijft dc-attn vóór dc-planning (partial-truth-contract).
-  const heeftContext = !!((vm.planning || {}).rows || []).length;
-  h += `<div class="ds-grid${heeftContext ? " story" : ""}">`;
-  h += `<div class="ds-quiet ds-stack dc-spine">`;
+  h += `<div class="dc-mem-grid"><div class="dc-spine">`;
 
-  // Z1 — Aandacht nu (gedeelde attention-primitive; Dossier duidt, schreeuwt niet)
-  const attn = vm.attention || [];
-  h += `<section class="dc-sec dc-attn">
-    <div class="ds-sechead"><h3 class="ds-label">Aandacht nu</h3></div>`;
-  if (attn.length) {
-    h += `<div class="ds-attn dc-cards">` + attn.map(c => dsAttnCard({
-      tone: dsTone("aandacht"), icon: _DC_KIND_IC[c.kind] || "alert",
-      title: c.title, why: c.why || "", meta: c.prov ? dcProvText(c.prov) : "",
-    })).join("") + `</div>`;
-  } else if (st.insufficient) {
-    h += dsEmpty("Te weinig data voor een oordeel — geen betrouwbare actiepunten.",
-                 { icon: "alert", tone: "is-unknown" });
-  } else {
-    h += dsEmpty(`Geen actiepunten — geen actieve klacht of signaal bekend${rel.level === "green" ? " (bronnen vers)" : ""}.`,
-                 { icon: "check" });
-  }
-  // Belasting-observatie (Teampuls-coherentie): de canonieke, ALTIJD-aanwezige
-  // verklaringsregel voor de belastingobservatie — óók bij actief-hoog met open
-  // Home-actie (de reden achter een rode Home/Teampuls-trigger, bv. +200%). Voorheen
-  // toonde de UI die case niet, waardoor de reden in Dossier kon verdwijnen. Dossier
-  // schreeuwt niet rood, maar de reden mag niet ontbreken.
-  const lo = vm.load_observation;
+  // ── VANDAAG: het sterkste punt op de lijn ──
+  let nu = attn.map(c => dcNode({
+    weight: 1, tone: dsTone("aandacht"), title: c.title,
+    sub: c.why || "", meta: c.prov ? dcProvText(c.prov) : "",
+  })).join("");
   if (lo) {
     const sev = lo.ernst === "hoog" ? "hoog" : "let op";
     const delta = (lo.delta_pct != null) ? ` · +${lo.delta_pct}% t.o.v. referentie` : "";
-    // Home-actie-semantiek is canonical (home_action = zichtbaar in de Home-actielijst).
     let reden;
     if (lo.afgehandeld) reden = "eerder afgehandeld — geen open Home-actie";
     else if (lo.home_action && lo.ernst === "hoog") reden = "open Home-actie";
     else reden = "monitoring — nog geen coachactie";
-    // Proza niet dubbel tonen: staat de load al als attention-kaart, dan hier alleen
-    // de compacte delta + Home-actie-duiding die de kaart mist (geen 2e alarmdashboard).
     const loadCarded = attn.some(c => c.kind === "load_signal");
-    const sig = (lo.signalen && !loadCarded) ? ": " + esc(lo.signalen) : "";
-    h += `<p class="dc-loadobs">${ic("pulse")} Belasting ${esc(sev)}${delta}${sig} <span class="muted klein">· ${esc(reden)} (Teampuls)</span></p>`;
+    nu += dcNode({ weight: 1, tone: dsTone(lo.ernst), title: `Belasting ${sev}${delta}`,
+      sub: (lo.signalen && !loadCarded) ? lo.signalen : "", meta: `${reden} (Teampuls)` });
   }
-  h += `</section>`;
+  if (!nu) nu = dcNode({ weight: 1, tone: "is-success", title: "Geen actiepunten",
+    sub: st.insufficient ? "Te weinig data voor een oordeel — geen betrouwbare actiepunten."
+                         : `geen actieve klacht of signaal bekend${rel.level === "green" ? " (bronnen vers)" : ""}` });
+  h += `<section class="dc-era dc-now dc-attn">
+    <h3 class="ds-label dc-era-l">Aandacht nu · vandaag</h3>
+    <ul class="dc-spine-list">${nu}</ul></section>`;
 
-  // Z2 — Recent veranderd: dezelfde spine, niet een losse kaart.
-  const changes = vm.changes || [];
-  h += `<section class="dc-sec dc-changes">
-    <div class="ds-sechead"><h3 class="ds-label">Recent veranderd</h3></div>` +
-    (changes.length
-      ? dsStream(changes.map(c => ({ date: c.effective_at || "", text: c.title, tone: "is-calm" })))
-      : dsEmpty("Geen recente wijziging in het beeld van deze atleet.", { icon: "check" })) +
-    `</section>`;
+  // ── RECENT VERANDERD ──
+  h += dcEra("Recent veranderd", chg.length
+    ? chg.map(c => dcNode({ weight: 2, when: c.effective_at || "", title: c.title })).join("")
+    : dcNode({ weight: 3, title: "Geen recente wijziging in het beeld van deze atleet." }),
+    "dc-changes");
 
-  // Z4 — Tijdlijn: het sluitstuk van de spine (capture OFF → eerlijke empty-state)
-  const tl = vm.timeline || {};
-  h += `<section class="dc-sec dc-timeline">
-    <div class="ds-sechead"><h3 class="ds-label">Longitudinale tijdlijn</h3></div>`;
+  // ── HISTORIE: verder terug = zwakker ──
+  h += `<section class="dc-era dc-timeline"><h3 class="ds-label dc-era-l">Longitudinale historie</h3>`;
   if (tl.empty_reason) {
     h += `<p class="dc-empty-tl">Er is nog geen longitudinale tijdlijn vastgelegd. BeBetter bouwt de historie op vanaf het moment dat history-capture wordt geactiveerd (vanaf-nu; geen terugwerkende reconstructie). <b>‘Geen events’ betekent hier niet ‘geen historie’</b> — alleen dat er nog niets is vastgelegd.</p>`;
   } else {
-    h += dsStream((tl.events || []).map(e => ({
-      date: e.effective_at || e.recorded_at || "", text: e.title || e.event_type, tone: "is-calm",
-    })));
+    h += `<ul class="dc-spine-list">` + tlv.map((e, i) => dcNode({
+      weight: Math.min(4, 2 + Math.floor(i / 4)),
+      when: e.effective_at || e.recorded_at || "", title: e.title || e.event_type })).join("") + `</ul>`;
   }
-  h += `</section></div>`;                            // /spine
+  h += `</section>`;
 
-  // ── Contextkolom: doel, domeinen en bronnen — compact naast het verhaal ──
-  h += `<div class="ds-section">`;
+  // ── VOORUIT: doelen & planning liggen vóór ons op de lijn ──
+  h += `<section class="dc-era dc-planning dc-ahead">
+    <h3 class="ds-label dc-era-l">Doelen &amp; planning</h3><ul class="dc-spine-list">`;
+  h += (plan.rows && plan.rows.length)
+    ? plan.rows.map(r => dcNode({ weight: 2, future: true, title: r.value, sub: r.label })).join("")
+    : dcNode({ weight: 3, future: true, title: "Geen doel of planning vastgelegd." });
+  h += `</ul></section></div>`;                        // /spine
 
-  // Z2b — Doelen & planning (compact, canonical: goal-evidence + laatst geconfigureerd blok)
-  const plan = vm.planning || { rows: [] };
-  if (plan.rows && plan.rows.length) {
-    h += `<section class="ds-quiet dc-sec dc-planning">
-      <div class="ds-sechead"><h3 class="ds-label">Doelen &amp; planning</h3></div>` +
-      dsKv(plan.rows) + `</section>`;
-  }
-
-  h += `</div></div>`;                               // /contextkolom /story-grid
-
-  // Z3 — Domeinkaarten: het BEWIJS. Krijgt de volle breedte: deze rijen dragen
-  // lange evidence-waarden (zones, provenance) die in een smalle kolom braken.
-  h += `<section class="dc-sec dc-domains ds-grid two">` + (vm.domains || []).map(d => `
+  // ── BEWIJS naast het verhaal ──
+  h += `<aside class="dc-evidence">`;
+  h += `<section class="dc-sec dc-domains">` + (vm.domains || []).map(d => `
     <details class="ds-disc dc-dom${d.onbekend ? " leeg" : ""}"${d.open ? " open" : ""}>
       <summary>${esc(d.titel)}${d.onbekend ? ` <span class="muted klein">— onbekend</span>` : ""}</summary>
       ${d.onbekend ? "" : `<div class="ds-disc-body"><ul class="dc-reg">` + d.regels.map(r => `
@@ -4847,22 +4814,21 @@ function dcRender(wrap, vm) {
             ${r.evidence_id ? `<button class="dc-why" data-id="${esc(r.evidence_id)}" data-key="${esc(vm.key)}">Waarom?</button>` : ""}</div>
         </li>`).join("") + `</ul></div>`}
     </details>`).join("") + `</section>`;
-
-  // Z5 — Bronnen & betrouwbaarheid (drill-down, gedeelde disclosure-primitive)
   const src = vm.source_health || [];
   if (src.length) {
     h += `<details class="ds-disc dc-sec dc-src"><summary>Bronnen &amp; betrouwbaarheid</summary>
       <div class="ds-disc-body"><ul class="dc-srclist">` +
-      src.map(s => `<li><span class="dc-src-n">${esc(s.source)}</span>
-        <span class="dc-src-s ${s.available ? (s.stale ? "warn" : "ok") : "bad"}">${s.available ? (s.stale ? "verouderd" : "vers") : "uitgevallen"}</span>
-        ${s.error ? `<span class="muted klein">${esc(s.error)}</span>` : ""}</li>`).join("") +
+      src.map(x => `<li><span class="dc-src-n">${esc(x.source)}</span>
+        <span class="dc-src-s ${x.available ? (x.stale ? "warn" : "ok") : "bad"}">${x.available ? (x.stale ? "verouderd" : "vers") : "uitgevallen"}</span>
+        ${x.error ? `<span class="muted klein">${esc(x.error)}</span>` : ""}</li>`).join("") +
       `</ul></div></details>`;
   }
+  h += `</aside></div></div>`;
 
-  h += `</div>`;                                     // /ds-cockpit
   wrap.innerHTML = h;
   wrap.querySelectorAll(".dc-why").forEach(b => b.addEventListener("click", () => dcWaarom(b)));
 }
+
 
 function dcGoSchema(key) {
   // Genormaliseerd naar het canonieke contract (was hand-rolled pushState + applyRoute).
@@ -4895,40 +4861,51 @@ async function dcWaarom(btn) {
 // feedback-status · snelle acties (bestaande routes/authority). De rijke context
 // (doel/planning/klachten) komt LAZY en parallel uit het bestaande /api/cockpit, zodat
 // een trage load-/feedback-refresh de shell of de andere secties nooit blokkeert.
-let wsSel = "", wsPicker = null, wsOpenPending = "", wsCache = [];
+let wsSel = "", wsOpenPending = "", wsCache = [], wsGroepVolgorde = [], wsRosterKlaar = false;
 
-function wsToonLijst() {
-  $('.view[data-view="workspace"]').classList.toggle("has-athlete", !!wsSel);
-  $("#ws-lijst").hidden = false;
-  if (isDesktop()) { if (!wsSel) $("#ws-detail").hidden = true; }
-  else if (wsSel) { $(".view[data-view='workspace'] .md-list").hidden = true; $("#ws-detail").hidden = false; }
-  else { $(".view[data-view='workspace'] .md-list").hidden = false; $("#ws-detail").hidden = true; }
+// De athlete-lijst is GEEN visueel fundament meer. In een actieve athlete-context
+// hoort ~90% van de aandacht bij die atleet; wisselen gebeurt via een compacte
+// switcher die de BESTAANDE overlay-picker opent (zelfde component, zelfde routes).
+function wsSwitchVul(naam, sub) {
+  const av = $("#ws-switch-av"), nm = $("#ws-switch-nm"), sb = $("#ws-switch-sub");
+  if (av) av.textContent = naam ? initialen(naam) : "—";
+  if (nm) nm.textContent = naam || "Kies atleet";
+  if (sb) sb.textContent = sub || "Workspace";
 }
+function wsOpenSwitcher() {
+  if (!wsCache.length) { laadWorkspace(); return; }
+  openAthletePickerOverlay({
+    title: "Wissel van atleet", confirmLabel: "Openen", placeholder: "Zoek atleet",
+    items: wsCache.map(a => ({ ...a, key: a.id })), groupOrder: wsGroepVolgorde,
+    onConfirm: a => openWorkspace(a.key),
+  });
+}
+$("#ws-switch")?.addEventListener("click", wsOpenSwitcher);
 
+// `laadWorkspace` laadt alleen nog de roster die de switcher voedt — geen lijst-UI.
 async function laadWorkspace() {
-  const box = $("#ws-lijst");
-  if (!wsPicker) skeleton(box, 6);
   let data;
   try { data = await api("/api/atleten"); }
-  catch { if (!wsPicker) box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  catch { return; }
   wsCache = data.atleten || [];
-  const items = wsCache.map(a => ({ ...a, key: a.id }));
-  if (!items.length && !wsPicker) {
-    box.innerHTML = `<div class="leeg">${ic("users")}<p>Geen atleten.</p></div>`; wsToonLijst(); return;
-  }
-  if (wsPicker) { wsPicker.setItems(items); }
-  else {
-    wsPicker = renderPicker({
-      mount: box, searchEl: $("#ws-zoek"), items, groupOrder: data.groep_volgorde || [],
-      selectedKey: wsSel || "", mode: "navigate", emptyText: "Geen atleet gevonden.",
-      secondary: a => (a.heeft_intake && a.doel) ? esc(a.doel) : "",
-      onActivate: a => openWorkspace(a.key),
-    });
-  }
-  wsToonLijst();
-  if (wsOpenPending) { const p = wsOpenPending; wsOpenPending = ""; openWorkspace(p); }
+  wsGroepVolgorde = data.groep_volgorde || [];
+  wsRosterKlaar = true;
+  if (wsOpenPending) { const p = wsOpenPending; wsOpenPending = ""; wsShow(p); }
+  else if (!wsSel) wsLeegScherm();
 }
 bindRefresh("ws-refresh", () => { if (wsSel) return wsShow(wsSel); geladen.workspace = true; return laadWorkspace(); });
+
+// Geen atleet gekozen → een rustige, uitnodigende scène (geen lege lijst).
+function wsLeegScherm() {
+  const wrap = $("#ws-detail"); if (!wrap) return;
+  wrap.innerHTML = `<div class="ws-empty">
+    <div class="ws-empty-orb"></div>
+    <h2>Kies een atleet</h2>
+    <p>De workspace toont wat er nu speelt bij één atleet: aandacht, belasting, doel en feedback.</p>
+    <button type="button" class="btn primary" onclick="wsOpenSwitcher()">Atleet kiezen</button>
+  </div>`;
+  wsSwitchVul("", "Workspace");
+}
 
 // Entry point — athlete-aware maar bewust BUITEN _ATHLETE_VIEWS (Cohesion-contract
 // byte-identiek). Schrijft de route en laadt de shell via wsShow.
@@ -4941,17 +4918,14 @@ function openWorkspace(user_key) {
 }
 
 async function wsShow(ident) {
-  if (!wsPicker) { wsOpenPending = ident; if (!geladen.workspace) { geladen.workspace = true; laadWorkspace(); } return; }
+  if (!wsRosterKlaar) { wsOpenPending = ident; if (!geladen.workspace) { geladen.workspace = true; laadWorkspace(); } return; }
   wsSel = ident;
-  // Presentatie-state: met een open atleet zakt de rail naar de achtergrond
-  // (80-90% aandacht naar de atleet). Geen routing/DOM-wijziging.
-  document.querySelector('.view[data-view="workspace"]').classList.add("has-athlete");
-  wsPicker.setSelected(ident);
   pushRoute("workspace", ident);
+  const roster = wsCache.find(a => a.id === ident);
+  wsSwitchVul(roster ? roster.naam : "", roster && roster.groep ? roster.groep : "Workspace");
   const wrap = $("#ws-detail");
-  if (!isDesktop()) { $(".view[data-view='workspace'] .md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }
-  wrap.hidden = false;
-  wrap.innerHTML = '<div class="dc-load"><p class="muted center">Workspace laden…</p></div>';
+  $("#scroller").scrollTo({ top: 0 });
+  wrap.innerHTML = `<div class="ws-loading">${wsSkel(4)}</div>`;
   let r;
   try { r = await api("/api/workspace/" + encodeURIComponent(ident)); }
   catch { r = null; }
@@ -4966,27 +4940,76 @@ async function wsShow(ident) {
   wsLoadDeep(wrap, ident);                                  // rijke context lazy + parallel
 }
 
-// Workspace = de primaire "coach now"-view, opgebouwd uit de gedeelde Design
-// System-primitives (Athlete Shell → metric strip → aandacht/context → acties).
-// Zelfde data, zelfde routes, zelfde authority — alleen één gedeelde presentatie.
+// ── DE ATHLETE CANVAS ────────────────────────────────────────────────────────
+// Workspace is een SCÈNE, geen grid: een centrale athlete-anchor met het dominante
+// signaal eronder, en contextzones die ruimtelijk om die anchor heen liggen. De
+// zones zijn "embedded" (niveau 3): geen kaartranden, gegroepeerd door spacing,
+// typografie en een tone-accentlijn. Alleen de anchor en het signaal krijgen een
+// eigen oppervlak. Zelfde data, zelfde acties, zelfde routes.
+
+// Randloze skeleton: de embedded zones hebben geen kaart, dus ook geen kaart-skeleton.
+function wsSkel(n) {
+  return Array.from({ length: n || 2 },
+    (_, i) => `<div class="ds-skel ${i % 2 ? "w60" : "w80"}"></div>`).join("");
+}
+
+// Een contextveld: label + inhoud, direct op het canvas. Geen doos.
+function wsField(label, body, o) {
+  o = o || {};
+  if (!body) return "";
+  return `<section class="ws-field ${o.tone || ""} ${o.cls || ""}">
+    <h3 class="ds-label">${esc(label)}</h3>
+    <div class="ws-field-b">${body}</div></section>`;
+}
+
+// Eén regel context: tone-streep + tekst + optionele waarde. Vervangt de kaart.
+function wsLine(l) {
+  return `<div class="ws-line ${l.tone || "is-calm"}">
+    ${l.icon ? `<span class="ws-line-ic">${ic(l.icon)}</span>` : ""}
+    <span class="ws-line-b"><span class="ws-line-t">${esc(l.title)}</span>
+      ${l.sub ? `<span class="ws-line-s">${esc(l.sub)}</span>` : ""}</span>
+    ${l.value ? `<span class="ws-line-v">${esc(l.value)}</span>` : ""}</div>`;
+}
+
+// De athlete-anchor: concentrische statusringen + medaillon. Geen verzonnen foto;
+// de ringen zijn echte status (toon volgt het zwaarste open signaal).
+function wsAnchor(naam, tone, chips, sub, nav) {
+  return `<div class="ws-anchor ${tone}">
+    <div class="ws-orb">
+      <svg class="ws-orb-rings" viewBox="0 0 240 240" aria-hidden="true">
+        <circle class="ws-ring r1" cx="120" cy="120" r="112"/>
+        <circle class="ws-ring r2" cx="120" cy="120" r="94"/>
+        <circle class="ws-ring r3" cx="120" cy="120" r="74"/>
+        <circle class="ws-ring-arc" cx="120" cy="120" r="112"/>
+      </svg>
+      <span class="ws-orb-in">${esc(initialen(naam))}</span>
+    </div>
+    <h2 class="ws-name">${esc(naam)}</h2>
+    <div class="ws-name-meta">${(chips || []).join("")}${(sub || []).filter(Boolean).join('<span class="sep">·</span>')}</div>
+    ${nav || ""}</div>`;
+}
+
+// Het dominante signaal: één plaat onder de anchor, midden in de scène.
+function wsSignal(f) {
+  if (!f) return "";
+  return `<div class="ws-signal ${f.tone || "is-calm"}">
+    <span class="ws-signal-l">${esc(f.label)}</span>
+    <span class="ws-signal-v">${esc(f.value)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
+    ${f.sub ? `<span class="ws-signal-s">${esc(f.sub)}</span>` : ""}
+    ${f.spark || ""}</div>`;
+}
+
 function wsRender(wrap, vm) {
   noteGeneration(vm.generation);                           // adopteer generatie vóór eigen banner
   const key = vm.key, naam = vm.naam || key;
   const bel = vm.belasting || {}, fb = vm.feedback || {}, sc = vm.schema;
   const attn = vm.attention || [];
   const gen = vm.generation || {}, gfr = gen.freshness || {};
-
-  // Toon van de HELE stage = het zwaarste openstaande signaal. De sfeer van het
-  // scherm vertelt al hoe het met deze atleet gaat, vóór je een cijfer leest.
-  const shellTone = dsWorstTone(attn.map(a => dsTone(a.tier)));
+  const tone = dsWorstTone(attn.map(a => dsTone(a.tier)));
   const belTone = dsTone(bel.ernst || "calm");
 
-  // ── HET FOCAL POINT: één dominant cijfer per scherm ──
-  // Prioriteit: actieve belasting (het signaal dat de coach hierheen bracht) →
-  // anders het weekvolume als rustige stand. Nooit een verzonnen waarde.
   // Focal-ladder MET eigenaar: wie het dominante cijfer bezit, mag het als enige
-  // groot tonen. Downstream toont de kwalificatie i.p.v. hetzelfde getal — zo staat
-  // "+202%" één keer op het scherm in plaats van vier keer.
+  // groot tonen. Downstream toont de kwalificatie i.p.v. hetzelfde getal.
   let focal;
   if (bel.actief && bel.pct != null) {
     focal = { owner: "bel-pct", tone: belTone, label: "Belastingsignaal",
@@ -5000,7 +5023,7 @@ function wsRender(wrap, vm) {
       sub: bel.km_basis_week != null ? `referentie ${bel.km_basis_week} km/wk · binnen de marge` : "binnen de marge",
       spark: dsSpark((bel.runs || []).map(r => r.km)) };
   } else if (attn.length) {
-    focal = { owner: "attn", tone: shellTone, label: "Aandacht", value: attn.length,
+    focal = { owner: "attn", tone, label: "Aandacht", value: attn.length,
       unit: attn.length === 1 ? "punt" : "punten", sub: attn[0].kort || "" };
   } else {
     focal = { owner: "rust", tone: "is-success", label: "Status", value: "Rustig",
@@ -5008,104 +5031,78 @@ function wsRender(wrap, vm) {
   }
   const owns = s => focal.owner === s;
 
-  // ── De metric-rail: kerncijfers als één band onder de identiteit ──
-  const stats = [];
-  if (owns("bel-pct")) {
-    // km + pct staan al in de focal → de rail toont wat de focal NIET zegt.
-    const nRuns = (bel.runs || []).length;
-    stats.push(dsStat({ label: "Runs", value: nRuns || "—", unit: nRuns ? "deze week" : "",
-      sub: nRuns ? `laatste ${bel.runs[nRuns - 1].datum}` : "geen runs geteld" }));
-  } else if (bel.km_recent != null) {
-    stats.push(dsStat({
-      label: "Belasting", value: bel.km_recent, unit: "km",
-      sub: bel.km_basis_week != null ? `ref. ${bel.km_basis_week} km/wk` : "deze week",
-      tone: bel.actief ? belTone : "",
-    }));
-  }
-  stats.push(dsStat({
-    label: "Signalen", value: attn.length || "0",
-    unit: attn.length === 1 ? "open" : "open",
-    sub: attn.length ? attn.map(a => a.soort).join(" · ") : "niets open",
-    tone: attn.length ? shellTone : "",
-  }));
-  if (sc) stats.push(dsStat({
-    label: "Schema", value: sc.days_left != null ? Math.abs(sc.days_left) : "—",
-    unit: sc.days_left != null && sc.days_left < 0 ? "d over" : "d",
-    sub: sc.einddatum ? `t/m ${sc.einddatum}` : (sc.kort || ""), tone: dsTone(sc.tier),
-  }));
-  stats.push(dsStat({
-    label: "Feedback", value: fb.status === "unknown" ? "—" : (fb.open || 0),
-    unit: fb.status === "unknown" ? "" : "open",
-    sub: fb.status === "unknown" ? "bijwerken…" : (fb.open ? "wacht op reactie" : "alles beantwoord"),
-    tone: fb.status === "unknown" ? "is-unknown" : (fb.open ? "is-attention" : "is-success"),
-  }));
-
-  const sub = [esc("Workspace · wat speelt er nu")];
+  const sub = [];
   if (bel.datum) sub.push(dsFresh(gfr.belasting || "unknown",
     gfr.belasting === "fresh" ? "belasting vers" : `stand ${bel.datum}`));
 
   let h = genBanner(vm.generation);
-  h += `<div class="ds-cockpit">`;
-  h += dsStage({
-    naam, key, tone: shellTone, focal, stats,
-    chips: attn.length ? [dsChip(shellTone === "is-critical" ? "actie" : "aandacht", shellTone)]
-                       : [dsChip("rustig", "is-calm")],
-    sub, nav: athleteNav("workspace", key),
-  });
+  h += `<div class="ws-scene ${tone}">`;
+  h += `<div class="ws-amb" aria-hidden="true"></div>`;      // ambient veld, volgt de status
 
-  // ── Verhaal: waarom (breed) naast context (compact) ──
-  h += `<div class="ds-grid story">`;
+  // ── LINKS: aandacht (boven) en belasting/trend (onder) ──
+  let attnBody = attn.length
+    ? attn.map(a => wsLine({
+        tone: dsTone(a.tier), icon: SOORT_IC[a.soort] || "alert",
+        title: a.kort || a.soort || "",
+        sub: a.soort === "belasting" && bel.datum ? `stand ${bel.datum}` : "",
+        value: (a.pct != null && !(owns("bel-pct") && a.soort === "belasting")) ? `+${a.pct}%` : "",
+      })).join("")
+    : `<p class="ws-calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`;
+  const restSig = (bel.signalen || []).slice(1);
+  if (restSig.length) attnBody += `<button type="button" class="ds-more" onclick="dsFoldToggle(this)">Alle signalen (${restSig.length})</button>
+    <div class="ds-fold"><div>${dsStream(restSig.map(x => ({ text: x, tone: belTone })))}</div></div>`;
 
-  // Links: WAAROM — de aandachtpunten, randloos binnen één rustig oppervlak.
-  let waarom = "";
-  if (attn.length) {
-    waarom = `<div class="ds-attn">` + attn.map(a => dsAttnCard({
-      tone: dsTone(a.tier), icon: SOORT_IC[a.soort] || "alert",
-      title: a.kort || a.soort || "",
-      // geen echo: is de reden identiek aan de titel, dan tonen we 'm niet nogmaals
-      why: (a.soort === "belasting" && bel.reden && bel.reden !== (a.kort || "")) ? bel.reden : "",
-      meta: a.soort === "belasting" && bel.datum ? `belasting · stand ${bel.datum}` : "",
-      // het dominante cijfer staat in de focal; hier niet nog eens
-      value: (a.pct != null && !(owns("bel-pct") && a.soort === "belasting")) ? `+${a.pct}%` : "",
-    })).join("") + `</div>`;
-    const rest = (bel.signalen || []).slice(1);
-    if (rest.length) {
-      waarom += `<button type="button" class="ds-more" onclick="dsFoldToggle(this)">Alle belasting-signalen (${rest.length})</button>
-        <div class="ds-fold"><div>${dsStream(rest.map(x => ({ text: x, tone: belTone })))}</div></div>`;
-    }
+  let loadBody = "";
+  if (bel.km_recent != null) {
+    const nRuns = (bel.runs || []).length;
+    // Bezit het signaal het weekvolume al, dan toont dit veld de TREND en niet
+    // hetzelfde getal nog eens groot — één dominant cijfer per scherm.
+    loadBody = `<div class="ws-load">
+      ${owns("bel-pct") ? "" : `<div class="ws-load-n ${bel.actief ? belTone : "is-calm"}">${esc(bel.km_recent)}<i>km</i></div>`}
+      ${dsSpark((bel.runs || []).map(r => r.km))}
+      <div class="ws-load-m">
+        ${owns("bel-pct") ? `<span>${esc(bel.km_recent)} km deze week</span>` : ""}
+        ${bel.km_basis_week != null ? `<span>referentie ${esc(bel.km_basis_week)} km/wk</span>` : ""}
+        ${nRuns ? `<span>${nRuns} runs · laatste ${esc(bel.runs[nRuns - 1].datum)}</span>` : ""}
+      </div></div>`;
   } else {
-    waarom = dsEmpty("Geen open actiepunt uit belasting, compliance, schema of feedback.", { icon: "check" });
+    loadBody = `<p class="ws-calm">Geen belastingstand bekend.</p>`;
   }
-  h += `<section class="ds-quiet">
-    <div class="ds-sechead"><h3 class="ds-label">Waarom dit speelt</h3>
-      ${bel.datum ? `<span class="ds-sechead-note">stand ${esc(bel.datum)}</span>` : ""}</div>
-    ${waarom}</section>`;
 
-  // Rechts: context — twee secties in ÉÉN oppervlak (haarlijn, geen 2e kaart).
-  let planHead = "";
-  if (sc) planHead = dsAttnCard({ tone: dsTone(sc.tier), icon: "clock",
-    title: sc.kort || "schema-signaal", why: sc.einddatum ? `t/m ${sc.einddatum}` : "" });
-  h += `<section class="ds-quiet ds-stack">
-    <div><div class="ds-sechead"><h3 class="ds-label">Schema &amp; doel</h3></div>
-      ${planHead}<div id="ws-plan" class="ws-deep-slot">${dsSkeletonBlock(2)}</div></div>
-    <div><div class="ds-sechead"><h3 class="ds-label">Klachten &amp; context</h3></div>
-      <div id="ws-context" class="ws-deep-slot">${dsSkeletonBlock(2)}</div></div>
-  </section>`;
-  h += `</div>`;
+  h += `<div class="ws-col ws-col-l">
+    ${wsField("Aandacht nu", attnBody, { tone })}
+    ${wsField("Belasting & trend", loadBody, { tone: bel.actief ? belTone : "" })}
+  </div>`;
 
-  // ── Actieband: onderdeel van de compositie, geen los blok onderaan ──
-  const acts = [
-    dsAction({ icon: "brain", title: "Schema openen", sub: "bouwen of verlengen", onclick: `openAthleteModule('schema','${esc(key)}')` }),
-    dsAction({ icon: "user-plus", title: "Dossier", sub: "profiel & notities", onclick: `openAthleteModule('atleten','${esc(key)}')` }),
-    dsAction({ icon: "brain", title: "Cockpit", sub: "context & geheugen", onclick: `openAthleteModule('dossier','${esc(key)}')` }),
-    dsAction({ icon: "pulse", title: "Teampuls", sub: "teammonitoring", onclick: `deepAtleet('teampuls','${esc(key)}')` }),
-  ];
-  if (bel.actief) acts.push(dsAction({
-    icon: "check", title: "Belasting gezien", sub: "dempt 7 dagen", tone: belTone,
-    onclick: `wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')`,
-  }));
-  h += `<div class="ds-actionbar"><h3 class="ds-label">Volgende stap</h3>
-    <div class="ds-actions">${acts.join("")}</div></div>`;
+  // ── MIDDEN: de atleet is de scène; het dominante signaal ligt eronder ──
+  h += `<div class="ws-col ws-col-c">
+    ${wsAnchor(naam, tone, attn.length ? [dsChip(tone === "is-critical" ? "actie" : "aandacht", tone)]
+                                       : [dsChip("rustig", "is-calm")], sub, athleteNav("workspace", key))}
+    ${wsSignal(focal)}
+    <div class="ws-acts">${[
+      dsAction({ icon: "brain", title: "Schema openen", sub: "bouwen of verlengen", onclick: `openAthleteModule('schema','${esc(key)}')` }),
+      dsAction({ icon: "user-plus", title: "Dossier", sub: "profiel & notities", onclick: `openAthleteModule('atleten','${esc(key)}')` }),
+      dsAction({ icon: "brain", title: "Cockpit", sub: "context & geheugen", onclick: `openAthleteModule('dossier','${esc(key)}')` }),
+      dsAction({ icon: "pulse", title: "Teampuls", sub: "teammonitoring", onclick: `deepAtleet('teampuls','${esc(key)}')` }),
+    ].concat(bel.actief ? [dsAction({ icon: "check", title: "Belasting gezien", sub: "dempt 7 dagen",
+      tone: belTone, onclick: `wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')` })] : []).join("")}</div>
+  </div>`;
+
+  // ── RECHTS: doel & planning (boven), feedback (midden), context (onder) ──
+  let planHead = sc ? wsLine({ tone: dsTone(sc.tier), icon: "clock",
+    title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
+  const fbTone = fb.status === "unknown" ? "is-unknown" : (fb.open ? "is-attention" : "is-success");
+  const fbBody = fb.status === "unknown"
+    ? `<p class="ws-calm">Feedback-status wordt bijgewerkt…</p>`
+    : `<div class="ws-fb ${fbTone}"><span class="ws-fb-n">${fb.open || 0}</span>
+        <span class="ws-fb-t">${fb.open ? `open reactie${fb.open !== 1 ? "s" : ""}` : "alles beantwoord"}</span></div>`;
+
+  h += `<div class="ws-col ws-col-r">
+    ${wsField("Doel & planning", planHead + `<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>`,
+      { tone: sc ? dsTone(sc.tier) : "" })}
+    ${wsField("Feedback", fbBody, { tone: fbTone })}
+    ${wsField("Klachten & context", `<div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>`)}
+  </div>`;
 
   h += `</div>`;
   wrap.innerHTML = h;
@@ -5127,28 +5124,28 @@ async function wsLoadDeep(wrap, ident) {
   if (!wrap || wsSel !== ident) return;                    // leak guard
   const plan = $("#ws-plan"), ctx = $("#ws-context");
   if (!r || !r.ok) {
-    if (plan) plan.innerHTML = dsEmpty("Doel & planning nu niet beschikbaar.", { icon: "alert", tone: "is-unknown" });
-    if (ctx) ctx.innerHTML = dsEmpty("Context nu niet beschikbaar.", { icon: "alert", tone: "is-unknown" });
+    if (plan) plan.innerHTML = `<p class="ws-calm">Doel &amp; planning nu niet beschikbaar.</p>`;
+    if (ctx) ctx.innerHTML = `<p class="ws-calm">Context nu niet beschikbaar.</p>`;
     return;
   }
   if (plan) {
     const rows = (r.planning && r.planning.rows) || [];
     plan.innerHTML = rows.length ? dsKv(rows)
-      : dsEmpty("Geen doel/planning bekend.", { icon: "flag", tone: "is-unknown" });
+      : `<p class="ws-calm">Geen doel of planning vastgelegd.</p>`;
   }
   if (ctx) {
     const attn = (r.attention || []).filter(c => c.kind === "complaint" || c.kind === "contradiction");
     const lo = r.load_observation;
     let c = "";
-    if (attn.length) c += `<div class="ds-attn">` + attn.map(a => dsAttnCard({
+    if (attn.length) c += attn.map(a => wsLine({
       tone: dsTone("aandacht"), icon: _DC_KIND_IC[a.kind] || "alert",
-      title: a.title || "", why: a.why || "",
-    })).join("") + `</div>`;
+      title: a.title || "", sub: a.why || "",
+    })).join("");
     // Bezit de stage de belasting al (focal + waarom-kaart), dan is de observatie
     // hier ruis: we herhalen hem niet.
     if (lo && lo.signalen && wrap.dataset.belOwned !== "1")
       c += dsStream([{ text: `Belasting-observatie: ${lo.signalen}`, tone: dsTone(lo.ernst) }]);
-    ctx.innerHTML = c || dsEmpty("Geen actieve klacht of tegenstrijdigheid bekend.", { icon: "check" });
+    ctx.innerHTML = c || `<p class="ws-calm">Geen actieve klacht of tegenstrijdigheid bekend.</p>`;
   }
 }
 
