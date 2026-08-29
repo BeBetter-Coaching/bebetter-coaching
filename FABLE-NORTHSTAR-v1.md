@@ -276,6 +276,19 @@ fotorealisme eist, is de volgende stap een écht gerenderd
 male/female/neutral-asset (buiten deze codebase gemaakt) in exact deze
 compositie — de laag-structuur is daarop voorbereid.
 
+## Spatial Cockpit Reset v3 (kandidaat na extern NO-GO op 20ba128)
+
+Externe review oordeelde: nog structureel een dashboard. De presentatielaag is
+afgebroken en herbouwd als spatial scene (vijf z-vlakken, gebroken geometrie,
+borderless fragmenten, instrument i.p.v. KPI-ring, geïntegreerd commando —
+zie README-REVIEW). De presence is nu een digitaal GESCHILDERD pre-rendered
+asset (sculpt-lagen → WebP met alpha, 3 varianten) met live code-overlays;
+de gecodeerde anatomie is weg. Fase B-prototype: `design-lab/spatial-lab.html`;
+paint-bron: `design-lab/presence-paint*.html`. Alle 10 objectieve gates van
+het reset-contract zijn intern doorlopen; mobiel stapelt center-first zonder
+overlap; 1026 tests groen (test 32/37 bewust op het nieuwe contract);
+FCP-band gelijk; 0 overflow. Geen zelf-GO — externe review beslist.
+
 ## Tool-/modeladvies (§5)
 
 Geen zwaardere tooling nodig gebleken: CSS + inline SVG haalden het ambitieniveau;

@@ -5027,19 +5027,25 @@ function wsChart(vals, o) {
 
 // Achtergrondlaag: canvas-brede orbitale lijnen + een vaste constellation.
 // Puur decoratief (geen data, geen suggestie van een persoon), statisch.
+// Z0 — omgeving: verre traces, constellation en het perspectiefveld dat naar
+// de atleet convergeert. Statisch en decoratief (geen data).
 function wsOrbits() {
-  const dots = [[120, 140, 1.4], [340, 90, 1], [520, 210, 1.2], [760, 70, 1.6],
-    [980, 150, 1], [1180, 110, 1.3], [1290, 300, 1], [220, 420, 1], [90, 600, 1.2],
-    [1330, 560, 1.4], [1150, 680, 1], [420, 740, 1.1], [680, 800, 1.3],
-    [940, 760, 1], [260, 640, .9], [1260, 430, .9],
-    [60, 300, 1.1], [190, 240, .8], [450, 60, 1], [620, 130, .9], [860, 40, 1.2],
-    [1080, 250, .8], [1360, 160, 1], [1400, 700, .9], [560, 820, 1], [160, 790, 1.2],
-    [820, 690, .8], [1020, 560, .9], [370, 560, .8], [720, 260, .7]];
-  return `<svg class="ws-orbits" viewBox="0 0 1400 860" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-    <ellipse cx="700" cy="400" rx="660" ry="330"/>
-    <ellipse cx="700" cy="430" rx="520" ry="250" transform="rotate(-6 700 430)"/>
-    <ellipse cx="700" cy="380" rx="820" ry="410" transform="rotate(4 700 380)"/>
-    ${dots.map((d, i) => `<circle class="ws-star${i % 7 === 3 ? " tw" : ""}" cx="${d[0]}" cy="${d[1]}" r="${d[2]}"/>`).join("")}</svg>`;
+  const stars = [[150, 130, 1.4, .4], [420, 70, 1, .25], [880, 52, 1.4, .4],
+    [1210, 120, 1.1, .3], [1340, 420, 1.3, .35], [90, 470, 1.2, .3],
+    [240, 820, 1.3, .3], [1150, 800, 1.2, .25], [640, 120, 1, .2],
+    [1050, 250, 1, .25], [340, 300, .9, .2], [1290, 640, 1, .22]];
+  return `<svg class="ws-orbits" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <path class="ws-tr" d="M-40 620 C300 520 700 500 1480 590"/>
+    <path class="ws-tr" d="M-40 700 C360 620 760 610 1480 680"/>
+    <path class="ws-tr" d="M120 -40 C240 220 320 420 340 780"/>
+    <path class="ws-tr" d="M1330 -40 C1240 240 1180 460 1170 820"/>
+    <g class="ws-fl">
+      <path d="M180 900 L648 560"/><path d="M420 900 L678 578"/>
+      <path d="M1260 900 L792 560"/><path d="M1030 900 L762 578"/>
+      <ellipse cx="720" cy="748" rx="560" ry="104"/>
+      <ellipse cx="720" cy="756" rx="380" ry="72"/>
+    </g>
+    ${stars.map((d, i) => `<circle class="ws-star${i % 5 === 2 ? " tw" : ""}" cx="${d[0]}" cy="${d[1]}" r="${d[2]}" opacity="${d[3]}"/>`).join("")}</svg>`;
 }
 
 // Weekstrip: de laatste 7 dagen t/m de stand-datum, met de echte dag-totalen
@@ -5069,95 +5075,19 @@ function wsWeekStrip(runs, standDatum) {
   }).join("") + `</div>`;
 }
 
-// De centrale athlete-presence: een sculpturale, holografische bust (hoofd/
-// schouders/torso) — meerdere dieptelagen, rim-light, scanlines, chromatische
-// scheiding en particle-dissolutie naar het platform. Bewust generiek en
-// niet-herleidbaar; het draagt de menselijke massa van de referentie.
-function wsBust(variant) {
-  // PRESENCE-LAYER (bindende spec): 3/4-frontale digital-human bust, opgebouwd
-  // uit lagen — schaduwmassa, donker-translucent basisvolume, gelaatsvlakken
-  // (suggestie, geen portret), topo-banen die de vorm volgen, scanlines,
-  // borstkern, dubbele rim-light (koel links, cyaan→status rechts), particles.
-  // Varianten v/m/x subtiel (haarmassa, hals-/schouderbreedte) — selectie via
-  // echt profielveld of presentatie-override, nooit geraden op naam.
-  const g = variant === "v" || variant === "m" ? variant : "x";
-  // Silhouet 800×900: hoofd licht 3/4 naar rechts, hals, schouders, bovenborst;
-  // onderzijde lost op (gradient + particles).
-  const P = "M400 92 C452 92 494 130 500 192 C503 226 498 258 484 286 C476 302 466 316 452 326 C448 344 448 360 452 376 C520 396 590 424 646 466 C686 496 706 530 712 566 C718 640 716 760 712 872 L88 872 C84 760 82 640 88 566 C94 530 114 496 154 466 C210 424 280 396 348 376 C352 360 352 344 348 326 C334 316 324 302 316 286 C302 258 297 226 300 192 C306 130 348 92 400 92 Z";
-  const BUN_V = "M352 130 C326 112 296 116 282 140 C268 166 276 196 304 206 C294 184 298 158 318 148 C328 138 341 133 352 130 Z";
-  const NECKPATCH_M = "M348 326 C334 316 324 302 316 286 L302 292 C312 312 324 328 340 340 C344 336 347 331 348 326 Z M452 326 C466 316 476 302 484 286 L498 292 C488 312 476 328 460 340 C456 336 453 331 452 326 Z";
-  const dust = [[150, 790, 3, .3], [200, 840, 2, .22], [260, 806, 2.6, .3], [330, 852, 2, .2],
-    [400, 820, 3.2, .32], [470, 856, 2.2, .22], [540, 810, 2.6, .3], [610, 846, 2, .2],
-    [660, 792, 2.8, .28], [120, 730, 1.8, .18], [680, 726, 1.8, .2], [400, 878, 1.8, .16],
-    [230, 748, 1.6, .16], [570, 752, 1.6, .18]];
-  const hair = g === "v" ? `<path class="ws-bust-hair" fill="url(#wsBustG)" d="${BUN_V}"/>` : "";
-  const broad = g === "m" ? `<path class="ws-bust-broad" d="${NECKPATCH_M}"/>` : "";
-  return `<svg class="ws-bust ws-bust--${g}" viewBox="0 0 800 900" aria-hidden="true">
-    <defs>
-      <linearGradient id="wsBustG" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#9FD8EF" stop-opacity=".34"/>
-        <stop offset=".2" stop-color="#5FA8D0" stop-opacity=".3"/>
-        <stop offset=".42" stop-color="#2E5E8E" stop-opacity=".3"/>
-        <stop offset=".62" stop-color="#16385E" stop-opacity=".3"/>
-        <stop offset=".85" stop-color="#0A1F3E" stop-opacity=".14"/>
-        <stop offset="1" stop-color="#0A1F3E" stop-opacity="0"/></linearGradient>
-      <linearGradient id="wsBustS" x1="0" y1="0" x2="0" y2="1">
-        <stop offset=".4" stop-color="#000" stop-opacity="0"/>
-        <stop offset=".78" style="stop-color:var(--tone)" stop-opacity=".2"/>
-        <stop offset="1" style="stop-color:var(--tone)" stop-opacity="0"/></linearGradient>
-      <linearGradient id="wsRimL" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#CFF6FF" stop-opacity=".9"/>
-        <stop offset=".5" stop-color="#59E8FF" stop-opacity=".5"/>
-        <stop offset=".92" stop-color="#59E8FF" stop-opacity="0"/></linearGradient>
-      <linearGradient id="wsRimR" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#BFF2FF" stop-opacity=".85"/>
-        <stop offset=".45" stop-color="#59E8FF" stop-opacity=".4"/>
-        <stop offset=".8" style="stop-color:var(--tone)" stop-opacity=".45"/>
-        <stop offset="1" style="stop-color:var(--tone)" stop-opacity="0"/></linearGradient>
-      <linearGradient id="wsBustCA" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#FF6D4D"/><stop offset=".6" stop-color="#FF6D4D" stop-opacity=".4"/>
-        <stop offset=".9" stop-color="#FF6D4D" stop-opacity="0"/></linearGradient>
-      <linearGradient id="wsBustCB" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#59E8FF"/><stop offset=".6" stop-color="#59E8FF" stop-opacity=".4"/>
-        <stop offset=".9" stop-color="#59E8FF" stop-opacity="0"/></linearGradient>
-      <clipPath id="wsBustClip"><path d="${P}"/></clipPath>
-      <pattern id="wsBustScan" width="4" height="5" patternUnits="userSpaceOnUse">
-        <rect width="4" height="1" fill="#DFFBFF" opacity=".06"/></pattern>
-    </defs>
-    <g class="ws-bust-shadow"><path d="${P}" transform="translate(20 14)"/></g>
-    <path class="ws-bust-chrA" fill="url(#wsBustCA)" d="${P}"/>
-    <path class="ws-bust-chrB" fill="url(#wsBustCB)" d="${P}"/>
-    ${hair}
-    <path fill="url(#wsBustG)" stroke="rgba(148,229,255,.3)" stroke-width="1.4" d="${P}"/>
-    ${broad}
-    <path fill="url(#wsBustS)" d="${P}"/>
-    <g clip-path="url(#wsBustClip)">
-      <ellipse class="ws-face-crown" cx="392" cy="150" rx="72" ry="60"/>
-      <ellipse class="ws-face-glow" cx="400" cy="215" rx="105" ry="125"/>
-      <ellipse class="ws-face-shadeL" cx="348" cy="244" rx="42" ry="92"/>
-      <ellipse class="ws-face-cheekR" cx="446" cy="252" rx="34" ry="44"/>
-      <ellipse class="ws-face-cheekL" cx="354" cy="256" rx="28" ry="38"/>
-      <ellipse class="ws-face-jaw" cx="400" cy="340" rx="54" ry="18"/>
-      <ellipse class="ws-bust-clavL" cx="320" cy="470" rx="66" ry="9"/>
-      <ellipse class="ws-bust-clavR" cx="482" cy="468" rx="66" ry="9"/>
-      <g class="ws-bust-topo">
-        <path d="M160 470 C240 432 330 414 400 414 C470 414 560 432 640 470"/>
-        <path d="M140 512 C232 470 324 450 400 450 C476 450 568 470 660 512"/>
-        <path d="M126 560 C226 514 320 492 400 492 C480 492 574 514 674 560"/>
-        <path d="M118 614 C222 566 318 542 400 542 C482 542 578 566 682 614"/>
-        <path d="M114 672 C220 624 316 598 400 598 C484 598 580 624 686 672"/>
-        <path d="M112 734 C220 686 316 660 400 660 C484 660 580 686 688 734"/>
-        <path d="M112 800 C220 752 318 726 400 726 C482 726 580 752 688 800"/>
-        <path d="M356 356 C372 366 388 370 400 370 C412 370 428 366 444 356"/>
-      </g>
-      <rect class="ws-bust-scan" width="800" height="830" fill="url(#wsBustScan)"/>
-      <ellipse class="ws-bust-core" cx="400" cy="560" rx="60" ry="110"/>
-      <ellipse class="ws-bust-corehot" cx="400" cy="524" rx="20" ry="44"/>
-    </g>
-    <path class="ws-bust-rimL" d="M400 92 C348 92 306 130 300 192 C297 226 302 258 316 286 C324 302 334 316 348 326 C352 344 352 360 348 376 C280 396 210 424 154 466 C114 496 94 530 88 566"/>
-    <path class="ws-bust-rimR" d="M400 92 C452 92 494 130 500 192 C503 226 498 258 484 286 C476 302 466 316 452 326 C448 344 448 360 452 376 C520 396 590 424 646 466 C686 496 706 530 712 566"/>
-    <g class="ws-bust-dust">${dust.map(d => `<circle cx="${d[0]}" cy="${d[1]}" r="${d[2]}" opacity="${d[3]}"/>`).join("")}</g>
-  </svg>`;
+// De athlete-presence: pre-rendered digital-human asset (alpha) + live
+// overlays (scanlines, status-licht, borstkern) — reset v3 §8/§9. De mensmassa
+// is een statisch asset; alles wat op data reageert blijft code-gedreven.
+// Variant: écht profielveld → ?presence/?bust-override → neutraal. Nooit naam.
+function wsHuman(variant) {
+  const g = variant === "v" ? "female" : variant === "m" ? "male" : "neutral";
+  return `<div class="ws-human" aria-hidden="true">
+    <img class="ws-human-asset" src="/static/presence/presence-${g}.webp" alt="">
+    <div class="ws-human-scan"></div>
+    <div class="ws-human-status"></div>
+    <div class="ws-human-core"></div>
+    <div class="ws-human-corehot"></div>
+  </div>`;
 }
 
 // Eén regel context: tone-streep + tekst + optionele waarde. Vervangt de kaart.
@@ -5186,11 +5116,21 @@ function wsAnchor(naam, tone) {
 function wsSignal(f) {
   if (!f) return "";
   const small = String(f.value).length > 5 ? " txt" : "";
-  return `<div class="ws-signalwrap ${f.tone || "is-calm"}"><div class="ws-signal">
+  // Instrument-ring: eerlijke mapping — ratio>=1: dim = 100% referentie, felle
+  // sweep = overshoot (max één extra ronde); ratio<1: voortgangsboog.
+  let ring = "";
+  if (f.gaugeFrac != null) {
+    const R = 62, C = 2 * Math.PI * R;
+    const dash = Math.max(f.gaugeFrac * C, 0).toFixed(1);
+    ring = `<svg viewBox="0 0 150 150" aria-hidden="true">
+      ${f.gaugeDim ? `<circle class="ws-inst-b" cx="75" cy="75" r="${R}" transform="rotate(90 75 75)"/>` : ""}
+      <circle class="ws-inst-v" cx="75" cy="75" r="${R}" transform="rotate(90 75 75)"
+        style="stroke-dasharray:${dash} ${C.toFixed(1)};--wsd:${dash}"/></svg>`;
+  }
+  return `<div class="ws-signal ${f.tone || "is-calm"}">${ring}
     <span class="ws-signal-l">${esc(f.label)}${f.word ? ` · ${esc(f.word)}` : ""}</span>
     <span class="ws-signal-v${small}">${esc(f.value)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
-    ${f.ratio ? `<span class="ws-signal-r">${esc(f.ratio)}× referentie</span>` : ""}</div>
-    ${f.sub ? `<div class="ws-signal-meta">${esc(f.sub)}</div>` : ""}</div>`;
+    ${f.sub ? `<span class="ws-signal-s">${esc(f.sub)}</span>` : ""}</div>`;
 }
 
 function wsRender(wrap, vm) {
@@ -5202,15 +5142,14 @@ function wsRender(wrap, vm) {
   const tone = dsWorstTone(attn.map(a => dsTone(a.tier)));
   const belTone = dsTone(bel.ernst || "calm");
 
-  // Focal-ladder MET eigenaar: wie het dominante cijfer bezit, mag het als enige
-  // groot tonen. De scène-typografie op het platform is de enige eigenaar-plek.
+  // Focal-ladder MET eigenaar (ongewijzigd contract): één dominante waarde.
   let focal;
   if (bel.actief && bel.pct != null) {
     focal = { owner: "bel-pct", tone: belTone, label: "Belastingssignaal",
       word: bel.ernst === "hoog" ? "Verhoogd" : "Let op",
       value: (bel.pct > 0 ? "+" : "") + bel.pct, unit: "%",
       sub: bel.km_recent != null
-        ? `deze week ${bel.km_recent} km · referentie ${bel.km_basis_week} km/wk`
+        ? `${bel.km_recent} km · referentie ${bel.km_basis_week} km/wk`
         : (bel.reden || "") };
   } else if (bel.km_recent != null) {
     focal = { owner: "bel-km", tone: "is-calm", label: "Weekvolume", value: bel.km_recent, unit: "km",
@@ -5223,23 +5162,12 @@ function wsRender(wrap, vm) {
       sub: "geen open actiepunt" };
   }
   const owns = s => focal.owner === s;
-
-  // ── DE ORBIT-GAUGE vertelt de ratio zelf (referentie-principe §7): eerste
-  // omloop = 100% van de referentie (gedimd), overshoot = felle tweede sweep
-  // met een luminous eindnode + ×-label. ratio<1 → voortgangsboog. Geen data →
-  // geen gauge. Zelfde canonieke velden als het dominante cijfer.
-  let gauge = null;
+  let ratioLbl = "";
   if ((owns("bel-pct") || owns("bel-km")) && bel.km_recent != null && bel.km_basis_week) {
     const ratio = bel.km_recent / bel.km_basis_week;
-    const R = 252, C = 2 * Math.PI * R;
-    const frac = ratio >= 1 ? Math.min(ratio - 1, 1) : ratio;
-    const dash = Math.max(frac * C, 0);
-    const ang = (90 + 360 * frac) * Math.PI / 180;      // start onderaan (6 uur)
-    gauge = { ratio, R, C, dash,
-      lbl: (Math.round(ratio * 10) / 10).toFixed(1).replace(".", ","),
-      nx: (320 + R * Math.cos(ang)).toFixed(1), ny: (320 + R * Math.sin(ang)).toFixed(1),
-      dim: ratio >= 1 };
-    focal.ratio = gauge.lbl;
+    focal.gaugeFrac = ratio >= 1 ? Math.min(ratio - 1, 1) : ratio;
+    focal.gaugeDim = ratio >= 1;
+    ratioLbl = (Math.round(ratio * 10) / 10).toFixed(1).replace(".", ",") + "×";
   }
 
   const chip = attn.length
@@ -5250,112 +5178,98 @@ function wsRender(wrap, vm) {
 
   let h = genBanner(vm.generation);
   h += `<div class="ws-scene ${tone}">`;
-  // Achtergrond doet mee: ambient haze (status-gestuurd) + orbits + vignette.
+  // Z0 — omgeving
   h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
+  // Z1 — cockpitgeometrie: gebroken bogen, gidslijnen, data-nodes
+  h += `<svg class="ws-geo" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <circle class="ws-arc a2" cx="700" cy="430" r="418" stroke-dasharray="600 2026" transform="rotate(-206 700 430)"/>
+    <circle class="ws-arc a3" cx="748" cy="470" r="332" stroke-dasharray="360 1726" transform="rotate(24 748 470)"/>
+    <circle class="ws-arc a4" cx="700" cy="450" r="368"/>
+    <circle class="ws-arc a1" cx="688" cy="452" r="272" stroke-dasharray="410 1299" transform="rotate(118 688 452)"/>
+    <path class="ws-gd" d="M700 40 L700 132"/>
+    <path class="ws-gd" d="M330 452 L262 452"/><path class="ws-gd" d="M1140 452 L1078 452"/>
+    ${attn.length ? `<circle class="ws-nd" cx="497" cy="372" r="5"/>` : ""}
+    <circle class="ws-nd2" cx="452" cy="641" r="3.5"/>
+  </svg>`;
 
-  // ── IDENTITY-ZONE: één keer, compact, daarna vertegenwoordigt de bust haar ──
-  h += `<header class="ws-id">
-    <div class="ws-eyebrow"><i></i>BeBetter · Athlete Command</div>
-    <div class="ws-id-row">${wsAnchor(naam, tone)}<h2 class="ws-name">${esc(naam)}</h2></div>
-    <div class="ws-id-meta">${chip}${vm.groep ? `<span class="ws-id-g">${esc(vm.groep)}</span>` : ""}${fresh}</div>
-    <div class="ws-id-nav">${athleteNav("workspace", key)}</div></header>`;
-
-  // ── HET COCKPIT-COMPLEX: orbit achter → bust → orbit/gauge vóór → platform ──
-  h += `<div class="ws-cockpit ${tone}">
-    <div class="ws-halo" aria-hidden="true"></div>
-    <svg class="ws-orbit ws-orbit-back" viewBox="0 0 640 680" aria-hidden="true">
-      <circle class="ws-ring r0" cx="320" cy="320" r="306"/>
-      <circle class="ws-ring rt" cx="320" cy="320" r="278"/>
-      <circle class="ws-ring r1" cx="320" cy="320" r="226"/>
-      <circle class="ws-ring rm" cx="320" cy="320" r="180"/>
-      ${gauge ? `${gauge.dim ? `<circle class="ws-gauge-lap1" cx="320" cy="320" r="${gauge.R}"/>` : ""}
-      ${gauge.dash > 10 ? `<circle class="ws-gauge-lap2" cx="320" cy="320" r="${gauge.R}"
-        style="stroke-dasharray:${gauge.dash.toFixed(1)} ${gauge.C.toFixed(1)};--wsd:${gauge.dash.toFixed(1)}"/>` : ""}` : ""}
-      <g class="ws-spin s2"><circle class="ws-ring-arc a2" cx="320" cy="320" r="278"/>
-        <circle class="ws-sat2" cx="320" cy="42" r="3.4"/></g>
-    </svg>
-    ${wsBust((vm.profiel && vm.profiel.geslacht === "vrouw" && "v") ||
-             (vm.profiel && vm.profiel.geslacht === "man" && "m") ||
-             ({ female: "v", male: "m", neutral: "x" })[new URLSearchParams(location.search).get("presence")] ||
-             new URLSearchParams(location.search).get("bust") || "x")}
-    <svg class="ws-orbit ws-orbit-front" viewBox="0 0 640 680" aria-hidden="true">
-      <defs><clipPath id="wsGaugeLow"><rect x="0" y="368" width="640" height="312"/></clipPath></defs>
-      ${gauge && gauge.dash > 10 ? `<g clip-path="url(#wsGaugeLow)">
-        <circle class="ws-gauge-lap2" cx="320" cy="320" r="${gauge.R}"
-          style="stroke-dasharray:${gauge.dash.toFixed(1)} ${gauge.C.toFixed(1)};--wsd:${gauge.dash.toFixed(1)}"/></g>
-      <circle class="ws-gauge-node" cx="${gauge.nx}" cy="${gauge.ny}" r="6"/>` : ""}
-      <g class="ws-spin s1"><circle class="ws-ring-arc a1" cx="320" cy="320" r="252"/>
-        <circle class="ws-sat" cx="320" cy="68" r="5"/></g>
-      <g class="ws-spin s3"><circle class="ws-ring-arc a3" cx="320" cy="320" r="207"/></g>
-      <ellipse class="ws-plat p1" cx="320" cy="600" rx="216" ry="44"/>
-      <ellipse class="ws-plat p2" cx="320" cy="602" rx="150" ry="30"/>
-      <ellipse class="ws-plat p3" cx="320" cy="604" rx="86" ry="17"/>
-      <ellipse class="ws-plat-glow" cx="320" cy="602" rx="190" ry="36"/>
-    </svg>
-    <div class="ws-orbit-ring" aria-hidden="true"></div>
+  // Z2 — athlete-vlak: identity (één keer) + human + platform + instrument
+  const presVar = (vm.profiel && vm.profiel.geslacht === "vrouw" && "v") ||
+    (vm.profiel && vm.profiel.geslacht === "man" && "m") ||
+    ({ female: "v", male: "m", neutral: "x" })[new URLSearchParams(location.search).get("presence")] ||
+    new URLSearchParams(location.search).get("bust") || "x";
+  h += `<div class="ws-stagez">
+    <div class="ws-id2">${wsAnchor(naam, tone)}<b class="ws-name">${esc(naam)}</b>${chip}${fresh}</div>
+    <div class="ws-aura" aria-hidden="true"></div>
+    ${wsHuman(presVar)}
+    <div class="ws-plat2" aria-hidden="true"><svg viewBox="0 0 560 150">
+      <ellipse class="ws-pg" cx="280" cy="75" rx="240" ry="46"/>
+      <ellipse cx="280" cy="75" rx="252" ry="52" opacity=".5"/>
+      <ellipse cx="280" cy="78" rx="176" ry="36" opacity=".35"/>
+      <ellipse cx="280" cy="81" rx="104" ry="21" opacity=".22"/></svg></div>
     ${wsSignal(focal)}
-    <nav class="ws-dock">
-      ${bel.actief ? `<button type="button" class="ws-ctl primary" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">${ic("check")}Belasting gezien</button>` : ""}
-      <button type="button" class="ws-ctl" onclick="deepAtleet('teampuls','${esc(key)}')">Teampuls</button>
-      <button type="button" class="ws-ctl" onclick="openAthleteModule('atleten','${esc(key)}')">Profiel</button>
-    </nav>
   </div>`;
 
-  // ── GLASS PANEL 1 (links): aandacht + belasting — zweeft de scène in ──
-  // Waarde-consistentie: de belasting-regel komt uit DEZELFDE canonieke velden
-  // als het dominante cijfer (load_metric) — nooit een voor-afgeronde bron-zin.
+  // Z3 — fragmenten (borderless, ruimtelijk, asymmetrisch)
+  // Waarde-consistentie: belasting-zin uit dezelfde canonieke velden als het signaal.
   const belZin = (bel.pct != null && bel.km_recent != null && bel.km_basis_week != null)
-    ? `Volume ${bel.pct > 0 ? "+" : ""}${bel.pct}% deze week (${bel.km_recent} km vs gem. ${bel.km_basis_week} km/wk)`
+    ? `Volume <b>${bel.pct > 0 ? "+" : ""}${bel.pct}%</b> deze week — ${bel.km_recent} km tegenover een referentie van ${bel.km_basis_week} km/wk.`
     : "";
-  let attnBody = attn.length
-    ? attn.map(a => wsLine({
-        tone: dsTone(a.tier), icon: SOORT_IC[a.soort] || "alert",
-        title: (a.soort === "belasting" && belZin) ? belZin : (a.kort || a.soort || ""),
-        sub: a.soort === "belasting" && bel.datum ? `stand ${bel.datum}` : "",
-        value: (a.pct != null && !(owns("bel-pct") && a.soort === "belasting")) ? `+${a.pct}%` : "",
-      })).join("")
-    : `<p class="ws-calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`;
-  const restSig = (bel.signalen || []).slice(1);
-  if (restSig.length) attnBody += `<button type="button" class="ds-more" onclick="dsFoldToggle(this)">Alle signalen (${restSig.length})</button>
-    <div class="ds-fold"><div>${dsStream(restSig.map(x => ({ text: x, tone: belTone })))}</div></div>`;
+  const attnMeta = [attn.length ? (attn[0].tier || "") : "", bel.datum ? `stand ${bel.datum}` : ""]
+    .concat(attn.slice(1).map(a => a.kort || "")).filter(Boolean).join(" · ");
+  const attnTxt = attn.length
+    ? ((attn[0].soort === "belasting" && belZin) ? belZin : esc(attn[0].kort || ""))
+    : "";
+  h += `<div class="ws-frag ws-frag-attn ${tone}">
+      <span class="ws-tick"></span>
+      <h3 class="ds-label">Aandacht nu</h3>
+      ${attn.length ? `<p class="ws-attn-t">${attnTxt}</p>
+        ${attnMeta ? `<p class="ws-attn-m">${esc(attnMeta)}</p>` : ""}`
+      : `<p class="ws-attn-t calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`}
+    </div>
+    ${attn.length ? `<svg class="ws-conn" viewBox="0 0 56 92" aria-hidden="true"><path d="M0 8 C20 26 34 54 48 84"/></svg>` : ""}`;
 
   const nRuns = (bel.runs || []).length;
-  let loadSec = "";
+  let loadFrag = "";
   if (bel.km_recent != null) {
-    // Cumulatieve weekcurve + referentielijn: de overshoot is zonder tekst
-    // leesbaar (§8). Zelfde runs als de weekstrip.
     const chrono = (bel.runs || []).slice()
       .sort((a, b) => String(a.datum || "").localeCompare(String(b.datum || "")));
     let acc = 0;
     const cum = chrono.map(r => (acc += Number(r.km) || 0));
-    loadSec = `<section class="ws-sec">
+    loadFrag = `<div class="ws-frag ws-frag-load ws-field ${bel.actief ? belTone : ""}">
       <h3 class="ds-label">Belasting · 7 dagen<em>${nRuns ? `${nRuns} runs` : ""}</em></h3>
-      <div class="ws-load-n">${esc(bel.km_recent)}<i>km deze week</i></div>
+      <div class="ws-kmrow"><span class="ws-km">${esc(bel.km_recent)}<i> km deze week</i></span>
+        ${ratioLbl ? `<span class="ws-rt">${esc(ratioLbl)}</span>` : ""}</div>
       ${wsWeekStrip(bel.runs || [], bel.datum)}
-      ${wsChart(cum, { w: 250, h: 60, min0: true, ref: bel.km_basis_week })}
-      <div class="ws-load-m">
-        ${bel.km_basis_week != null ? `<span>referentie ${esc(bel.km_basis_week)} km/wk</span>` : ""}
-        ${nRuns ? `<span>laatste ${esc(String((bel.runs[nRuns - 1] || {}).datum || ""))}</span>` : ""}
-      </div></section>`;
+      ${wsChart(cum, { w: 300, h: 56, min0: true, ref: bel.km_basis_week })}
+      <div class="ws-load-m"><span>cumulatief weekvolume</span>
+        ${nRuns ? `<span>laatste ${esc(String((bel.runs[nRuns - 1] || {}).datum || ""))}</span>` : ""}</div>
+    </div>`;
   } else {
-    loadSec = `<section class="ws-sec"><h3 class="ds-label">Belasting</h3>
-      <p class="ws-calm">Geen belastingstand bekend.</p></section>`;
+    loadFrag = `<div class="ws-frag ws-frag-load ws-field">
+      <h3 class="ds-label">Belasting</h3>
+      <p class="ws-attn-t calm">Geen belastingstand bekend.</p></div>`;
   }
-  h += `<div class="ws-wing ws-wing-l">
-    <aside class="ws-pane ws-panel ws-panel-a ${attn.length ? tone : ""}">
-      <section class="ws-sec"><h3 class="ds-label">Aandacht nu</h3>${attnBody}</section></aside>
-    <aside class="ws-pane ws-panel ws-panel-t ${bel.actief ? belTone : ""}">
-      ${loadSec}</aside>
-  </div>`;
+  h += loadFrag;
 
-  // ── GLASS PANEL 2 (rechts): doel/feedback/context/bronnen ──
   let planHead = sc ? wsLine({ tone: dsTone(sc.tier), icon: "clock",
     title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
+  h += `<div class="ws-frag ws-frag-plan ws-field ${sc ? dsTone(sc.tier) : ""}">
+    <h3 class="ds-label">Doel &amp; planning</h3>
+    ${planHead}<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>
+    <button type="button" class="ws-cta quiet" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button>
+  </div>`;
+
   const fbTone = fb.status === "unknown" ? "is-unknown" : (fb.open ? "is-attention" : "is-success");
   const fbBody = fb.status === "unknown"
-    ? `<p class="ws-calm">Feedback-status wordt bijgewerkt…</p>`
+    ? `<p class="ws-attn-t calm">Feedback-status wordt bijgewerkt…</p>`
     : `<div class="ws-fb ${fbTone}"><span class="ws-fb-badge">${fb.open || 0}</span>
-        <span class="ws-fb-t">${fb.open ? `open reactie${fb.open !== 1 ? "s" : ""}` : "alles beantwoord"}</span></div>`;
+        <span class="ws-fb-t">${fb.open ? `${fb.open} open reactie${fb.open !== 1 ? "s" : ""}<small>vraagt aandacht</small>` : `alles beantwoord<small>geen open reacties</small>`}</span></div>`;
+  h += `<div class="ws-frag ws-frag-fb ws-field ${fbTone}">
+    <h3 class="ds-label">Feedback</h3>${fbBody}
+    <div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>
+    <button type="button" class="ws-cta quiet" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit openen</button>
+  </div>`;
+
   const srcRow = (lbl, state, ver) => {
     const t = dsTone(state);
     const word = state === "fresh" ? "vers" : (state === "stale" ? "eerder" : state || "onbekend");
@@ -5363,18 +5277,21 @@ function wsRender(wrap, vm) {
       <em>${esc([String(ver || "").slice(0, 10), word].filter(Boolean).join(" · "))}</em></li>`;
   };
   const sv = gen.source_versions || {};
-  h += `<div class="ws-wing ws-wing-r"><aside class="ws-pane ws-panel ws-panel-r">
-    <section class="ws-sec ${sc ? dsTone(sc.tier) : ""}"><h3 class="ds-label">Doel &amp; planning</h3>
-      ${planHead}<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>
-      <button type="button" class="ws-cta quiet" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button></section>
-    <section class="ws-sec ${fbTone}"><h3 class="ds-label">Feedback</h3>${fbBody}</section>
-    <section class="ws-sec"><h3 class="ds-label">Klachten &amp; context</h3>
-      <div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>
-      <button type="button" class="ws-cta quiet" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit openen</button></section>
-    <section class="ws-sec ws-sec-src"><h3 class="ds-label">Bronnen</h3><ul class="ws-src">
-      ${srcRow("Belasting", gfr.belasting, sv.belasting)}
-      ${srcRow("Overzicht", gfr.home, sv.home)}
-      ${srcRow("Feedback", gfr.feedback, sv.feedback)}</ul></section></aside></div>`;
+  h += `<div class="ws-frag ws-frag-src">
+    <h3 class="ds-label">Bronnen</h3><ul class="ws-src">
+    ${srcRow("Belasting", gfr.belasting, sv.belasting)}
+    ${srcRow("Overzicht", gfr.home, sv.home)}
+    ${srcRow("Feedback", gfr.feedback, sv.feedback)}</ul></div>`;
+
+  // Z4 — command: één dominante coachactie, stille secundaire controls
+  h += `<nav class="ws-dock ${attn.length ? tone : "is-calm"}">
+    <div class="ws-qc">
+      <button type="button" onclick="deepAtleet('teampuls','${esc(key)}')">Teampuls</button>
+      <button type="button" onclick="openAthleteModule('atleten','${esc(key)}')">Profiel</button>
+    </div>
+    ${bel.actief ? `<button type="button" class="ws-cmd" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">${ic("check")}Belasting gezien</button>` : ""}
+    <div class="ws-qc">${athleteNav("workspace", key)}</div>
+  </nav>`;
 
   h += `</div>`;
   wrap.innerHTML = h;

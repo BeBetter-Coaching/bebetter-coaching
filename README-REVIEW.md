@@ -96,6 +96,42 @@ referenties haar consistent tonen), via de presentatie-parameter.
 - Varianten v/m/x; selectie: écht profielveld → `?presence=female|male|neutral`
   (of legacy `?bust=`) → neutraal. Nooit naam-gokken (test-geborgd).
 
+## SPATIAL COCKPIT RESET v3 (deze kandidaat)
+**Fase A-audit:** dashboard-makers in `20ba128` waren het wing-kolommengrid,
+drie omrande glas-kaarten, de perfecte reuzenring + KPI-dock, de pill-knoppenrij
+en de gespiegelde symmetrie. Die presentatiestructuren zijn verwijderd;
+data/fetching/routes/acties/focal-ladder bleven onaangeraakt.
+
+**Nieuwe compositie — vijf z-vlakken:**
+- **Z0 omgeving**: haze, constellation, verre traces, perspectiefveld dat naar
+  de atleet convergeert, vignette.
+- **Z1 geometrie**: vier GEBROKEN bogen op verschillende radii/offsets (één
+  bewust uit het centrum), gidslijnen, data-nodes (aandacht-node + curve-tip).
+- **Z2 athlete**: geschilderde digital-human (zie hieronder) + aura +
+  borstkern + platform-ellipsen + compact signaal-INSTRUMENT (partial-ring,
+  eerlijke ratio-mapping) op de platformrand; identiteit één keer, klein.
+- **Z3 fragmenten**: borderless (mask-fade, geen borders) — aandacht-anker met
+  licht-connector naar de boog-node, load-instrument (km + weekstrip +
+  cumulatieve curve + REF), plan-fragment, feedback/context-fragment, bronnen
+  als lage-contrast telemetrie. Bewust asymmetrisch en op verschillende dieptes.
+- **Z4 command**: één dominante coachactie + stille tekst-controls met
+  separators (geen pill-rij).
+
+**Presence (reset §8, optie 2):** de mensmassa is een PRE-RENDERED alpha-asset
+— digitaal geschilderd in `design-lab/presence-paint*.html` (gestapelde
+soft-gradient sculpt-lagen: vormschaduwen, oogkas-schaduw zonder ogen,
+neus/jukbeen/kin-modellering, rim-lights) en geëxporteerd als
+`pwa/static/presence/presence-{female,male,neutral}.webp` (1160px, ±131KB,
+alpha). Live overlays blijven code: scanlines, status-licht, borstkern, aura,
+orbit vóór/achter. Gecodeerde SVG-anatomie is volledig verwijderd.
+Selectie: profielveld → `?presence`-override → neutraal; nooit naam (test-geborgd).
+
+## Verwijderde superseded presentation-code (deze pass)
+`wsBust` (gecodeerde anatomie), de dock-ring/schijf-CSS, `ws-wing`/`ws-panel`-
+kolommen, `ws-pane`-glaskaarten, de grote gauge-ring (`ws-gauge-lap*` rond de
+figuur), `ws-orbit-back/front`-svg's, `ws-sec`-secties, de oude command-dock-
+CSS. Grep-geverifieerd: 0 restanten.
+
 ## Teststatus
 1026 passed — vaste én random volgorde (`python3 -m pytest tests/ -q`).
 

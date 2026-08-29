@@ -306,8 +306,10 @@ class TestAthleteCanvas:
         for owner in ('owner: "bel-pct"', 'owner: "bel-km"', 'owner: "attn"', 'owner: "rust"'):
             assert owner in body, f"focal-ladder mist {owner}"
         assert "const owns = s => focal.owner === s;" in body
-        # het dominante cijfer wordt downstream niet herhaald
-        assert 'owns("bel-pct") && a.soort === "belasting"' in body
+        # het dominante cijfer bestaat één keer als instrument; de aandacht-zin
+        # wordt uit DEZELFDE canonieke velden opgebouwd (geen tweede bron-%)
+        assert "belZin" in body and "bel.pct" in body
+        assert 'owns("bel-pct") ? "1" : ""' in body
 
     def test_33_dossier_spine_maakt_tijd_ruimtelijk(self):
         body = _fn("dcRender")
@@ -344,30 +346,31 @@ class TestAthleteCanvas:
             assert dead not in _CSS, f"legacy CSS {dead} nog aanwezig"
         assert "function wsToonLijst(" not in _APP               # rail-toggle is weg
 
-    def test_37_cockpit_is_scene_met_maximaal_drie_panels_en_dock(self):
-        # Final visual+code contract: de athlete-BUST (hybride volume+contour,
-        # variant via echt profielveld — nooit geraden) is het centrale object,
-        # met orbit-lagen achter én vóór; de orbit-gauge draagt de ratio; er
-        # zijn maximaal DRIE hoofdpanelen + één command dock; de achtergrond
-        # doet mee. Embedded regels (.ws-line) blijven randloos.
-        pane = _DS.split(".ws-pane{")[1][:420]
-        assert "backdrop-filter" in pane and "linear-gradient" in pane
-        assert _fn("wsRender").count('class="ws-pane') == 3       # harde drie-panels-grens
-        assert 'class="ws-dock"' in _fn("wsRender")               # command dock
-        blok = _DS.split(".ws-line{")[1][:220]
-        assert "border:1px solid" not in blok                     # regel blijft embedded
-        assert "function wsBust(" in _APP and "wsBust(" in _fn("wsRender")
-        # Presence-selectie is EERLIJK (contract §6/§34): écht profielveld →
-        # presentatie-override (?presence/?bust) → neutraal. Nooit naam-gokken.
+    def test_37_spatial_cockpit_scene(self):
+        # Spatial-reset v3-contract (extern NO-GO op de dashboard-compositie):
+        # de athlete is een pre-rendered asset met live overlays (geen gecodeerde
+        # anatomie meer), de geometrie bestaat uit GEBROKEN bogen (geen perfecte
+        # KPI-ring als centrum), context leeft als borderless fragmenten op
+        # z-vlakken, en het commando is geïntegreerd (geen actiebalk/pills-rij).
         ws = _fn("wsRender")
-        assert 'vm.profiel && vm.profiel.geslacht' in ws           # echt veld eerst
-        assert '"presence"' in ws and '"bust"' in ws               # override-params
-        sel = ws[ws.index("wsBust("):ws.index("wsBust(") + 400]
-        assert "voornaam" not in sel and "naam" not in sel         # geen naam-inferentie
-        assert '|| "x")' in sel                                    # neutraal als fallback
-        assert "ws-orbit-back" in _fn("wsRender") and "ws-orbit-front" in _fn("wsRender")
-        assert ".ws-plat" in _DS                                  # platform: de athlete stáát
-        assert ".ws-gauge-lap1" in _DS and ".ws-gauge-lap2" in _DS  # ratio in de geometrie
-        assert ".ws-amb{" in _DS                                  # ambient licht
-        assert ".ws-orbits" in _DS and ".ws-vig{" in _DS          # achtergrondlagen
+        assert "wsHuman(" in ws and "function wsHuman(" in _APP
+        assert "ws-human-asset" in _APP and "/static/presence/presence-" in _APP
+        for g in ("female", "male", "neutral"):                    # assets bestaan echt
+            assert os.path.exists(os.path.join(_ROOT, "pwa", "static", "presence",
+                                               f"presence-{g}.webp")), g
+        assert "function wsBust(" not in _APP                      # gecodeerde anatomie weg
+        # eerlijke presence-selectie: profielveld -> override -> neutraal, nooit naam
+        assert 'vm.profiel && vm.profiel.geslacht' in ws
+        assert '"presence"' in ws and '"bust"' in ws
+        sel = ws[ws.index("presVar"):ws.index("presVar") + 420]
+        assert "voornaam" not in sel and '|| "x"' in sel
+        # gebroken geometrie + fragmenten + command dock
+        assert 'class="ws-geo"' in ws and ws.count("ws-arc") >= 4
+        assert "ws-frag-attn" in ws and "ws-frag-load" in ws and "ws-frag-plan" in ws
+        assert "ws-frag-fb" in ws and "ws-frag-src" in ws
+        assert 'class="ws-cmd"' in ws                              # geintegreerd commando
+        # borderless fragmenten: het veld heeft mask-fade en geen border
+        veld = _DS.split(".ws-field{")[1][:340]
+        assert "mask-image" in veld and "border:" not in veld
+        assert ".ws-amb{" in _DS and ".ws-vig{" in _DS             # omgeving doet mee
         assert "prefers-reduced-motion" in _DS
