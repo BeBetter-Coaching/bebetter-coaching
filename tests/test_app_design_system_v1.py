@@ -344,18 +344,21 @@ class TestAthleteCanvas:
             assert dead not in _CSS, f"legacy CSS {dead} nog aanwezig"
         assert "function wsToonLijst(" not in _APP               # rail-toggle is weg
 
-    def test_37_canvas_bouwt_diepte_uit_glas_licht_en_overlap(self):
-        # North-star-contract (bewuste wijziging t.o.v. de "geen dozen"-regel):
-        # context leeft in TRANSLUCENT GLAS (gradient-achtergrond + blur, geen
-        # vlakke kaarten), de signaal-schijf is rond en overlapt het ringveld
-        # (negatieve marge = layering), en de achtergrond doet mee (ambient +
-        # orbits + vignette). Embedded regels (.ws-line) blijven randloos.
+    def test_37_cockpit_is_scene_met_maximaal_twee_glaspanels(self):
+        # 1:1 north-star-contract (bewuste wijziging t.o.v. de schijf-compositie):
+        # de athlete-BUST is het centrale object, met orbit-lagen achter én vóór
+        # (echte overlap); het signaal is scène-typografie + de orbit-gauge (geen
+        # schijf/kaart); er zijn maximaal TWEE glas-panels; de achtergrond doet
+        # mee. Embedded regels (.ws-line) blijven randloos.
         pane = _DS.split(".ws-pane{")[1][:420]
         assert "backdrop-filter" in pane and "linear-gradient" in pane
+        assert _fn("wsRender").count('class="ws-pane') == 2       # harde twee-panels-grens
         blok = _DS.split(".ws-line{")[1][:220]
         assert "border:1px solid" not in blok                     # regel blijft embedded
-        sig = _DS.split(".ws-signal{")[1][:420]
-        assert "border-radius:50%" in sig and "margin:-" in sig   # schijf + overlap
+        assert "function wsBust(" in _APP and "wsBust()" in _fn("wsRender")
+        assert "ws-orbit-back" in _fn("wsRender") and "ws-orbit-front" in _fn("wsRender")
+        assert ".ws-plat" in _DS                                  # platform: de athlete stáát
+        assert ".ws-gauge-lap1" in _DS and ".ws-gauge-lap2" in _DS  # ratio in de geometrie
         assert ".ws-amb{" in _DS                                  # ambient licht
         assert ".ws-orbits" in _DS and ".ws-vig{" in _DS          # achtergrondlagen
         assert "prefers-reduced-motion" in _DS

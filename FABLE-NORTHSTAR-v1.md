@@ -229,6 +229,25 @@ feedback-badge (amber "1"), actiebalk-meta én bronnen-freshness.
 Screen recording: `design-lab/workspace-live-recording.gif` — echte interface
 (entree-choreografie → idle → switcher-overlay → wissel naar kalme atleet).
 
+## 1:1 North-star implementatie (finale pass)
+
+De presentatie-architectuur van Workspace-desktop is herbouwd naar de
+referentie (frontend-only; motor intact, carrosserie vervangen):
+scene-first compositie met één identity-zone; een holografische athlete-bust
+als grootste visuele object (dieptelagen, rim-light, scanlines, chromatische
+scheiding, particle-dissolutie, status-tint door de onderzijde); orbit-lagen
+achter het hoofd én vóór de torso; de orbit-gauge als ratio-verhaal (gedimde
+volle ronde = 100% referentie, felle sweep = overshoot die eindigt in een
+luminous node náást het dominante cijfer, met het ×-label bij de node);
+platform-ellipsen; het signaal als scène-typografie; cockpit-controls;
+maximaal twee zwevende glas-panels; en een 76px Focus-rail op Workspace
+(:has, presentationeel — andere modules behouden de brede sidebar).
+Zelf-review §26: 8/8 kernvragen ja; dichtheid van de referentie komt deels
+uit verzonnen content die wij bewust weigeren (eerlijke lege staten in de
+plaats). Tests 1026 groen (test 37 bewust herschreven naar het nieuwe
+contract: bust + orbit-voor/achter + twee-panels-grens + platform + gauge).
+FCP 928-948ms (band gelijk), 0 overflow 1440/390, geen nieuwe errors.
+
 ## Tool-/modeladvies (§5)
 
 Geen zwaardere tooling nodig gebleken: CSS + inline SVG haalden het ambitieniveau;

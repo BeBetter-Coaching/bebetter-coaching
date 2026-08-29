@@ -4982,54 +4982,6 @@ function wsSkel(n) {
     (_, i) => `<div class="ds-skel ${i % 2 ? "w60" : "w80"}"></div>`).join("");
 }
 
-// Contextoppervlak in twee gedaanten (referentie-principe: niet zes identieke
-// kaarten): `embed:true` → randloze zone direct op het canvas (label + accent),
-// anders een translucent glas-pane. Beide met optionele contextuele CTA.
-function wsField(label, body, o) {
-  o = o || {};
-  if (!body) return "";
-  const shell = o.embed ? "ws-zone" : "ws-pane";
-  return `<section class="${shell} ${o.tone || ""} ${o.cls || ""}">
-    <header class="ws-pane-h"><h3 class="ds-label">${esc(label)}</h3>
-      ${o.note ? `<span class="ws-pane-n">${esc(o.note)}</span>` : ""}</header>
-    <div class="ws-pane-b">${body}</div>
-    ${o.cta ? `<button type="button" class="ws-cta ${o.cta.quiet ? "quiet" : ""}" onclick="${o.cta.onclick}">${esc(o.cta.label)}</button>` : ""}</section>`;
-}
-
-// De holografische athlete-presence: een abstracte hardloper opgebouwd uit
-// lichtstroken (capsule-strokes langs een skelet) met een gloed-onderlaag en
-// motion-trails. Bewust NIET-herleidbaar (geen gezicht, geen echte persoon) —
-// het draagt de menselijke massa die de referentie met een portret oplost.
-function wsFigure() {
-  const limbs = `
-    <circle cx="197" cy="61" r="21" class="ws-fig-head"/>
-    <path class="ws-fig-l w30" d="M190 86 C178 124 163 166 150 206"/>
-    <path class="ws-fig-l w15" d="M180 104 C196 118 208 128 220 136 C236 134 248 128 258 118"/>
-    <path class="ws-fig-l w15" d="M182 102 C160 120 146 134 138 146 C126 158 118 172 114 186"/>
-    <path class="ws-fig-l w19" d="M152 204 C174 220 192 234 204 250 C210 272 204 296 196 316"/>
-    <path class="ws-fig-l w14" d="M196 316 L216 326"/>
-    <path class="ws-fig-l w19" d="M148 206 C132 226 116 242 104 258 C90 272 76 284 64 296"/>
-    <path class="ws-fig-l w14" d="M64 296 L46 312"/>`;
-  return `<svg class="ws-fig" viewBox="0 0 300 400" aria-hidden="true">
-    <defs><linearGradient id="wsFigG" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" style="stop-color:#D8FBFF"/>
-      <stop offset=".42" style="stop-color:var(--ds-accent)"/>
-      <stop offset="1" style="stop-color:var(--tone)" stop-opacity=".55"/></linearGradient></defs>
-    <g class="ws-fig-trails">
-      <path d="M96 120 C70 160 66 210 84 252"/>
-      <path d="M116 106 C92 148 86 200 100 246"/>
-      <path d="M258 150 C270 190 268 232 250 268"/>
-    </g>
-    <g class="ws-fig-glow">${limbs}</g>
-    <g class="ws-fig-chrA">${limbs}</g>
-    <g class="ws-fig-chrB">${limbs}</g>
-    <g class="ws-fig-main">${limbs}</g>
-    <g class="ws-fig-pulses">
-      <path class="ws-fpulse" d="M190 86 C178 124 163 166 150 206 C174 220 192 234 204 250"/>
-      <path class="ws-fpulse p2" d="M190 86 C178 124 163 166 150 206 C132 226 116 242 104 258 C90 272 76 284 64 296"/>
-    </g></svg>`;
-}
-
 // Grote datalijn met glow-punten — ALLEEN echte reeksen (de runs uit de captured
 // stand). Vloeiende curve (Catmull-Rom→bezier), area-verloop, punt per meting.
 // Geen library, geen canvas: één inline SVG-string. Leeg bij < 2 punten.
@@ -5117,6 +5069,57 @@ function wsWeekStrip(runs, standDatum) {
   }).join("") + `</div>`;
 }
 
+// De centrale athlete-presence: een sculpturale, holografische bust (hoofd/
+// schouders/torso) — meerdere dieptelagen, rim-light, scanlines, chromatische
+// scheiding en particle-dissolutie naar het platform. Bewust generiek en
+// niet-herleidbaar; het draagt de menselijke massa van de referentie.
+function wsBust() {
+  const P = "M200 30 C236 30 254 58 254 94 C254 118 247 138 234 152 C230 162 228 172 230 182 C258 192 294 206 322 228 C344 244 356 266 360 292 C363 344 362 400 358 452 L42 452 C38 400 37 344 40 292 C44 266 56 244 78 228 C106 206 142 192 170 182 C172 172 170 162 166 152 C153 138 146 118 146 94 C146 58 164 30 200 30 Z";
+  const dust = [[70, 392, 2.5, .35], [96, 428, 1.8, .25], [130, 404, 2.2, .3],
+    [164, 440, 1.6, .2], [204, 416, 2.6, .35], [244, 444, 1.8, .22], [282, 408, 2.2, .3],
+    [316, 436, 1.6, .2], [344, 396, 2.4, .28], [112, 372, 1.4, .18], [288, 372, 1.5, .2],
+    [196, 448, 1.4, .16], [56, 420, 1.6, .2], [352, 428, 1.4, .18]];
+  return `<svg class="ws-bust" viewBox="0 0 400 470" aria-hidden="true">
+    <defs>
+      <linearGradient id="wsBustG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#EAFDFF"/><stop offset=".16" stop-color="#B8F4FF"/>
+        <stop offset=".36" stop-color="#59E8FF"/><stop offset=".56" stop-color="#2E7FB8"/>
+        <stop offset=".76" stop-color="#17395F" stop-opacity=".5"/>
+        <stop offset=".96" stop-color="#0A1A34" stop-opacity="0"/></linearGradient>
+      <linearGradient id="wsBustS" x1="0" y1="0" x2="0" y2="1">
+        <stop offset=".45" stop-color="#000" stop-opacity="0"/>
+        <stop offset=".82" style="stop-color:var(--tone)" stop-opacity=".3"/>
+        <stop offset="1" style="stop-color:var(--tone)" stop-opacity="0"/></linearGradient>
+      <linearGradient id="wsBustD" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0E2C52"/><stop offset=".7" stop-color="#0E2C52" stop-opacity=".6"/>
+        <stop offset=".95" stop-color="#0E2C52" stop-opacity="0"/></linearGradient>
+      <linearGradient id="wsBustCA" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#FF6D4D"/><stop offset=".62" stop-color="#FF6D4D" stop-opacity=".5"/>
+        <stop offset=".9" stop-color="#FF6D4D" stop-opacity="0"/></linearGradient>
+      <linearGradient id="wsBustCB" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#59E8FF"/><stop offset=".62" stop-color="#59E8FF" stop-opacity=".5"/>
+        <stop offset=".9" stop-color="#59E8FF" stop-opacity="0"/></linearGradient>
+      <linearGradient id="wsRimG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#FFFFFF" stop-opacity=".85"/>
+        <stop offset=".45" stop-color="#9FF4FF" stop-opacity=".35"/>
+        <stop offset="1" stop-color="#9FF4FF" stop-opacity="0"/></linearGradient>
+      <clipPath id="wsBustClip"><path d="${P}"/></clipPath>
+      <pattern id="wsBustScan" width="4" height="5" patternUnits="userSpaceOnUse">
+        <rect width="4" height="1" fill="#DFFBFF" opacity=".07"/></pattern>
+    </defs>
+    <g class="ws-bust-depth"><path fill="url(#wsBustD)" d="${P}" transform="translate(16 12)"/></g>
+    <g class="ws-bust-depth d2"><path fill="url(#wsBustD)" d="${P}" transform="translate(-13 8)"/></g>
+    <path class="ws-bust-chrA" fill="url(#wsBustCA)" d="${P}"/>
+    <path class="ws-bust-chrB" fill="url(#wsBustCB)" d="${P}"/>
+    <path fill="url(#wsBustG)" d="${P}"/>
+    <path fill="url(#wsBustS)" d="${P}"/>
+    <rect width="400" height="440" fill="url(#wsBustScan)" clip-path="url(#wsBustClip)"/>
+    <path class="ws-bust-rim" d="${P}"/>
+    <ellipse class="ws-bust-spec" cx="180" cy="64" rx="22" ry="34"/>
+    <g class="ws-bust-dust">${dust.map(d => `<circle cx="${d[0]}" cy="${d[1]}" r="${d[2]}" opacity="${d[3]}"/>`).join("")}</g>
+  </svg>`;
+}
+
 // Eén regel context: tone-streep + tekst + optionele waarde. Vervangt de kaart.
 function wsLine(l) {
   return `<div class="ws-line ${l.tone || "is-calm"}">
@@ -5129,59 +5132,24 @@ function wsLine(l) {
 // Het focal-systeem: gelaagd ringveld + medaillon-kern. Geen verzonnen foto —
 // de ontbrekende portretmassa wordt gedragen door schaal, licht en gelaagdheid.
 // De bogen zijn echte status (toon volgt het zwaarste open signaal).
+// Compact identity-medaillon in de identity-zone: initialen + statusring.
+// De athlete-presence zelf is de centrale bust (wsBust) — identiteit staat één
+// keer, klein en helder, en wordt daarna niet meer dominant herhaald.
 function wsAnchor(naam, tone) {
-  return `<div class="ws-anchor ${tone}">
-    <div class="ws-halo" aria-hidden="true"></div>
-    <div class="ws-orb">
-      <svg class="ws-orb-rings" viewBox="0 0 480 480" aria-hidden="true">
-        <circle class="ws-ring r0" cx="240" cy="240" r="232"/>
-        <circle class="ws-ring rt" cx="240" cy="240" r="206"/>
-        <circle class="ws-ring r1" cx="240" cy="240" r="178"/>
-        <circle class="ws-ring r2" cx="240" cy="240" r="150"/>
-        <circle class="ws-ring rm" cx="240" cy="240" r="112"/>
-        <g class="ws-spin s1"><circle class="ws-ring-arc a1" cx="240" cy="240" r="178"/>
-          <circle class="ws-sat" cx="240" cy="62" r="4.5"/></g>
-        <g class="ws-spin s2"><circle class="ws-ring-arc a2" cx="240" cy="240" r="206"/>
-          <circle class="ws-sat2" cx="240" cy="34" r="3.2"/></g>
-        <g class="ws-spin s3"><circle class="ws-ring-arc a3" cx="240" cy="240" r="150"/></g>
-      </svg>
-      ${wsFigure()}
-      <span class="ws-idchip">${esc(initialen(naam))}</span>
-    </div></div>`;
+  return `<span class="ws-anchor ${tone}"><span class="ws-orb"><i></i>${esc(initialen(naam))}</span></span>`;
 }
 
 // Het dominante signaal: een cirkelvormige glasschijf die het ringveld overlapt —
 // de tweede massa van de scène. De golfgrafiek (echte runs) loopt er doorheen.
+// Het dominante signaal is scène-typografie op het platform — de ratio zelf
+// wordt door de orbit-gauge verteld (geen kaart, geen schijf, geen herhaling).
 function wsSignal(f) {
   if (!f) return "";
   const small = String(f.value).length > 5 ? " txt" : "";
-  // Rim-gauge: weekvolume t.o.v. de referentie als (dubbele) ronde om de schijf.
-  // ratio ≥ 1 → gedimde volle ronde (=100% van de referentie) + felle boog voor
-  // de overshoot (gemaximeerd op één extra ronde; het label draagt de exacte ×).
-  // ratio < 1 → alleen een boog voor de voortgang. Eerlijke mapping, geen decor.
-  let rim = "";
-  if (f.gauge && isFinite(f.gauge.ratio) && f.gauge.ratio > 0) {
-    const R = 186.6, C = 1172.5, ratio = f.gauge.ratio;
-    const frac = ratio >= 1 ? Math.min(ratio - 1, 1) : ratio;
-    const dash = Math.max(frac * C, 0);
-    const ang = (-90 + 360 * frac) * Math.PI / 180;
-    const capX = (190 + R * Math.cos(ang)).toFixed(1), capY = (190 + R * Math.sin(ang)).toFixed(1);
-    const lbl = (Math.round(ratio * 10) / 10).toFixed(1).replace(".", ",");
-    rim = `<svg class="ws-rim" viewBox="0 0 380 380" aria-hidden="true">
-      ${ratio >= 1 ? `<circle class="ws-rim-lap1" cx="190" cy="190" r="182"/>` : ""}
-      ${dash > 8 ? `<circle class="ws-rim-lap2" cx="190" cy="190" r="${R}"
-        style="stroke-dasharray:${dash.toFixed(1)} ${C};--wsd:${dash.toFixed(1)}"/>
-      <circle class="ws-rim-cap" cx="${capX}" cy="${capY}" r="5"/>` : ""}</svg>
-      <span class="ws-rimlbl">${esc(lbl)}×<small>de referentie</small></span>`;
-  }
   return `<div class="ws-signal ${f.tone || "is-calm"}">
-    ${rim}
-    <div class="ws-signal-in">
-      <span class="ws-signal-l">${esc(f.label)}</span>
-      ${f.word ? `<span class="ws-signal-w">${esc(f.word)}</span>` : ""}
-      <span class="ws-signal-v${small}">${esc(f.value)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
-      ${f.sub ? `<span class="ws-signal-s">${esc(f.sub)}</span>` : ""}
-    </div>${f.chart || ""}</div>`;
+    <span class="ws-signal-l">${esc(f.label)}${f.word ? ` · ${esc(f.word)}` : ""}</span>
+    <span class="ws-signal-v${small}">${esc(f.value)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
+    ${f.sub ? `<span class="ws-signal-s">${esc(f.sub)}</span>` : ""}</div>`;
 }
 
 function wsRender(wrap, vm) {
@@ -5192,13 +5160,12 @@ function wsRender(wrap, vm) {
   const gen = vm.generation || {}, gfr = gen.freshness || {};
   const tone = dsWorstTone(attn.map(a => dsTone(a.tier)));
   const belTone = dsTone(bel.ernst || "calm");
-  const runsKm = (bel.runs || []).map(r => r.km);
 
   // Focal-ladder MET eigenaar: wie het dominante cijfer bezit, mag het als enige
-  // groot tonen. Downstream toont de kwalificatie i.p.v. hetzelfde getal.
+  // groot tonen. De scène-typografie op het platform is de enige eigenaar-plek.
   let focal;
   if (bel.actief && bel.pct != null) {
-    focal = { owner: "bel-pct", tone: belTone, label: "Belastingsignaal",
+    focal = { owner: "bel-pct", tone: belTone, label: "Belastingssignaal",
       word: bel.ernst === "hoog" ? "Verhoogd" : "Let op",
       value: (bel.pct > 0 ? "+" : "") + bel.pct, unit: "%",
       sub: bel.km_recent != null
@@ -5215,20 +5182,22 @@ function wsRender(wrap, vm) {
       sub: "geen open actiepunt" };
   }
   const owns = s => focal.owner === s;
-  // Schijfgrafiek = CUMULATIEF weekvolume vs de referentielijn (beide reeksen
-  // bestaan al in de payload). Zo leest de curve in dezelfde richting als het
-  // signaal: de lijn klimt vóórbij de gestippelde referentie bij +X%.
-  // De rim-gauge vertaalt dezelfde verhouding naar de schijfrand (1,9× = de
-  // ring loopt bijna twee keer rond).
-  if (owns("bel-pct") || owns("bel-km")) {
-    const chrono = (bel.runs || []).slice()
-      .sort((a, b) => String(a.datum || "").localeCompare(String(b.datum || "")));
-    let acc = 0;
-    const cum = chrono.map(r => (acc += Number(r.km) || 0));
-    focal.chart = wsChart(cum, { w: 340, h: 88, cls: "ws-signal-chart", area: false,
-      min0: true, ref: bel.km_basis_week });
-    if (bel.km_recent != null && bel.km_basis_week)
-      focal.gauge = { ratio: bel.km_recent / bel.km_basis_week };
+
+  // ── DE ORBIT-GAUGE vertelt de ratio zelf (referentie-principe §7): eerste
+  // omloop = 100% van de referentie (gedimd), overshoot = felle tweede sweep
+  // met een luminous eindnode + ×-label. ratio<1 → voortgangsboog. Geen data →
+  // geen gauge. Zelfde canonieke velden als het dominante cijfer.
+  let gauge = null;
+  if ((owns("bel-pct") || owns("bel-km")) && bel.km_recent != null && bel.km_basis_week) {
+    const ratio = bel.km_recent / bel.km_basis_week;
+    const R = 252, C = 2 * Math.PI * R;
+    const frac = ratio >= 1 ? Math.min(ratio - 1, 1) : ratio;
+    const dash = Math.max(frac * C, 0);
+    const ang = (90 + 360 * frac) * Math.PI / 180;      // start onderaan (6 uur)
+    gauge = { ratio, R, C, dash,
+      lbl: (Math.round(ratio * 10) / 10).toFixed(1).replace(".", ","),
+      nx: (320 + R * Math.cos(ang)).toFixed(1), ny: (320 + R * Math.sin(ang)).toFixed(1),
+      dim: ratio >= 1 };
   }
 
   const chip = attn.length
@@ -5239,21 +5208,57 @@ function wsRender(wrap, vm) {
 
   let h = genBanner(vm.generation);
   h += `<div class="ws-scene ${tone}">`;
-  // Achtergrond doet mee: ambient haze (volgt status) + orbitale lijnen + vignette.
-  h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div>${wsOrbits()}
-    <div class="ws-floor"></div><div class="ws-floorglow"></div><div class="ws-vig"></div></div>`;
+  // Achtergrond doet mee: ambient haze (status-gestuurd) + orbits + vignette.
+  h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
 
-  // ── KOP: identiteit links, athlete-nav rechts (het centrum blijft grafisch) ──
-  h += `<header class="ws-head">
-    <div class="ws-head-t"><div class="ws-eyebrow"><i></i>BeBetter · Athlete Command</div>
-      <h2 class="ws-name">${esc(naam)}</h2>
-      <div class="ws-name-meta">${chip}${fresh}</div></div>
-    <div class="ws-head-nav"><span class="anav-chip on">Workspace</span>${athleteNav("workspace", key)}</div></header>`;
+  // ── IDENTITY-ZONE: één keer, compact, daarna vertegenwoordigt de bust haar ──
+  h += `<header class="ws-id">
+    <div class="ws-eyebrow"><i></i>BeBetter · Athlete Command</div>
+    <div class="ws-id-row">${wsAnchor(naam, tone)}<h2 class="ws-name">${esc(naam)}</h2></div>
+    <div class="ws-id-meta">${chip}${vm.groep ? `<span class="ws-id-g">${esc(vm.groep)}</span>` : ""}${fresh}</div>
+    <div class="ws-id-nav">${athleteNav("workspace", key)}</div></header>`;
 
-  // ── LINKS: aandacht + één samengevoegd belasting-oppervlak (minder dozen) ──
-  // Waarde-consistentie: de belasting-regel wordt hier uit DEZELFDE canonieke
-  // velden opgebouwd als de schijf (load_metric: pct/km_recent/km_basis_week),
-  // niet uit de voor-afgeronde bron-zin — zo staat nooit +91% naast +92%.
+  // ── HET COCKPIT-COMPLEX: orbit achter → bust → orbit/gauge vóór → platform ──
+  h += `<div class="ws-cockpit ${tone}">
+    <div class="ws-halo" aria-hidden="true"></div>
+    <svg class="ws-orbit ws-orbit-back" viewBox="0 0 640 680" aria-hidden="true">
+      <circle class="ws-ring r0" cx="320" cy="320" r="306"/>
+      <circle class="ws-ring rt" cx="320" cy="320" r="278"/>
+      <circle class="ws-ring r1" cx="320" cy="320" r="226"/>
+      <circle class="ws-ring rm" cx="320" cy="320" r="180"/>
+      ${gauge ? `${gauge.dim ? `<circle class="ws-gauge-lap1" cx="320" cy="320" r="${gauge.R}"/>` : ""}
+      ${gauge.dash > 10 ? `<circle class="ws-gauge-lap2" cx="320" cy="320" r="${gauge.R}"
+        style="stroke-dasharray:${gauge.dash.toFixed(1)} ${gauge.C.toFixed(1)};--wsd:${gauge.dash.toFixed(1)}"/>` : ""}` : ""}
+      <g class="ws-spin s2"><circle class="ws-ring-arc a2" cx="320" cy="320" r="278"/>
+        <circle class="ws-sat2" cx="320" cy="42" r="3.4"/></g>
+    </svg>
+    ${wsBust()}
+    <svg class="ws-orbit ws-orbit-front" viewBox="0 0 640 680" aria-hidden="true">
+      <defs><clipPath id="wsGaugeLow"><rect x="0" y="368" width="640" height="312"/></clipPath></defs>
+      ${gauge && gauge.dash > 10 ? `<g clip-path="url(#wsGaugeLow)">
+        <circle class="ws-gauge-lap2" cx="320" cy="320" r="${gauge.R}"
+          style="stroke-dasharray:${gauge.dash.toFixed(1)} ${gauge.C.toFixed(1)};--wsd:${gauge.dash.toFixed(1)}"/></g>
+      <circle class="ws-gauge-node" cx="${gauge.nx}" cy="${gauge.ny}" r="6"/>` : ""}
+      <g class="ws-spin s1"><circle class="ws-ring-arc a1" cx="320" cy="320" r="252"/>
+        <circle class="ws-sat" cx="320" cy="68" r="5"/></g>
+      <g class="ws-spin s3"><circle class="ws-ring-arc a3" cx="320" cy="320" r="207"/></g>
+      <ellipse class="ws-plat p1" cx="320" cy="600" rx="216" ry="44"/>
+      <ellipse class="ws-plat p2" cx="320" cy="602" rx="150" ry="30"/>
+      <ellipse class="ws-plat p3" cx="320" cy="604" rx="86" ry="17"/>
+      <ellipse class="ws-plat-glow" cx="320" cy="602" rx="190" ry="36"/>
+    </svg>
+    ${gauge ? `<span class="ws-gaugelbl" style="left:${((+gauge.nx + 18) / 640 * 100).toFixed(1)}%;top:${((+gauge.ny + 6) / 680 * 100).toFixed(1)}%">${esc(gauge.lbl)}×<small>referentie</small></span>` : ""}
+    ${wsSignal(focal)}
+    <div class="ws-controls">
+      ${bel.actief ? `<button type="button" class="ws-ctl primary" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">${ic("check")}Belasting gezien</button>` : ""}
+      <button type="button" class="ws-ctl" onclick="deepAtleet('teampuls','${esc(key)}')">Teampuls</button>
+      <button type="button" class="ws-ctl" onclick="openAthleteModule('atleten','${esc(key)}')">Profiel</button>
+    </div>
+  </div>`;
+
+  // ── GLASS PANEL 1 (links): aandacht + belasting — zweeft de scène in ──
+  // Waarde-consistentie: de belasting-regel komt uit DEZELFDE canonieke velden
+  // als het dominante cijfer (load_metric) — nooit een voor-afgeronde bron-zin.
   const belZin = (bel.pct != null && bel.km_recent != null && bel.km_basis_week != null)
     ? `Volume ${bel.pct > 0 ? "+" : ""}${bel.pct}% deze week (${bel.km_recent} km vs gem. ${bel.km_basis_week} km/wk)`
     : "";
@@ -5270,31 +5275,32 @@ function wsRender(wrap, vm) {
     <div class="ds-fold"><div>${dsStream(restSig.map(x => ({ text: x, tone: belTone })))}</div></div>`;
 
   const nRuns = (bel.runs || []).length;
-  let loadBody;
+  let loadSec = "";
   if (bel.km_recent != null) {
-    // Weekstrip: de 7 dagen t/m de stand — trainingsdagen en rustdagen worden
-    // beide zichtbaar (eerlijke leegte). Vervangt de losse runs-balkjes.
-    loadBody = `<div class="ws-load">
+    // Cumulatieve weekcurve + referentielijn: de overshoot is zonder tekst
+    // leesbaar (§8). Zelfde runs als de weekstrip.
+    const chrono = (bel.runs || []).slice()
+      .sort((a, b) => String(a.datum || "").localeCompare(String(b.datum || "")));
+    let acc = 0;
+    const cum = chrono.map(r => (acc += Number(r.km) || 0));
+    loadSec = `<section class="ws-sec ${bel.actief ? belTone : ""}">
+      <h3 class="ds-label">Belasting · 7 dagen<em>${nRuns ? `${nRuns} runs` : ""}</em></h3>
       <div class="ws-load-n">${esc(bel.km_recent)}<i>km deze week</i></div>
       ${wsWeekStrip(bel.runs || [], bel.datum)}
+      ${wsChart(cum, { w: 250, h: 60, min0: true, ref: bel.km_basis_week })}
       <div class="ws-load-m">
         ${bel.km_basis_week != null ? `<span>referentie ${esc(bel.km_basis_week)} km/wk</span>` : ""}
         ${nRuns ? `<span>laatste ${esc(String((bel.runs[nRuns - 1] || {}).datum || ""))}</span>` : ""}
-      </div></div>`;
+      </div></section>`;
   } else {
-    loadBody = `<p class="ws-calm">Geen belastingstand bekend.</p>`;
+    loadSec = `<section class="ws-sec"><h3 class="ds-label">Belasting</h3>
+      <p class="ws-calm">Geen belastingstand bekend.</p></section>`;
   }
+  h += `<aside class="ws-pane ws-panel ws-panel-l ${attn.length ? tone : ""}">
+    <section class="ws-sec"><h3 class="ds-label">Aandacht nu</h3>${attnBody}</section>
+    ${loadSec}</aside>`;
 
-  h += `<div class="ws-stage"><div class="ws-col ws-col-l">
-    ${wsField("Aandacht nu", attnBody, { tone: attn.length ? tone : "" })}
-    ${wsField("Belasting", loadBody, { tone: bel.actief ? belTone : "",
-      note: nRuns ? `${nRuns} runs` : "" })}
-  </div>`;
-
-  // ── MIDDEN: het focal-systeem met de signaal-schijf die de ringen overlapt ──
-  h += `<div class="ws-col ws-col-c">${wsAnchor(naam, tone)}${wsSignal(focal)}</div>`;
-
-  // ── RECHTS: doel & planning, feedback, klachten & context ──
+  // ── GLASS PANEL 2 (rechts): doel/feedback/context/bronnen ──
   let planHead = sc ? wsLine({ tone: dsTone(sc.tier), icon: "clock",
     title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
   const fbTone = fb.status === "unknown" ? "is-unknown" : (fb.open ? "is-attention" : "is-success");
@@ -5302,9 +5308,6 @@ function wsRender(wrap, vm) {
     ? `<p class="ws-calm">Feedback-status wordt bijgewerkt…</p>`
     : `<div class="ws-fb ${fbTone}"><span class="ws-fb-badge">${fb.open || 0}</span>
         <span class="ws-fb-t">${fb.open ? `open reactie${fb.open !== 1 ? "s" : ""}` : "alles beantwoord"}</span></div>`;
-
-  // Bronnen-pane: de per-source generation-freshness die de response al draagt —
-  // zichtbaar gemaakt zoals de referentie dat doet (geen nieuwe data, geen read).
   const srcRow = (lbl, state, ver) => {
     const t = dsTone(state);
     const word = state === "fresh" ? "vers" : (state === "stale" ? "eerder" : state || "onbekend");
@@ -5312,44 +5315,18 @@ function wsRender(wrap, vm) {
       <em>${esc([String(ver || "").slice(0, 10), word].filter(Boolean).join(" · "))}</em></li>`;
   };
   const sv = gen.source_versions || {};
-  const srcBody = `<ul class="ws-src">
-    ${srcRow("Belasting", gfr.belasting, sv.belasting)}
-    ${srcRow("Overzicht", gfr.home, sv.home)}
-    ${srcRow("Feedback", gfr.feedback, sv.feedback)}</ul>`;
-
-  // Rechts: één glas-pane (doel) + een randloze embedded cluster — de referentie
-  // mengt zwevend glas met content dírect op het canvas; niet vier gelijke dozen.
-  h += `<div class="ws-col ws-col-r">
-    ${wsField("Doel & planning", planHead + `<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>`,
-      { tone: sc ? dsTone(sc.tier) : "",
-        cta: { label: "Schema openen", onclick: `openAthleteModule('schema','${esc(key)}')` } })}
-    <div class="ws-side">
-    ${wsField("Feedback", fbBody, { tone: fbTone, embed: true })}
-    ${wsField("Klachten & context", `<div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>`,
-      { embed: true,
-        cta: { quiet: true, label: "Cockpit openen", onclick: `openAthleteModule('dossier','${esc(key)}')` } })}
-    ${wsField("Bronnen", srcBody, { embed: true, cls: "ws-zone-src" })}
-    </div>
-  </div></div>`;
-
-  // ── ONDER: geïntegreerde actiebalk — het dominante actiepunt + de acties ──
-  // Korte semantische kop (geen letterlijke herhaling van de aandacht-regel):
-  // belasting actief → "Belasting hoog/let op · +X% t.o.v. referentie".
-  const advKop = bel.actief && bel.pct != null
-    ? `Belasting ${bel.ernst === "hoog" ? "hoog" : "let op"} · ${bel.pct > 0 ? "+" : ""}${bel.pct}% t.o.v. referentie`
-    : (attn.length ? (attn[0].kort || "") : "Geen open actiepunt");
-  const advIc = attn.length ? (SOORT_IC[attn[0].soort] || "alert") : "check";
-  const advMeta = [bel.datum ? `stand ${bel.datum}` : "",
-    attn.length > 1 ? `${attn.length} open signalen` : ""].filter(Boolean).join(" · ");
-  h += `<footer class="ws-adv ${attn.length ? tone : "is-calm"}">
-    <span class="ws-adv-ic">${ic(advIc)}</span>
-    <div class="ws-adv-b"><b>${esc(advKop)}</b>
-      ${advMeta ? `<span>${esc(advMeta)}</span>` : ""}</div>
-    <div class="ws-adv-a">
-      ${bel.actief ? `<button type="button" class="ws-adv-btn primary" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">${ic("check")}Belasting gezien</button>` : ""}
-      <button type="button" class="ws-adv-btn" onclick="deepAtleet('teampuls','${esc(key)}')">${ic("pulse")}Teampuls</button>
-      <button type="button" class="ws-adv-btn" onclick="openAthleteModule('atleten','${esc(key)}')">${ic("user-plus")}Profiel</button>
-    </div></footer>`;
+  h += `<aside class="ws-pane ws-panel ws-panel-r">
+    <section class="ws-sec ${sc ? dsTone(sc.tier) : ""}"><h3 class="ds-label">Doel &amp; planning</h3>
+      ${planHead}<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>
+      <button type="button" class="ws-cta quiet" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button></section>
+    <section class="ws-sec ${fbTone}"><h3 class="ds-label">Feedback</h3>${fbBody}</section>
+    <section class="ws-sec"><h3 class="ds-label">Klachten &amp; context</h3>
+      <div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>
+      <button type="button" class="ws-cta quiet" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit openen</button></section>
+    <section class="ws-sec ws-sec-src"><h3 class="ds-label">Bronnen</h3><ul class="ws-src">
+      ${srcRow("Belasting", gfr.belasting, sv.belasting)}
+      ${srcRow("Overzicht", gfr.home, sv.home)}
+      ${srcRow("Feedback", gfr.feedback, sv.feedback)}</ul></section></aside>`;
 
   h += `</div>`;
   wrap.innerHTML = h;
@@ -5377,8 +5354,10 @@ async function wsLoadDeep(wrap, ident) {
   }
   if (plan) {
     const rows = (r.planning && r.planning.rows) || [];
+    // Geen doel → ontworpen rustige lege staat (geen kale zin in een kaart).
     plan.innerHTML = rows.length ? dsKv(rows)
-      : `<p class="ws-calm">Geen doel of planning vastgelegd.</p>`;
+      : `<div class="ws-goal"><div class="ws-goal-ring"><i></i></div>
+          <p>Nog geen doel vastgelegd.<small>Leg een race- of trainingsdoel vast — het masterbrein plant erop.</small></p></div>`;
   }
   if (ctx) {
     const attn = (r.attention || []).filter(c => c.kind === "complaint" || c.kind === "contradiction");

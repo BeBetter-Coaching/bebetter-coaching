@@ -31,6 +31,30 @@ draagt (`design-lab/workspace-lab.html` + still + motion-GIF).
 - `design-lab/workspace-live-recording.gif` — echte interface-opname
   (entree → idle → switcher → atleet-wissel).
 
+## 1:1 North-star pass (deze oplevering)
+- **Presentatie-architectuur herbouwd** (frontend-only): identity-zone (één keer),
+  centraal cockpit-complex — holografische athlete-BUST (gelaagd, rim-light,
+  scanlines, chroma-scheiding, particle-dissolutie) tussen orbit-lagen (ring
+  achter het hoofd, gauge-sweep vóór de torso), orbit-gauge = ratio-verhaal
+  (gedimde ronde = 100% referentie, felle sweep = overshoot, eindnode wijst
+  naar het dominante cijfer, ×-label bij de node), platform-ellipsen (de
+  athlete stáát), scène-typografie voor het signaal, cockpit-controls.
+- **Maximaal twee glas-panels** (aandacht+belasting links; doel/feedback/
+  context/bronnen rechts), zwevend en licht gekanteld de scène in.
+- **Focus Shell**: op Workspace collapseert de sidebar tot een 76px icon-rail
+  (:has, puur presentationeel; labels als hover-tooltips; routes identiek).
+- **Locked architecture: ONAANGERAAKT** — geen wijziging aan Coach Read Model,
+  generation/source_versions, stores, caches, routes, acties of businesslogica
+  (git-diff vs main bevat backend-only de eerder gereviewde additieve
+  `runs`-passthrough).
+
+## Verwijderde superseded presentation-code (deze pass)
+`wsField`, `wsFigure` (+ alle `.ws-fig*` CSS), het drie-koloms `ws-stage`/
+`ws-col`-grid, de `ws-adv`-actiebalk, de embedded `ws-zone`/`ws-side`-cluster,
+de schijf-gauge (`.ws-rim*`), de schijf-CSS van `.ws-signal`,
+`.ws-signal-chart`, `.ws-idchip`, de oude hero-`.ws-anchor`/`.ws-halo`/kop-
+layout en `.ws-pane-h`. Grep-geverifieerd: 0 restanten in app.js/design-system.css.
+
 ## Teststatus
 1026 passed — vaste én random volgorde (`python3 -m pytest tests/ -q`).
 
