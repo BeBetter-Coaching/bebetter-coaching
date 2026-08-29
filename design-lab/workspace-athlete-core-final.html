@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Workspace · Athlete Core (design-lab)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   DESIGN-LAB — Athlete Core (geen menselijke avatar). Zelfstandige preview:
+   tokens + scène-CSS + de nieuwe abstracte core. Echte Masja-datasnapshot.
+   Doel van deze pass: compositie/art-direction bewijzen vóór productieport.
+   ───────────────────────────────────────────────────────────────────────── */
+@font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-400.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-500.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-700.woff2) format("woff2");font-weight:700;font-display:swap}
+:root{
+  --ds-canvas:#081527;--ds-text:#EAF2FF;--ds-text-2:#B4C7E6;--ds-text-3:#7F97BC;
+  --ds-accent:#5EE6EB;
+  --ds-calm:#5EE6EB;--ds-calm-bg:rgba(94,230,235,.10);--ds-calm-bd:rgba(94,230,235,.36);
+  --ds-attention:#F0A62B;--ds-attention-bg:rgba(240,166,43,.12);--ds-attention-bd:rgba(240,166,43,.46);
+  --ds-critical:#F4744C;--ds-critical-bg:rgba(244,116,76,.14);--ds-critical-bd:rgba(244,116,76,.50);
+  --ds-success:#37D9A2;--ds-success-bg:rgba(55,217,162,.10);--ds-success-bd:rgba(55,217,162,.38);
+  --ds-1:4px;--ds-2:8px;--ds-3:12px;--ds-4:16px;--ds-5:20px;--ds-6:24px;--ds-8:32px;--ds-10:40px;
+  --ds-r-pill:999px;--ds-ease:cubic-bezier(.2,.7,.3,1);--ds-fast:120ms;
+  --tone:var(--ds-calm);--tone-bg:var(--ds-calm-bg);--tone-bd:var(--ds-calm-bd);
+}
+.is-calm{--tone:var(--ds-calm);--tone-bg:var(--ds-calm-bg);--tone-bd:var(--ds-calm-bd)}
+.is-attention{--tone:var(--ds-attention);--tone-bg:var(--ds-attention-bg);--tone-bd:var(--ds-attention-bd)}
+.is-critical{--tone:var(--ds-critical);--tone-bg:var(--ds-critical-bg);--tone-bd:var(--ds-critical-bd)}
+.is-success{--tone:var(--ds-success);--tone-bg:var(--ds-success-bg);--tone-bd:var(--ds-success-bd)}
+*{box-sizing:border-box}
+body{margin:0;background:
+    radial-gradient(120% 90% at 50% 0%,#0a1c38,#050e1f 60%,#03081260 100%),var(--ds-canvas);
+  color:var(--ds-text);font-family:"Space Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  min-height:100vh}
+.ds-label{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ds-text-3);margin:0}
+.ds-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:var(--ds-r-pill);
+  font-size:9.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd);white-space:nowrap}
+.ds-dot{width:5px;height:5px;border-radius:50%;background:var(--tone);flex:0 0 auto}
+.ds-fresh{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--ds-text-3)}
+.ds-fresh::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ds-success);box-shadow:0 0 7px var(--ds-success)}
+
+/* ══ shell: focus-rail (Workspace bewoont dezelfde wereld) ══ */
+.lab{display:flex;min-height:100vh}
+.rail{width:76px;flex:0 0 76px;display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:18px 0;background:linear-gradient(180deg,rgba(13,34,68,.55),rgba(8,21,39,.2));
+  border-right:1px solid rgba(94,230,235,.08)}
+.rail-brand{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;margin-bottom:14px;
+  background:radial-gradient(circle at 40% 30%,rgba(94,230,235,.3),rgba(20,52,106,.9));
+  color:#eafdff;font-weight:800;font-size:15px;box-shadow:0 0 22px -6px var(--ds-accent)}
+.rail-i{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;color:var(--ds-text-3);
+  position:relative}
+.rail-i svg{width:20px;height:20px}
+.rail-i.on{color:#eafdff;background:rgba(94,230,235,.1)}
+.rail-i.on::before{content:"";position:absolute;left:-18px;top:12px;bottom:12px;width:3px;border-radius:3px;
+  background:var(--ds-accent);box-shadow:0 0 10px var(--ds-accent)}
+.rail-me{margin-top:auto;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(94,230,235,.12);color:var(--ds-accent);font-weight:700;font-size:11px}
+.stage-wrap{flex:1;min-width:0;display:flex;flex-direction:column}
+
+/* ══ appbar: athlete-switch ══ */
+.ws-bar{display:flex;align-items:center;gap:18px;padding:16px 30px 0}
+.ws-back{font-size:12.5px;color:var(--ds-text-3);display:flex;align-items:center;gap:6px}
+.ws-switch{display:flex;align-items:center;gap:12px;background:rgba(4,12,26,.45);
+  border:1px solid rgba(255,255,255,.05);border-radius:var(--ds-r-pill);padding:6px 16px 6px 6px}
+.ws-switch-av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(94,230,235,.12);color:var(--ds-accent);font-size:12px;font-weight:700}
+.ws-switch-nm{font-size:14px;font-weight:650}
+.ws-switch-sub{font-size:10.5px;color:var(--ds-text-3)}
+.ws-bar .r{margin-left:auto;text-align:right}
+.ws-per{font-size:12.5px;color:var(--ds-text-2);background:rgba(4,12,26,.4);
+  border:1px solid rgba(255,255,255,.05);border-radius:var(--ds-r-pill);padding:7px 15px}
+
+/* ══════════════════════════ DE SCÈNE ══════════════════════════ */
+.ws-scene{position:relative;min-height:850px;overflow:hidden}
+.ws-scene>*{position:relative;z-index:1}
+
+/* Z0 — omgeving */
+.ws-bg{position:absolute;inset:-40px -20px 0;pointer-events:none;z-index:0;overflow:hidden}
+.ws-amb{position:absolute;inset:0;background:
+   radial-gradient(40% 40% at 50% 40%,var(--tone-bg),transparent 66%),
+   radial-gradient(30% 26% at 84% 6%,rgba(89,232,255,.06),transparent 72%),
+   radial-gradient(34% 30% at 12% 86%,rgba(89,232,255,.05),transparent 72%)}
+.ws-orbits{position:absolute;inset:0;width:100%;height:100%}
+.ws-tr{fill:none;stroke:rgba(122,168,255,.05);stroke-width:1}
+.ws-fl path,.ws-fl ellipse{fill:none;stroke:rgba(122,168,255,.06);stroke-width:1}
+.ws-star{fill:rgba(150,198,255,.5)}
+.ws-star.tw{animation:tw 4.5s ease-in-out infinite}
+@keyframes tw{0%,100%{opacity:.4}50%{opacity:.1}}
+.ws-vig{position:absolute;inset:0;background:radial-gradient(115% 88% at 50% 40%,transparent 50%,rgba(2,6,14,.74) 100%)}
+
+/* ══ Z2 — ATHLETE CORE (abstract, geen mens) ══ */
+.ws-stagez{position:relative;z-index:2;width:min(660px,100%);margin:0 auto;height:812px}
+.ws-id2{position:absolute;left:0;right:0;top:10px;z-index:6;display:flex;align-items:center;
+  justify-content:center;gap:11px;white-space:nowrap;animation:fin .34s var(--ds-ease) both}
+.ws-anchor .ws-orb{position:relative;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--tone);border:1.5px solid var(--tone-bd);
+  text-shadow:0 0 10px var(--tone-bg);
+  background:radial-gradient(circle at 50% 30%,rgba(255,255,255,.12),transparent 55%),
+             radial-gradient(circle at 50% 46%,var(--tone-bg),rgba(13,30,58,.95) 80%)}
+.ws-anchor .ws-orb i{position:absolute;inset:-5px;border-radius:50%;border:1px solid var(--tone-bd);opacity:.35}
+.ws-name{font-size:21px;font-weight:700;letter-spacing:-.01em}
+.ws-id2 .ds-chip{font-size:9.5px}
+
+/* de core-container: alles centreert op 340,332 (in het 680×680-veld) */
+.ws-core{position:absolute;left:50%;top:64px;width:600px;height:600px;transform:translateX(-50%);z-index:2}
+.ws-core svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+
+/* aura-bloom achter alles */
+.ws-aura{position:absolute;left:50%;top:50%;width:560px;height:560px;transform:translate(-50%,-50%);
+  border-radius:50%;pointer-events:none;filter:blur(12px);z-index:0;
+  background:radial-gradient(circle at 50% 46%,var(--tone-bg) 0%,var(--tone-bg) 12%,transparent 42%),
+            radial-gradient(circle at 50% 44%,var(--tone-bg) 0%,transparent 60%);
+  animation:fglow 1s var(--ds-ease) .25s both,breathe 7s ease-in-out 2s infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.78}}
+
+/* tilted orbit-rings ACHTER de sphere */
+.ws-rings{z-index:1;animation:fglow .9s var(--ds-ease) .35s both}
+.ws-ring{fill:none}
+.ws-ring.r1{stroke:rgba(150,198,255,.28);stroke-width:1;stroke-dasharray:3 9}
+.ws-ring.r2{stroke:var(--ds-accent);stroke-width:1.4;opacity:.42}
+.ws-ring.r3{stroke:var(--tone);stroke-width:1.1;opacity:.3;stroke-dasharray:2 8}
+.ws-ringspin{transform-origin:340px 332px;animation:spin 150s linear infinite}
+.ws-ringspin.rev{animation-duration:210s;animation-direction:reverse}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* het instrument: eerlijke load-ratio boog op een gekantelde ring */
+.ws-inst-dim{fill:none;stroke:var(--tone);opacity:.2;stroke-width:2}
+.ws-inst-v{fill:none;stroke:var(--tone);stroke-width:3.2;stroke-linecap:round;opacity:.9;
+  filter:drop-shadow(0 0 8px var(--tone));animation:sweep 1.1s var(--ds-ease) .9s both}
+@keyframes sweep{from{stroke-dashoffset:var(--wsd)}to{stroke-dashoffset:0}}
+.ws-onode{fill:#FFE7DC;filter:drop-shadow(0 0 8px var(--tone));animation:np 3.8s ease-in-out 2s infinite}
+.ws-onode.n2{fill:var(--ds-accent);filter:drop-shadow(0 0 7px var(--ds-accent))}
+@keyframes np{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* de glazen sphere */
+.ws-sphere{z-index:2;animation:corein 1.2s var(--ds-ease) .4s both}
+@keyframes corein{from{opacity:0;transform:scale(.9);filter:blur(8px)}to{opacity:1;transform:none;filter:none}}
+.ws-sph-glass{}
+.ws-sph-rim{fill:none;stroke:rgba(220,240,255,.5);stroke-width:1.2;opacity:.5}
+.ws-sph-line{fill:none;stroke:rgba(150,198,255,.16);stroke-width:.9}
+.ws-sph-line.t{stroke:var(--tone);opacity:.22}
+.ws-sph-dot{fill:rgba(180,215,255,.55)}
+.ws-hot{fill:var(--tone);filter:blur(2px)}
+.ws-hot2{fill:#FFF3EC;animation:hotp 6s ease-in-out 2.2s infinite}
+@keyframes hotp{0%,100%{opacity:.9}50%{opacity:.5}}
+
+/* front-arc: kruist vóór de onderrand van de sphere (diepte-cue) */
+.ws-front{z-index:3;pointer-events:none}
+.ws-front-arc{fill:none;stroke:var(--tone);stroke-width:2;opacity:.7;stroke-linecap:round;
+  filter:drop-shadow(0 0 7px var(--tone))}
+.ws-fnode{fill:#FFE7DC;filter:drop-shadow(0 0 8px var(--tone))}
+
+/* de reading — dominante signaal, geïntegreerd in de sphere. Let op: de
+   centrerings-transform mag NIET door een entree-keyframe met transform:none
+   worden overschreven — daarom een eigen keyframe die op de juiste translate eindigt. */
+.ws-read{position:absolute;left:50%;top:43%;z-index:4;
+  text-align:center;width:300px;animation:readin .6s var(--ds-ease) .7s both}
+@keyframes readin{from{opacity:0;transform:translate(-50%,calc(-50% + 12px))}
+  to{opacity:1;transform:translate(-50%,-50%)}}
+.ws-read .lbl{display:block;font-size:10px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--tone);opacity:.85;margin-bottom:2px}
+.ws-read .val{display:block;font-size:82px;font-weight:700;letter-spacing:-.03em;line-height:.98;
+  color:var(--tone);font-variant-numeric:tabular-nums;text-shadow:0 0 42px var(--tone-bg),0 0 16px var(--tone-bg)}
+.ws-read .val i{font-style:normal;font-size:38px;opacity:.72;font-weight:600}
+.ws-read .sub{display:block;margin-top:9px;font-size:13.5px;color:var(--ds-text-2);font-weight:500;
+  letter-spacing:.01em}
+
+/* het platform / radar-basis: de core staat érgens */
+.ws-plat{position:absolute;left:50%;top:540px;width:600px;height:172px;transform:translateX(-50%);z-index:1;
+  animation:fglow .9s var(--ds-ease) .6s both}
+.ws-plat svg{width:100%;height:100%;overflow:visible}
+.ws-plat .pe{fill:none;stroke:rgba(94,230,235,.3)}
+.ws-plat .pe.d{stroke:rgba(94,230,235,.16);stroke-dasharray:2 7}
+.ws-plat .pg{fill:var(--tone);opacity:.15;filter:blur(15px);stroke:none}
+.ws-plat .tick{stroke:rgba(150,198,255,.35);stroke-width:1.2}
+.ws-plat .lead{fill:none;stroke:var(--tone);stroke-width:2;opacity:.7;stroke-linecap:round;
+  filter:drop-shadow(0 0 6px var(--tone))}
+
+/* ══ Z1 — verre cockpitgeometrie (gebroken bogen, buiten de core) ══ */
+.ws-geo{position:absolute;inset:-40px -20px 0;width:calc(100% + 40px);height:calc(100% + 40px);
+  z-index:1;pointer-events:none;overflow:visible;animation:fglow .9s var(--ds-ease) .25s both}
+.ws-arc{fill:none;stroke-linecap:round}
+.ws-arc.g1{stroke:var(--tone);stroke-width:1.6;opacity:.32;transform-origin:720px 470px;animation:spin 170s linear infinite}
+.ws-arc.g2{stroke:var(--ds-accent);stroke-width:1.1;opacity:.26;transform-origin:720px 470px;animation:spin 220s linear infinite reverse}
+.ws-arc.g3{stroke:rgba(150,198,255,.4);stroke-width:1;opacity:.3;stroke-dasharray:2 11}
+.ws-gd{fill:none;stroke:rgba(122,168,255,.08);stroke-width:1}
+
+/* ══ Z3 — fragmenten: borderless, fade-randen, asymmetrisch ══ */
+.ws-frag{position:absolute;z-index:3}
+.ws-frag>.ds-label{display:flex;justify-content:space-between;letter-spacing:.2em;font-size:9.5px;margin-bottom:8px}
+.ws-frag>.ds-label em{font-style:normal;letter-spacing:.04em;font-weight:500;font-size:10px;text-transform:none;color:var(--ds-text-3)}
+.ws-field{padding:16px 18px;border-radius:18px;
+  background:radial-gradient(120% 120% at 30% 0%,rgba(22,52,100,.42),rgba(9,24,48,.16) 70%);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  -webkit-mask-image:radial-gradient(140% 140% at 40% 30%,#000 55%,transparent 98%);
+  mask-image:radial-gradient(140% 140% at 40% 30%,#000 55%,transparent 98%)}
+
+.ws-frag-attn{left:5.2%;top:150px;width:266px;animation:fin .4s var(--ds-ease) 1.05s both}
+.ws-tick{position:absolute;left:-14px;top:2px;bottom:8px;width:2px;border-radius:2px;
+  background:linear-gradient(180deg,var(--tone),transparent 90%);box-shadow:0 0 10px var(--tone-bg)}
+.ws-attn-t{margin:0;font-size:15px;font-weight:600;line-height:1.42;color:var(--ds-text)}
+.ws-attn-t b{color:var(--tone)}
+.ws-attn-m{margin:6px 0 0;font-size:10.5px;color:var(--ds-text-3)}
+.ws-conn{position:absolute;left:calc(5.2% + 250px);top:250px;width:120px;height:120px;z-index:2;pointer-events:none;overflow:visible;
+  animation:fglow .8s var(--ds-ease) 1.4s both}
+.ws-conn path{fill:none;stroke:var(--tone);stroke-width:1.2;stroke-dasharray:5 8;opacity:.55}
+
+.ws-frag-load{left:3%;top:430px;width:346px;animation:fin .4s var(--ds-ease) 1.15s both}
+.ws-kmrow{display:flex;align-items:baseline;gap:9px}
+.ws-km{font-size:31px;font-weight:700;letter-spacing:-.02em;color:var(--ds-text);font-variant-numeric:tabular-nums}
+.ws-km i{font-style:normal;font-size:12px;color:var(--ds-text-3);font-weight:500}
+.ws-rt{margin-left:auto;font-size:12px;color:var(--tone);font-weight:700}
+.ws-load-m{margin-top:6px;font-size:10.5px;color:var(--ds-text-3);display:flex;gap:14px}
+.ws-wk{display:flex;gap:7px;align-items:flex-end;height:56px;margin:12px 0 2px}
+.ws-wk>div{flex:1;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;min-width:0}
+.ws-wk i{width:100%;border-radius:4px 4px 2px 2px;transform-origin:bottom;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--tone) 60%,#fff),var(--tone));
+  box-shadow:0 0 12px -4px var(--tone);animation:grow .6s var(--ds-ease) 1.3s both}
+.ws-wk .off i{height:2px!important;background:rgba(132,178,255,.16);box-shadow:none;animation:none}
+.ws-wk span{font-size:8.5px;font-weight:700;letter-spacing:.08em;color:var(--ds-text-3)}
+.ws-wk .on span{color:var(--ds-text-2)}
+.ws-wk em{font-style:normal;font-size:9px;color:var(--tone);font-weight:700;min-height:11px;font-variant-numeric:tabular-nums}
+@keyframes grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.ws-conn2{position:absolute;left:calc(3% + 250px);top:398px;width:130px;height:110px;z-index:2;pointer-events:none;overflow:visible;
+  animation:fglow .8s var(--ds-ease) 1.5s both}
+.ws-conn2 path{fill:none;stroke:var(--tone);stroke-width:1.2;stroke-dasharray:5 8;opacity:.5}
+.ws-chart{display:block;width:100%;height:auto;color:var(--tone);overflow:visible;margin-top:6px}
+.ws-chart-line{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;filter:drop-shadow(0 0 6px var(--tone-bg))}
+.ws-chart-ref{stroke:var(--ds-accent);stroke-width:1.1;stroke-dasharray:3 6;opacity:.55}
+.ws-chart-reflbl{font-size:8.5px;font-weight:700;letter-spacing:.08em;fill:var(--ds-accent);opacity:.75}
+.ws-chart-tip{fill:#FFE3D4;filter:drop-shadow(0 0 6px currentColor)}
+
+.ws-frag-plan{right:4%;top:140px;width:284px;animation:fin .4s var(--ds-ease) 1.2s both}
+.ws-line{display:flex;align-items:flex-start;gap:12px;margin-bottom:8px}
+.ws-line-ic{color:var(--tone);flex:0 0 auto;margin-top:1px}
+.ws-line-ic svg{width:15px;height:15px}
+.ws-line-t{font-size:13px;font-weight:600;color:var(--ds-text);line-height:1.35}
+.ws-line-s{font-size:10.5px;color:var(--ds-text-3)}
+.ws-goal{display:flex;align-items:center;gap:13px}
+.ws-goal-ring{width:44px;height:44px;border-radius:50%;flex:0 0 auto;border:1.5px dashed rgba(94,230,235,.5);
+  display:grid;place-items:center;animation:spin 40s linear infinite}
+.ws-goal-ring i{width:7px;height:7px;border-radius:50%;background:var(--ds-accent);box-shadow:0 0 9px var(--ds-accent)}
+.ws-goal p{margin:0;font-size:12.5px;color:var(--ds-text-2);line-height:1.45}
+.ws-goal p small{display:block;font-size:10.5px;color:var(--ds-text-3);margin-top:2px}
+.ws-cta{font:inherit;cursor:pointer;margin-top:10px;padding:0;background:none;border:0;display:inline-block;
+  font-size:11.5px;font-weight:700;color:var(--ds-accent)}
+
+.ws-frag-fb{right:3.5%;top:414px;width:262px;animation:fin .4s var(--ds-ease) 1.25s both}
+.ws-fb{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.ws-fb-badge{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  font-size:16px;font-weight:700;color:var(--tone);border:2px solid var(--tone-bd);
+  background:radial-gradient(circle at 50% 32%,var(--tone-bg),transparent 70%);box-shadow:0 0 20px -8px var(--tone)}
+.ws-fb-t{font-size:12.5px;color:var(--ds-text-2)}
+.ws-fb-t small{display:block;font-size:10.5px;color:var(--ds-text-3)}
+.ws-deep{font-size:12px;color:var(--ds-text-2);line-height:1.45;margin-top:8px}
+
+.ws-frag-src{right:4.5%;bottom:150px;width:222px;opacity:.62;animation:fin .4s var(--ds-ease) 1.3s both}
+.ws-src{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.ws-src li{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--ds-text-2)}
+.ws-src li span{flex:1}
+.ws-src li em{font-style:normal;color:var(--ds-text-3);font-size:10px;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* ══ Z4 — command ══ */
+.ws-dock{position:absolute;left:50%;bottom:22px;z-index:5;display:flex;align-items:center;
+  gap:16px;animation:dockin .5s var(--ds-ease) 1.35s both}
+@keyframes dockin{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
+.ws-cmd{display:inline-flex;align-items:center;gap:9px;padding:13px 26px;border-radius:var(--ds-r-pill);border:0;
+  font:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#1C0A02;
+  background:linear-gradient(120deg,color-mix(in srgb,var(--tone) 55%,#fff),var(--tone));
+  box-shadow:0 0 36px -8px var(--tone),0 12px 26px -12px var(--tone)}
+.ws-cmd svg{width:16px;height:16px}
+.ws-qc{display:flex;align-items:center}
+.ws-qc button{background:none;border:0;font:inherit;font-size:12.5px;font-weight:600;color:var(--ds-text-3);
+  cursor:pointer;padding:4px 14px;position:relative}
+.ws-qc button+button::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:1px;background:rgba(122,168,255,.2)}
+
+@keyframes fin{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes fglow{from{opacity:0}to{opacity:1}}
+</style>
+</head>
+<body>
+<div class="lab">
+  <!-- focus-rail -->
+  <nav class="rail">
+    <div class="rail-brand">B</div>
+    <div class="rail-i on" title="Workspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8.2" stroke-dasharray="2 4"/></svg></div>
+    <div class="rail-i" title="Atleten"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9.5" r="2.2"/></svg></div>
+    <div class="rail-i" title="Teampuls"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h4l2-6 3 12 2-6h5"/></svg></div>
+    <div class="rail-i" title="Feedback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16v11H8l-4 4z"/></svg></div>
+    <div class="rail-i" title="Schema"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9h16M9 3v4M15 3v4"/></svg></div>
+    <div class="rail-me">JvL</div>
+  </nav>
+
+  <div class="stage-wrap">
+    <!-- appbar -->
+    <div class="ws-bar">
+      <span class="ws-back">‹ Alle atleten</span>
+      <button class="ws-switch"><span class="ws-switch-av">MB</span>
+        <span><span class="ws-switch-nm">Masja Bolk</span><br><span class="ws-switch-sub">actieve atleet · wissel</span></span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7F97BC" stroke-width="1.7"><path d="M8 10l4 4 4-4"/></svg></button>
+      <div class="r"><span class="ws-per">18 – 24 aug · deze week</span></div>
+    </div>
+
+    <!-- DE SCÈNE -->
+    <div class="ws-scene is-critical">
+      <!-- Z0 -->
+      <div class="ws-bg">
+        <div class="ws-amb"></div>
+        <svg class="ws-orbits" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+          <path class="ws-tr" d="M-40 640 C300 540 780 520 1480 610"/>
+          <path class="ws-tr" d="M-40 720 C360 640 820 630 1480 700"/>
+          <g class="ws-fl"><ellipse cx="720" cy="770" rx="600" ry="112"/><ellipse cx="720" cy="778" rx="400" ry="76"/></g>
+          <circle class="ws-star tw" cx="150" cy="130" r="1.4" opacity=".4"/><circle class="ws-star" cx="420" cy="80" r="1" opacity=".25"/>
+          <circle class="ws-star tw" cx="1180" cy="90" r="1.4" opacity=".4"/><circle class="ws-star" cx="1330" cy="360" r="1.2" opacity=".3"/>
+          <circle class="ws-star" cx="90" cy="480" r="1.2" opacity=".3"/><circle class="ws-star tw" cx="1250" cy="640" r="1" opacity=".25"/>
+          <circle class="ws-star" cx="300" cy="820" r="1.2" opacity=".28"/><circle class="ws-star" cx="1100" cy="810" r="1.1" opacity=".24"/>
+        </svg>
+        <div class="ws-vig"></div>
+      </div>
+
+      <!-- Z1 — verre gebroken bogen -->
+      <svg class="ws-geo" viewBox="0 0 1440 940" preserveAspectRatio="xMidYMid slice">
+        <circle class="ws-arc g2" cx="720" cy="470" r="470" stroke-dasharray="640 2313" transform="rotate(-30 720 470)"/>
+        <circle class="ws-arc g3" cx="720" cy="470" r="410"/>
+        <circle class="ws-arc g1" cx="720" cy="470" r="360" stroke-dasharray="470 1792" transform="rotate(120 720 470)"/>
+        <path class="ws-gd" d="M720 44 L720 150"/>
+        <path class="ws-gd" d="M300 470 L232 470"/><path class="ws-gd" d="M1140 470 L1208 470"/>
+      </svg>
+
+      <div class="ws-stagez">
+        <!-- identity, één keer, klein -->
+        <div class="ws-id2 is-critical">
+          <span class="ws-anchor is-critical"><span class="ws-orb"><i></i>MB</span></span>
+          <b class="ws-name">Masja Bolk</b>
+          <span class="ds-chip">Actie</span>
+          <span class="ds-fresh">belasting vers</span>
+        </div>
+
+        <!-- ══ DE ATHLETE CORE ══ -->
+        <div class="ws-core is-critical">
+          <div class="ws-aura"></div>
+
+          <!-- tilted orbit-rings achter de sphere -->
+          <svg class="ws-rings" viewBox="0 0 680 680">
+            <g class="ws-ringspin"><ellipse class="ws-ring r1" cx="340" cy="332" rx="300" ry="96" transform="rotate(-15 340 332)"/></g>
+            <g class="ws-ringspin rev"><ellipse class="ws-ring r3" cx="340" cy="332" rx="180" ry="286" transform="rotate(12 340 332)"/></g>
+            <!-- instrument-ring (gekanteld) draagt de load-ratio; cirkel→ellipse via scale -->
+            <g transform="translate(340 332) rotate(22) scale(1 .60)">
+              <circle class="ws-inst-dim" r="252"/>
+              <circle class="ws-inst-v" r="252" transform="rotate(-90)"
+                style="stroke-dasharray:1425 158;--wsd:1425"/>
+            </g>
+            <!-- nodes waar verbindingen landen -->
+            <circle class="ws-onode" cx="118" cy="214" r="5"/>
+            <circle class="ws-onode n2" cx="150" cy="470" r="4"/>
+          </svg>
+
+          <!-- de glazen sphere -->
+          <svg class="ws-sphere" viewBox="0 0 680 680">
+            <defs>
+              <radialGradient id="glass" cx="42%" cy="36%" r="72%">
+                <stop offset="0" stop-color="rgba(120,180,255,.16)"/>
+                <stop offset="42%" stop-color="rgba(30,64,120,.30)"/>
+                <stop offset="82%" stop-color="rgba(10,26,52,.62)"/>
+                <stop offset="100%" stop-color="rgba(6,16,34,.82)"/>
+              </radialGradient>
+              <radialGradient id="tonewash" cx="50%" cy="70%" r="60%">
+                <stop offset="0" stop-color="var(--tone)" stop-opacity=".32"/>
+                <stop offset="60%" stop-color="var(--tone)" stop-opacity=".05"/>
+                <stop offset="100%" stop-color="var(--tone)" stop-opacity="0"/>
+              </radialGradient>
+              <clipPath id="sph"><circle cx="340" cy="332" r="150"/></clipPath>
+            </defs>
+            <circle cx="340" cy="332" r="150" fill="url(#glass)"/>
+            <circle cx="340" cy="332" r="150" fill="url(#tonewash)"/>
+            <g clip-path="url(#sph)">
+              <!-- meridianen -->
+              <ellipse class="ws-sph-line" cx="340" cy="332" rx="52" ry="150"/>
+              <ellipse class="ws-sph-line" cx="340" cy="332" rx="108" ry="150"/>
+              <!-- breedtecirkels -->
+              <ellipse class="ws-sph-line" cx="340" cy="332" rx="150" ry="46"/>
+              <ellipse class="ws-sph-line t" cx="340" cy="332" rx="150" ry="100"/>
+              <ellipse class="ws-sph-line" cx="340" cy="290" rx="146" ry="30" opacity=".4"/>
+              <!-- inner particles -->
+              <circle class="ws-sph-dot" cx="300" cy="300" r="1.3"/><circle class="ws-sph-dot" cx="386" cy="322" r="1.6"/>
+              <circle class="ws-sph-dot" cx="352" cy="368" r="1.2"/><circle class="ws-sph-dot" cx="312" cy="356" r="1.4"/>
+              <circle class="ws-sph-dot" cx="372" cy="286" r="1.1"/><circle class="ws-sph-dot" cx="330" cy="398" r="1.3"/>
+              <!-- core-hotspot onderin (bloom) -->
+              <ellipse class="ws-hot" cx="340" cy="408" rx="66" ry="30" opacity=".5"/>
+              <ellipse class="ws-hot2" cx="340" cy="404" rx="24" ry="14"/>
+            </g>
+            <!-- rim-light -->
+            <circle class="ws-sph-rim" cx="340" cy="332" r="150"/>
+            <path class="ws-sph-rim" d="M232 250 A150 150 0 0 1 430 232" style="opacity:.7;stroke-width:1.6"/>
+          </svg>
+
+          <!-- front-arc: kruist vóór onderrand -->
+          <svg class="ws-front" viewBox="0 0 680 680">
+            <g transform="translate(340 332) rotate(22) scale(1 .60)">
+              <path class="ws-front-arc" d="M -238 84 A 252 252 0 0 0 96 233"/>
+            </g>
+            <circle class="ws-fnode" cx="470" cy="452" r="4.5"/>
+          </svg>
+
+          <!-- de reading: dominante signaal IN de core -->
+          <div class="ws-read is-critical">
+            <span class="lbl">Belastingssignaal</span>
+            <span class="val">+92<i>%</i></span>
+            <span class="sub">1,9× t.o.v. referentie</span>
+          </div>
+        </div>
+
+        <!-- platform / radar-basis -->
+        <div class="ws-plat is-critical">
+          <svg viewBox="0 0 600 172">
+            <ellipse class="pg" cx="300" cy="78" rx="250" ry="48"/>
+            <ellipse class="pe" cx="300" cy="78" rx="256" ry="52"/>
+            <ellipse class="pe d" cx="300" cy="80" rx="190" ry="38"/>
+            <ellipse class="pe" cx="300" cy="82" rx="120" ry="24" style="opacity:.6"/>
+            <ellipse class="pe d" cx="300" cy="84" rx="64" ry="13"/>
+            <!-- radartikken -->
+            <line class="tick" x1="60" y1="78" x2="80" y2="78"/><line class="tick" x1="520" y1="78" x2="540" y2="78"/>
+            <line class="tick" x1="120" y1="112" x2="134" y2="104"/><line class="tick" x1="480" y1="104" x2="466" y2="112"/>
+            <line class="tick" x1="230" y1="128" x2="238" y2="120"/><line class="tick" x1="370" y1="120" x2="362" y2="128"/>
+            <path class="lead" d="M120 62 A200 44 0 0 1 300 40"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- ══ Z3 — fragmenten ══ -->
+      <div class="ws-frag ws-frag-attn is-critical">
+        <span class="ws-tick"></span>
+        <h3 class="ds-label">Aandacht nu</h3>
+        <p class="ws-attn-t">Volume <b>+92%</b> deze week — 36,4 km tegenover een referentie van 19 km/wk.</p>
+        <p class="ws-attn-m">hoog · stand 2025-08-28</p>
+      </div>
+      <svg class="ws-conn is-critical" viewBox="0 0 120 120"><path d="M2 10 C50 30 84 62 116 104"/></svg>
+
+      <div class="ws-frag ws-frag-load ws-field is-critical">
+        <h3 class="ds-label">Belasting · 7 dagen<em>4 runs</em></h3>
+        <div class="ws-kmrow"><span class="ws-km">36,4<i> km deze week</i></span><span class="ws-rt">1,9×</span></div>
+        <div class="ws-wk">
+          <div class="off"><em></em><i style="height:0%"></i><span>VR</span></div>
+          <div class="on"><em>8.2</em><i style="height:51%"></i><span>ZA</span></div>
+          <div class="on"><em>12</em><i style="height:74%"></i><span>ZO</span></div>
+          <div class="off"><em></em><i style="height:0%"></i><span>MA</span></div>
+          <div class="off"><em></em><i style="height:0%"></i><span>DI</span></div>
+          <div class="on"><em>16.2</em><i style="height:100%"></i><span>WO</span></div>
+          <div class="off"><em></em><i style="height:0%"></i><span>DO</span></div>
+        </div>
+        <svg class="ws-chart" viewBox="0 0 300 56" style="color:var(--tone)">
+          <line class="ws-chart-ref" x1="8" y1="34.6" x2="292" y2="34.6"/>
+          <text class="ws-chart-reflbl" x="10" y="29.6">REF 19</text>
+          <defs><linearGradient id="ca" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".26"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+          <path fill="url(#ca)" d="M8 44.7 C40 41,68 38.5,102 33.4 C140 27.7,180 24,236 16.8 C258 14,278 12,292 11 L292 48 L8 48 Z"/>
+          <path class="ws-chart-line" d="M8 44.7 C40 41,68 38.5,102 33.4 C140 27.7,180 24,236 16.8 C258 14,278 12,292 11"/>
+          <circle class="ws-chart-tip" cx="292" cy="11" r="3"/>
+        </svg>
+        <div class="ws-load-m"><span>cumulatief weekvolume</span><span>laatste 2025-08-28</span></div>
+      </div>
+      <svg class="ws-conn2 is-critical" viewBox="0 0 130 110"><path d="M2 98 C54 74 96 44 128 8"/></svg>
+
+      <div class="ws-frag ws-frag-plan ws-field">
+        <h3 class="ds-label">Doel &amp; planning</h3>
+        <div class="ws-goal"><div class="ws-goal-ring"><i></i></div>
+          <p>Nog geen doel vastgelegd.<small>Leg een race- of trainingsdoel vast — het masterbrein plant erop.</small></p></div>
+        <button class="ws-cta">Schema openen</button>
+      </div>
+
+      <div class="ws-frag ws-frag-fb ws-field is-attention">
+        <h3 class="ds-label">Feedback</h3>
+        <div class="ws-fb"><span class="ws-fb-badge">1</span>
+          <span class="ws-fb-t">1 open reactie<small>vraagt aandacht</small></span></div>
+        <p class="ws-deep">Laatste reactie na lange duurloop — nog niet beantwoord.</p>
+        <button class="ws-cta">Cockpit openen</button>
+      </div>
+
+      <div class="ws-frag ws-frag-src">
+        <h3 class="ds-label">Bronnen</h3>
+        <ul class="ws-src">
+          <li class="is-success"><i class="ds-dot"></i><span>Belasting</span><em>2025-08-28 · vers</em></li>
+          <li class="is-success"><i class="ds-dot"></i><span>Overzicht</span><em>2025-08-28 · vers</em></li>
+          <li class="is-attention"><i class="ds-dot"></i><span>Feedback</span><em>2025-08-27 · eerder</em></li>
+        </ul>
+      </div>
+
+      <!-- ══ Z4 — command ══ -->
+      <nav class="ws-dock is-critical">
+        <div class="ws-qc"><button>Teampuls</button><button>Profiel</button></div>
+        <button class="ws-cmd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12l4 4 10-10"/></svg>Belasting gezien</button>
+        <div class="ws-qc"><button>Overzicht</button><button>Dossier</button></div>
+      </nav>
+    </div>
+  </div>
+</div>
+</body>
+</html>

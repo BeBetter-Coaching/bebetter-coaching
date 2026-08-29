@@ -3,6 +3,52 @@
 **Branch:** `feature/app-design-system-athlete-shell-v1` · **commit:** zie COMMIT.txt
 **Base:** `main = 39d2453` (SW v97 live) — deze branch is NIET gemerged.
 
+## AFRONDING ZONDER AVATAR — ATHLETE CORE (huidige kandidaat)
+> Deze pass **vervangt** de menselijke presence uit `20ba128`/`e50bd20`. De hele
+> avatar-lijn (avatar/bust/portret/silhouet/pre-rendered human asset) is
+> **volledig verlaten en niet opnieuw geprobeerd** — de RESET v3-presence-tekst
+> verderop is daarmee achterhaald.
+
+**Waarom:** de menselijke presence overtuigde niet en trok de scène terug naar
+"dashboard met glows". De centrale hero is nu een abstracte, ruimtelijke
+**Athlete Core**: een glazen sphere (wireframe-meridianen + inner-particles +
+hotspot-bloom), omgeven door gekantelde orbit-ringen waarvan er ÉÉN de eerlijke
+load-ratio als instrument draagt, staand op een radar-basis. Het dominante
+signaal (`+92%` · `1,9× t.o.v. referentie`, of `Rustig` bij geen signaal) leeft
+geïntegreerd IN de kern — geen losse KPI-kaart, geen donut. De toon van de kern
+volgt het zwaarste open signaal; geen data → geen gauge (kalme atleet = serene
+groene kern zonder instrument).
+
+De rest van het spatiale contract blijft: Z0 omgeving, Z1 verre gebroken bogen,
+Z3 borderless fragmenten op z-vlakken, Z4 geïntegreerd commando. Twee zichtbare
+relaties: aandacht↔boog-node en belasting-fragment↔kern. Focus-rail-shell.
+Alleen echte data (geen fake readiness/ACWR/RPE/HRV/feedback-%/doelen); lege
+staten zijn ontworpen (o.a. "Nog geen doel vastgelegd").
+
+**Gewijzigde bestanden (deze pass):** `pwa/static/app.js` (`wsHuman`→`wsCore`,
+`wsSignal` verwijderd, Z2-blok + tweede connector in `wsRender`),
+`pwa/static/design-system.css` (Z2-CSS herschreven naar de kern; dock-/read-
+centrering-keyframes gefixt; mobiel + reduced-motion bijgewerkt),
+`pwa/static/index.html` + `pwa/static/sw.js` (asset-/cache-bump v108a/v104),
+`tests/test_app_design_system_v1.py` (test 8/13/37 → Athlete-Core-contract).
+Presence-assets `pwa/static/presence/*.webp` en `design-lab/presence-paint*.html`-
+afhankelijkheid verwijderd. Design-lab: `design-lab/workspace-athlete-core-final.html`.
+
+**Verwijderd deze pass (grep-geverifieerd 0 restanten in `pwa/static`):**
+`wsHuman`, `wsSignal`, `.ws-human*`, `.ws-plat2`, `.ws-signal*`, `.ws-inst-b`,
+`presVar`/`geslacht`-selectie, `/static/presence/`-referenties, de webp-assets.
+
+**Teststatus:** 1026 passed — vaste én random volgorde (`python3 -m pytest tests/ -q`).
+**Performance (headless Chrome, lokaal):** FCP ~1,37 s incl. deep-load; 0
+horizontale overflow op 1440px en 390px; geen nieuwe console-errors (alleen
+pre-existing favicon-404 + vibrate-warning); alleen compositor-animaties
+(orbit-rotatie/pulse); geen library/canvas/WebGL in productie.
+
+**Acceptance-renders:** `review-screenshots/01-workspace-desktop.png` (flagship),
+`02-hero-closeup.png` (kern), `04-mobile-sanity.png`, `08-calm-core.png` (geen
+signaal → geen gauge), `05-northstar-comparison.png`, `07-before-after.png`
+(afgekeurde mens vs. nieuwe kern).
+
 ## Wat dit is
 De volledige stand van de Workspace visual-milestone bij SLUITING (closure-pass verwerkt):
 de north-star passes (design system → visual wow → athlete canvas → north-star →

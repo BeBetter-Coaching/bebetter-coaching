@@ -97,7 +97,7 @@ class TestStatusSemantics:
 
 # ── 3. Gedeelde primitives bestaan en worden hergebruikt ────────────────────
 class TestPrimitives:
-    PRIMS = ["wsAnchor", "wsSignal", "wsLine", "dcNode", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
+    PRIMS = ["wsAnchor", "wsCore", "wsLine", "dcNode", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
              "dsKv", "dsStream", "dsAction", "dsEmpty", "dsSpark", "dsRing"]
 
     def test_8_alle_primitives_bestaan_eenmalig(self):
@@ -151,7 +151,7 @@ class TestAthleteShell:
         for body, view in ((wsb, "workspace"), (dcb, "dossier")):
             assert "dsTone(" in body, f"{view} gebruikt de gedeelde statussemantiek niet"
             assert f'athleteNav("{view}"' in body, f"{view} mist de gedeelde athlete-nav"
-        assert "wsAnchor(" in wsb and "wsSignal(" in wsb      # canvas-anchor + dominant signaal
+        assert "wsAnchor(" in wsb and "wsCore(" in wsb        # canvas-anchor + Athlete Core
         assert _APP.count("function wsAnchor(") == 1
 
     def test_14_alle_athlete_views_spreken_hetzelfde_signaaldialect(self):
@@ -346,31 +346,40 @@ class TestAthleteCanvas:
             assert dead not in _CSS, f"legacy CSS {dead} nog aanwezig"
         assert "function wsToonLijst(" not in _APP               # rail-toggle is weg
 
-    def test_37_spatial_cockpit_scene(self):
-        # Spatial-reset v3-contract (extern NO-GO op de dashboard-compositie):
-        # de athlete is een pre-rendered asset met live overlays (geen gecodeerde
-        # anatomie meer), de geometrie bestaat uit GEBROKEN bogen (geen perfecte
-        # KPI-ring als centrum), context leeft als borderless fragmenten op
-        # z-vlakken, en het commando is geïntegreerd (geen actiebalk/pills-rij).
+    def test_37_athlete_core_scene(self):
+        # Workspace-afronding zonder avatar: de menslijn (avatar/bust/portret/
+        # pre-rendered human asset) is VOLLEDIG verlaten. De centrale hero is een
+        # abstracte, ruimtelijke ATHLETE CORE (glazen sphere + gekantelde orbits +
+        # radar-basis) met het dominante signaal geïntegreerd IN de kern. Verder
+        # blijft het spatiale contract: gebroken verre geometrie, borderless
+        # fragmenten op z-vlakken, geïntegreerd commando.
+        core = _fn("wsCore")
         ws = _fn("wsRender")
-        assert "wsHuman(" in ws and "function wsHuman(" in _APP
-        assert "ws-human-asset" in _APP and "/static/presence/presence-" in _APP
-        for g in ("female", "male", "neutral"):                    # assets bestaan echt
-            assert os.path.exists(os.path.join(_ROOT, "pwa", "static", "presence",
-                                               f"presence-{g}.webp")), g
-        assert "function wsBust(" not in _APP                      # gecodeerde anatomie weg
-        # eerlijke presence-selectie: profielveld -> override -> neutraal, nooit naam
-        assert 'vm.profiel && vm.profiel.geslacht' in ws
-        assert '"presence"' in ws and '"bust"' in ws
-        sel = ws[ws.index("presVar"):ws.index("presVar") + 420]
-        assert "voornaam" not in sel and '|| "x"' in sel
-        # gebroken geometrie + fragmenten + command dock
+        # de kern bestaat en wordt gebruikt; de menslijn is echt weg
+        assert "function wsCore(" in _APP and "wsCore(focal)" in ws
+        assert "function wsHuman(" not in _APP and "function wsBust(" not in _APP
+        assert "ws-human" not in _APP and "wsSignal(" not in _APP
+        assert "/static/presence/" not in _APP           # geen human-asset meer
+        assert not os.path.exists(os.path.join(_ROOT, "pwa", "static", "presence"))
+        assert "geslacht" not in ws and "presVar" not in ws        # geen gender-inferentie
+        # de kern zelf: sphere + gekantelde ring(en) + geïntegreerd signaal
+        assert 'class="ws-sphere"' in core and 'class="ws-rings"' in core
+        assert 'class="ws-read"' in core and "ws-read-v" in core   # signaal ín de kern
+        # eerlijk instrument: gauge alleen bij data (gaugeFrac), niet verzonnen
+        assert "f.gaugeFrac != null" in core
+        # verre gebroken geometrie blijft (geen perfecte KPI-ring als centrum)
         assert 'class="ws-geo"' in ws and ws.count("ws-arc") >= 4
+        # radar-basis: de kern staat érgens
+        assert 'class="ws-plat"' in ws and ".ws-plat{" in _DS
+        # fragmenten + twee zichtbare relaties (attn↔node, load↔kern)
         assert "ws-frag-attn" in ws and "ws-frag-load" in ws and "ws-frag-plan" in ws
         assert "ws-frag-fb" in ws and "ws-frag-src" in ws
+        assert 'class="ws-conn' in ws and "ws-conn2" in ws
         assert 'class="ws-cmd"' in ws                              # geintegreerd commando
         # borderless fragmenten: het veld heeft mask-fade en geen border
         veld = _DS.split(".ws-field{")[1][:340]
         assert "mask-image" in veld and "border:" not in veld
         assert ".ws-amb{" in _DS and ".ws-vig{" in _DS             # omgeving doet mee
+        # de centrerings-transform van het signaal mag niet door 'none' sneuvelen
+        assert "ws-readin" in _DS
         assert "prefers-reduced-motion" in _DS

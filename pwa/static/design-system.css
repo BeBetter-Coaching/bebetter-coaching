@@ -544,10 +544,10 @@
 .ws-nd2{fill:var(--ds-accent);filter:drop-shadow(0 0 7px var(--ds-accent))}
 @keyframes ws-nodepulse{0%,100%{opacity:1}50%{opacity:.5}}
 
-/* ── Z2 — athlete-vlak ── */
-.ws-stagez{position:relative;z-index:2;width:min(640px,100%);margin:0 auto;height:790px}
-.ws-id2{position:absolute;left:0;right:0;top:14px;z-index:5;
-  display:flex;align-items:center;justify-content:center;gap:10px;white-space:nowrap;
+/* ── Z2 — athlete-vlak: identity + ATHLETE CORE (abstract, geen mens) ── */
+.ws-stagez{position:relative;z-index:2;width:min(660px,100%);margin:0 auto;height:812px}
+.ws-id2{position:absolute;left:0;right:0;top:12px;z-index:6;
+  display:flex;align-items:center;justify-content:center;gap:11px;white-space:nowrap;
   animation:ws-in 340ms var(--ds-ease) both}
 .ws-anchor .ws-orb{position:relative;width:34px;height:34px;border-radius:50%;display:grid;
   place-items:center;font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--tone);
@@ -560,57 +560,69 @@
 .ws-id2 .ds-chip{font-size:9.5px;padding:3px 9px}
 .ws-id2 .ds-fresh{font-size:11px}
 
-.ws-aura{position:absolute;left:50%;top:316px;width:560px;height:560px;border-radius:50%;
-  transform:translate(-50%,-50%);pointer-events:none;filter:blur(10px);z-index:1;
+/* de kern-container — alles centreert op sphere-midden (340,332 in 680-veld) */
+.ws-core{position:absolute;left:50%;top:64px;width:600px;height:600px;transform:translateX(-50%);z-index:2}
+.ws-core svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.ws-aura{position:absolute;left:50%;top:50%;width:560px;height:560px;border-radius:50%;
+  transform:translate(-50%,-50%);pointer-events:none;filter:blur(12px);z-index:0;
   background:
-    radial-gradient(circle at 50% 44%,var(--tone-bg) 0%,var(--tone-bg) 12%,transparent 30%),
-    radial-gradient(circle at 50% 42%,var(--tone-bg) 0%,transparent 58%);
+    radial-gradient(circle at 50% 46%,var(--tone-bg) 0%,var(--tone-bg) 12%,transparent 42%),
+    radial-gradient(circle at 50% 44%,var(--tone-bg) 0%,transparent 60%);
   animation:ws-glow 1s var(--ds-ease) .3s both,ws-breathe 7s ease-in-out 2s infinite}
-@keyframes ws-breathe{0%,100%{opacity:1}50%{opacity:.8}}
-.ws-human{position:absolute;left:50%;top:58px;width:478px;transform:translateX(-50%);z-index:2;
-  animation:ws-humanin 1.1s var(--ds-ease) .35s both}
-@keyframes ws-humanin{from{opacity:0;transform:translateX(-50%) translateY(26px);filter:blur(10px)}
-  to{opacity:1;transform:translateX(-50%) translateY(0);filter:blur(0)}}
-.ws-human-asset{display:block;width:100%;height:auto}
-.ws-human-scan{position:absolute;inset:4% 10% 12% 10%;pointer-events:none;mix-blend-mode:screen;
-  background:repeating-linear-gradient(to bottom,rgba(170,230,255,.05) 0 1px,transparent 1px 5px);
-  opacity:.5;-webkit-mask-image:radial-gradient(58% 52% at 50% 38%,#000 34%,transparent 76%);
-  mask-image:radial-gradient(58% 52% at 50% 38%,#000 34%,transparent 76%)}
-.ws-human-status{position:absolute;inset:38% 6% 0;pointer-events:none;mix-blend-mode:screen;
-  background:linear-gradient(to top,var(--tone-bg) 0%,transparent 70%);opacity:.9;
-  -webkit-mask-image:radial-gradient(60% 70% at 50% 62%,#000 40%,transparent 80%);
-  mask-image:radial-gradient(60% 70% at 50% 62%,#000 40%,transparent 80%)}
-.ws-human-core{position:absolute;left:50%;top:56%;width:70px;height:130px;border-radius:50%;
-  transform:translateX(-50%);filter:blur(16px);background:var(--ds-accent);opacity:.24}
-.ws-human-corehot{position:absolute;left:50%;top:55%;width:22px;height:48px;border-radius:50%;
-  transform:translateX(-50%);filter:blur(7px);background:#EAFDFF;opacity:.5;
-  animation:ws-corepulse 6s ease-in-out 2.4s infinite}
-@keyframes ws-corepulse{0%,100%{opacity:.5}50%{opacity:.3}}
-
-.ws-plat2{position:absolute;left:50%;top:620px;width:560px;height:150px;
-  transform:translateX(-50%);z-index:1;animation:ws-glow .9s var(--ds-ease) .6s both}
-.ws-plat2 svg{width:100%;height:100%;overflow:visible}
-.ws-plat2 ellipse{fill:none;stroke:rgba(94,230,235,.32)}
-.ws-pg{fill:var(--tone);opacity:.14;filter:blur(14px);stroke:none!important}
-
-/* ── het signaal-instrument: compacte partial-ring op de platformrand ── */
-.ws-signal{position:absolute;left:50%;top:610px;transform:translateX(64px);z-index:4;
-  width:150px;text-align:center;display:flex;flex-direction:column;align-items:center;
-  animation:ws-in 380ms var(--ds-ease) .8s both}
-.ws-signal svg{position:absolute;left:50%;top:-12px;width:150px;height:150px;
-  transform:translateX(-50%);overflow:visible}
-.ws-inst-b{fill:none;stroke:var(--tone);opacity:.3;stroke-width:2}
-.ws-inst-v{fill:none;stroke:var(--tone);stroke-width:4;stroke-linecap:round;
-  stroke-dashoffset:0;filter:drop-shadow(0 0 8px var(--tone-bg));
-  animation:ws-sweep 1s var(--ds-ease) 1s both}
+@keyframes ws-breathe{0%,100%{opacity:1}50%{opacity:.78}}
+/* gekantelde orbit-ringen achter de sphere */
+.ws-rings{z-index:1;animation:ws-glow .9s var(--ds-ease) .35s both}
+.ws-ring{fill:none}
+.ws-ring.r1{stroke:rgba(150,198,255,.28);stroke-width:1;stroke-dasharray:3 9}
+.ws-ring.r3{stroke:var(--tone);stroke-width:1.1;opacity:.3;stroke-dasharray:2 8}
+.ws-ringspin{transform-origin:340px 332px;animation:ws-rot 150s linear infinite}
+.ws-ringspin.rev{animation-duration:210s;animation-direction:reverse}
+/* het instrument: eerlijke load-ratio-boog op een gekantelde ring */
+.ws-inst-dim{fill:none;stroke:var(--tone);opacity:.2;stroke-width:2}
+.ws-inst-v{fill:none;stroke:var(--tone);stroke-width:3.2;stroke-linecap:round;opacity:.9;
+  filter:drop-shadow(0 0 8px var(--tone));animation:ws-sweep 1.1s var(--ds-ease) .9s both}
 @keyframes ws-sweep{from{stroke-dashoffset:var(--wsd)}to{stroke-dashoffset:0}}
-.ws-signal-l{position:relative;margin-top:14px;font-size:9px;font-weight:700;
-  letter-spacing:.18em;text-transform:uppercase;color:var(--ds-text-3);max-width:150px}
-.ws-signal-v{position:relative;font-size:40px;font-weight:700;letter-spacing:-.02em;
-  color:var(--tone);font-variant-numeric:tabular-nums;text-shadow:0 0 26px var(--tone-bg)}
-.ws-signal-v.txt{font-size:24px}
-.ws-signal-v i{font-style:normal;font-size:16px;opacity:.75}
-.ws-signal-s{position:relative;font-size:10.5px;color:var(--ds-text-2);max-width:170px}
+.ws-onode{fill:#FFE7DC;filter:drop-shadow(0 0 8px var(--tone));animation:ws-nodepulse 3.8s ease-in-out 2s infinite}
+.ws-onode.n2{fill:var(--ds-accent);filter:drop-shadow(0 0 7px var(--ds-accent))}
+/* de glazen sphere */
+.ws-sphere{z-index:2;animation:ws-corein 1.2s var(--ds-ease) .4s both}
+@keyframes ws-corein{from{opacity:0;transform:scale(.9);filter:blur(8px)}to{opacity:1;transform:none;filter:none}}
+.ws-sph-rim{fill:none;stroke:rgba(220,240,255,.5);stroke-width:1.2;opacity:.5}
+.ws-sph-line{fill:none;stroke:rgba(150,198,255,.16);stroke-width:.9}
+.ws-sph-line.t{stroke:var(--tone);opacity:.22}
+.ws-sph-dot{fill:rgba(180,215,255,.55)}
+.ws-hot{fill:var(--tone);filter:blur(2px)}
+.ws-hot2{fill:#FFF3EC;animation:ws-corepulse 6s ease-in-out 2.2s infinite}
+@keyframes ws-corepulse{0%,100%{opacity:.9}50%{opacity:.5}}
+/* front-arc: kruist vóór de onderrand (diepte-cue) */
+.ws-front{z-index:3;pointer-events:none}
+.ws-front-arc{fill:none;stroke:var(--tone);stroke-width:2;opacity:.7;stroke-linecap:round;
+  filter:drop-shadow(0 0 7px var(--tone))}
+.ws-fnode{fill:#FFE7DC;filter:drop-shadow(0 0 8px var(--tone))}
+/* het dominante signaal, geïntegreerd IN de kern. De centrerings-transform mag
+   NIET door een entree-keyframe met transform:none worden overschreven. */
+.ws-read{position:absolute;left:50%;top:43%;z-index:4;text-align:center;width:300px;
+  animation:ws-readin .6s var(--ds-ease) .7s both}
+@keyframes ws-readin{from{opacity:0;transform:translate(-50%,calc(-50% + 12px))}
+  to{opacity:1;transform:translate(-50%,-50%)}}
+.ws-read-l{display:block;font-size:10px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--tone);opacity:.85;margin-bottom:2px}
+.ws-read-v{display:block;font-size:82px;font-weight:700;letter-spacing:-.03em;line-height:.98;
+  color:var(--tone);font-variant-numeric:tabular-nums;text-shadow:0 0 42px var(--tone-bg),0 0 16px var(--tone-bg)}
+.ws-read-v.txt{font-size:44px}
+.ws-read-v i{font-style:normal;font-size:38px;opacity:.72;font-weight:600}
+.ws-read-s{display:block;margin-top:9px;font-size:13.5px;color:var(--ds-text-2);font-weight:500;letter-spacing:.01em}
+
+/* ── de radar-basis: de kern staat érgens ── */
+.ws-plat{position:absolute;left:50%;top:540px;width:600px;height:172px;
+  transform:translateX(-50%);z-index:1;animation:ws-glow .9s var(--ds-ease) .6s both}
+.ws-plat svg{width:100%;height:100%;overflow:visible}
+.ws-pe{fill:none;stroke:rgba(94,230,235,.3)}
+.ws-pe.d{stroke:rgba(94,230,235,.16);stroke-dasharray:2 7}
+.ws-pg{fill:var(--tone);opacity:.15;filter:blur(15px);stroke:none!important}
+.ws-ptick{stroke:rgba(150,198,255,.35);stroke-width:1.2}
+.ws-plead{fill:none;stroke:var(--tone);stroke-width:2;opacity:.7;stroke-linecap:round;
+  filter:drop-shadow(0 0 6px var(--tone))}
 
 /* ── Z3 — fragmenten: borderless, fade-randen ── */
 .ws-frag{position:absolute;z-index:3}
@@ -636,6 +648,10 @@
   z-index:3;pointer-events:none;overflow:visible;
   animation:ws-glow .8s var(--ds-ease) 1.4s both}
 .ws-conn path{fill:none;stroke:var(--tone);stroke-width:1.2;stroke-dasharray:5 8;opacity:.6}
+/* tweede zichtbare relatie: belasting-fragment ↔ centrale kern */
+.ws-conn2{position:absolute;left:calc(6.5% + 300px);top:398px;width:150px;height:118px;z-index:2;
+  pointer-events:none;overflow:visible;animation:ws-glow .8s var(--ds-ease) 1.5s both}
+.ws-conn2 path{fill:none;stroke:var(--tone);stroke-width:1.2;stroke-dasharray:5 8;opacity:.5}
 
 .ws-frag-load{left:6.5%;top:456px;width:340px;animation:ws-in 400ms var(--ds-ease) 1.15s both}
 .ws-kmrow{display:flex;align-items:baseline;gap:9px}
@@ -705,8 +721,11 @@
 .ws-src .ds-dot{width:5px;height:5px}
 
 /* ── Z4 — command ── */
-.ws-dock{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:4;
-  display:flex;align-items:center;gap:14px;animation:ws-in 380ms var(--ds-ease) 1.35s both}
+/* let op: eigen keyframe — ws-in eindigt op transform:none en zou de
+   translateX(-50%)-centrering wegvagen. */
+.ws-dock{position:absolute;left:50%;bottom:24px;z-index:4;
+  display:flex;align-items:center;gap:14px;animation:ws-dockin 420ms var(--ds-ease) 1.35s both}
+@keyframes ws-dockin{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
 .ws-cmd{display:inline-flex;align-items:center;gap:9px;padding:13px 26px;
   border-radius:var(--ds-r-pill);border:0;font:inherit;font-size:14px;font-weight:700;
   cursor:pointer;color:#1C0A02;
@@ -738,22 +757,22 @@
   .ws-conn{display:none}
   .ws-tick{left:-10px}
   .ws-frag-src{opacity:.75}
-  /* compacte stage: de figuur + platform + signaal in één vast blok, context eronder */
-  .ws-stagez{height:660px}
-  .ws-human{width:min(430px,82%);top:64px}
-  .ws-aura{width:480px;height:480px;top:290px}
-  .ws-plat2{width:min(470px,94%);top:520px}
-  .ws-signal{top:508px;transform:translateX(48px)}
-  .ws-dock{position:static;transform:none;justify-content:center;flex-wrap:wrap;
-    margin:var(--ds-5) auto 0}
+  .ws-conn2{display:none}
+  /* compacte stage: de kern + radar in één vast blok, context eronder */
+  .ws-stagez{height:600px}
+  .ws-core{width:min(470px,92%);top:56px}
+  .ws-read-v{font-size:64px}
+  .ws-read-v i{font-size:30px}
+  .ws-plat{width:min(470px,94%);top:452px}
+  .ws-dock{position:static;justify-content:center;flex-wrap:wrap;margin:var(--ds-5) auto 0;
+    animation:ws-in 380ms var(--ds-ease) 1.35s both}
 }
 @media (max-width:760px){
-  .ws-stagez{width:100%;height:560px}
-  .ws-human{width:min(340px,86%);top:56px}
-  .ws-aura{width:390px;height:390px;top:240px}
-  .ws-plat2{width:min(380px,94%);top:428px}
-  .ws-signal{top:416px;transform:translateX(30px)}
-  .ws-signal-v{font-size:34px}
+  .ws-stagez{width:100%;height:496px}
+  .ws-core{width:min(360px,90%);top:44px}
+  .ws-read-v{font-size:52px}
+  .ws-read-v i{font-size:24px}
+  .ws-plat{width:min(360px,94%);top:360px}
   .ws-bg{inset:-24px -12px -8px}
   .ws-geo{display:none}
   .ws-id2{white-space:normal;justify-content:center;flex-wrap:wrap}
@@ -763,10 +782,10 @@
 @keyframes ws-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 @keyframes ws-glow{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){
-  .ws-id2,.ws-aura,.ws-human,.ws-plat2,.ws-signal,.ws-frag,.ws-conn,.ws-dock,
-  .ws-geo,.ws-bg{animation:none}
-  .ws-arc.a1,.ws-arc.a2,.ws-goal-ring{animation:none}
-  .ws-inst-v,.ws-nd,.ws-human-corehot,.ws-aura,.ws-wk i{animation:none}
+  .ws-id2,.ws-aura,.ws-core,.ws-rings,.ws-sphere,.ws-front,.ws-read,.ws-plat,.ws-frag,
+  .ws-conn,.ws-conn2,.ws-dock,.ws-geo,.ws-bg{animation:none}
+  .ws-arc.a1,.ws-arc.a2,.ws-goal-ring,.ws-ringspin{animation:none}
+  .ws-inst-v,.ws-nd,.ws-onode,.ws-hot2,.ws-aura,.ws-wk i{animation:none}
   .ws-star.tw{animation:none}
   .ws-switch{transition:none}
 }

@@ -5075,18 +5075,79 @@ function wsWeekStrip(runs, standDatum) {
   }).join("") + `</div>`;
 }
 
-// De athlete-presence: pre-rendered digital-human asset (alpha) + live
-// overlays (scanlines, status-licht, borstkern) — reset v3 §8/§9. De mensmassa
-// is een statisch asset; alles wat op data reageert blijft code-gedreven.
-// Variant: écht profielveld → ?presence/?bust-override → neutraal. Nooit naam.
-function wsHuman(variant) {
-  const g = variant === "v" ? "female" : variant === "m" ? "male" : "neutral";
-  return `<div class="ws-human" aria-hidden="true">
-    <img class="ws-human-asset" src="/static/presence/presence-${g}.webp" alt="">
-    <div class="ws-human-scan"></div>
-    <div class="ws-human-status"></div>
-    <div class="ws-human-core"></div>
-    <div class="ws-human-corehot"></div>
+// De ATHLETE CORE: een abstracte, ruimtelijke intelligentie-kern — GEEN mens.
+// Geen avatar/bust/portret/silhouet; de menslijn is bewust verlaten. De kern is
+// een glazen sphere (wireframe-meridianen + inner-particles + hotspot-bloom),
+// omgeven door gekantelde orbit-ringen waarvan er ÉÉN de eerlijke load-ratio als
+// instrument draagt, staand op een radar-basis. Het dominante signaal (focal)
+// leeft geïntegreerd IN de kern. Reageert volledig op toon + echte data.
+function wsCore(focal) {
+  const f = focal || {};
+  const R = 252, C = 2 * Math.PI * R;
+  // Instrument-ring: eerlijke mapping — ratio>=1: dim ring = 100% referentie
+  // bereikt, felle sweep = overshoot (max één extra ronde); ratio<1: voortgang.
+  // Geen data → geen boog (de decoratieve ringen blijven, het instrument niet).
+  let inst = "";
+  if (f.gaugeFrac != null) {
+    const dash = Math.max(f.gaugeFrac * C, 0);
+    inst = `<g transform="translate(340 332) rotate(22) scale(1 .60)">
+      ${f.gaugeDim ? `<circle class="ws-inst-dim" r="${R}"/>` : ""}
+      <circle class="ws-inst-v" r="${R}" transform="rotate(-90)"
+        style="stroke-dasharray:${dash.toFixed(1)} ${(C - dash).toFixed(1)};--wsd:${dash.toFixed(1)}"/></g>`;
+  }
+  const val = String(f.value == null ? "" : f.value);
+  const big = val.length > 4 ? " txt" : "";
+  return `<div class="ws-core ${f.tone || ""}">
+    <div class="ws-aura" aria-hidden="true"></div>
+    <svg class="ws-rings" viewBox="0 0 680 680" aria-hidden="true">
+      <g class="ws-ringspin"><ellipse class="ws-ring r1" cx="340" cy="332" rx="300" ry="96" transform="rotate(-15 340 332)"/></g>
+      <g class="ws-ringspin rev"><ellipse class="ws-ring r3" cx="340" cy="332" rx="180" ry="286" transform="rotate(12 340 332)"/></g>
+      ${inst}
+      <circle class="ws-onode" cx="118" cy="214" r="5"/>
+      <circle class="ws-onode n2" cx="150" cy="470" r="4"/>
+    </svg>
+    <svg class="ws-sphere" viewBox="0 0 680 680" aria-hidden="true">
+      <defs>
+        <radialGradient id="ws-glass" cx="42%" cy="36%" r="72%">
+          <stop offset="0" stop-color="rgba(120,180,255,.16)"/>
+          <stop offset="42%" stop-color="rgba(30,64,120,.30)"/>
+          <stop offset="82%" stop-color="rgba(10,26,52,.62)"/>
+          <stop offset="100%" stop-color="rgba(6,16,34,.82)"/>
+        </radialGradient>
+        <radialGradient id="ws-wash" cx="50%" cy="70%" r="60%">
+          <stop offset="0" stop-color="var(--tone)" stop-opacity=".32"/>
+          <stop offset="60%" stop-color="var(--tone)" stop-opacity=".05"/>
+          <stop offset="100%" stop-color="var(--tone)" stop-opacity="0"/>
+        </radialGradient>
+        <clipPath id="ws-sph"><circle cx="340" cy="332" r="150"/></clipPath>
+      </defs>
+      <circle cx="340" cy="332" r="150" fill="url(#ws-glass)"/>
+      <circle cx="340" cy="332" r="150" fill="url(#ws-wash)"/>
+      <g clip-path="url(#ws-sph)">
+        <ellipse class="ws-sph-line" cx="340" cy="332" rx="52" ry="150"/>
+        <ellipse class="ws-sph-line" cx="340" cy="332" rx="108" ry="150"/>
+        <ellipse class="ws-sph-line" cx="340" cy="332" rx="150" ry="46"/>
+        <ellipse class="ws-sph-line t" cx="340" cy="332" rx="150" ry="100"/>
+        <ellipse class="ws-sph-line" cx="340" cy="290" rx="146" ry="30" opacity=".4"/>
+        <circle class="ws-sph-dot" cx="300" cy="300" r="1.3"/><circle class="ws-sph-dot" cx="386" cy="322" r="1.6"/>
+        <circle class="ws-sph-dot" cx="352" cy="368" r="1.2"/><circle class="ws-sph-dot" cx="312" cy="356" r="1.4"/>
+        <circle class="ws-sph-dot" cx="372" cy="286" r="1.1"/><circle class="ws-sph-dot" cx="330" cy="398" r="1.3"/>
+        <ellipse class="ws-hot" cx="340" cy="408" rx="66" ry="30" opacity=".5"/>
+        <ellipse class="ws-hot2" cx="340" cy="404" rx="24" ry="14"/>
+      </g>
+      <circle class="ws-sph-rim" cx="340" cy="332" r="150"/>
+      <path class="ws-sph-rim" d="M232 250 A150 150 0 0 1 430 232" style="opacity:.7;stroke-width:1.6"/>
+    </svg>
+    <svg class="ws-front" viewBox="0 0 680 680" aria-hidden="true">
+      <g transform="translate(340 332) rotate(22) scale(1 .60)">
+        <path class="ws-front-arc" d="M -238 84 A 252 252 0 0 0 96 233"/></g>
+      <circle class="ws-fnode" cx="470" cy="452" r="4.5"/>
+    </svg>
+    <div class="ws-read">
+      <span class="ws-read-l">${esc(f.label || "")}${f.word ? ` · ${esc(f.word)}` : ""}</span>
+      <span class="ws-read-v${big}">${esc(val)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
+      ${f.sub ? `<span class="ws-read-s">${esc(f.sub)}</span>` : ""}
+    </div>
   </div>`;
 }
 
@@ -5099,38 +5160,11 @@ function wsLine(l) {
     ${l.value ? `<span class="ws-line-v">${esc(l.value)}</span>` : ""}</div>`;
 }
 
-// Het focal-systeem: gelaagd ringveld + medaillon-kern. Geen verzonnen foto —
-// de ontbrekende portretmassa wordt gedragen door schaal, licht en gelaagdheid.
-// De bogen zijn echte status (toon volgt het zwaarste open signaal).
-// Compact identity-medaillon in de identity-zone: initialen + statusring.
-// De athlete-presence zelf is de centrale bust (wsBust) — identiteit staat één
-// keer, klein en helder, en wordt daarna niet meer dominant herhaald.
+// Compact identity-medaillon in de identity-zone: initialen + statusring. De
+// identiteit staat hier één keer klein en helder; de centrale kern (wsCore) is
+// bewust abstract (geen mens), dus de naam wordt niet dominant herhaald.
 function wsAnchor(naam, tone) {
   return `<span class="ws-anchor ${tone}"><span class="ws-orb"><i></i>${esc(initialen(naam))}</span></span>`;
-}
-
-// Het dominante signaal: een cirkelvormige glasschijf die het ringveld overlapt —
-// de tweede massa van de scène. De golfgrafiek (echte runs) loopt er doorheen.
-// Het dominante signaal is scène-typografie op het platform — de ratio zelf
-// wordt door de orbit-gauge verteld (geen kaart, geen schijf, geen herhaling).
-function wsSignal(f) {
-  if (!f) return "";
-  const small = String(f.value).length > 5 ? " txt" : "";
-  // Instrument-ring: eerlijke mapping — ratio>=1: dim = 100% referentie, felle
-  // sweep = overshoot (max één extra ronde); ratio<1: voortgangsboog.
-  let ring = "";
-  if (f.gaugeFrac != null) {
-    const R = 62, C = 2 * Math.PI * R;
-    const dash = Math.max(f.gaugeFrac * C, 0).toFixed(1);
-    ring = `<svg viewBox="0 0 150 150" aria-hidden="true">
-      ${f.gaugeDim ? `<circle class="ws-inst-b" cx="75" cy="75" r="${R}" transform="rotate(90 75 75)"/>` : ""}
-      <circle class="ws-inst-v" cx="75" cy="75" r="${R}" transform="rotate(90 75 75)"
-        style="stroke-dasharray:${dash} ${C.toFixed(1)};--wsd:${dash}"/></svg>`;
-  }
-  return `<div class="ws-signal ${f.tone || "is-calm"}">${ring}
-    <span class="ws-signal-l">${esc(f.label)}${f.word ? ` · ${esc(f.word)}` : ""}</span>
-    <span class="ws-signal-v${small}">${esc(f.value)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
-    ${f.sub ? `<span class="ws-signal-s">${esc(f.sub)}</span>` : ""}</div>`;
 }
 
 function wsRender(wrap, vm) {
@@ -5192,21 +5226,21 @@ function wsRender(wrap, vm) {
     <circle class="ws-nd2" cx="452" cy="641" r="3.5"/>
   </svg>`;
 
-  // Z2 — athlete-vlak: identity (één keer) + human + platform + instrument
-  const presVar = (vm.profiel && vm.profiel.geslacht === "vrouw" && "v") ||
-    (vm.profiel && vm.profiel.geslacht === "man" && "m") ||
-    ({ female: "v", male: "m", neutral: "x" })[new URLSearchParams(location.search).get("presence")] ||
-    new URLSearchParams(location.search).get("bust") || "x";
-  h += `<div class="ws-stagez">
+  // Z2 — athlete-vlak: identity (één keer, klein) + de abstracte Athlete Core
+  // (geen mens) + radar-basis. Het dominante signaal leeft geïntegreerd in de kern.
+  h += `<div class="ws-stagez ${focal.tone || tone}">
     <div class="ws-id2">${wsAnchor(naam, tone)}<b class="ws-name">${esc(naam)}</b>${chip}${fresh}</div>
-    <div class="ws-aura" aria-hidden="true"></div>
-    ${wsHuman(presVar)}
-    <div class="ws-plat2" aria-hidden="true"><svg viewBox="0 0 560 150">
-      <ellipse class="ws-pg" cx="280" cy="75" rx="240" ry="46"/>
-      <ellipse cx="280" cy="75" rx="252" ry="52" opacity=".5"/>
-      <ellipse cx="280" cy="78" rx="176" ry="36" opacity=".35"/>
-      <ellipse cx="280" cy="81" rx="104" ry="21" opacity=".22"/></svg></div>
-    ${wsSignal(focal)}
+    ${wsCore(focal)}
+    <div class="ws-plat" aria-hidden="true"><svg viewBox="0 0 600 172">
+      <ellipse class="ws-pg" cx="300" cy="78" rx="250" ry="48"/>
+      <ellipse class="ws-pe" cx="300" cy="78" rx="256" ry="52"/>
+      <ellipse class="ws-pe d" cx="300" cy="80" rx="190" ry="38"/>
+      <ellipse class="ws-pe" cx="300" cy="82" rx="120" ry="24" style="opacity:.6"/>
+      <ellipse class="ws-pe d" cx="300" cy="84" rx="64" ry="13"/>
+      <line class="ws-ptick" x1="60" y1="78" x2="80" y2="78"/><line class="ws-ptick" x1="520" y1="78" x2="540" y2="78"/>
+      <line class="ws-ptick" x1="120" y1="112" x2="134" y2="104"/><line class="ws-ptick" x1="480" y1="104" x2="466" y2="112"/>
+      <line class="ws-ptick" x1="230" y1="128" x2="238" y2="120"/><line class="ws-ptick" x1="370" y1="120" x2="362" y2="128"/>
+      <path class="ws-plead" d="M120 62 A200 44 0 0 1 300 40"/></svg></div>
   </div>`;
 
   // Z3 — fragmenten (borderless, ruimtelijk, asymmetrisch)
@@ -5250,6 +5284,9 @@ function wsRender(wrap, vm) {
       <p class="ws-attn-t calm">Geen belastingstand bekend.</p></div>`;
   }
   h += loadFrag;
+  // Zichtbare relatie belasting-fragment ↔ centrale kern (tweede verbinding).
+  if (bel.km_recent != null)
+    h += `<svg class="ws-conn2 ${bel.actief ? belTone : "is-calm"}" viewBox="0 0 130 110" aria-hidden="true"><path d="M2 98 C54 74 96 44 128 8"/></svg>`;
 
   let planHead = sc ? wsLine({ tone: dsTone(sc.tier), icon: "clock",
     title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
