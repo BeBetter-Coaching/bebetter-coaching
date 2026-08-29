@@ -55,6 +55,29 @@ de schijf-gauge (`.ws-rim*`), de schijf-CSS van `.ws-signal`,
 `.ws-signal-chart`, `.ws-idchip`, de oude hero-`.ws-anchor`/`.ws-halo`/kop-
 layout en `.ws-pane-h`. Grep-geverifieerd: 0 restanten in app.js/design-system.css.
 
+## Final visual+code contract-pass (deze oplevering)
+- **Athlete-presence = hybride optie 2+3**: profielbust (hoofd/nek/schouders/
+  torso) met anatomisch volume (radiaal schaduwvolume, kaakschaduw, sleutel-
+  beenderen, kern-gloed in de borst) én digital-twin transparantie (topo-
+  contourlijnen op de torso, scanlines, dissolve, chroma-scheiding, rim-light).
+  **Drie varianten**: v (haarknot + staart), m (voller achterhoofd/nekhaar),
+  x (neutraal, productie-default). Selectie: écht profielveld
+  (`vm.profiel.geslacht`) zodra dat bestaat, plus presentatie-override
+  `?bust=v|m` — **nooit geraden op voornaam** (bewuste weigering).
+- **Drie hoofdpanelen + command dock** (contract §13/§18): Aandacht ·
+  Belasting/Training (weekstrip + cumulatieve curve) · Doel/Feedback/Context/
+  Bronnen; primary coachactie + rustige secundaire controls in de dock.
+- Orbit-gauge, platform, Focus-rail, achtergrondlagen: zie vorige secties.
+
+## BLOCKER-RESIDUAL (expliciet gemeld)
+Het contract vraagt gender-passende presence, maar **nergens in de data
+bestaat een geslachtsveld** (FinalSurge TeamAthleteList, intake, cockpit-
+payload — alle gecontroleerd). Raden op voornaam is een echte misgender-fout
+en is geweigerd. De v/m-varianten zijn af en direct activeerbaar zodra één
+intake-/profielveld het draagt; tot die tijd is de neutrale variant default
+en tonen de flagship-materialen Masja met de v-variant (zoals Jips eigen
+referenties haar consistent tonen), via de presentatie-parameter.
+
 ## Teststatus
 1026 passed — vaste én random volgorde (`python3 -m pytest tests/ -q`).
 

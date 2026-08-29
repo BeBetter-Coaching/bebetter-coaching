@@ -344,18 +344,20 @@ class TestAthleteCanvas:
             assert dead not in _CSS, f"legacy CSS {dead} nog aanwezig"
         assert "function wsToonLijst(" not in _APP               # rail-toggle is weg
 
-    def test_37_cockpit_is_scene_met_maximaal_twee_glaspanels(self):
-        # 1:1 north-star-contract (bewuste wijziging t.o.v. de schijf-compositie):
-        # de athlete-BUST is het centrale object, met orbit-lagen achter én vóór
-        # (echte overlap); het signaal is scène-typografie + de orbit-gauge (geen
-        # schijf/kaart); er zijn maximaal TWEE glas-panels; de achtergrond doet
-        # mee. Embedded regels (.ws-line) blijven randloos.
+    def test_37_cockpit_is_scene_met_maximaal_drie_panels_en_dock(self):
+        # Final visual+code contract: de athlete-BUST (hybride volume+contour,
+        # variant via echt profielveld — nooit geraden) is het centrale object,
+        # met orbit-lagen achter én vóór; de orbit-gauge draagt de ratio; er
+        # zijn maximaal DRIE hoofdpanelen + één command dock; de achtergrond
+        # doet mee. Embedded regels (.ws-line) blijven randloos.
         pane = _DS.split(".ws-pane{")[1][:420]
         assert "backdrop-filter" in pane and "linear-gradient" in pane
-        assert _fn("wsRender").count('class="ws-pane') == 2       # harde twee-panels-grens
+        assert _fn("wsRender").count('class="ws-pane') == 3       # harde drie-panels-grens
+        assert 'class="ws-dock"' in _fn("wsRender")               # command dock
         blok = _DS.split(".ws-line{")[1][:220]
         assert "border:1px solid" not in blok                     # regel blijft embedded
-        assert "function wsBust(" in _APP and "wsBust()" in _fn("wsRender")
+        assert "function wsBust(" in _APP and "wsBust(" in _fn("wsRender")
+        assert 'vm.profiel && vm.profiel.geslacht' in _fn("wsRender")  # variant uit echt veld
         assert "ws-orbit-back" in _fn("wsRender") and "ws-orbit-front" in _fn("wsRender")
         assert ".ws-plat" in _DS                                  # platform: de athlete stáát
         assert ".ws-gauge-lap1" in _DS and ".ws-gauge-lap2" in _DS  # ratio in de geometrie

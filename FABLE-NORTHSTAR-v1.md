@@ -248,6 +248,19 @@ plaats). Tests 1026 groen (test 37 bewust herschreven naar het nieuwe
 contract: bust + orbit-voor/achter + twee-panels-grens + platform + gauge).
 FCP 928-948ms (band gelijk), 0 overflow 1440/390, geen nieuwe errors.
 
+## Final visual+code contract (laatste pass)
+
+Bust v3→v5 (5 render-iteraties): de lichtstroken-figuur en de gladde
+silhouet-bust zijn vervangen door een **hybride optie-2/3 profielbust** —
+menselijk volume (schaduwvolume, kaakschaduw, sleutelbeenderen, borstkern)
+plus digital-twin lagen (topo-contouren op de torso, scanlines, dissolve,
+chroma, rim). Afgekeurd onderweg: bolle "badmuts"-schedel (v3), karikaturale
+neus (v4). Drie varianten (v/m/x) met eerlijke selectie (profielveld of
+presentatie-parameter; nooit naam-gokken — geslachtsveld ontbreekt in alle
+bronnen: expliciete blocker-residual). Panels 2→3 + command dock per contract;
+test 37 bewust bijgewerkt (drie-panels-grens, dock, variant-uit-echt-veld).
+1026 groen (vast + random); FCP 872–948ms (band gelijk); 0 overflow.
+
 ## Tool-/modeladvies (§5)
 
 Geen zwaardere tooling nodig gebleken: CSS + inline SVG haalden het ambitieniveau;
