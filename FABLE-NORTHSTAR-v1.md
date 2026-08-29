@@ -190,6 +190,45 @@ Gemeten na de pass: FCP 772–804ms (zelfde band als baseline), 0 overflow op
 animatie (compositor-transform). Tests: 1026 groen, geen testwijzigingen in
 deze ronde.
 
+## Closure-pass (Workspace Final Milestone)
+
+Na het goedgekeurde Visual Design Lab-concept is de productie-Workspace op
+lab-niveau gebracht — licht en binnen alle locks:
+
+1. **Typografie** — Space Grotesk (3× woff2, lokaal gehost, ±40KB, preload +
+   SW-cache) op de shell en de home/workspace/dossier-views; Feedback (FROZEN)
+   behoudt bewust de systeemstack.
+2. **Stage** — perspectiefvloer + vloergloed, rijkere constellation met enkele
+   twinkelende sterren, warmere halo. Statisch/compositor-only; geen canvas.
+3. **Hero** — anchor 508px, tweede satelliet, chroma-echo + trage energiepuls
+   (4,5s, klein SVG-oppervlak) door de lichtstroken-atleet.
+4. **Rim-gauge** — het weekvolume t.o.v. de referentie als (dubbele) ronde om
+   de signaal-schijf: gedimde volle ronde = 100% van de referentie, felle boog
+   = de overshoot (gemaximeerd op één extra ronde; het ×-label draagt de
+   exacte verhouding, bv. "1,9×"). ratio<1 → alleen voortgangsboog; geen data
+   → geen gauge. Sweep-animatie bij binnenkomst.
+5. **Weekstrip** — de 7 dagen t/m de stand met echte dagtotalen (runs
+   gesommeerd per dag); rustdagen eerlijk leeg. Vervangt de runs-balkjes
+   (superseded CSS verwijderd).
+6. **Kop** — eyebrow "BeBetter · Athlete Command", gradient-naam, actieve
+   Workspace-pill naast de bestaande athleteNav-chips.
+7. **Cockpit-wrap** — de vleugels kantelen ±6° naar het centrum
+   (perspective 1600px); actiebalk-primary als gevulde tone-knop.
+8. **Zelfcheck** — backend-diff sinds main = alleen de eerder gereviewde
+   additieve `runs`-passthrough; `.ds-skel-panel`-wees verwijderd; overige
+   DS-primitives bewust behouden als contract-gepinde gedeelde bibliotheek.
+
+Gemeten: FCP 900–940ms (zelfde band als baseline 908–924ms), 0 overflow op
+1440/390, geen nieuwe console-errors; doorlopende animaties = 3 orbit-spins +
+2 trage pulsen + enkele twinkles (transform/opacity/kleine SVG-dash), alles
+uit onder `prefers-reduced-motion`. 1026 tests groen (vast + random), geen
+testwijzigingen in deze pass. Live-dynamiek geverifieerd: een echte nieuwe
+open reactie verscheen tijdens de acceptance-run consistent in aandacht,
+feedback-badge (amber "1"), actiebalk-meta én bronnen-freshness.
+
+Screen recording: `design-lab/workspace-live-recording.gif` — echte interface
+(entree-choreografie → idle → switcher-overlay → wissel naar kalme atleet).
+
 ## Tool-/modeladvies (§5)
 
 Geen zwaardere tooling nodig gebleken: CSS + inline SVG haalden het ambitieniveau;

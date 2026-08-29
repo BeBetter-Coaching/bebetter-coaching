@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>BeBetter — Workspace North-Star Lab</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   BeBetter — Visual Design Laboratory · Workspace prototype (Masja Bolk)
+   Standalone concept-artboard 1440×900. Echte data & semantiek (stand
+   2026-08-29): +92% · 36.4 km · referentie 19 km/wk · 4 runs · geen doel
+   vastgelegd · 0 open feedback · geen actieve klacht. Geen productie-code.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@font-face{font-family:"Space Grotesk";src:url(fonts/sg-400.woff2) format("woff2");font-weight:400;font-display:block}
+@font-face{font-family:"Space Grotesk";src:url(fonts/sg-500.woff2) format("woff2");font-weight:500;font-display:block}
+@font-face{font-family:"Space Grotesk";src:url(fonts/sg-700.woff2) format("woff2");font-weight:700;font-display:block}
+
+:root{
+  --ink:#EAF4FF; --ink2:#AFC6E8; --ink3:#7690BA;
+  --cyan:#59E8FF; --cyan-soft:rgba(89,232,255,.12);
+  --amber:#FF7A45; --amber-soft:rgba(255,122,69,.14); --amber-bd:rgba(255,122,69,.5);
+  --green:#3BE0A8;
+  --glass:linear-gradient(164deg,rgba(26,58,110,.52),rgba(8,22,46,.4));
+  --glass-bd:rgba(132,178,255,.16);
+  --e:cubic-bezier(.22,.8,.28,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden;background:#040B18;
+  font-family:"Space Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ink);-webkit-font-smoothing:antialiased}
+
+/* ── STAGE ─────────────────────────────────────────────────────────────────── */
+#stage{position:fixed;inset:0;width:1440px;height:900px}
+#stars{position:absolute;inset:0;z-index:0}
+.neb{position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:
+    radial-gradient(46% 52% at 50% 40%,rgba(255,110,60,.13),transparent 62%),
+    radial-gradient(30% 34% at 84% 10%,rgba(89,232,255,.08),transparent 70%),
+    radial-gradient(26% 30% at 8% 16%,rgba(89,232,255,.05),transparent 70%),
+    radial-gradient(34% 30% at 14% 88%,rgba(46,102,177,.10),transparent 70%);
+  animation:fadein .9s var(--e) both}
+/* Perspectiefvloer: de scène krijgt een grond. */
+.floor{position:absolute;left:50%;bottom:-118px;width:1900px;height:560px;z-index:1;
+  transform:translateX(-50%) perspective(860px) rotateX(63deg);transform-origin:50% 100%;
+  background:
+    repeating-linear-gradient(90deg,rgba(132,178,255,.07) 0 1px,transparent 1px 64px),
+    repeating-linear-gradient(0deg,rgba(132,178,255,.055) 0 1px,transparent 1px 52px);
+  -webkit-mask-image:radial-gradient(58% 82% at 50% 12%,#000 30%,transparent 78%);
+          mask-image:radial-gradient(58% 82% at 50% 12%,#000 30%,transparent 78%);
+  animation:floorin 1.1s var(--e) .15s both}
+.floor-glow{position:absolute;left:50%;top:700px;width:760px;height:170px;z-index:1;
+  transform:translateX(-50%);border-radius:50%;
+  background:radial-gradient(50% 50% at 50% 50%,rgba(255,110,60,.16),transparent 68%);
+  filter:blur(10px);animation:fadein 1.2s var(--e) .5s both}
+.vig{position:absolute;inset:0;z-index:2;pointer-events:none;
+  background:radial-gradient(112% 92% at 50% 42%,transparent 52%,rgba(2,6,14,.72) 100%)}
+
+/* ── FRAME ─────────────────────────────────────────────────────────────────── */
+.frame{position:fixed;inset:0;z-index:3}
+
+/* Kop */
+.head{position:absolute;left:64px;top:40px;animation:rise .7s var(--e) .25s both}
+.eyebrow{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:700;
+  letter-spacing:.34em;color:var(--ink3);text-transform:uppercase}
+.eyebrow i{width:26px;height:1px;background:linear-gradient(90deg,var(--cyan),transparent)}
+h1{margin-top:10px;font-size:58px;font-weight:700;letter-spacing:-.028em;line-height:1;
+  background:linear-gradient(180deg,#FFFFFF 20%,#B9D2F5 90%);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.headmeta{display:flex;align-items:center;gap:14px;margin-top:14px}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:6px 14px;border-radius:999px;
+  font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--amber);background:var(--amber-soft);border:1px solid var(--amber-bd);
+  box-shadow:0 0 22px -8px var(--amber)}
+.meta{font-size:13.5px;color:var(--ink3);font-weight:500}
+.fresh{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--cyan)}
+.fresh b{width:7px;height:7px;border-radius:50%;background:var(--cyan);
+  box-shadow:0 0 10px var(--cyan);animation:pulse 2.6s ease-in-out infinite}
+
+.topnav{position:absolute;right:64px;top:52px;display:flex;gap:10px;
+  animation:rise .7s var(--e) .35s both}
+.tn{padding:9px 18px;border-radius:999px;font-size:13px;font-weight:500;color:var(--ink2);
+  background:rgba(10,24,48,.55);border:1px solid rgba(132,178,255,.14);
+  backdrop-filter:blur(10px)}
+.tn.on{color:#06121F;background:linear-gradient(120deg,#6FEFFF,#3ECDE8);border-color:transparent;
+  font-weight:700;box-shadow:0 0 30px -8px rgba(89,232,255,.7)}
+
+/* ── HERO ─────────────────────────────────────────────────────────────────── */
+.hero{position:absolute;left:50%;top:96px;width:680px;height:680px;transform:translateX(-50%)}
+.rings{position:absolute;inset:0;animation:bloom 1s var(--e) .35s both}
+.rings svg{position:absolute;inset:0;overflow:visible}
+.rg{fill:none;stroke:var(--amber)}
+.rg.r0{opacity:.10}.rg.rt{opacity:.3;stroke-dasharray:2 12;stroke-width:1.5}
+.rg.r1{opacity:.5;stroke-width:1.3}.rg.r2{opacity:.2}
+.rg.rc{stroke:var(--cyan);opacity:.35;stroke-dasharray:1 7;stroke-width:1.4}
+.arc{fill:none;stroke-linecap:round;transform-origin:50% 50%}
+.arc.a1{stroke:var(--amber);stroke-width:3.5;stroke-dasharray:340 1400;opacity:.95;
+  transform:rotate(-105deg);filter:drop-shadow(0 0 16px rgba(255,122,69,.55)) drop-shadow(0 0 5px var(--amber))}
+.arc.a2{stroke:var(--cyan);stroke-width:2.2;stroke-dasharray:190 1500;opacity:.85;
+  transform:rotate(-168deg);filter:drop-shadow(0 0 12px rgba(89,232,255,.55))}
+.arc.a3{stroke:var(--amber);stroke-width:2.2;stroke-dasharray:100 1000;opacity:.6;
+  transform:rotate(116deg);filter:drop-shadow(0 0 9px rgba(255,122,69,.4))}
+.sat{fill:var(--amber);filter:drop-shadow(0 0 8px var(--amber))}
+.sat2{fill:var(--cyan);filter:drop-shadow(0 0 7px var(--cyan))}
+.spin{transform-origin:50% 50%;animation:rot 74s linear infinite}
+.spin.s2{animation:rot 52s linear infinite reverse}
+.spin.s3{animation:rot 64s linear infinite}
+.idchip{position:absolute;right:64px;top:84px;width:58px;height:58px;border-radius:50%;
+  display:grid;place-items:center;font-size:17px;font-weight:700;letter-spacing:.05em;
+  color:var(--amber);border:1.5px solid var(--amber-bd);
+  background:radial-gradient(circle at 50% 24%,rgba(255,255,255,.16),transparent 52%),
+             radial-gradient(circle at 50% 46%,var(--amber-soft) 0%,rgba(10,22,46,.95) 78%);
+  text-shadow:0 0 14px var(--amber-soft);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.14),0 0 30px -8px var(--amber),
+             0 12px 30px -14px rgba(0,0,0,.7);
+  animation:bloom .8s var(--e) .8s both}
+
+/* Halo + atleet */
+.halo{position:absolute;left:50%;top:33%;width:500px;height:500px;border-radius:50%;
+  transform:translate(-50%,-50%);
+  background:radial-gradient(circle at 50% 46%,rgba(255,110,60,.30) 0%,rgba(255,110,60,.12) 30%,transparent 62%);
+  filter:blur(10px);animation:breathe 6s ease-in-out infinite,fadein 1s var(--e) .55s both}
+.fig{position:absolute;left:50%;top:-30px;width:320px;height:auto;transform:translateX(-50%);
+  z-index:2;filter:drop-shadow(0 30px 60px rgba(0,0,0,.55));
+  animation:figin 1.1s var(--e) .6s both}
+.fg{fill:none;stroke:url(#figG);stroke-linecap:round;stroke-linejoin:round}
+.fg.w30{stroke-width:31}.fg.w19{stroke-width:19}.fg.w15{stroke-width:15}.fg.w14{stroke-width:13}
+.fhead{fill:url(#figG)}
+.fglow{filter:blur(13px);opacity:.6}
+.fchrA{stroke:#FF6D4D!important;opacity:.14;transform:translateX(-3.5px)}
+.fchrB{stroke:#59E8FF!important;opacity:.16;transform:translateX(3.5px)}
+.fchrA .fhead{fill:#FF6D4D}.fchrB .fhead{fill:#59E8FF}
+/* Energiepulsen door het lichaam */
+.fpulse{fill:none;stroke:#EAFDFF;stroke-width:3.4;stroke-linecap:round;
+  stroke-dasharray:5 120;opacity:.85;animation:flow 2.4s linear infinite;
+  filter:drop-shadow(0 0 6px #9FF4FF)}
+.ftrail{fill:none;stroke:var(--cyan);stroke-width:1.6;stroke-linecap:round;opacity:.2;
+  stroke-dasharray:2 9}
+.ftrail.t2{opacity:.12;stroke:var(--amber)}
+
+/* ── SIGNAAL-SCHIJF ───────────────────────────────────────────────────────── */
+.disc{position:absolute;left:50%;top:338px;width:360px;height:360px;
+  transform:translateX(-50%);border-radius:50%;z-index:3;
+  background:radial-gradient(circle at 50% 26%,rgba(52,96,160,.62),rgba(7,18,38,.9) 72%);
+  border:1px solid var(--amber-bd);
+  box-shadow:0 40px 90px -30px rgba(0,0,0,.8),0 0 70px -16px rgba(255,122,69,.35),
+    inset 0 1px 0 rgba(255,255,255,.09),inset 0 -40px 80px -40px var(--amber-soft);
+  backdrop-filter:blur(12px);
+  animation:discin 1s var(--e) .85s both}
+/* Dubbele-ronde rim-gauge: 36.4 km = 1,9× de referentie → de ring loopt bijna
+   twee keer rond. Eerste ronde gedimd (=100% van de referentie), tweede ronde
+   fel (=de +92% overshoot). Eerlijke mapping, geen decoratie. */
+.rim{position:absolute;inset:-9px;overflow:visible}
+.rim circle{fill:none;transform-origin:50% 50%;transform:rotate(-90deg)}
+.rim .lap1{stroke:rgba(255,122,69,.30);stroke-width:2.5}
+.rim .lap2{stroke:var(--amber);stroke-width:5;stroke-linecap:round;
+  stroke-dasharray:1090.2 1185.0;stroke-dashoffset:1090.2;
+  filter:drop-shadow(0 0 12px rgba(255,122,69,.7));
+  animation:sweep 1.5s var(--e) 1.5s forwards}
+.rim .cap{fill:#FFD9C4;filter:drop-shadow(0 0 8px var(--amber));opacity:0;
+  animation:fadein .4s var(--e) 2.9s forwards}
+.rimlbl{position:absolute;left:-104px;top:-6px;text-align:right;font-size:12px;font-weight:700;color:var(--amber);
+  letter-spacing:.06em;opacity:0;animation:fadein .5s var(--e) 3s forwards;
+  background:rgba(6,14,30,.78);padding:7px 11px;border-radius:11px;
+  border:1px solid rgba(255,122,69,.35);box-shadow:0 8px 22px -10px rgba(0,0,0,.7)}
+.rimlbl small{display:block;font-size:10px;font-weight:500;color:var(--ink3);letter-spacing:.04em}
+
+.disc-in{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;transform:translateY(-20px);z-index:2}
+.d-l{font-size:11px;font-weight:700;letter-spacing:.3em;color:var(--ink3);text-transform:uppercase}
+.d-w{margin-top:6px;font-size:15px;font-weight:500;color:var(--ink2)}
+.d-v{margin-top:2px;font-size:74px;font-weight:700;line-height:1;letter-spacing:-.04em;
+  color:var(--amber);font-variant-numeric:tabular-nums;
+  text-shadow:0 0 40px rgba(255,122,69,.5),0 0 110px rgba(255,122,69,.35)}
+.d-v i{font-style:normal;font-size:.36em;font-weight:700;opacity:.75;margin-left:3px}
+.d-s{margin-top:6px;font-size:13.5px;color:var(--ink2)}
+.d-s b{color:var(--ink);font-weight:500}
+.dchart{position:absolute;left:-7%;bottom:12.5%;width:114%;z-index:1;overflow:visible}
+.dc-line{fill:none;stroke:var(--amber);stroke-width:2.6;stroke-linecap:round;
+  stroke-dasharray:420;stroke-dashoffset:420;
+  filter:drop-shadow(0 0 8px rgba(255,122,69,.5));
+  animation:draw 1.1s var(--e) 1.7s forwards}
+.dc-dot{fill:var(--amber);opacity:0;animation:fadein .3s var(--e) 2.5s forwards}
+.dc-tip{fill:#FFE2D2;filter:drop-shadow(0 0 8px var(--amber));opacity:0;
+  animation:fadein .3s var(--e) 2.7s forwards}
+.dc-ref{stroke:var(--cyan);stroke-width:1.3;stroke-dasharray:3 7;opacity:0;
+  animation:fadeto .6s var(--e) 1.6s forwards}
+.dc-reflbl{font-size:10px;fill:var(--cyan);opacity:0;letter-spacing:.06em;
+  animation:fadeto .6s var(--e) 1.9s forwards}
+
+/* ── CONTEXT-PANELEN (licht gekanteld → cockpit-wrap) ─────────────────────── */
+.wing{position:absolute;top:224px;width:332px;perspective:1500px}
+.wing.l{left:64px}.wing.r{right:64px}
+.card{position:relative;border-radius:22px;padding:19px 22px;margin-bottom:15px;
+  background:var(--glass);border:1px solid var(--glass-bd);
+  box-shadow:0 24px 50px -22px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.07);
+  backdrop-filter:blur(12px)}
+.card::before{content:"";position:absolute;inset:0 0 auto;height:1px;border-radius:inherit;
+  background:linear-gradient(90deg,transparent 8%,rgba(255,255,255,.2),transparent 92%)}
+.wing.l .card{transform:rotateY(7deg);animation:cardinL .8s var(--e) both}
+.wing.r .card{transform:rotateY(-7deg);animation:cardinR .8s var(--e) both}
+.wing .card:nth-child(1){animation-delay:1.25s}
+.wing .card:nth-child(2){animation-delay:1.4s}
+.wing .card:nth-child(3){animation-delay:1.55s}
+.card.hot{border-color:var(--amber-bd);
+  box-shadow:0 24px 50px -22px rgba(0,0,0,.65),0 0 44px -14px rgba(255,122,69,.5),
+    inset 0 1px 0 rgba(255,255,255,.07)}
+.card.hot::before{background:linear-gradient(90deg,transparent,var(--amber),transparent);opacity:.6}
+.clabel{display:flex;justify-content:space-between;align-items:baseline;font-size:10.5px;
+  font-weight:700;letter-spacing:.22em;color:var(--ink3);text-transform:uppercase;margin-bottom:13px}
+.clabel em{font-style:normal;letter-spacing:.04em;font-weight:500;font-size:11px}
+.attn-t{font-size:15.5px;font-weight:500;line-height:1.45;color:var(--ink)}
+.attn-t b{color:var(--amber);font-weight:700}
+.attn-m{margin-top:8px;font-size:11.5px;color:var(--ink3)}
+
+/* Weekstrip: laatste 7 dagen, echte runs */
+.wk{display:flex;gap:9px;align-items:flex-end;height:74px;margin:2px 0 8px}
+.wk div{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;
+  justify-content:flex-end}
+.wk i{width:100%;border-radius:5px 5px 2px 2px;
+  background:linear-gradient(180deg,#FFB07E,var(--amber));
+  box-shadow:0 0 14px -4px var(--amber);transform-origin:bottom;animation:grow .7s var(--e) 1.9s both}
+.wk .off i{height:3px!important;background:rgba(132,178,255,.16);box-shadow:none;border-radius:2px}
+.wk span{font-size:9.5px;font-weight:700;letter-spacing:.08em;color:var(--ink3)}
+.wk .on span{color:var(--ink2)}
+.wk em{font-style:normal;font-size:9.5px;color:var(--amber);font-weight:700;min-height:12px}
+.kmrow{display:flex;justify-content:space-between;align-items:baseline}
+.kmrow b{font-size:30px;font-weight:700;letter-spacing:-.02em;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.kmrow b i{font-style:normal;font-size:12.5px;color:var(--ink3);font-weight:500;margin-left:5px}
+.kmrow span{font-size:11.5px;color:var(--ink3)}
+
+.runs{list-style:none;display:flex;flex-direction:column;gap:7px}
+.runs li{display:grid;grid-template-columns:40px 1fr auto;gap:11px;align-items:center;
+  font-size:13px}
+.runs .d{color:var(--ink3);font-size:11px;font-variant-numeric:tabular-nums}
+.runs .bar{height:4px;border-radius:2px;background:rgba(132,178,255,.10);overflow:hidden}
+.runs .bar i{display:block;height:100%;border-radius:inherit;
+  background:linear-gradient(90deg,var(--cyan),transparent 160%);opacity:.8;
+  transform-origin:left;animation:growx .7s var(--e) 2s both}
+.runs .km{font-weight:700;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:12.5px}
+
+/* Doel: ontworpen lege staat */
+.goal{display:flex;align-items:center;gap:16px}
+.goal-ring{width:56px;height:56px;border-radius:50%;flex:0 0 auto;
+  border:1.6px dashed rgba(89,232,255,.5);display:grid;place-items:center;
+  animation:rot 40s linear infinite}
+.goal-ring i{width:8px;height:8px;border-radius:50%;background:var(--cyan);
+  box-shadow:0 0 10px var(--cyan)}
+.goal p{font-size:13.5px;color:var(--ink2);line-height:1.5}
+.goal p small{display:block;font-size:11px;color:var(--ink3);margin-top:2px}
+.cta{margin-top:15px;width:100%;padding:10px;border-radius:13px;font:inherit;font-size:13px;
+  font-weight:700;color:var(--ink);cursor:pointer;letter-spacing:.02em;
+  background:rgba(89,232,255,.09);border:1px solid rgba(89,232,255,.3)}
+.fb{display:flex;align-items:center;gap:15px}
+.fb-badge{width:56px;height:56px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
+  font-size:21px;font-weight:700;color:var(--green);
+  border:2px solid rgba(59,224,168,.5);
+  background:radial-gradient(circle at 50% 32%,rgba(59,224,168,.16),transparent 70%);
+  box-shadow:0 0 26px -8px var(--green),inset 0 0 16px -8px rgba(59,224,168,.4)}
+.fb p{font-size:13.5px;color:var(--ink2)}
+.fb p small{display:block;font-size:11px;color:var(--ink3);margin-top:1px}
+.zone{position:relative;padding:4px 0 4px 16px;margin:20px 0 0}
+.zone::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:1px;
+  background:linear-gradient(180deg,var(--cyan),transparent 90%);opacity:.5}
+.zone .clabel{margin-bottom:9px}
+.zone p{font-size:13px;color:var(--ink2);line-height:1.5}
+.src{list-style:none;display:flex;flex-direction:column;gap:8px}
+.src li{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink2)}
+.src b{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px rgba(89,232,255,.6)}
+.src .old b{background:var(--ink3);box-shadow:none}
+.src em{font-style:normal;margin-left:auto;font-size:11px;color:var(--ink3);
+  font-variant-numeric:tabular-nums}
+
+/* ── CONNECTORS ───────────────────────────────────────────────────────────── */
+#wires{position:absolute;inset:0;z-index:2;pointer-events:none}
+.wire{fill:none;stroke-width:1.8;stroke-dasharray:6 10;opacity:0;
+  animation:fadeto .8s var(--e) 1.9s forwards,flow 3.2s linear 1.9s infinite}
+.wire.wa{stroke:var(--amber)}
+.wire.wc{stroke:var(--cyan)}
+
+/* ── ACTIEBALK ────────────────────────────────────────────────────────────── */
+.dock{position:absolute;left:50%;bottom:34px;transform:translateX(-50%);width:820px;
+  display:flex;align-items:center;gap:18px;padding:14px 16px 14px 22px;border-radius:22px;
+  background:linear-gradient(164deg,rgba(26,58,110,.6),rgba(8,22,46,.5));
+  border:1px solid var(--amber-bd);backdrop-filter:blur(14px);
+  box-shadow:0 30px 70px -26px rgba(0,0,0,.8),0 0 50px -18px rgba(255,122,69,.4),
+    inset 0 1px 0 rgba(255,255,255,.08);
+  animation:rise .8s var(--e) 2.1s both}
+.dock-ic{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  color:var(--amber);background:var(--amber-soft);border:1px solid var(--amber-bd);
+  box-shadow:0 0 24px -8px var(--amber)}
+.dock-ic svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+.dock-t{flex:1;min-width:0}
+.dock-t b{display:block;font-size:15.5px;font-weight:700}
+.dock-t span{font-size:11.5px;color:var(--ink3)}
+.dock-a{display:flex;gap:10px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:999px;
+  font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;color:var(--ink2);
+  background:none;border:1px solid rgba(132,178,255,.2)}
+.btn.primary{color:#1C0A02;border:0;
+  background:linear-gradient(120deg,#FFB07E,#FF7A45);
+  box-shadow:0 0 34px -8px var(--amber),0 10px 24px -10px rgba(255,122,69,.6)}
+.btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4;
+  stroke-linecap:round;stroke-linejoin:round}
+
+/* ── KEYFRAMES ────────────────────────────────────────────────────────────── */
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+@keyframes fadeto{from{opacity:0}to{opacity:.7}}
+@keyframes rise{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
+.dock{animation-name:dockin}
+@keyframes dockin{from{opacity:0;transform:translate(-50%,26px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes floorin{from{opacity:0;transform:translateX(-50%) perspective(860px) rotateX(63deg) translateY(70px)}
+  to{opacity:1;transform:translateX(-50%) perspective(860px) rotateX(63deg)}}
+@keyframes bloom{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+@keyframes figin{from{opacity:0;transform:translateX(-50%) translateY(34px)}
+  to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes discin{from{opacity:0;transform:translateX(-50%) translateY(40px) scale(.94)}
+  to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+@keyframes cardinL{from{opacity:0;transform:rotateY(26deg) translateY(26px);filter:blur(6px)}
+  to{opacity:1;transform:rotateY(7deg) translateY(0);filter:blur(0)}}
+@keyframes cardinR{from{opacity:0;transform:rotateY(-26deg) translateY(26px);filter:blur(6px)}
+  to{opacity:1;transform:rotateY(-7deg) translateY(0);filter:blur(0)}}
+@keyframes rot{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes breathe{0%,100%{opacity:.9}50%{opacity:.65}}
+@keyframes flow{to{stroke-dashoffset:-250}}
+@keyframes sweep{to{stroke-dashoffset:0}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes growx{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="stars" width="1440" height="900"></canvas>
+  <div class="neb"></div>
+  <div class="floor"></div>
+  <div class="floor-glow"></div>
+  <div class="vig"></div>
+</div>
+
+<div class="frame">
+  <!-- Kop -->
+  <header class="head">
+    <div class="eyebrow"><i></i>BeBetter · Athlete Command</div>
+    <h1>Masja Bolk</h1>
+    <div class="headmeta">
+      <span class="chip">Actie</span>
+      <span class="meta">5. Comfort</span>
+      <span class="fresh"><b></b>belasting vers · stand 29 aug</span>
+    </div>
+  </header>
+  <nav class="topnav">
+    <span class="tn on">Overzicht</span><span class="tn">Dossier</span>
+    <span class="tn">Schema</span><span class="tn">Cockpit</span>
+  </nav>
+
+  <!-- Hero: ringveld + atleet + schijf -->
+  <div class="hero">
+    <div class="halo"></div>
+    <div class="rings">
+      <svg viewBox="0 0 680 680" aria-hidden="true">
+        <circle class="rg r0" cx="340" cy="340" r="330"/>
+        <circle class="rg rt" cx="340" cy="340" r="294"/>
+        <circle class="rg r1" cx="340" cy="340" r="252"/>
+        <circle class="rg r2" cx="340" cy="340" r="212"/>
+        <circle class="rg rc" cx="340" cy="340" r="160"/>
+        <g class="spin"><circle class="arc a1" cx="340" cy="340" r="252"/>
+          <circle class="sat" cx="340" cy="88" r="5"/></g>
+        <g class="spin s2"><circle class="arc a2" cx="340" cy="340" r="294"/>
+          <circle class="sat2" cx="340" cy="46" r="3.5"/></g>
+        <g class="spin s3"><circle class="arc a3" cx="340" cy="340" r="212"/></g>
+      </svg>
+    </div>
+    <span class="idchip">MB</span>
+
+    <!-- Holografische atleet -->
+    <svg class="fig" viewBox="0 0 300 400" aria-hidden="true">
+      <defs><linearGradient id="figG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#E4FCFF"/>
+        <stop offset=".42" stop-color="#59E8FF"/>
+        <stop offset="1" stop-color="#FF7A45" stop-opacity=".65"/></linearGradient></defs>
+      <g class="ftrails">
+        <path class="ftrail" d="M96 120 C70 160 66 210 84 252"/>
+        <path class="ftrail t2" d="M116 106 C92 148 86 200 100 246"/>
+        <path class="ftrail" d="M258 150 C270 190 268 232 250 268"/>
+      </g>
+      <g class="fglow">
+        <circle cx="197" cy="61" r="21" class="fhead"/>
+        <path class="fg w30" d="M190 86 C178 124 163 166 150 206"/>
+        <path class="fg w15" d="M180 104 C196 118 208 128 220 136 C236 134 248 128 258 118"/>
+        <path class="fg w15" d="M182 102 C160 120 146 134 138 146 C126 158 118 172 114 186"/>
+        <path class="fg w19" d="M152 204 C174 220 192 234 204 250 C210 272 204 296 196 316"/>
+        <path class="fg w14" d="M196 316 L216 326"/>
+        <path class="fg w19" d="M148 206 C132 226 116 242 104 258 C90 272 76 284 64 296"/>
+        <path class="fg w14" d="M64 296 L46 312"/>
+      </g>
+      <g class="fchrA">
+        <circle cx="197" cy="61" r="21" class="fhead"/>
+        <path class="fg w30" d="M190 86 C178 124 163 166 150 206"/>
+        <path class="fg w19" d="M152 204 C174 220 192 234 204 250 C210 272 204 296 196 316"/>
+        <path class="fg w19" d="M148 206 C132 226 116 242 104 258 C90 272 76 284 64 296"/>
+      </g>
+      <g class="fchrB">
+        <circle cx="197" cy="61" r="21" class="fhead"/>
+        <path class="fg w30" d="M190 86 C178 124 163 166 150 206"/>
+        <path class="fg w19" d="M152 204 C174 220 192 234 204 250 C210 272 204 296 196 316"/>
+        <path class="fg w19" d="M148 206 C132 226 116 242 104 258 C90 272 76 284 64 296"/>
+      </g>
+      <g class="fmain">
+        <circle cx="197" cy="61" r="21" class="fhead"/>
+        <path class="fg w30" d="M190 86 C178 124 163 166 150 206"/>
+        <path class="fg w15" d="M180 104 C196 118 208 128 220 136 C236 134 248 128 258 118"/>
+        <path class="fg w15" d="M182 102 C160 120 146 134 138 146 C126 158 118 172 114 186"/>
+        <path class="fg w19" d="M152 204 C174 220 192 234 204 250 C210 272 204 296 196 316"/>
+        <path class="fg w14" d="M196 316 L216 326"/>
+        <path class="fg w19" d="M148 206 C132 226 116 242 104 258 C90 272 76 284 64 296"/>
+        <path class="fg w14" d="M64 296 L46 312"/>
+      </g>
+      <g class="fpulses">
+        <path class="fpulse" d="M190 86 C178 124 163 166 150 206 C174 220 192 234 204 250"/>
+        <path class="fpulse" style="animation-delay:-1.2s"
+          d="M190 86 C178 124 163 166 150 206 C132 226 116 242 104 258 C90 272 76 284 64 296"/>
+      </g>
+    </svg>
+
+    <!-- Signaal-schijf -->
+    <div class="disc">
+      <svg class="rim" viewBox="0 0 378 378">
+        <circle class="lap1" cx="189" cy="189" r="184"/>
+        <circle class="lap2" cx="189" cy="189" r="188.6"/>
+        <circle class="cap" cx="98.1" cy="23.7" r="6"/>
+      </svg>
+      <span class="rimlbl">1,9×<small>de referentie</small></span>
+      <div class="disc-in">
+        <span class="d-l">Belastingssignaal</span>
+        <span class="d-w">Verhoogd</span>
+        <span class="d-v"><span id="cnt">+0</span><i>%</i></span>
+        <span class="d-s">deze week <b><span id="km">0</span> km</b> · referentie <b>19 km/wk</b></span>
+      </div>
+      <svg class="dchart" viewBox="0 0 340 96" aria-hidden="true">
+        <line class="dc-ref" x1="10" y1="52.3" x2="330" y2="52.3"/>
+        <text class="dc-reflbl" x="12" y="47">REF 19</text>
+        <path class="dc-line" d="M10 60.6 C27.8 59.0,81.1 57.2,116.7 51.2 C152.3 45.2,187.7 30.2,223.3 24.9 C258.9 19.6,312.2 20.5,330 19.6"/>
+        <circle class="dc-dot" cx="10" cy="60.6" r="3"/>
+        <circle class="dc-dot" cx="116.7" cy="51.2" r="3"/>
+        <circle class="dc-dot" cx="223.3" cy="24.9" r="3"/>
+        <circle class="dc-tip" cx="330" cy="19.6" r="4.6"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Linker vleugel -->
+  <aside class="wing l">
+    <div class="card hot">
+      <div class="clabel">Aandacht nu</div>
+      <p class="attn-t">Volume <b>+92%</b> deze week — 36.4 km tegenover een referentie van 19 km/wk.</p>
+      <p class="attn-m">actie · stand 2026-08-29</p>
+    </div>
+    <div class="card">
+      <div class="clabel">Belasting · 7 dagen<em>4 runs</em></div>
+      <div class="kmrow"><b>36.4<i>km</i></b><span>referentie 19 km/wk</span></div>
+      <div class="wk">
+        <div class="on"><em>14.6</em><i style="height:52px"></i><span>ZO</span></div>
+        <div class="on"><em>5</em><i style="height:20px;animation-delay:2s"></i><span>MA</span></div>
+        <div class="off"><em></em><i></i><span>DI</span></div>
+        <div class="off"><em></em><i></i><span>WO</span></div>
+        <div class="on"><em>16.8</em><i style="height:60px;animation-delay:2.1s"></i><span>DO</span></div>
+        <div class="off"><em></em><i></i><span>VR</span></div>
+        <div class="off"><em></em><i></i><span>ZA</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="clabel">Recente trainingen</div>
+      <ul class="runs">
+        <li><span class="d">08-27</span><span class="bar"><i style="width:19%"></i></span><span class="km">2.8 km</span></li>
+        <li><span class="d">08-27</span><span class="bar"><i style="width:96%;animation-delay:2.05s"></i></span><span class="km">14 km</span></li>
+        <li><span class="d">08-24</span><span class="bar"><i style="width:34%;animation-delay:2.1s"></i></span><span class="km">5 km</span></li>
+        <li><span class="d">08-23</span><span class="bar"><i style="width:100%;animation-delay:2.15s"></i></span><span class="km">14.6 km</span></li>
+      </ul>
+    </div>
+  </aside>
+
+  <!-- Rechter vleugel -->
+  <aside class="wing r">
+    <div class="card">
+      <div class="clabel">Doel &amp; planning</div>
+      <div class="goal">
+        <div class="goal-ring"><i></i></div>
+        <p>Nog geen doel vastgelegd.<small>Leg een racedoel of trainingsdoel vast — het masterbrein plant erop.</small></p>
+      </div>
+      <button class="cta">Schema openen</button>
+    </div>
+    <div class="card">
+      <div class="clabel">Feedback</div>
+      <div class="fb"><span class="fb-badge">0</span>
+        <p>Alles beantwoord.<small>geen open reacties</small></p></div>
+      <div class="zone">
+        <div class="clabel">Klachten &amp; context</div>
+        <p>Geen actieve klacht of tegenstrijdigheid bekend.</p>
+      </div>
+      <div class="zone">
+        <div class="clabel">Bronnen</div>
+        <ul class="src">
+          <li><b></b>Belasting<em>29 aug · vers</em></li>
+          <li><b></b>Overzicht<em>29 aug · vers</em></li>
+          <li class="old"><b></b>Feedback<em>eerder</em></li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Lichtpaden -->
+  <svg id="wires" viewBox="0 0 1440 900" aria-hidden="true">
+    <path class="wire wa" d="M398 400 C420 412 430 430 442 446"/>
+  </svg>
+
+  <!-- Actiebalk -->
+  <footer class="dock">
+    <span class="dock-ic"><svg viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg></span>
+    <div class="dock-t"><b>Belasting hoog · +92% t.o.v. referentie</b>
+      <span>stand 2026-08-29 · dempen geldt 7 dagen</span></div>
+    <div class="dock-a">
+      <button class="btn primary"><svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>Belasting gezien</button>
+      <button class="btn">Teampuls</button>
+      <button class="btn">Profiel</button>
+    </div>
+  </footer>
+</div>
+
+<script>
+/* Pseudo-3D particle-veld: drie dieptelagen, trage drift, twinkle. */
+const cv = document.getElementById("stars"), cx = cv.getContext("2d");
+const DPR = 2; cv.width = 1440 * DPR; cv.height = 900 * DPR; cx.scale(DPR, DPR);
+const P = [];
+let seed = 7;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+for (let i = 0; i < 170; i++) {
+  const z = .25 + rnd() * .75;
+  P.push({ x: rnd() * 1440, y: rnd() * 900, z,
+    r: (.5 + rnd() * 1.7) * z, tw: rnd() * Math.PI * 2,
+    warm: rnd() < .16, spd: (.06 + rnd() * .1) * z });
+}
+function tick(t) {
+  cx.clearRect(0, 0, 1440, 900);
+  for (const p of P) {
+    p.x -= p.spd; p.y -= p.spd * .35;
+    if (p.x < -4) p.x = 1444; if (p.y < -4) p.y = 904;
+    const a = (0.16 + 0.5 * Math.abs(Math.sin(p.tw + t * .0006))) * p.z;
+    cx.beginPath();
+    cx.fillStyle = p.warm ? `rgba(255,150,100,${a})` : `rgba(156,200,255,${a})`;
+    cx.arc(p.x, p.y, p.r, 0, 7); cx.fill();
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* Count-up van de echte waarden (+92% · 36.4 km).
+   ?slow=N vertraagt de hele choreografie (voor motion-opnames). */
+const SLOW = Number(new URLSearchParams(location.search).get("slow")) || 1;
+if (SLOW > 1) requestAnimationFrame(() =>
+  document.getAnimations().forEach(a => { try { a.playbackRate = 1 / SLOW; } catch (e) {} }));
+const ease = x => 1 - Math.pow(1 - x, 3);
+const t0 = performance.now() + 1150 * SLOW, dur = 1300 * SLOW;
+function count(now) {
+  const u = Math.min(1, Math.max(0, (now - t0) / dur)), e = ease(u);
+  document.getElementById("cnt").textContent = "+" + Math.round(92 * e);
+  document.getElementById("km").textContent = (36.4 * e).toFixed(1);
+  if (u < 1) requestAnimationFrame(count);
+  else { document.getElementById("cnt").textContent = "+92";
+         document.getElementById("km").textContent = "36.4"; }
+}
+requestAnimationFrame(count);
+</script>
+</body>
+</html>

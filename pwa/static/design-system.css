@@ -17,6 +17,18 @@
      blijft leidend.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+@font-face{font-family:"Space Grotesk";src:url(/static/fonts/sg-400.woff2) format("woff2");
+  font-weight:400;font-display:swap}
+@font-face{font-family:"Space Grotesk";src:url(/static/fonts/sg-500.woff2) format("woff2");
+  font-weight:500;font-display:swap}
+@font-face{font-family:"Space Grotesk";src:url(/static/fonts/sg-700.woff2) format("woff2");
+  font-weight:700;font-display:swap}
+/* De cockpit-wereld spreekt één display-taal; modules die nog niet zijn
+   uitgerold (o.a. Feedback, bewust FROZEN) behouden de systeemstack. */
+.sidebar,.bottomnav,.appbar,
+.view[data-view="home"],.view[data-view="workspace"],.view[data-view="dossier"]{
+  font-family:"Space Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+
 :root{
   /* ── Surfaces: 4 lagen diepte i.p.v. één vlakke kaartkleur ─────────────── */
   --ds-canvas:#081527;
@@ -232,7 +244,6 @@
   height:12px;margin:7px 0}
 @keyframes ds-shim{from{background-position:200% 0}to{background-position:-200% 0}}
 .ds-skel.w40{width:40%} .ds-skel.w60{width:60%} .ds-skel.w80{width:80%}
-.ds-skel-panel{height:118px;border-radius:var(--ds-r-lg);margin:0}
 
 /* ═══════ Primitive: progressive disclosure ═════════════════════════════ */
 .ds-more{border:0;background:none;color:var(--ds-accent);font:inherit;font-size:var(--ds-t-sm);
@@ -521,11 +532,29 @@
 .ws-star:nth-of-type(odd){opacity:.25}
 .ws-vig{position:absolute;inset:0;
   background:radial-gradient(115% 88% at 50% 40%,transparent 56%,rgba(3,9,20,.55) 100%)}
+/* Perspectiefvloer: de scène krijgt een grond (statisch, goedkoop). */
+.ws-floor{position:absolute;left:50%;bottom:-16px;width:1700px;height:440px;
+  transform:translateX(-50%) perspective(820px) rotateX(63deg);transform-origin:50% 100%;
+  background:
+    repeating-linear-gradient(90deg,rgba(132,178,255,.06) 0 1px,transparent 1px 62px),
+    repeating-linear-gradient(0deg,rgba(132,178,255,.05) 0 1px,transparent 1px 50px);
+  -webkit-mask-image:radial-gradient(56% 80% at 50% 12%,#000 28%,transparent 76%);
+          mask-image:radial-gradient(56% 80% at 50% 12%,#000 28%,transparent 76%)}
+.ws-floorglow{position:absolute;left:50%;bottom:14px;width:640px;height:140px;
+  transform:translateX(-50%);border-radius:50%;filter:blur(10px);
+  background:radial-gradient(50% 50% at 50% 50%,var(--tone-bg),transparent 68%)}
+.ws-star.tw{animation:ws-twinkle 4.5s ease-in-out infinite}
+@keyframes ws-twinkle{0%,100%{opacity:.45}50%{opacity:.1}}
 
 /* ── Kop: identiteit links, athlete-nav rechts ──────────────────────────────── */
 .ws-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--ds-4);
   flex-wrap:wrap;padding:0 var(--ds-2)}
-.ws-name{margin:0;font-size:clamp(30px,3vw,42px);font-weight:750;letter-spacing:-.03em;line-height:1.02}
+.ws-eyebrow{display:flex;align-items:center;gap:10px;font-size:10.5px;font-weight:700;
+  letter-spacing:.32em;color:var(--ds-text-3);text-transform:uppercase;margin-bottom:9px}
+.ws-eyebrow i{width:26px;height:1px;background:linear-gradient(90deg,var(--ds-accent),transparent)}
+.ws-name{margin:0;font-size:clamp(32px,3.2vw,50px);font-weight:700;letter-spacing:-.028em;
+  line-height:1.02;background:linear-gradient(180deg,#FFFFFF 20%,#B9D2F5 90%);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
 .ws-name-meta{display:flex;align-items:center;gap:var(--ds-3);flex-wrap:wrap;margin-top:7px;
   font-size:var(--ds-t-sm);color:var(--ds-text-3)}
 .ws-head-nav{padding-bottom:3px}
@@ -535,6 +564,10 @@
   transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
 .ws-anchor .anav-chip:hover,.ws-head .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text)}
 .ws-head .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap}
+.ws-head-nav{display:flex;gap:var(--ds-2);align-items:center}
+.ws-head-nav .anav-chip.on{color:#06121F;font-weight:700;cursor:default;
+  background:linear-gradient(120deg,#6FEFFF,#3ECDE8);border-color:transparent;
+  box-shadow:0 0 28px -8px rgba(94,230,235,.7)}
 
 /* ── Stage: drie kolommen, bewust asymmetrisch ─────────────────────────────── */
 .ws-stage{display:grid;grid-template-columns:1fr;gap:var(--ds-4);align-items:start}
@@ -576,26 +609,26 @@
   font-variant-numeric:tabular-nums}
 
 /* ── Het focal-systeem: gelaagd ringveld + medaillon-kern ───────────────────── */
-.ws-anchor{position:relative;width:min(460px,100%);aspect-ratio:1;display:grid;
-  place-items:center;margin:calc(var(--ds-6)*-1) auto 0}
+.ws-anchor{position:relative;width:min(508px,100%);aspect-ratio:1;display:grid;
+  place-items:center;margin:calc(var(--ds-8)*-1) auto 0}
 /* De halo draagt ÁLLE grote gloed (een grote box-shadow-blur op het medaillon
    rasterde als vierkant artefact — daarom hier, als ronde gradient-laag). */
 .ws-halo{position:absolute;inset:-16%;border-radius:50%;
   background:
-    radial-gradient(circle at 50% 46%,var(--tone-bg) 0%,transparent 24%),
+    radial-gradient(circle at 50% 44%,var(--tone-bg) 0%,var(--tone-bg) 14%,transparent 30%),
     radial-gradient(circle at 50% 46%,var(--tone-bg) 0%,transparent 34%),
     radial-gradient(circle at 50% 42%,var(--tone-bg) 0%,transparent 58%);
-  filter:blur(8px);opacity:1}
+  filter:blur(9px);opacity:1}
 .ws-orb{position:relative;width:100%;height:100%;display:grid;place-items:center}
 .ws-orb-rings{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 .ws-ring{fill:none;stroke:var(--tone)}
 .ws-ring.r0{opacity:.12}
 .ws-ring.rt{opacity:.26;stroke-dasharray:2 11;stroke-width:1.5}
-.ws-ring.r1{opacity:.42;stroke-width:1.2}
+.ws-ring.r1{opacity:.5;stroke-width:1.3}
 .ws-ring.r2{opacity:.2}
 .ws-ring.rm{opacity:.3;stroke:var(--ds-accent);stroke-dasharray:1 6;stroke-width:1.4}
 .ws-ring-arc{fill:none;stroke-linecap:round;transform-origin:50% 50%}
-.ws-ring-arc.a1{stroke:var(--tone);stroke-width:3;stroke-dasharray:300 1119;opacity:.95;
+.ws-ring-arc.a1{stroke:var(--tone);stroke-width:3.4;stroke-dasharray:300 1119;opacity:.95;
   transform:rotate(-108deg);
   filter:drop-shadow(0 0 14px var(--tone-bg)) drop-shadow(0 0 5px var(--tone))}
 .ws-ring-arc.a2{stroke:var(--ds-accent);stroke-width:2;stroke-dasharray:170 1295;opacity:.8;
@@ -603,6 +636,7 @@
 .ws-ring-arc.a3{stroke:var(--tone);stroke-width:2;stroke-dasharray:90 853;opacity:.6;
   transform:rotate(118deg);filter:drop-shadow(0 0 8px var(--tone-bg))}
 .ws-sat{fill:var(--tone);filter:drop-shadow(0 0 6px var(--tone))}
+.ws-sat2{fill:var(--ds-accent);filter:drop-shadow(0 0 6px var(--ds-accent))}
 .ws-spin{transform-origin:50% 50%}
 .ws-spin.s1{animation:ws-rot 80s linear infinite}
 .ws-spin.s2{animation:ws-rot 56s linear infinite reverse}
@@ -620,7 +654,19 @@
 .ws-fig-l.w15{stroke-width:15}
 .ws-fig-l.w14{stroke-width:13}
 .ws-fig-glow{filter:blur(12px);opacity:.6}
+.ws-fig-chrA,.ws-fig-chrB{opacity:.13}
+.ws-fig-chrA{transform:translateX(-3.5px)}
+.ws-fig-chrA .ws-fig-l,.ws-fig-chrA .ws-fig-head{stroke:#FF6D4D;fill:#FF6D4D}
+.ws-fig-chrB{transform:translateX(3.5px)}
+.ws-fig-chrB .ws-fig-l,.ws-fig-chrB .ws-fig-head{stroke:#59E8FF;fill:#59E8FF}
+.ws-fig-chrA .ws-fig-head,.ws-fig-chrB .ws-fig-head{stroke:none}
 .ws-fig-main{opacity:.96}
+/* Energiepuls door het lichaam: traag, klein oppervlak, uit bij reduced-motion. */
+.ws-fpulse{fill:none;stroke:#EAFDFF;stroke-width:3.2;stroke-linecap:round;
+  stroke-dasharray:5 150;opacity:.8;animation:ws-flow 4.5s linear infinite;
+  filter:drop-shadow(0 0 6px #9FF4FF)}
+.ws-fpulse.p2{animation-delay:-2.2s}
+@keyframes ws-flow{to{stroke-dashoffset:-310}}
 .ws-fig-trails path{fill:none;stroke:var(--ds-accent);stroke-width:1.6;stroke-linecap:round;
   opacity:.22;stroke-dasharray:2 9}
 .ws-fig-trails path:nth-child(2){opacity:.13;stroke:var(--tone)}
@@ -635,7 +681,23 @@
              0 10px 26px -12px rgba(0,0,0,.6)}
 
 /* ── De signaal-schijf: tweede massa, overlapt het ringveld ─────────────────── */
-.ws-signal{position:relative;width:min(344px,92%);aspect-ratio:1;margin:-152px auto 0;z-index:2;
+.ws-rim{position:absolute;inset:-9px;overflow:visible;pointer-events:none}
+.ws-rim circle{fill:none;transform-origin:50% 50%;transform:rotate(-90deg)}
+.ws-rim-lap1{stroke:var(--tone);opacity:.3;stroke-width:2.2}
+.ws-rim-lap2{stroke:var(--tone);stroke-width:4.6;stroke-linecap:round;
+  stroke-dashoffset:0;filter:drop-shadow(0 0 12px var(--tone-bg)) drop-shadow(0 0 4px var(--tone));
+  animation:ws-sweep 1.1s var(--ds-ease) .6s both}
+@keyframes ws-sweep{from{stroke-dashoffset:var(--wsd)}to{stroke-dashoffset:0}}
+.ws-rim-cap{fill:#FFE3D4;filter:drop-shadow(0 0 8px var(--tone));
+  animation:ws-glow 0.4s var(--ds-ease) 1.7s both}
+.ws-rimlbl{position:absolute;left:-88px;top:-6px;z-index:3;text-align:right;
+  font-size:12px;font-weight:700;color:var(--tone);letter-spacing:.05em;
+  background:rgba(6,14,30,.78);padding:7px 11px;border-radius:11px;
+  border:1px solid var(--tone-bd);box-shadow:0 8px 22px -10px rgba(0,0,0,.7);
+  animation:ws-glow .5s var(--ds-ease) 1.6s both}
+.ws-rimlbl small{display:block;font-size:9.5px;font-weight:500;color:var(--ds-text-3);
+  letter-spacing:.03em}
+.ws-signal{position:relative;width:min(344px,92%);aspect-ratio:1;margin:-158px auto 0;z-index:2;
   border-radius:50%;display:grid;place-items:center;text-align:center;
   background:radial-gradient(circle at 50% 28%,rgba(40,76,132,.6),rgba(8,20,40,.86) 72%);
   border:1px solid var(--tone-bd);
@@ -667,6 +729,7 @@
 .ws-chart-tip{fill:currentColor;filter:drop-shadow(0 0 6px currentColor)}
 /* Referentielijn (bv. km_basis_week): echte waarde, gestippeld en rustig. */
 .ws-chart-ref{stroke:var(--ds-accent);stroke-width:1.2;stroke-dasharray:3 6;opacity:.55}
+.ws-chart-reflbl{font-size:9px;font-weight:700;letter-spacing:.08em;fill:var(--ds-accent);opacity:.75}
 
 /* ── Embedded zone (randloos): content dírect op het canvas ────────────────── */
 .ws-zone{position:relative;padding-left:var(--ds-4);min-width:0}
@@ -686,15 +749,20 @@
 .ws-pane.is-attention .ws-load-n,.ws-pane.is-critical .ws-load-n{color:var(--tone)}
 .ws-load-m{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:var(--ds-t-xs);color:var(--ds-text-3)}
 
-/* ── Recente trainingen: echte runs, met volumebalkjes ─────────────────────── */
-.ws-runs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.ws-runs li{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:10px;
-  font-size:var(--ds-t-sm)}
-.ws-run-d{color:var(--ds-text-3);font-variant-numeric:tabular-nums;font-size:var(--ds-t-xs)}
-.ws-run-bar{height:4px;border-radius:2px;background:rgba(255,255,255,.06);overflow:hidden}
-.ws-run-bar i{display:block;height:100%;border-radius:inherit;
-  background:linear-gradient(90deg,var(--ds-accent),transparent 150%);opacity:.7}
-.ws-run-km{font-weight:650;color:var(--ds-text-2);font-variant-numeric:tabular-nums}
+/* ── Weekstrip: 7 dagen t/m de stand — trainings- en rustdagen eerlijk ─────── */
+.ws-wk{display:flex;gap:8px;align-items:flex-end;height:78px;margin:var(--ds-2) 0 var(--ds-1)}
+.ws-wk>div{flex:1;height:100%;display:flex;flex-direction:column;align-items:center;
+  justify-content:flex-end;gap:5px;min-width:0}
+.ws-wk i{width:100%;border-radius:5px 5px 2px 2px;transform-origin:bottom;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--tone) 60%,#fff) 0%,var(--tone) 100%);
+  box-shadow:0 0 14px -4px var(--tone);animation:ws-grow .6s var(--ds-ease) .5s both}
+.ws-wk .off i{height:3px!important;background:rgba(132,178,255,.15);box-shadow:none;
+  border-radius:2px;animation:none}
+.ws-wk span{font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--ds-text-3)}
+.ws-wk .on span{color:var(--ds-text-2)}
+.ws-wk em{font-style:normal;font-size:9.5px;color:var(--tone);font-weight:700;min-height:12px;
+  font-variant-numeric:tabular-nums}
+@keyframes ws-grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 
 /* ── Bronnen: per-source generation-freshness (echte data, geen extra read) ── */
 .ws-src{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
@@ -733,7 +801,8 @@
   transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease),
     background var(--ds-fast) var(--ds-ease)}
 .ws-adv-btn:hover{border-color:var(--ds-accent);color:var(--ds-text)}
-.ws-adv-btn.primary{background:var(--tone-bg);border-color:var(--tone-bd);color:var(--tone)}
+.ws-adv-btn.primary{background:var(--tone);border-color:transparent;color:#0A1626;
+  font-weight:700;box-shadow:0 0 30px -8px var(--tone),0 10px 22px -12px var(--tone)}
 .ws-adv-btn .ic{width:15px;height:15px}
 
 /* ── Lege scène ───────────────────────────────────────────────────────────── */
@@ -748,12 +817,12 @@
 /* ── Ruimtelijke verdeling: asymmetrisch, gevuld tot de randen ──────────────── */
 @media (min-width:1120px){
   .ws-stage{grid-template-columns:minmax(248px,.92fr) minmax(440px,1.5fr) minmax(248px,.98fr);
-    gap:var(--ds-6);align-items:start}
+    gap:var(--ds-6);align-items:start;perspective:1600px}
   /* Ruimer verticaal ritme in de zijkolommen; de scène vult zonder te forceren. */
   .ws-col-l,.ws-col-r{gap:var(--ds-5)}
-  /* Bewuste asymmetrie: rechts start lager dan links; het centrum hangt vrij. */
-  .ws-col-r{transform:translateY(20px)}
-  .ws-col-l{transform:translateY(4px)}
+  /* Cockpit-wrap: de vleugels kantelen licht naar het centrum (bewuste diepte). */
+  .ws-col-r{transform:translateY(20px) rotateY(-6deg)}
+  .ws-col-l{transform:translateY(4px) rotateY(6deg)}
 }
 @media (max-width:1119px){
   .ws-col-c{order:-1}                       /* de atleet blijft bovenaan */
@@ -767,6 +836,7 @@
   .ws-signal-in{transform:translateY(-16px)}
   .ws-signal-s{max-width:190px;font-size:12px}
   .ws-signal-chart{bottom:9%}
+  .ws-rimlbl{left:auto;right:-6px;top:-20px}
   .ws-adv{flex-wrap:wrap}
   .ws-adv-b{flex:1 1 60%}
   .ws-adv-a{flex:1 1 100%;justify-content:flex-start}
@@ -786,6 +856,9 @@
 @media (prefers-reduced-motion:reduce){
   .ws-head,.ws-anchor,.ws-signal,.ws-pane,.ws-adv,.ws-bg{animation:none}
   .ws-spin.s1,.ws-spin.s2,.ws-spin.s3{animation:none}
+  .ws-rim-lap2,.ws-rim-cap,.ws-rimlbl,.ws-wk i{animation:none}
+  .ws-fpulse{display:none}
+  .ws-star.tw{animation:none}
   .ws-switch{transition:none}
 }
 

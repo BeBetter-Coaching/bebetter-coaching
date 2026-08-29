@@ -5021,7 +5021,13 @@ function wsFigure() {
       <path d="M258 150 C270 190 268 232 250 268"/>
     </g>
     <g class="ws-fig-glow">${limbs}</g>
-    <g class="ws-fig-main">${limbs}</g></svg>`;
+    <g class="ws-fig-chrA">${limbs}</g>
+    <g class="ws-fig-chrB">${limbs}</g>
+    <g class="ws-fig-main">${limbs}</g>
+    <g class="ws-fig-pulses">
+      <path class="ws-fpulse" d="M190 86 C178 124 163 166 150 206 C174 220 192 234 204 250"/>
+      <path class="ws-fpulse p2" d="M190 86 C178 124 163 166 150 206 C132 226 116 242 104 258 C90 272 76 284 64 296"/>
+    </g></svg>`;
 }
 
 // Grote datalijn met glow-punten — ALLEEN echte reeksen (de runs uit de captured
@@ -5042,7 +5048,8 @@ function wsChart(vals, o) {
   const span = (max - min) || 1;
   const yOf = n => h - pad - ((n - min) / span) * (h - pad * 3);
   const refLine = ref != null
-    ? `<line class="ws-chart-ref" x1="${pad}" y1="${yOf(ref).toFixed(1)}" x2="${w - pad}" y2="${yOf(ref).toFixed(1)}"/>`
+    ? `<line class="ws-chart-ref" x1="${pad}" y1="${yOf(ref).toFixed(1)}" x2="${w - pad}" y2="${yOf(ref).toFixed(1)}"/>
+       <text class="ws-chart-reflbl" x="${pad + 2}" y="${(yOf(ref) - 5).toFixed(1)}">REF ${esc(ref)}</text>`
     : "";
   const pts = v.map((n, i) => [pad + (i / (v.length - 1)) * (w - pad * 2), yOf(n)]);
   let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
@@ -5072,12 +5079,42 @@ function wsOrbits() {
   const dots = [[120, 140, 1.4], [340, 90, 1], [520, 210, 1.2], [760, 70, 1.6],
     [980, 150, 1], [1180, 110, 1.3], [1290, 300, 1], [220, 420, 1], [90, 600, 1.2],
     [1330, 560, 1.4], [1150, 680, 1], [420, 740, 1.1], [680, 800, 1.3],
-    [940, 760, 1], [260, 640, .9], [1260, 430, .9]];
+    [940, 760, 1], [260, 640, .9], [1260, 430, .9],
+    [60, 300, 1.1], [190, 240, .8], [450, 60, 1], [620, 130, .9], [860, 40, 1.2],
+    [1080, 250, .8], [1360, 160, 1], [1400, 700, .9], [560, 820, 1], [160, 790, 1.2],
+    [820, 690, .8], [1020, 560, .9], [370, 560, .8], [720, 260, .7]];
   return `<svg class="ws-orbits" viewBox="0 0 1400 860" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
     <ellipse cx="700" cy="400" rx="660" ry="330"/>
     <ellipse cx="700" cy="430" rx="520" ry="250" transform="rotate(-6 700 430)"/>
     <ellipse cx="700" cy="380" rx="820" ry="410" transform="rotate(4 700 380)"/>
-    ${dots.map(d => `<circle class="ws-star" cx="${d[0]}" cy="${d[1]}" r="${d[2]}"/>`).join("")}</svg>`;
+    ${dots.map((d, i) => `<circle class="ws-star${i % 7 === 3 ? " tw" : ""}" cx="${d[0]}" cy="${d[1]}" r="${d[2]}"/>`).join("")}</svg>`;
+}
+
+// Weekstrip: de laatste 7 dagen t/m de stand-datum, met de echte dag-totalen
+// (runs uit de captured stand, gesommeerd per dag). Rustdagen tonen eerlijk leeg.
+function wsWeekStrip(runs, standDatum) {
+  const parse = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ""));
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+  const end = parse(standDatum) || parse((runs[runs.length - 1] || {}).datum);
+  if (!end || !(runs || []).length) return "";
+  const per = {};
+  for (const r of runs) { const k = String(r.datum || "").slice(0, 10);
+    per[k] = (per[k] || 0) + (Number(r.km) || 0); }
+  const DAG = ["ZO", "MA", "DI", "WO", "DO", "VR", "ZA"];
+  const cols = [];
+  let max = 1;
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(end.getFullYear(), end.getMonth(), end.getDate() - i);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const km = per[k] || 0; max = Math.max(max, km);
+    cols.push({ dag: DAG[d.getDay()], km });
+  }
+  return `<div class="ws-wk">` + cols.map(c => {
+    const hp = Math.round(c.km / max * 100);
+    const kmTxt = c.km ? String(Math.round(c.km * 10) / 10) : "";
+    return `<div class="${c.km ? "on" : "off"}"><em>${esc(kmTxt)}</em>
+      <i style="height:${c.km ? Math.max(hp, 8) : 0}%"></i><span>${c.dag}</span></div>`;
+  }).join("") + `</div>`;
 }
 
 // Eén regel context: tone-streep + tekst + optionele waarde. Vervangt de kaart.
@@ -5104,7 +5141,8 @@ function wsAnchor(naam, tone) {
         <circle class="ws-ring rm" cx="240" cy="240" r="112"/>
         <g class="ws-spin s1"><circle class="ws-ring-arc a1" cx="240" cy="240" r="178"/>
           <circle class="ws-sat" cx="240" cy="62" r="4.5"/></g>
-        <g class="ws-spin s2"><circle class="ws-ring-arc a2" cx="240" cy="240" r="206"/></g>
+        <g class="ws-spin s2"><circle class="ws-ring-arc a2" cx="240" cy="240" r="206"/>
+          <circle class="ws-sat2" cx="240" cy="34" r="3.2"/></g>
         <g class="ws-spin s3"><circle class="ws-ring-arc a3" cx="240" cy="240" r="150"/></g>
       </svg>
       ${wsFigure()}
@@ -5117,7 +5155,27 @@ function wsAnchor(naam, tone) {
 function wsSignal(f) {
   if (!f) return "";
   const small = String(f.value).length > 5 ? " txt" : "";
+  // Rim-gauge: weekvolume t.o.v. de referentie als (dubbele) ronde om de schijf.
+  // ratio ≥ 1 → gedimde volle ronde (=100% van de referentie) + felle boog voor
+  // de overshoot (gemaximeerd op één extra ronde; het label draagt de exacte ×).
+  // ratio < 1 → alleen een boog voor de voortgang. Eerlijke mapping, geen decor.
+  let rim = "";
+  if (f.gauge && isFinite(f.gauge.ratio) && f.gauge.ratio > 0) {
+    const R = 186.6, C = 1172.5, ratio = f.gauge.ratio;
+    const frac = ratio >= 1 ? Math.min(ratio - 1, 1) : ratio;
+    const dash = Math.max(frac * C, 0);
+    const ang = (-90 + 360 * frac) * Math.PI / 180;
+    const capX = (190 + R * Math.cos(ang)).toFixed(1), capY = (190 + R * Math.sin(ang)).toFixed(1);
+    const lbl = (Math.round(ratio * 10) / 10).toFixed(1).replace(".", ",");
+    rim = `<svg class="ws-rim" viewBox="0 0 380 380" aria-hidden="true">
+      ${ratio >= 1 ? `<circle class="ws-rim-lap1" cx="190" cy="190" r="182"/>` : ""}
+      ${dash > 8 ? `<circle class="ws-rim-lap2" cx="190" cy="190" r="${R}"
+        style="stroke-dasharray:${dash.toFixed(1)} ${C};--wsd:${dash.toFixed(1)}"/>
+      <circle class="ws-rim-cap" cx="${capX}" cy="${capY}" r="5"/>` : ""}</svg>
+      <span class="ws-rimlbl">${esc(lbl)}×<small>de referentie</small></span>`;
+  }
   return `<div class="ws-signal ${f.tone || "is-calm"}">
+    ${rim}
     <div class="ws-signal-in">
       <span class="ws-signal-l">${esc(f.label)}</span>
       ${f.word ? `<span class="ws-signal-w">${esc(f.word)}</span>` : ""}
@@ -5160,6 +5218,8 @@ function wsRender(wrap, vm) {
   // Schijfgrafiek = CUMULATIEF weekvolume vs de referentielijn (beide reeksen
   // bestaan al in de payload). Zo leest de curve in dezelfde richting als het
   // signaal: de lijn klimt vóórbij de gestippelde referentie bij +X%.
+  // De rim-gauge vertaalt dezelfde verhouding naar de schijfrand (1,9× = de
+  // ring loopt bijna twee keer rond).
   if (owns("bel-pct") || owns("bel-km")) {
     const chrono = (bel.runs || []).slice()
       .sort((a, b) => String(a.datum || "").localeCompare(String(b.datum || "")));
@@ -5167,6 +5227,8 @@ function wsRender(wrap, vm) {
     const cum = chrono.map(r => (acc += Number(r.km) || 0));
     focal.chart = wsChart(cum, { w: 340, h: 88, cls: "ws-signal-chart", area: false,
       min0: true, ref: bel.km_basis_week });
+    if (bel.km_recent != null && bel.km_basis_week)
+      focal.gauge = { ratio: bel.km_recent / bel.km_basis_week };
   }
 
   const chip = attn.length
@@ -5178,13 +5240,15 @@ function wsRender(wrap, vm) {
   let h = genBanner(vm.generation);
   h += `<div class="ws-scene ${tone}">`;
   // Achtergrond doet mee: ambient haze (volgt status) + orbitale lijnen + vignette.
-  h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
+  h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div>${wsOrbits()}
+    <div class="ws-floor"></div><div class="ws-floorglow"></div><div class="ws-vig"></div></div>`;
 
   // ── KOP: identiteit links, athlete-nav rechts (het centrum blijft grafisch) ──
   h += `<header class="ws-head">
-    <div class="ws-head-t"><h2 class="ws-name">${esc(naam)}</h2>
+    <div class="ws-head-t"><div class="ws-eyebrow"><i></i>BeBetter · Athlete Command</div>
+      <h2 class="ws-name">${esc(naam)}</h2>
       <div class="ws-name-meta">${chip}${fresh}</div></div>
-    <div class="ws-head-nav">${athleteNav("workspace", key)}</div></header>`;
+    <div class="ws-head-nav"><span class="anav-chip on">Workspace</span>${athleteNav("workspace", key)}</div></header>`;
 
   // ── LINKS: aandacht + één samengevoegd belasting-oppervlak (minder dozen) ──
   // Waarde-consistentie: de belasting-regel wordt hier uit DEZELFDE canonieke
@@ -5206,21 +5270,13 @@ function wsRender(wrap, vm) {
     <div class="ds-fold"><div>${dsStream(restSig.map(x => ({ text: x, tone: belTone })))}</div></div>`;
 
   const nRuns = (bel.runs || []).length;
-  const runsNieuwEerst = (bel.runs || []).slice(-6).reverse();
-  const maxKm = Math.max(...runsNieuwEerst.map(r => Number(r.km) || 0), 1);
-  const runsLijst = runsNieuwEerst.length
-    ? `<ul class="ws-runs">` + runsNieuwEerst.map(r => {
-        const b = Math.max(6, Math.round((Number(r.km) || 0) / maxKm * 100));
-        return `<li><span class="ws-run-d">${esc(String(r.datum || "").slice(5))}</span>
-          <span class="ws-run-bar"><i style="width:${b}%"></i></span>
-          <span class="ws-run-km">${esc(r.km)} km</span></li>`;
-      }).join("") + `</ul>`
-    : "";
   let loadBody;
   if (bel.km_recent != null) {
+    // Weekstrip: de 7 dagen t/m de stand — trainingsdagen en rustdagen worden
+    // beide zichtbaar (eerlijke leegte). Vervangt de losse runs-balkjes.
     loadBody = `<div class="ws-load">
       <div class="ws-load-n">${esc(bel.km_recent)}<i>km deze week</i></div>
-      ${runsLijst}
+      ${wsWeekStrip(bel.runs || [], bel.datum)}
       <div class="ws-load-m">
         ${bel.km_basis_week != null ? `<span>referentie ${esc(bel.km_basis_week)} km/wk</span>` : ""}
         ${nRuns ? `<span>laatste ${esc(String((bel.runs[nRuns - 1] || {}).datum || ""))}</span>` : ""}
