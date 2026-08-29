@@ -261,6 +261,21 @@ bronnen: expliciete blocker-residual). Panels 2→3 + command dock per contract;
 test 37 bewust bijgewerkt (drie-panels-grens, dock, variant-uit-echt-veld).
 1026 groen (vast + random); FCP 872–948ms (band gelijk); 0 overflow.
 
+## Final candidate (acceptance-contract v2 + presence-code-spec)
+
+De presence is herbouwd naar de bindende CODE-SPEC: 3/4-frontale gelaagde
+digital-human (13-laags stack), ring-dock op de borst met +92% en 1,9×
+referentie, twee-tonige front-orbit, en eerlijke presence-selectie
+(profielveld → ?presence-override → neutraal; test-geborgd, nooit naam).
+Afgekeurd onderweg: masker-achtige gezichtslijnen (brow/bridge) en een
+zwevende haarknot. Zelf-GO afgeschaft per contract §31 — externe review
+bepaalt de acceptance. 1026 groen (vast + random), FCP-band gelijk,
+0 overflow. Eerlijk restverschil: een handgecodeerde SVG-human blijft
+grafisch onder een prof-gerenderd asset; als de externe review meer
+fotorealisme eist, is de volgende stap een écht gerenderd
+male/female/neutral-asset (buiten deze codebase gemaakt) in exact deze
+compositie — de laag-structuur is daarop voorbereid.
+
 ## Tool-/modeladvies (§5)
 
 Geen zwaardere tooling nodig gebleken: CSS + inline SVG haalden het ambitieniveau;

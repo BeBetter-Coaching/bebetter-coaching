@@ -5074,82 +5074,88 @@ function wsWeekStrip(runs, standDatum) {
 // scheiding en particle-dissolutie naar het platform. Bewust generiek en
 // niet-herleidbaar; het draagt de menselijke massa van de referentie.
 function wsBust(variant) {
-  // Hybride optie 2+3: anatomisch volume (schaduw, kern, sleutelbeenderen) mét
-  // digital-twin transparantie (contourlijnen, scanlines, dissolve). Profiel-
-  // hoofd = menselijk zonder identificeerbaar gezicht. Varianten: "v" (haar-
-  // knot/paardenstaart), "m" (nekhaar, bredere schouders), "x" (neutraal) —
-  // gekozen via een echt profielveld zodra dat bestaat; nooit geraden op naam.
+  // PRESENCE-LAYER (bindende spec): 3/4-frontale digital-human bust, opgebouwd
+  // uit lagen — schaduwmassa, donker-translucent basisvolume, gelaatsvlakken
+  // (suggestie, geen portret), topo-banen die de vorm volgen, scanlines,
+  // borstkern, dubbele rim-light (koel links, cyaan→status rechts), particles.
+  // Varianten v/m/x subtiel (haarmassa, hals-/schouderbreedte) — selectie via
+  // echt profielveld of presentatie-override, nooit geraden op naam.
   const g = variant === "v" || variant === "m" ? variant : "x";
-  const P = "M186 34 C212 30 232 46 238 72 C242 84 246 92 246 100 C250 104 257 111 254 117 C248 122 248 126 250 130 C255 135 253 143 246 148 C250 154 246 162 238 168 C229 177 218 183 209 187 C207 195 207 203 211 211 C246 223 292 237 330 260 C352 274 362 294 366 312 C370 362 368 412 364 452 L36 452 C32 412 30 362 34 312 C38 294 48 274 70 260 C102 240 138 228 163 218 C165 210 165 202 163 194 C148 186 138 172 134 154 C130 128 132 96 142 66 C152 42 168 36 186 34 Z";
-  const HAIR_V = "M170 40 C152 28 130 32 121 50 C112 68 119 88 137 93 C130 76 135 58 150 51 C157 46 164 42 170 40 Z";
-  const TAIL_V = "M128 90 C115 114 107 146 107 178 C107 206 113 230 123 246 C129 232 129 212 129 194 C125 166 129 134 139 108 C135 102 131 96 128 90 Z";
-  const HAIR_M = "M186 28 C160 32 144 48 138 72 C132 96 132 120 138 142 C142 158 148 170 156 178 C158 168 158 158 158 150 C150 128 150 100 158 76 C166 52 176 36 186 28 Z";
-  const dust = [[70, 392, 2.5, .35], [96, 428, 1.8, .25], [130, 404, 2.2, .3],
-    [164, 440, 1.6, .2], [204, 416, 2.6, .35], [244, 444, 1.8, .22], [282, 408, 2.2, .3],
-    [316, 436, 1.6, .2], [344, 396, 2.4, .28], [112, 372, 1.4, .18], [288, 372, 1.5, .2],
-    [196, 448, 1.4, .16], [56, 420, 1.6, .2], [352, 428, 1.4, .18]];
-  const hair = g === "v" ? `<path class="ws-bust-hair" d="${HAIR_V}"/><path class="ws-bust-hair" d="${TAIL_V}"/>`
-             : g === "m" ? `<path class="ws-bust-hair" d="${HAIR_M}"/>` : "";
-  const shoulders = g === "m" ? `<path class="ws-bust-broad" d="M44 452 C38 400 36 350 40 306 C44 286 56 268 78 254 L80 258 C58 272 46 292 42 310 C38 360 40 410 44 452 Z M356 452 C362 400 364 350 360 306 C356 286 344 268 324 254 L322 258 C344 272 354 292 358 310 C362 360 360 410 356 452 Z"/>` : "";
-  return `<svg class="ws-bust" viewBox="0 0 400 470" aria-hidden="true">
+  // Silhouet 800×900: hoofd licht 3/4 naar rechts, hals, schouders, bovenborst;
+  // onderzijde lost op (gradient + particles).
+  const P = "M400 92 C452 92 494 130 500 192 C503 226 498 258 484 286 C476 302 466 316 452 326 C448 344 448 360 452 376 C520 396 590 424 646 466 C686 496 706 530 712 566 C718 640 716 760 712 872 L88 872 C84 760 82 640 88 566 C94 530 114 496 154 466 C210 424 280 396 348 376 C352 360 352 344 348 326 C334 316 324 302 316 286 C302 258 297 226 300 192 C306 130 348 92 400 92 Z";
+  const BUN_V = "M352 130 C326 112 296 116 282 140 C268 166 276 196 304 206 C294 184 298 158 318 148 C328 138 341 133 352 130 Z";
+  const NECKPATCH_M = "M348 326 C334 316 324 302 316 286 L302 292 C312 312 324 328 340 340 C344 336 347 331 348 326 Z M452 326 C466 316 476 302 484 286 L498 292 C488 312 476 328 460 340 C456 336 453 331 452 326 Z";
+  const dust = [[150, 790, 3, .3], [200, 840, 2, .22], [260, 806, 2.6, .3], [330, 852, 2, .2],
+    [400, 820, 3.2, .32], [470, 856, 2.2, .22], [540, 810, 2.6, .3], [610, 846, 2, .2],
+    [660, 792, 2.8, .28], [120, 730, 1.8, .18], [680, 726, 1.8, .2], [400, 878, 1.8, .16],
+    [230, 748, 1.6, .16], [570, 752, 1.6, .18]];
+  const hair = g === "v" ? `<path class="ws-bust-hair" fill="url(#wsBustG)" d="${BUN_V}"/>` : "";
+  const broad = g === "m" ? `<path class="ws-bust-broad" d="${NECKPATCH_M}"/>` : "";
+  return `<svg class="ws-bust ws-bust--${g}" viewBox="0 0 800 900" aria-hidden="true">
     <defs>
       <linearGradient id="wsBustG" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#DFF8FF"/><stop offset=".14" stop-color="#A9EFFF"/>
-        <stop offset=".34" stop-color="#59D2F2"/><stop offset=".54" stop-color="#2E7FB8"/>
-        <stop offset=".74" stop-color="#1A4470" stop-opacity=".6"/>
-        <stop offset=".96" stop-color="#0A1A34" stop-opacity="0"/></linearGradient>
-      <linearGradient id="wsHairG" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#8FE5F8"/><stop offset=".6" stop-color="#3D9BC8"/>
-        <stop offset="1" stop-color="#1E5580" stop-opacity=".7"/></linearGradient>
-      <radialGradient id="wsBustVol" cx=".52" cy=".3" r=".66">
-        <stop offset=".38" stop-color="#000" stop-opacity="0"/>
-        <stop offset=".8" stop-color="#061A38" stop-opacity=".5"/>
-        <stop offset="1" stop-color="#04122A" stop-opacity=".72"/></radialGradient>
+        <stop offset="0" stop-color="#9FD8EF" stop-opacity=".34"/>
+        <stop offset=".2" stop-color="#5FA8D0" stop-opacity=".3"/>
+        <stop offset=".42" stop-color="#2E5E8E" stop-opacity=".3"/>
+        <stop offset=".62" stop-color="#16385E" stop-opacity=".3"/>
+        <stop offset=".85" stop-color="#0A1F3E" stop-opacity=".14"/>
+        <stop offset="1" stop-color="#0A1F3E" stop-opacity="0"/></linearGradient>
       <linearGradient id="wsBustS" x1="0" y1="0" x2="0" y2="1">
-        <stop offset=".45" stop-color="#000" stop-opacity="0"/>
-        <stop offset=".82" style="stop-color:var(--tone)" stop-opacity=".3"/>
+        <stop offset=".4" stop-color="#000" stop-opacity="0"/>
+        <stop offset=".78" style="stop-color:var(--tone)" stop-opacity=".2"/>
         <stop offset="1" style="stop-color:var(--tone)" stop-opacity="0"/></linearGradient>
-      <linearGradient id="wsBustD" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#0E2C52"/><stop offset=".7" stop-color="#0E2C52" stop-opacity=".6"/>
-        <stop offset=".95" stop-color="#0E2C52" stop-opacity="0"/></linearGradient>
+      <linearGradient id="wsRimL" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#CFF6FF" stop-opacity=".9"/>
+        <stop offset=".5" stop-color="#59E8FF" stop-opacity=".5"/>
+        <stop offset=".92" stop-color="#59E8FF" stop-opacity="0"/></linearGradient>
+      <linearGradient id="wsRimR" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#BFF2FF" stop-opacity=".85"/>
+        <stop offset=".45" stop-color="#59E8FF" stop-opacity=".4"/>
+        <stop offset=".8" style="stop-color:var(--tone)" stop-opacity=".45"/>
+        <stop offset="1" style="stop-color:var(--tone)" stop-opacity="0"/></linearGradient>
       <linearGradient id="wsBustCA" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#FF6D4D"/><stop offset=".62" stop-color="#FF6D4D" stop-opacity=".5"/>
+        <stop offset="0" stop-color="#FF6D4D"/><stop offset=".6" stop-color="#FF6D4D" stop-opacity=".4"/>
         <stop offset=".9" stop-color="#FF6D4D" stop-opacity="0"/></linearGradient>
       <linearGradient id="wsBustCB" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#59E8FF"/><stop offset=".62" stop-color="#59E8FF" stop-opacity=".5"/>
+        <stop offset="0" stop-color="#59E8FF"/><stop offset=".6" stop-color="#59E8FF" stop-opacity=".4"/>
         <stop offset=".9" stop-color="#59E8FF" stop-opacity="0"/></linearGradient>
-      <linearGradient id="wsRimG" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#FFFFFF" stop-opacity=".9"/>
-        <stop offset=".45" stop-color="#9FF4FF" stop-opacity=".4"/>
-        <stop offset="1" stop-color="#9FF4FF" stop-opacity="0"/></linearGradient>
       <clipPath id="wsBustClip"><path d="${P}"/></clipPath>
-      <clipPath id="wsTopoClip"><rect x="0" y="216" width="400" height="254"/></clipPath>
       <pattern id="wsBustScan" width="4" height="5" patternUnits="userSpaceOnUse">
-        <rect width="4" height="1" fill="#DFFBFF" opacity=".07"/></pattern>
+        <rect width="4" height="1" fill="#DFFBFF" opacity=".06"/></pattern>
     </defs>
-    <g class="ws-bust-depth"><path fill="url(#wsBustD)" d="${P}" transform="translate(17 12)"/></g>
-    <g class="ws-bust-depth d2"><path fill="url(#wsBustD)" d="${P}" transform="translate(-14 8)"/></g>
+    <g class="ws-bust-shadow"><path d="${P}" transform="translate(20 14)"/></g>
     <path class="ws-bust-chrA" fill="url(#wsBustCA)" d="${P}"/>
     <path class="ws-bust-chrB" fill="url(#wsBustCB)" d="${P}"/>
-    ${hair ? `<g class="ws-bust-hairg">${hair}</g>` : ""}
-    ${shoulders}
-    <path fill="url(#wsBustG)" d="${P}"/>
-    <path fill="url(#wsBustVol)" d="${P}"/>
+    ${hair}
+    <path fill="url(#wsBustG)" stroke="rgba(148,229,255,.3)" stroke-width="1.4" d="${P}"/>
+    ${broad}
     <path fill="url(#wsBustS)" d="${P}"/>
     <g clip-path="url(#wsBustClip)">
-      <rect width="400" height="440" fill="url(#wsBustScan)"/>
-      <ellipse class="ws-bust-jaw" cx="204" cy="204" rx="30" ry="15"/>
-      <path class="ws-bust-clav" d="M198 248 C182 254 164 258 150 258"/>
-      <path class="ws-bust-clav" d="M212 248 C228 254 246 258 260 258"/>
-      <ellipse class="ws-bust-core" cx="204" cy="308" rx="26" ry="60"/>
-      <ellipse class="ws-bust-corehot" cx="204" cy="292" rx="9" ry="22"/>
+      <ellipse class="ws-face-crown" cx="392" cy="150" rx="72" ry="60"/>
+      <ellipse class="ws-face-glow" cx="400" cy="215" rx="105" ry="125"/>
+      <ellipse class="ws-face-shadeL" cx="348" cy="244" rx="42" ry="92"/>
+      <ellipse class="ws-face-cheekR" cx="446" cy="252" rx="34" ry="44"/>
+      <ellipse class="ws-face-cheekL" cx="354" cy="256" rx="28" ry="38"/>
+      <ellipse class="ws-face-jaw" cx="400" cy="340" rx="54" ry="18"/>
+      <ellipse class="ws-bust-clavL" cx="320" cy="470" rx="66" ry="9"/>
+      <ellipse class="ws-bust-clavR" cx="482" cy="468" rx="66" ry="9"/>
+      <g class="ws-bust-topo">
+        <path d="M160 470 C240 432 330 414 400 414 C470 414 560 432 640 470"/>
+        <path d="M140 512 C232 470 324 450 400 450 C476 450 568 470 660 512"/>
+        <path d="M126 560 C226 514 320 492 400 492 C480 492 574 514 674 560"/>
+        <path d="M118 614 C222 566 318 542 400 542 C482 542 578 566 682 614"/>
+        <path d="M114 672 C220 624 316 598 400 598 C484 598 580 624 686 672"/>
+        <path d="M112 734 C220 686 316 660 400 660 C484 660 580 686 688 734"/>
+        <path d="M112 800 C220 752 318 726 400 726 C482 726 580 752 688 800"/>
+        <path d="M356 356 C372 366 388 370 400 370 C412 370 428 366 444 356"/>
+      </g>
+      <rect class="ws-bust-scan" width="800" height="830" fill="url(#wsBustScan)"/>
+      <ellipse class="ws-bust-core" cx="400" cy="560" rx="60" ry="110"/>
+      <ellipse class="ws-bust-corehot" cx="400" cy="524" rx="20" ry="44"/>
     </g>
-    <g class="ws-bust-topo" clip-path="url(#wsTopoClip)">
-      <path d="${P}" transform="translate(200 250) scale(.9) translate(-200 -250)"/>
-      <path d="${P}" transform="translate(200 250) scale(.79) translate(-200 -250)"/>
-      <path d="${P}" transform="translate(200 250) scale(.67) translate(-200 -250)"/>
-    </g>
-    <path class="ws-bust-rim" d="${P}"/>
+    <path class="ws-bust-rimL" d="M400 92 C348 92 306 130 300 192 C297 226 302 258 316 286 C324 302 334 316 348 326 C352 344 352 360 348 376 C280 396 210 424 154 466 C114 496 94 530 88 566"/>
+    <path class="ws-bust-rimR" d="M400 92 C452 92 494 130 500 192 C503 226 498 258 484 286 C476 302 466 316 452 326 C448 344 448 360 452 376 C520 396 590 424 646 466 C686 496 706 530 712 566"/>
     <g class="ws-bust-dust">${dust.map(d => `<circle cx="${d[0]}" cy="${d[1]}" r="${d[2]}" opacity="${d[3]}"/>`).join("")}</g>
   </svg>`;
 }
@@ -5180,10 +5186,11 @@ function wsAnchor(naam, tone) {
 function wsSignal(f) {
   if (!f) return "";
   const small = String(f.value).length > 5 ? " txt" : "";
-  return `<div class="ws-signal ${f.tone || "is-calm"}">
+  return `<div class="ws-signalwrap ${f.tone || "is-calm"}"><div class="ws-signal">
     <span class="ws-signal-l">${esc(f.label)}${f.word ? ` · ${esc(f.word)}` : ""}</span>
     <span class="ws-signal-v${small}">${esc(f.value)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
-    ${f.sub ? `<span class="ws-signal-s">${esc(f.sub)}</span>` : ""}</div>`;
+    ${f.ratio ? `<span class="ws-signal-r">${esc(f.ratio)}× referentie</span>` : ""}</div>
+    ${f.sub ? `<div class="ws-signal-meta">${esc(f.sub)}</div>` : ""}</div>`;
 }
 
 function wsRender(wrap, vm) {
@@ -5232,6 +5239,7 @@ function wsRender(wrap, vm) {
       lbl: (Math.round(ratio * 10) / 10).toFixed(1).replace(".", ","),
       nx: (320 + R * Math.cos(ang)).toFixed(1), ny: (320 + R * Math.sin(ang)).toFixed(1),
       dim: ratio >= 1 };
+    focal.ratio = gauge.lbl;
   }
 
   const chip = attn.length
@@ -5268,6 +5276,7 @@ function wsRender(wrap, vm) {
     </svg>
     ${wsBust((vm.profiel && vm.profiel.geslacht === "vrouw" && "v") ||
              (vm.profiel && vm.profiel.geslacht === "man" && "m") ||
+             ({ female: "v", male: "m", neutral: "x" })[new URLSearchParams(location.search).get("presence")] ||
              new URLSearchParams(location.search).get("bust") || "x")}
     <svg class="ws-orbit ws-orbit-front" viewBox="0 0 640 680" aria-hidden="true">
       <defs><clipPath id="wsGaugeLow"><rect x="0" y="368" width="640" height="312"/></clipPath></defs>
@@ -5283,7 +5292,7 @@ function wsRender(wrap, vm) {
       <ellipse class="ws-plat p3" cx="320" cy="604" rx="86" ry="17"/>
       <ellipse class="ws-plat-glow" cx="320" cy="602" rx="190" ry="36"/>
     </svg>
-    ${gauge ? `<span class="ws-gaugelbl" style="left:${((+gauge.nx + 18) / 640 * 100).toFixed(1)}%;top:${((+gauge.ny + 6) / 680 * 100).toFixed(1)}%">${esc(gauge.lbl)}×<small>referentie</small></span>` : ""}
+    <div class="ws-orbit-ring" aria-hidden="true"></div>
     ${wsSignal(focal)}
     <nav class="ws-dock">
       ${bel.actief ? `<button type="button" class="ws-ctl primary" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">${ic("check")}Belasting gezien</button>` : ""}

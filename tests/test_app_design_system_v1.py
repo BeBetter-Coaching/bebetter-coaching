@@ -357,7 +357,14 @@ class TestAthleteCanvas:
         blok = _DS.split(".ws-line{")[1][:220]
         assert "border:1px solid" not in blok                     # regel blijft embedded
         assert "function wsBust(" in _APP and "wsBust(" in _fn("wsRender")
-        assert 'vm.profiel && vm.profiel.geslacht' in _fn("wsRender")  # variant uit echt veld
+        # Presence-selectie is EERLIJK (contract §6/§34): écht profielveld →
+        # presentatie-override (?presence/?bust) → neutraal. Nooit naam-gokken.
+        ws = _fn("wsRender")
+        assert 'vm.profiel && vm.profiel.geslacht' in ws           # echt veld eerst
+        assert '"presence"' in ws and '"bust"' in ws               # override-params
+        sel = ws[ws.index("wsBust("):ws.index("wsBust(") + 400]
+        assert "voornaam" not in sel and "naam" not in sel         # geen naam-inferentie
+        assert '|| "x")' in sel                                    # neutraal als fallback
         assert "ws-orbit-back" in _fn("wsRender") and "ws-orbit-front" in _fn("wsRender")
         assert ".ws-plat" in _DS                                  # platform: de athlete stáát
         assert ".ws-gauge-lap1" in _DS and ".ws-gauge-lap2" in _DS  # ratio in de geometrie

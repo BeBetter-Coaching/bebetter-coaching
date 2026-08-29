@@ -53,7 +53,9 @@ draagt (`design-lab/workspace-lab.html` + still + motion-GIF).
 `ws-col`-grid, de `ws-adv`-actiebalk, de embedded `ws-zone`/`ws-side`-cluster,
 de schijf-gauge (`.ws-rim*`), de schijf-CSS van `.ws-signal`,
 `.ws-signal-chart`, `.ws-idchip`, de oude hero-`.ws-anchor`/`.ws-halo`/kop-
-layout en `.ws-pane-h`. Grep-geverifieerd: 0 restanten in app.js/design-system.css.
+layout en `.ws-pane-h`, plus in deze kandidaat: de profiel-bust (v5), losse gauge-label-chip
+(`.ws-gaugelbl`) en de scène-typografie-variant van het signaal. Grep-geverifieerd:
+0 restanten in app.js/design-system.css.
 
 ## Final visual+code contract-pass (deze oplevering)
 - **Athlete-presence = hybride optie 2+3**: profielbust (hoofd/nek/schouders/
@@ -77,6 +79,22 @@ en is geweigerd. De v/m-varianten zijn af en direct activeerbaar zodra één
 intake-/profielveld het draagt; tot die tijd is de neutrale variant default
 en tonen de flagship-materialen Masja met de v-variant (zoals Jips eigen
 referenties haar consistent tonen), via de presentatie-parameter.
+
+## Presence-layer per bindende CODE-SPEC (deze kandidaat)
+- **Gelaagde 3/4-frontale digital-human** (geen zijprofiel, geen masker, geen
+  icoon): schaduwmassa → donker-translucent basisvolume → gelaatsvlakken als
+  suggestie (crown/glow/wangen/kaak/vorm-schaduw — géén ogen/mond) → topo-banen
+  die schouders/borst volgen → scanlines → borstkern met trage puls → dubbele
+  rim-light (koel links, cyaan→status rechts) → particles → orbit vóór/achter →
+  platform → RING-DOCK op de borst met het dominante cijfer + "1,9× referentie"
+  (gauge gekoppeld aan de presence, niet los).
+- **Bouwkeuze gedocumenteerd**: contract v2 §5 noemt losse assets, de
+  PRESENCE-LAYER-CODE-SPEC (specifieker, bindend) schrijft een gelaagde
+  SVG/CSS-opbouw voor — die is gekozen omdat de statuskleur live door kern/
+  onderzijde/orbit moet reageren (calm/attention/critical), wat een statisch
+  plaatje niet kan. Referentie-exports staan in `design-lab/presence/`.
+- Varianten v/m/x; selectie: écht profielveld → `?presence=female|male|neutral`
+  (of legacy `?bust=`) → neutraal. Nooit naam-gokken (test-geborgd).
 
 ## Teststatus
 1026 passed — vaste én random volgorde (`python3 -m pytest tests/ -q`).
