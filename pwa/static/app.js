@@ -1014,6 +1014,13 @@ function prioDetailHtml(it) {
     (dsTone(a.tier) === "is-critical" ? 0 : 1) - (dsTone(b.tier) === "is-critical" ? 0 : 1))[0];
   const bel = sigs.find(s => s.soort === "belasting");
   const pct = bel && bel.detail && bel.detail.pct != null ? bel.detail.pct : null;
+  // Waarde-consistentie: de belasting-zin in de briefing komt uit DEZELFDE
+  // canonieke detailvelden als het dominante cijfer rechtsboven — nooit een
+  // voor-afgeronde bron-zin (+91%) naast het canonieke percentage (+92%).
+  const bd = (bel && bel.detail) || {};
+  const belZin = (bd.pct != null && bd.km_recent != null && bd.km_basis != null)
+    ? `Volume ${bd.pct > 0 ? "+" : ""}${bd.pct}% deze week (${bd.km_recent} km vs gem. ${bd.km_basis} km/wk)` : "";
+  const titelVan = s => (s.soort === "belasting" && belZin) ? belZin : s.reden;
 
   let h = `<div class="pb ${tone}">`;
   h += `<div class="pb-amb" aria-hidden="true"></div>`;
@@ -1021,7 +1028,11 @@ function prioDetailHtml(it) {
   h += `<header class="pb-head">
     <span class="pb-orb">${esc(initialen(it.naam || ""))}</span>
     <div class="pb-id"><h3 class="pb-naam">${esc(it.naam || "")}</h3>
-      <p class="pb-reden">${esc(hoofd ? hoofd.reden : "geen open signaal")}</p></div>
+      <p class="pb-reden">${esc(hoofd
+        ? (hoofd.soort === "belasting" && bd.pct != null
+            ? `Belasting ${hoofd.tier === "actie" ? "hoog" : "let op"} · ${bd.pct > 0 ? "+" : ""}${bd.pct}% t.o.v. referentie`
+            : titelVan(hoofd))
+        : "geen open signaal")}</p></div>
     ${pct != null ? `<span class="pb-dom"><b>${pct > 0 ? "+" : ""}${esc(pct)}</b><i>%</i></span>` : ""}
   </header>`;
 
@@ -1033,7 +1044,9 @@ function prioDetailHtml(it) {
     const open = s === hoofd;
     return `<div class="pd-s-blok ${dsTone(s.tier)}" data-soort="${s.soort}">
       ${dsAttnCard({ tone: dsTone(s.tier), icon: SOORT_IC[s.soort] || "activity",
-                     title: s.reden, meta: s.kort && s.kort !== s.reden ? s.kort : "" })}
+                     title: titelVan(s),
+                     meta: (s.soort === "belasting" && belZin) ? ""
+                           : (s.kort && s.kort !== s.reden ? s.kort : "") })}
       <button type="button" class="ds-more pb-more" onclick="dsFoldToggle(this)">${open ? "Verberg" : "Toon"} onderbouwing</button>
       <div class="ds-fold${open ? " open" : ""}"><div class="pd-s-body">${prioSignaalBody(s)}</div></div>
       <div class="pd-s-work">
@@ -4689,6 +4702,14 @@ function dcProv(p) {
   return esc(parts.join(" · "));
 }
 
+// Presentatie-opschoning van registry-labels: technische sleutel-suffixen
+// (uuid's) horen niet in de coach-UI. Alleen weergave — de onderliggende
+// registry-key en het Waarom?-spoor blijven onaangetast.
+function dcPrettyLabel(l) {
+  return String(l || "")
+    .replace(/[.\s]*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*$/i, "");
+}
+
 // Zelfde provenance-keten als platte tekst (de DS-primitives escapen zelf).
 function dcProvText(p) {
   if (!p) return "";
@@ -4756,9 +4777,16 @@ function dcRender(wrap, vm) {
   h += `<div class="dc-mem-grid"><div class="dc-spine">`;
 
   // ── VANDAAG: het sterkste punt op de lijn ──
+  // Waarde-consistentie: het percentage in de load-signaalkaart volgt de
+  // canonieke `delta_pct` (load_metric) — nooit een voor-afgerond bron-%
+  // (+91%) boven het canonieke oordeel (+92%) op hetzelfde scherm.
+  const canonPct = t => (lo && lo.delta_pct != null && t)
+    ? String(t).replace(/[+-]?\d+(?:[.,]\d+)?%/, `${lo.delta_pct > 0 ? "+" : ""}${lo.delta_pct}%`)
+    : t;
   let nu = attn.map(c => dcNode({
     weight: 1, tone: dsTone("aandacht"), title: c.title,
-    sub: c.why || "", meta: c.prov ? dcProvText(c.prov) : "",
+    sub: (c.kind === "load_signal" ? canonPct(c.why) : c.why) || "",
+    meta: c.prov ? dcProvText(c.prov) : "",
   })).join("");
   if (lo) {
     const sev = lo.ernst === "hoog" ? "hoog" : "let op";
@@ -4810,7 +4838,7 @@ function dcRender(wrap, vm) {
       <summary>${esc(d.titel)}${d.onbekend ? ` <span class="muted klein">— onbekend</span>` : ""}</summary>
       ${d.onbekend ? "" : `<div class="ds-disc-body"><ul class="dc-reg">` + d.regels.map(r => `
         <li>
-          <div class="dc-reg-main"><span class="dc-lbl">${esc(r.label)}</span><span class="dc-val">${esc(r.value)}</span></div>
+          <div class="dc-reg-main"><span class="dc-lbl">${esc(dcPrettyLabel(r.label))}</span><span class="dc-val">${esc(r.value)}</span></div>
           <div class="dc-reg-meta">${r.prov ? `<span class="dc-prov">${dcProv(r.prov)}</span>` : ""}
             ${r.evidence_id ? `<button class="dc-why" data-id="${esc(r.evidence_id)}" data-key="${esc(vm.key)}">Waarom?</button>` : ""}</div>
         </li>`).join("") + `</ul></div>`}
@@ -4954,16 +4982,46 @@ function wsSkel(n) {
     (_, i) => `<div class="ds-skel ${i % 2 ? "w60" : "w80"}"></div>`).join("");
 }
 
-// Contextpane: translucent glasoppervlak met label, inhoud en optionele
-// contextuele CTA (bestaande route). De toon kleurt rand + gloed.
+// Contextoppervlak in twee gedaanten (referentie-principe: niet zes identieke
+// kaarten): `embed:true` → randloze zone direct op het canvas (label + accent),
+// anders een translucent glas-pane. Beide met optionele contextuele CTA.
 function wsField(label, body, o) {
   o = o || {};
   if (!body) return "";
-  return `<section class="ws-pane ${o.tone || ""} ${o.cls || ""}">
+  const shell = o.embed ? "ws-zone" : "ws-pane";
+  return `<section class="${shell} ${o.tone || ""} ${o.cls || ""}">
     <header class="ws-pane-h"><h3 class="ds-label">${esc(label)}</h3>
       ${o.note ? `<span class="ws-pane-n">${esc(o.note)}</span>` : ""}</header>
     <div class="ws-pane-b">${body}</div>
-    ${o.cta ? `<button type="button" class="ws-cta" onclick="${o.cta.onclick}">${esc(o.cta.label)}</button>` : ""}</section>`;
+    ${o.cta ? `<button type="button" class="ws-cta ${o.cta.quiet ? "quiet" : ""}" onclick="${o.cta.onclick}">${esc(o.cta.label)}</button>` : ""}</section>`;
+}
+
+// De holografische athlete-presence: een abstracte hardloper opgebouwd uit
+// lichtstroken (capsule-strokes langs een skelet) met een gloed-onderlaag en
+// motion-trails. Bewust NIET-herleidbaar (geen gezicht, geen echte persoon) —
+// het draagt de menselijke massa die de referentie met een portret oplost.
+function wsFigure() {
+  const limbs = `
+    <circle cx="197" cy="61" r="21" class="ws-fig-head"/>
+    <path class="ws-fig-l w30" d="M190 86 C178 124 163 166 150 206"/>
+    <path class="ws-fig-l w15" d="M180 104 C196 118 208 128 220 136 C236 134 248 128 258 118"/>
+    <path class="ws-fig-l w15" d="M182 102 C160 120 146 134 138 146 C126 158 118 172 114 186"/>
+    <path class="ws-fig-l w19" d="M152 204 C174 220 192 234 204 250 C210 272 204 296 196 316"/>
+    <path class="ws-fig-l w14" d="M196 316 L216 326"/>
+    <path class="ws-fig-l w19" d="M148 206 C132 226 116 242 104 258 C90 272 76 284 64 296"/>
+    <path class="ws-fig-l w14" d="M64 296 L46 312"/>`;
+  return `<svg class="ws-fig" viewBox="0 0 300 400" aria-hidden="true">
+    <defs><linearGradient id="wsFigG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color:#D8FBFF"/>
+      <stop offset=".42" style="stop-color:var(--ds-accent)"/>
+      <stop offset="1" style="stop-color:var(--tone)" stop-opacity=".55"/></linearGradient></defs>
+    <g class="ws-fig-trails">
+      <path d="M96 120 C70 160 66 210 84 252"/>
+      <path d="M116 106 C92 148 86 200 100 246"/>
+      <path d="M258 150 C270 190 268 232 250 268"/>
+    </g>
+    <g class="ws-fig-glow">${limbs}</g>
+    <g class="ws-fig-main">${limbs}</g></svg>`;
 }
 
 // Grote datalijn met glow-punten — ALLEEN echte reeksen (de runs uit de captured
@@ -4975,9 +5033,18 @@ function wsChart(vals, o) {
   const v = (vals || []).map(Number).filter(n => isFinite(n));
   if (v.length < 2) return "";
   const w = o.w || 260, h = o.h || 72, pad = 8;
-  const min = Math.min(...v), max = Math.max(...v), span = (max - min) || 1;
-  const pts = v.map((n, i) => [pad + (i / (v.length - 1)) * (w - pad * 2),
-    h - pad - ((n - min) / span) * (h - pad * 3)]);
+  // `min0` + `ref`: cumulatieve reeksen tekenen vanaf 0 en mogen een echte
+  // referentiewaarde (bv. km_basis_week) als gestippelde lijn dragen — zo leest
+  // de grafiek in dezelfde richting als het signaal (semantiek, geen decoratie).
+  const ref = (o.ref != null && isFinite(Number(o.ref))) ? Number(o.ref) : null;
+  const min = o.min0 ? 0 : Math.min(...v);
+  const max = Math.max(...v, ref != null ? ref : -Infinity);
+  const span = (max - min) || 1;
+  const yOf = n => h - pad - ((n - min) / span) * (h - pad * 3);
+  const refLine = ref != null
+    ? `<line class="ws-chart-ref" x1="${pad}" y1="${yOf(ref).toFixed(1)}" x2="${w - pad}" y2="${yOf(ref).toFixed(1)}"/>`
+    : "";
+  const pts = v.map((n, i) => [pad + (i / (v.length - 1)) * (w - pad * 2), yOf(n)]);
   let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
   for (let i = 0; i < pts.length - 1; i++) {
     const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
@@ -4993,7 +5060,7 @@ function wsChart(vals, o) {
       <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
     <path fill="url(#${uid})" stroke="none" d="${d} L${(w - pad).toFixed(1)} ${h - 2} L${pad} ${h - 2} Z"/>`;
   return `<svg class="ws-chart ${o.cls || ""}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
-    ${area}
+    ${area}${refLine}
     <path class="ws-chart-line" d="${d}"/>
     ${pts.map(p => `<circle class="ws-chart-dot" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.6"/>`).join("")}
     <circle class="ws-chart-tip" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4"/></svg>`;
@@ -5040,7 +5107,8 @@ function wsAnchor(naam, tone) {
         <g class="ws-spin s2"><circle class="ws-ring-arc a2" cx="240" cy="240" r="206"/></g>
         <g class="ws-spin s3"><circle class="ws-ring-arc a3" cx="240" cy="240" r="150"/></g>
       </svg>
-      <span class="ws-orb-in">${esc(initialen(naam))}</span>
+      ${wsFigure()}
+      <span class="ws-idchip">${esc(initialen(naam))}</span>
     </div></div>`;
 }
 
@@ -5089,8 +5157,17 @@ function wsRender(wrap, vm) {
       sub: "geen open actiepunt" };
   }
   const owns = s => focal.owner === s;
-  if (owns("bel-pct") || owns("bel-km"))
-    focal.chart = wsChart(runsKm, { w: 340, h: 84, cls: "ws-signal-chart", area: false });
+  // Schijfgrafiek = CUMULATIEF weekvolume vs de referentielijn (beide reeksen
+  // bestaan al in de payload). Zo leest de curve in dezelfde richting als het
+  // signaal: de lijn klimt vóórbij de gestippelde referentie bij +X%.
+  if (owns("bel-pct") || owns("bel-km")) {
+    const chrono = (bel.runs || []).slice()
+      .sort((a, b) => String(a.datum || "").localeCompare(String(b.datum || "")));
+    let acc = 0;
+    const cum = chrono.map(r => (acc += Number(r.km) || 0));
+    focal.chart = wsChart(cum, { w: 340, h: 88, cls: "ws-signal-chart", area: false,
+      min0: true, ref: bel.km_basis_week });
+  }
 
   const chip = attn.length
     ? dsChip(tone === "is-critical" ? "actie" : "aandacht", tone)
@@ -5109,11 +5186,17 @@ function wsRender(wrap, vm) {
       <div class="ws-name-meta">${chip}${fresh}</div></div>
     <div class="ws-head-nav">${athleteNav("workspace", key)}</div></header>`;
 
-  // ── LINKS: aandacht, belasting-overzicht, recente trainingen ──
+  // ── LINKS: aandacht + één samengevoegd belasting-oppervlak (minder dozen) ──
+  // Waarde-consistentie: de belasting-regel wordt hier uit DEZELFDE canonieke
+  // velden opgebouwd als de schijf (load_metric: pct/km_recent/km_basis_week),
+  // niet uit de voor-afgeronde bron-zin — zo staat nooit +91% naast +92%.
+  const belZin = (bel.pct != null && bel.km_recent != null && bel.km_basis_week != null)
+    ? `Volume ${bel.pct > 0 ? "+" : ""}${bel.pct}% deze week (${bel.km_recent} km vs gem. ${bel.km_basis_week} km/wk)`
+    : "";
   let attnBody = attn.length
     ? attn.map(a => wsLine({
         tone: dsTone(a.tier), icon: SOORT_IC[a.soort] || "alert",
-        title: a.kort || a.soort || "",
+        title: (a.soort === "belasting" && belZin) ? belZin : (a.kort || a.soort || ""),
         sub: a.soort === "belasting" && bel.datum ? `stand ${bel.datum}` : "",
         value: (a.pct != null && !(owns("bel-pct") && a.soort === "belasting")) ? `+${a.pct}%` : "",
       })).join("")
@@ -5123,13 +5206,21 @@ function wsRender(wrap, vm) {
     <div class="ds-fold"><div>${dsStream(restSig.map(x => ({ text: x, tone: belTone })))}</div></div>`;
 
   const nRuns = (bel.runs || []).length;
+  const runsNieuwEerst = (bel.runs || []).slice(-6).reverse();
+  const maxKm = Math.max(...runsNieuwEerst.map(r => Number(r.km) || 0), 1);
+  const runsLijst = runsNieuwEerst.length
+    ? `<ul class="ws-runs">` + runsNieuwEerst.map(r => {
+        const b = Math.max(6, Math.round((Number(r.km) || 0) / maxKm * 100));
+        return `<li><span class="ws-run-d">${esc(String(r.datum || "").slice(5))}</span>
+          <span class="ws-run-bar"><i style="width:${b}%"></i></span>
+          <span class="ws-run-km">${esc(r.km)} km</span></li>`;
+      }).join("") + `</ul>`
+    : "";
   let loadBody;
   if (bel.km_recent != null) {
-    // De schijf bezit het dominante percentage; dit pane draagt het volume + de
-    // trendgrafiek — ondersteunend, nooit hetzelfde getal nog eens dominant.
     loadBody = `<div class="ws-load">
       <div class="ws-load-n">${esc(bel.km_recent)}<i>km deze week</i></div>
-      ${wsChart(runsKm, { w: 260, h: 74 })}
+      ${runsLijst}
       <div class="ws-load-m">
         ${bel.km_basis_week != null ? `<span>referentie ${esc(bel.km_basis_week)} km/wk</span>` : ""}
         ${nRuns ? `<span>laatste ${esc(String((bel.runs[nRuns - 1] || {}).datum || ""))}</span>` : ""}
@@ -5138,21 +5229,10 @@ function wsRender(wrap, vm) {
     loadBody = `<p class="ws-calm">Geen belastingstand bekend.</p>`;
   }
 
-  const runsNieuwEerst = (bel.runs || []).slice(-6).reverse();
-  const maxKm = Math.max(...runsNieuwEerst.map(r => Number(r.km) || 0), 1);
-  const runsBody = runsNieuwEerst.length
-    ? `<ul class="ws-runs">` + runsNieuwEerst.map(r => {
-        const b = Math.max(6, Math.round((Number(r.km) || 0) / maxKm * 100));
-        return `<li><span class="ws-run-d">${esc(String(r.datum || "").slice(5))}</span>
-          <span class="ws-run-bar"><i style="width:${b}%"></i></span>
-          <span class="ws-run-km">${esc(r.km)} km</span></li>`;
-      }).join("") + `</ul>`
-    : "";
-
   h += `<div class="ws-stage"><div class="ws-col ws-col-l">
     ${wsField("Aandacht nu", attnBody, { tone: attn.length ? tone : "" })}
-    ${wsField("Belasting overzicht", loadBody, { tone: bel.actief ? belTone : "" })}
-    ${wsField("Recente trainingen", runsBody, { note: nRuns ? `${nRuns} runs` : "" })}
+    ${wsField("Belasting", loadBody, { tone: bel.actief ? belTone : "",
+      note: nRuns ? `${nRuns} runs` : "" })}
   </div>`;
 
   // ── MIDDEN: het focal-systeem met de signaal-schijf die de ringen overlapt ──
@@ -5181,14 +5261,19 @@ function wsRender(wrap, vm) {
     ${srcRow("Overzicht", gfr.home, sv.home)}
     ${srcRow("Feedback", gfr.feedback, sv.feedback)}</ul>`;
 
+  // Rechts: één glas-pane (doel) + een randloze embedded cluster — de referentie
+  // mengt zwevend glas met content dírect op het canvas; niet vier gelijke dozen.
   h += `<div class="ws-col ws-col-r">
     ${wsField("Doel & planning", planHead + `<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>`,
       { tone: sc ? dsTone(sc.tier) : "",
         cta: { label: "Schema openen", onclick: `openAthleteModule('schema','${esc(key)}')` } })}
-    ${wsField("Feedback", fbBody, { tone: fbTone })}
+    <div class="ws-side">
+    ${wsField("Feedback", fbBody, { tone: fbTone, embed: true })}
     ${wsField("Klachten & context", `<div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>`,
-      { cta: { label: "Cockpit openen", onclick: `openAthleteModule('dossier','${esc(key)}')` } })}
-    ${wsField("Bronnen", srcBody, { cls: "ws-pane-src" })}
+      { embed: true,
+        cta: { quiet: true, label: "Cockpit openen", onclick: `openAthleteModule('dossier','${esc(key)}')` } })}
+    ${wsField("Bronnen", srcBody, { embed: true, cls: "ws-zone-src" })}
+    </div>
   </div></div>`;
 
   // ── ONDER: geïntegreerde actiebalk — het dominante actiepunt + de acties ──

@@ -608,15 +608,31 @@
 .ws-spin.s2{animation:ws-rot 56s linear infinite reverse}
 .ws-spin.s3{animation:ws-rot 68s linear infinite}
 @keyframes ws-rot{to{transform:rotate(360deg)}}
-.ws-orb-in{position:relative;width:198px;height:198px;border-radius:50%;display:grid;place-items:center;
-  font-size:56px;font-weight:750;letter-spacing:.04em;color:var(--tone);
-  background:
-    radial-gradient(circle at 50% 20%,rgba(255,255,255,.16),transparent 46%),
-    radial-gradient(circle at 30% 70%,rgba(94,230,235,.08),transparent 55%),
-    radial-gradient(circle at 50% 44%,var(--tone-bg) 0%,var(--tone-bg) 28%,rgba(13,30,58,.94) 78%);
-  border:1.5px solid var(--tone-bd);text-shadow:0 0 34px var(--tone),0 0 14px var(--tone-bg);
-  box-shadow:inset 0 2px 1px rgba(255,255,255,.14),inset 0 -18px 34px -18px var(--tone-bg),
-             0 0 0 7px rgba(255,255,255,.025),0 26px 60px -20px rgba(0,0,0,.6)}
+/* De holografische athlete-presence: lichtstroken-figuur met gloed-onderlaag.
+   Menselijke massa zonder foto en zonder herleidbaarheid — de identiteit zelf
+   zit in een compact medaillon dat als satelliet op het ringveld ligt.        */
+.ws-fig{position:absolute;width:66%;left:16%;top:7%;height:auto;z-index:1;
+  filter:drop-shadow(0 22px 44px rgba(0,0,0,.5))}
+.ws-fig-head{fill:url(#wsFigG)}
+.ws-fig-l{fill:none;stroke:url(#wsFigG);stroke-linecap:round;stroke-linejoin:round}
+.ws-fig-l.w30{stroke-width:31}
+.ws-fig-l.w19{stroke-width:19}
+.ws-fig-l.w15{stroke-width:15}
+.ws-fig-l.w14{stroke-width:13}
+.ws-fig-glow{filter:blur(12px);opacity:.6}
+.ws-fig-main{opacity:.96}
+.ws-fig-trails path{fill:none;stroke:var(--ds-accent);stroke-width:1.6;stroke-linecap:round;
+  opacity:.22;stroke-dasharray:2 9}
+.ws-fig-trails path:nth-child(2){opacity:.13;stroke:var(--tone)}
+.ws-fig-trails path:nth-child(3){opacity:.16}
+.ws-idchip{position:absolute;right:11%;top:13%;z-index:2;width:52px;height:52px;
+  border-radius:50%;display:grid;place-items:center;
+  font-size:16px;font-weight:750;letter-spacing:.04em;color:var(--tone);
+  background:radial-gradient(circle at 50% 24%,rgba(255,255,255,.14),transparent 50%),
+             radial-gradient(circle at 50% 46%,var(--tone-bg) 0%,var(--tone-bg) 30%,rgba(13,30,58,.95) 80%);
+  border:1.5px solid var(--tone-bd);text-shadow:0 0 14px var(--tone-bg);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.12),0 0 26px -6px var(--tone-bg),
+             0 10px 26px -12px rgba(0,0,0,.6)}
 
 /* ── De signaal-schijf: tweede massa, overlapt het ringveld ─────────────────── */
 .ws-signal{position:relative;width:min(344px,92%);aspect-ratio:1;margin:-152px auto 0;z-index:2;
@@ -649,6 +665,18 @@
   filter:drop-shadow(0 0 6px var(--tone-bg))}
 .ws-chart-dot{fill:currentColor;opacity:.8}
 .ws-chart-tip{fill:currentColor;filter:drop-shadow(0 0 6px currentColor)}
+/* Referentielijn (bv. km_basis_week): echte waarde, gestippeld en rustig. */
+.ws-chart-ref{stroke:var(--ds-accent);stroke-width:1.2;stroke-dasharray:3 6;opacity:.55}
+
+/* ── Embedded zone (randloos): content dírect op het canvas ────────────────── */
+.ws-zone{position:relative;padding-left:var(--ds-4);min-width:0}
+.ws-zone::before{content:"";position:absolute;left:0;top:4px;bottom:4px;width:1px;
+  background:linear-gradient(180deg,var(--tone,var(--ds-hairline)),transparent 88%);opacity:.5}
+.ws-zone .ws-pane-h{margin-bottom:var(--ds-2)}
+.ws-side{display:flex;flex-direction:column;gap:var(--ds-5);padding:var(--ds-2) var(--ds-2) 0}
+.ws-cta.quiet{width:auto;align-self:flex-start;background:none;border-color:transparent;
+  color:var(--ds-accent);padding:4px 0;margin-top:var(--ds-2)}
+.ws-cta.quiet:hover{background:none;text-decoration:underline;border-color:transparent}
 
 /* ── Belasting-overzicht in het pane ───────────────────────────────────────── */
 .ws-load{display:flex;flex-direction:column;gap:var(--ds-3)}
@@ -733,10 +761,12 @@
 }
 @media (max-width:760px){
   .ws-anchor{width:min(320px,94%)}
-  .ws-orb-in{width:128px;height:128px;font-size:38px}
+  .ws-idchip{width:42px;height:42px;font-size:13px}
   .ws-signal{width:min(280px,88%);margin-top:-120px}
   .ws-signal-v{font-size:46px}
-  .ws-signal-in{transform:translateY(-8px)}
+  .ws-signal-in{transform:translateY(-16px)}
+  .ws-signal-s{max-width:190px;font-size:12px}
+  .ws-signal-chart{bottom:9%}
   .ws-adv{flex-wrap:wrap}
   .ws-adv-b{flex:1 1 60%}
   .ws-adv-a{flex:1 1 100%;justify-content:flex-start}
@@ -757,6 +787,53 @@
   .ws-head,.ws-anchor,.ws-signal,.ws-pane,.ws-adv,.ws-bg{animation:none}
   .ws-spin.s1,.ws-spin.s2,.ws-spin.s3{animation:none}
   .ws-switch{transition:none}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SHELL — de globale navigatie bewoont dezelfde wereld als de flagship-views:
+   materiaal, diepte en licht i.p.v. een platte SaaS-menulijst. Puur CSS op de
+   bestaande markup; mobiele bottomnav en routes blijven onaangeraakt.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (min-width:900px){
+  .sidebar{position:relative;padding:22px 16px 16px;
+    background:
+      radial-gradient(130% 46% at 0% 0%,rgba(94,230,235,.055),transparent 62%),
+      radial-gradient(90% 30% at 50% 100%,rgba(46,102,177,.10),transparent 70%),
+      linear-gradient(196deg,#0C2347 0%,#091830 55%,#071120 100%);
+    border-right:1px solid rgba(122,168,255,.10);
+    box-shadow:inset -26px 0 44px -34px rgba(0,0,0,.65)}
+  .sidebar::after{content:"";position:absolute;top:0;bottom:0;right:-1px;width:1px;
+    pointer-events:none;
+    background:linear-gradient(180deg,rgba(94,230,235,.30),rgba(122,168,255,.09) 32%,transparent 86%)}
+  .sb-brand{padding:4px 10px 24px}
+  .sb-logo-img{filter:drop-shadow(0 0 16px rgba(94,230,235,.22))}
+  .sb-label{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ds-text-3);opacity:.7;margin:20px 14px 7px}
+  .sidebar .nav-item{padding:10px 14px;border-radius:12px;font-size:14px;font-weight:600;
+    color:#96ACD0;border:1px solid transparent;position:relative;
+    transition:color var(--ds-fast) var(--ds-ease),background var(--ds-fast) var(--ds-ease),
+      border-color var(--ds-fast) var(--ds-ease)}
+  .sidebar .nav-item .ic{color:#5F7AA6;transition:color var(--ds-fast) var(--ds-ease)}
+  .sidebar .nav-item:hover{background:rgba(94,230,235,.05);color:var(--ds-text)}
+  .sidebar .nav-item:hover .ic{color:var(--ds-accent)}
+  .sidebar .nav-item.on{color:var(--ds-text);
+    background:linear-gradient(115deg,rgba(94,230,235,.13),rgba(94,230,235,.03) 70%);
+    border-color:rgba(94,230,235,.22);
+    box-shadow:0 0 26px -12px rgba(94,230,235,.55),inset 0 1px 0 rgba(255,255,255,.05)}
+  .sidebar .nav-item.on .ic{color:var(--ds-accent);
+    filter:drop-shadow(0 0 6px rgba(94,230,235,.55))}
+  .sidebar .nav-item.on::before{content:"";position:absolute;left:-16px;top:9px;bottom:9px;
+    width:2px;border-radius:2px;background:var(--ds-accent);
+    box-shadow:0 0 10px var(--ds-accent)}
+  .sb-foot{opacity:.5;font-size:10.5px;letter-spacing:.02em}
+}
+/* Top-utilities in dezelfde materiaaltaal (alle views). */
+.iconbtn{background:rgba(13,32,64,.55);border-color:rgba(122,168,255,.16);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  transition:border-color var(--ds-fast) var(--ds-ease),box-shadow var(--ds-fast) var(--ds-ease)}
+.iconbtn:hover{border-color:var(--ds-accent);box-shadow:0 0 18px -8px var(--ds-accent)}
+@media (prefers-reduced-motion:reduce){
+  .sidebar .nav-item,.iconbtn{transition:none}
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

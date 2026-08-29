@@ -155,6 +155,41 @@ Geen library, geen canvas/WebGL, geen extra requests; assets ±12KB groter.
    "+91%" in de zin vs +92% canoniek); en het bewijspaneel toont soms rauwe
    registry-sleutels als label (bv. `DISTANCE DEVIATION.<uuid>`).
 
+## Final pass (ronde 2) — shell, presence, semantiek, consistentie
+
+Op de externe feedbackronde ("nog te SaaS, te veel hokjes, initialen te arm,
++91 naast +92") is een tweede decisive pass gebouwd:
+
+1. **Shell** — de linker navigatie bewoont nu dezelfde wereld: gradient-materiaal
+   met radial licht, gloeiende actieve pill met accent-balk, tracked
+   sectielabels, brand-glow, glas-`iconbtn` utilities. Puur CSS op bestaande
+   markup; bottomnav/routes byte-gelijk.
+2. **Holografische athlete-presence** — `wsFigure()`: een abstracte hardloper
+   uit lichtstroken (capsule-strokes langs een skelet, gloed-onderlaag,
+   motion-trails, verloop cyaan→statuskleur) stáát op de signaal-schijf; de
+   identiteit zit in een compact `ws-idchip`-medaillon als satelliet op het
+   ringveld. Niet-herleidbaar, geen foto-afhankelijkheid, veel meer presence
+   dan initialen.
+3. **Minder dozen** — links twee glas-panes (Aandacht + één samengevoegd
+   Belasting-oppervlak met runs-balkjes); rechts één glas-pane (Doel) + een
+   randloze embedded cluster (Feedback/Klachten/Bronnen) met accentlijnen:
+   7 kaarten → 3 glas + zones, mix van glas en canvas zoals de referentie.
+4. **Grafieksemantiek** — de schijfgrafiek is nu het CUMULATIEVE weekvolume
+   (som van de echte runs) met de échte referentie (km_basis_week) als
+   gestippelde lijn: de curve klimt vóórbij de referentie bij +X% en leest in
+   dezelfde richting als het signaal.
+5. **Waarde-consistentie** — de belasting-zin wordt overal opgebouwd uit
+   dezelfde canonieke `load_metric`-velden (Workspace-aandachtregel, Home-
+   briefing) of pct-genormaliseerd uit `delta_pct` (Dossier-spine): nooit meer
+   +91% naast +92% op één scherm. Home-briefing-reden gebruikt de korte
+   semantische vorm zodat dezelfde zin niet 2× gestapeld staat. Dossier-
+   bewijslabels worden opgeschoond van registry-uuid-suffixen (weergave-only).
+
+Gemeten na de pass: FCP 772–804ms (zelfde band als baseline), 0 overflow op
+1440/390, geen nieuwe console-errors, 3 orbit-spins als enige doorlopende
+animatie (compositor-transform). Tests: 1026 groen, geen testwijzigingen in
+deze ronde.
+
 ## Tool-/modeladvies (§5)
 
 Geen zwaardere tooling nodig gebleken: CSS + inline SVG haalden het ambitieniveau;
