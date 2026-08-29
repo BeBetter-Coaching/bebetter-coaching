@@ -4738,12 +4738,13 @@ function dcRender(wrap, vm) {
   const attnTone = attn.length ? dsTone("aandacht") : "is-calm";
 
   let h = `<div class="dc-memory ${attn.length ? attnTone : relTone}">`;
-  h += `<div class="dc-amb" aria-hidden="true"></div>`;
+  // Zelfde achtergrondwereld als Workspace: ambient haze + orbits + vignette.
+  h += `<div class="dc-bg" aria-hidden="true"><div class="dc-amb"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
   h += `<header class="dc-head2">
-    <div class="dc-id2"><span class="dc-orb">${esc(initialen(vm.naam || vm.key))}</span>
+    <div class="dc-id2"><span class="dc-orbwrap"><i class="dc-orb-halo"></i><span class="dc-orb">${esc(initialen(vm.naam || vm.key))}</span></span>
       <div><h2 class="dc-name">${esc(vm.naam || vm.key)}</h2>
-        <p class="dc-sub">${vm.groep ? esc(vm.groep) + '<span class="sep">·</span>' : ""}${dsChip(_DC_OVERALL[st.overall] || st.overall || "—", relTone)}${dsFresh(rel.level || "unknown", relTxt)}</p>
-        <div class="dc-nav2">${athleteNav("dossier", vm.key)}</div></div></div>
+        <p class="dc-sub">${vm.groep ? esc(vm.groep) + '<span class="sep">·</span>' : ""}${dsChip(_DC_OVERALL[st.overall] || st.overall || "—", relTone)}${dsFresh(rel.level || "unknown", relTxt)}</p></div></div>
+    <div class="dc-nav2">${athleteNav("dossier", vm.key)}</div>
   </header>`;
 
   // Partial-truth diagnostic: één build-stage faalde → alleen dát stuk mist, de rest klopt.
@@ -4940,26 +4941,76 @@ async function wsShow(ident) {
   wsLoadDeep(wrap, ident);                                  // rijke context lazy + parallel
 }
 
-// ── DE ATHLETE CANVAS ────────────────────────────────────────────────────────
-// Workspace is een SCÈNE, geen grid: een centrale athlete-anchor met het dominante
-// signaal eronder, en contextzones die ruimtelijk om die anchor heen liggen. De
-// zones zijn "embedded" (niveau 3): geen kaartranden, gegroepeerd door spacing,
-// typografie en een tone-accentlijn. Alleen de anchor en het signaal krijgen een
-// eigen oppervlak. Zelfde data, zelfde acties, zelfde routes.
+// ── DE ATHLETE CANVAS (north-star pass) ─────────────────────────────────────
+// Workspace is een performance command scene: een gelaagd focal-systeem in het
+// midden (ringen + medaillon + signaal-schijf die de ringen overlapt), context
+// als translucent glas-panes links en rechts, een meedoende achtergrond
+// (ambient haze + orbitale lijnen + vignette) en onderaan een geïntegreerde
+// actiebalk. Zelfde data, zelfde acties, zelfde routes — alleen de presentatie.
 
-// Randloze skeleton: de embedded zones hebben geen kaart, dus ook geen kaart-skeleton.
+// Randloze skeleton voor de lazy deep-slots.
 function wsSkel(n) {
   return Array.from({ length: n || 2 },
     (_, i) => `<div class="ds-skel ${i % 2 ? "w60" : "w80"}"></div>`).join("");
 }
 
-// Een contextveld: label + inhoud, direct op het canvas. Geen doos.
+// Contextpane: translucent glasoppervlak met label, inhoud en optionele
+// contextuele CTA (bestaande route). De toon kleurt rand + gloed.
 function wsField(label, body, o) {
   o = o || {};
   if (!body) return "";
-  return `<section class="ws-field ${o.tone || ""} ${o.cls || ""}">
-    <h3 class="ds-label">${esc(label)}</h3>
-    <div class="ws-field-b">${body}</div></section>`;
+  return `<section class="ws-pane ${o.tone || ""} ${o.cls || ""}">
+    <header class="ws-pane-h"><h3 class="ds-label">${esc(label)}</h3>
+      ${o.note ? `<span class="ws-pane-n">${esc(o.note)}</span>` : ""}</header>
+    <div class="ws-pane-b">${body}</div>
+    ${o.cta ? `<button type="button" class="ws-cta" onclick="${o.cta.onclick}">${esc(o.cta.label)}</button>` : ""}</section>`;
+}
+
+// Grote datalijn met glow-punten — ALLEEN echte reeksen (de runs uit de captured
+// stand). Vloeiende curve (Catmull-Rom→bezier), area-verloop, punt per meting.
+// Geen library, geen canvas: één inline SVG-string. Leeg bij < 2 punten.
+let _wsChartN = 0;
+function wsChart(vals, o) {
+  o = o || {};
+  const v = (vals || []).map(Number).filter(n => isFinite(n));
+  if (v.length < 2) return "";
+  const w = o.w || 260, h = o.h || 72, pad = 8;
+  const min = Math.min(...v), max = Math.max(...v), span = (max - min) || 1;
+  const pts = v.map((n, i) => [pad + (i / (v.length - 1)) * (w - pad * 2),
+    h - pad - ((n - min) / span) * (h - pad * 3)]);
+  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)} ${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)},` +
+         `${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)} ${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)},` +
+         `${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  const uid = "wsg" + (++_wsChartN);
+  const last = pts[pts.length - 1];
+  const area = o.area === false ? "" :
+    `<defs><linearGradient id="${uid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="currentColor" stop-opacity=".26"/>
+      <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+    <path fill="url(#${uid})" stroke="none" d="${d} L${(w - pad).toFixed(1)} ${h - 2} L${pad} ${h - 2} Z"/>`;
+  return `<svg class="ws-chart ${o.cls || ""}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    ${area}
+    <path class="ws-chart-line" d="${d}"/>
+    ${pts.map(p => `<circle class="ws-chart-dot" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.6"/>`).join("")}
+    <circle class="ws-chart-tip" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4"/></svg>`;
+}
+
+// Achtergrondlaag: canvas-brede orbitale lijnen + een vaste constellation.
+// Puur decoratief (geen data, geen suggestie van een persoon), statisch.
+function wsOrbits() {
+  const dots = [[120, 140, 1.4], [340, 90, 1], [520, 210, 1.2], [760, 70, 1.6],
+    [980, 150, 1], [1180, 110, 1.3], [1290, 300, 1], [220, 420, 1], [90, 600, 1.2],
+    [1330, 560, 1.4], [1150, 680, 1], [420, 740, 1.1], [680, 800, 1.3],
+    [940, 760, 1], [260, 640, .9], [1260, 430, .9]];
+  return `<svg class="ws-orbits" viewBox="0 0 1400 860" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <ellipse cx="700" cy="400" rx="660" ry="330"/>
+    <ellipse cx="700" cy="430" rx="520" ry="250" transform="rotate(-6 700 430)"/>
+    <ellipse cx="700" cy="380" rx="820" ry="410" transform="rotate(4 700 380)"/>
+    ${dots.map(d => `<circle class="ws-star" cx="${d[0]}" cy="${d[1]}" r="${d[2]}"/>`).join("")}</svg>`;
 }
 
 // Eén regel context: tone-streep + tekst + optionele waarde. Vervangt de kaart.
@@ -4971,32 +5022,40 @@ function wsLine(l) {
     ${l.value ? `<span class="ws-line-v">${esc(l.value)}</span>` : ""}</div>`;
 }
 
-// De athlete-anchor: concentrische statusringen + medaillon. Geen verzonnen foto;
-// de ringen zijn echte status (toon volgt het zwaarste open signaal).
-function wsAnchor(naam, tone, chips, sub, nav) {
+// Het focal-systeem: gelaagd ringveld + medaillon-kern. Geen verzonnen foto —
+// de ontbrekende portretmassa wordt gedragen door schaal, licht en gelaagdheid.
+// De bogen zijn echte status (toon volgt het zwaarste open signaal).
+function wsAnchor(naam, tone) {
   return `<div class="ws-anchor ${tone}">
+    <div class="ws-halo" aria-hidden="true"></div>
     <div class="ws-orb">
-      <svg class="ws-orb-rings" viewBox="0 0 240 240" aria-hidden="true">
-        <circle class="ws-ring r1" cx="120" cy="120" r="112"/>
-        <circle class="ws-ring r2" cx="120" cy="120" r="94"/>
-        <circle class="ws-ring r3" cx="120" cy="120" r="74"/>
-        <circle class="ws-ring-arc" cx="120" cy="120" r="112"/>
+      <svg class="ws-orb-rings" viewBox="0 0 480 480" aria-hidden="true">
+        <circle class="ws-ring r0" cx="240" cy="240" r="232"/>
+        <circle class="ws-ring rt" cx="240" cy="240" r="206"/>
+        <circle class="ws-ring r1" cx="240" cy="240" r="178"/>
+        <circle class="ws-ring r2" cx="240" cy="240" r="150"/>
+        <circle class="ws-ring rm" cx="240" cy="240" r="112"/>
+        <g class="ws-spin s1"><circle class="ws-ring-arc a1" cx="240" cy="240" r="178"/>
+          <circle class="ws-sat" cx="240" cy="62" r="4.5"/></g>
+        <g class="ws-spin s2"><circle class="ws-ring-arc a2" cx="240" cy="240" r="206"/></g>
+        <g class="ws-spin s3"><circle class="ws-ring-arc a3" cx="240" cy="240" r="150"/></g>
       </svg>
       <span class="ws-orb-in">${esc(initialen(naam))}</span>
-    </div>
-    <h2 class="ws-name">${esc(naam)}</h2>
-    <div class="ws-name-meta">${(chips || []).join("")}${(sub || []).filter(Boolean).join('<span class="sep">·</span>')}</div>
-    ${nav || ""}</div>`;
+    </div></div>`;
 }
 
-// Het dominante signaal: één plaat onder de anchor, midden in de scène.
+// Het dominante signaal: een cirkelvormige glasschijf die het ringveld overlapt —
+// de tweede massa van de scène. De golfgrafiek (echte runs) loopt er doorheen.
 function wsSignal(f) {
   if (!f) return "";
+  const small = String(f.value).length > 5 ? " txt" : "";
   return `<div class="ws-signal ${f.tone || "is-calm"}">
-    <span class="ws-signal-l">${esc(f.label)}</span>
-    <span class="ws-signal-v">${esc(f.value)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
-    ${f.sub ? `<span class="ws-signal-s">${esc(f.sub)}</span>` : ""}
-    ${f.spark || ""}</div>`;
+    <div class="ws-signal-in">
+      <span class="ws-signal-l">${esc(f.label)}</span>
+      ${f.word ? `<span class="ws-signal-w">${esc(f.word)}</span>` : ""}
+      <span class="ws-signal-v${small}">${esc(f.value)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
+      ${f.sub ? `<span class="ws-signal-s">${esc(f.sub)}</span>` : ""}
+    </div>${f.chart || ""}</div>`;
 }
 
 function wsRender(wrap, vm) {
@@ -5007,21 +5066,21 @@ function wsRender(wrap, vm) {
   const gen = vm.generation || {}, gfr = gen.freshness || {};
   const tone = dsWorstTone(attn.map(a => dsTone(a.tier)));
   const belTone = dsTone(bel.ernst || "calm");
+  const runsKm = (bel.runs || []).map(r => r.km);
 
   // Focal-ladder MET eigenaar: wie het dominante cijfer bezit, mag het als enige
   // groot tonen. Downstream toont de kwalificatie i.p.v. hetzelfde getal.
   let focal;
   if (bel.actief && bel.pct != null) {
     focal = { owner: "bel-pct", tone: belTone, label: "Belastingsignaal",
+      word: bel.ernst === "hoog" ? "Verhoogd" : "Let op",
       value: (bel.pct > 0 ? "+" : "") + bel.pct, unit: "%",
       sub: bel.km_recent != null
-        ? `${bel.km_recent} km deze week · referentie ${bel.km_basis_week} km/wk`
-        : (bel.reden || ""),
-      spark: dsSpark((bel.runs || []).map(r => r.km)) };
+        ? `deze week ${bel.km_recent} km · referentie ${bel.km_basis_week} km/wk`
+        : (bel.reden || "") };
   } else if (bel.km_recent != null) {
     focal = { owner: "bel-km", tone: "is-calm", label: "Weekvolume", value: bel.km_recent, unit: "km",
-      sub: bel.km_basis_week != null ? `referentie ${bel.km_basis_week} km/wk · binnen de marge` : "binnen de marge",
-      spark: dsSpark((bel.runs || []).map(r => r.km)) };
+      sub: bel.km_basis_week != null ? `referentie ${bel.km_basis_week} km/wk · binnen de marge` : "binnen de marge" };
   } else if (attn.length) {
     focal = { owner: "attn", tone, label: "Aandacht", value: attn.length,
       unit: attn.length === 1 ? "punt" : "punten", sub: attn[0].kort || "" };
@@ -5030,16 +5089,27 @@ function wsRender(wrap, vm) {
       sub: "geen open actiepunt" };
   }
   const owns = s => focal.owner === s;
+  if (owns("bel-pct") || owns("bel-km"))
+    focal.chart = wsChart(runsKm, { w: 340, h: 84, cls: "ws-signal-chart", area: false });
 
-  const sub = [];
-  if (bel.datum) sub.push(dsFresh(gfr.belasting || "unknown",
-    gfr.belasting === "fresh" ? "belasting vers" : `stand ${bel.datum}`));
+  const chip = attn.length
+    ? dsChip(tone === "is-critical" ? "actie" : "aandacht", tone)
+    : dsChip("rustig", "is-calm");
+  const fresh = bel.datum ? dsFresh(gfr.belasting || "unknown",
+    gfr.belasting === "fresh" ? "belasting vers" : `stand ${bel.datum}`) : "";
 
   let h = genBanner(vm.generation);
   h += `<div class="ws-scene ${tone}">`;
-  h += `<div class="ws-amb" aria-hidden="true"></div>`;      // ambient veld, volgt de status
+  // Achtergrond doet mee: ambient haze (volgt status) + orbitale lijnen + vignette.
+  h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
 
-  // ── LINKS: aandacht (boven) en belasting/trend (onder) ──
+  // ── KOP: identiteit links, athlete-nav rechts (het centrum blijft grafisch) ──
+  h += `<header class="ws-head">
+    <div class="ws-head-t"><h2 class="ws-name">${esc(naam)}</h2>
+      <div class="ws-name-meta">${chip}${fresh}</div></div>
+    <div class="ws-head-nav">${athleteNav("workspace", key)}</div></header>`;
+
+  // ── LINKS: aandacht, belasting-overzicht, recente trainingen ──
   let attnBody = attn.length
     ? attn.map(a => wsLine({
         tone: dsTone(a.tier), icon: SOORT_IC[a.soort] || "alert",
@@ -5052,57 +5122,93 @@ function wsRender(wrap, vm) {
   if (restSig.length) attnBody += `<button type="button" class="ds-more" onclick="dsFoldToggle(this)">Alle signalen (${restSig.length})</button>
     <div class="ds-fold"><div>${dsStream(restSig.map(x => ({ text: x, tone: belTone })))}</div></div>`;
 
-  let loadBody = "";
+  const nRuns = (bel.runs || []).length;
+  let loadBody;
   if (bel.km_recent != null) {
-    const nRuns = (bel.runs || []).length;
-    // Bezit het signaal het weekvolume al, dan toont dit veld de TREND en niet
-    // hetzelfde getal nog eens groot — één dominant cijfer per scherm.
+    // De schijf bezit het dominante percentage; dit pane draagt het volume + de
+    // trendgrafiek — ondersteunend, nooit hetzelfde getal nog eens dominant.
     loadBody = `<div class="ws-load">
-      ${owns("bel-pct") ? "" : `<div class="ws-load-n ${bel.actief ? belTone : "is-calm"}">${esc(bel.km_recent)}<i>km</i></div>`}
-      ${dsSpark((bel.runs || []).map(r => r.km))}
+      <div class="ws-load-n">${esc(bel.km_recent)}<i>km deze week</i></div>
+      ${wsChart(runsKm, { w: 260, h: 74 })}
       <div class="ws-load-m">
-        ${owns("bel-pct") ? `<span>${esc(bel.km_recent)} km deze week</span>` : ""}
         ${bel.km_basis_week != null ? `<span>referentie ${esc(bel.km_basis_week)} km/wk</span>` : ""}
-        ${nRuns ? `<span>${nRuns} runs · laatste ${esc(bel.runs[nRuns - 1].datum)}</span>` : ""}
+        ${nRuns ? `<span>laatste ${esc(String((bel.runs[nRuns - 1] || {}).datum || ""))}</span>` : ""}
       </div></div>`;
   } else {
     loadBody = `<p class="ws-calm">Geen belastingstand bekend.</p>`;
   }
 
-  h += `<div class="ws-col ws-col-l">
-    ${wsField("Aandacht nu", attnBody, { tone })}
-    ${wsField("Belasting & trend", loadBody, { tone: bel.actief ? belTone : "" })}
+  const runsNieuwEerst = (bel.runs || []).slice(-6).reverse();
+  const maxKm = Math.max(...runsNieuwEerst.map(r => Number(r.km) || 0), 1);
+  const runsBody = runsNieuwEerst.length
+    ? `<ul class="ws-runs">` + runsNieuwEerst.map(r => {
+        const b = Math.max(6, Math.round((Number(r.km) || 0) / maxKm * 100));
+        return `<li><span class="ws-run-d">${esc(String(r.datum || "").slice(5))}</span>
+          <span class="ws-run-bar"><i style="width:${b}%"></i></span>
+          <span class="ws-run-km">${esc(r.km)} km</span></li>`;
+      }).join("") + `</ul>`
+    : "";
+
+  h += `<div class="ws-stage"><div class="ws-col ws-col-l">
+    ${wsField("Aandacht nu", attnBody, { tone: attn.length ? tone : "" })}
+    ${wsField("Belasting overzicht", loadBody, { tone: bel.actief ? belTone : "" })}
+    ${wsField("Recente trainingen", runsBody, { note: nRuns ? `${nRuns} runs` : "" })}
   </div>`;
 
-  // ── MIDDEN: de atleet is de scène; het dominante signaal ligt eronder ──
-  h += `<div class="ws-col ws-col-c">
-    ${wsAnchor(naam, tone, attn.length ? [dsChip(tone === "is-critical" ? "actie" : "aandacht", tone)]
-                                       : [dsChip("rustig", "is-calm")], sub, athleteNav("workspace", key))}
-    ${wsSignal(focal)}
-    <div class="ws-acts">${[
-      dsAction({ icon: "brain", title: "Schema openen", sub: "bouwen of verlengen", onclick: `openAthleteModule('schema','${esc(key)}')` }),
-      dsAction({ icon: "user-plus", title: "Dossier", sub: "profiel & notities", onclick: `openAthleteModule('atleten','${esc(key)}')` }),
-      dsAction({ icon: "brain", title: "Cockpit", sub: "context & geheugen", onclick: `openAthleteModule('dossier','${esc(key)}')` }),
-      dsAction({ icon: "pulse", title: "Teampuls", sub: "teammonitoring", onclick: `deepAtleet('teampuls','${esc(key)}')` }),
-    ].concat(bel.actief ? [dsAction({ icon: "check", title: "Belasting gezien", sub: "dempt 7 dagen",
-      tone: belTone, onclick: `wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')` })] : []).join("")}</div>
-  </div>`;
+  // ── MIDDEN: het focal-systeem met de signaal-schijf die de ringen overlapt ──
+  h += `<div class="ws-col ws-col-c">${wsAnchor(naam, tone)}${wsSignal(focal)}</div>`;
 
-  // ── RECHTS: doel & planning (boven), feedback (midden), context (onder) ──
+  // ── RECHTS: doel & planning, feedback, klachten & context ──
   let planHead = sc ? wsLine({ tone: dsTone(sc.tier), icon: "clock",
     title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
   const fbTone = fb.status === "unknown" ? "is-unknown" : (fb.open ? "is-attention" : "is-success");
   const fbBody = fb.status === "unknown"
     ? `<p class="ws-calm">Feedback-status wordt bijgewerkt…</p>`
-    : `<div class="ws-fb ${fbTone}"><span class="ws-fb-n">${fb.open || 0}</span>
+    : `<div class="ws-fb ${fbTone}"><span class="ws-fb-badge">${fb.open || 0}</span>
         <span class="ws-fb-t">${fb.open ? `open reactie${fb.open !== 1 ? "s" : ""}` : "alles beantwoord"}</span></div>`;
+
+  // Bronnen-pane: de per-source generation-freshness die de response al draagt —
+  // zichtbaar gemaakt zoals de referentie dat doet (geen nieuwe data, geen read).
+  const srcRow = (lbl, state, ver) => {
+    const t = dsTone(state);
+    const word = state === "fresh" ? "vers" : (state === "stale" ? "eerder" : state || "onbekend");
+    return `<li class="${t}"><i class="ds-dot"></i><span>${esc(lbl)}</span>
+      <em>${esc([String(ver || "").slice(0, 10), word].filter(Boolean).join(" · "))}</em></li>`;
+  };
+  const sv = gen.source_versions || {};
+  const srcBody = `<ul class="ws-src">
+    ${srcRow("Belasting", gfr.belasting, sv.belasting)}
+    ${srcRow("Overzicht", gfr.home, sv.home)}
+    ${srcRow("Feedback", gfr.feedback, sv.feedback)}</ul>`;
 
   h += `<div class="ws-col ws-col-r">
     ${wsField("Doel & planning", planHead + `<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>`,
-      { tone: sc ? dsTone(sc.tier) : "" })}
+      { tone: sc ? dsTone(sc.tier) : "",
+        cta: { label: "Schema openen", onclick: `openAthleteModule('schema','${esc(key)}')` } })}
     ${wsField("Feedback", fbBody, { tone: fbTone })}
-    ${wsField("Klachten & context", `<div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>`)}
-  </div>`;
+    ${wsField("Klachten & context", `<div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>`,
+      { cta: { label: "Cockpit openen", onclick: `openAthleteModule('dossier','${esc(key)}')` } })}
+    ${wsField("Bronnen", srcBody, { cls: "ws-pane-src" })}
+  </div></div>`;
+
+  // ── ONDER: geïntegreerde actiebalk — het dominante actiepunt + de acties ──
+  // Korte semantische kop (geen letterlijke herhaling van de aandacht-regel):
+  // belasting actief → "Belasting hoog/let op · +X% t.o.v. referentie".
+  const advKop = bel.actief && bel.pct != null
+    ? `Belasting ${bel.ernst === "hoog" ? "hoog" : "let op"} · ${bel.pct > 0 ? "+" : ""}${bel.pct}% t.o.v. referentie`
+    : (attn.length ? (attn[0].kort || "") : "Geen open actiepunt");
+  const advIc = attn.length ? (SOORT_IC[attn[0].soort] || "alert") : "check";
+  const advMeta = [bel.datum ? `stand ${bel.datum}` : "",
+    attn.length > 1 ? `${attn.length} open signalen` : ""].filter(Boolean).join(" · ");
+  h += `<footer class="ws-adv ${attn.length ? tone : "is-calm"}">
+    <span class="ws-adv-ic">${ic(advIc)}</span>
+    <div class="ws-adv-b"><b>${esc(advKop)}</b>
+      ${advMeta ? `<span>${esc(advMeta)}</span>` : ""}</div>
+    <div class="ws-adv-a">
+      ${bel.actief ? `<button type="button" class="ws-adv-btn primary" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">${ic("check")}Belasting gezien</button>` : ""}
+      <button type="button" class="ws-adv-btn" onclick="deepAtleet('teampuls','${esc(key)}')">${ic("pulse")}Teampuls</button>
+      <button type="button" class="ws-adv-btn" onclick="openAthleteModule('atleten','${esc(key)}')">${ic("user-plus")}Profiel</button>
+    </div></footer>`;
 
   h += `</div>`;
   wrap.innerHTML = h;

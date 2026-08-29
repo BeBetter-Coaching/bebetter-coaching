@@ -128,11 +128,14 @@ class TestPrimitives:
 # ── 4. Athlete Shell: één identiteit over drie views ────────────────────────
 class TestAthleteShell:
     def test_12_athlete_identiteit_is_dominant_in_beide_views(self):
-        # Workspace: canvas-anchor met ringen + medaillon. Dossier: dezelfde taal,
-        # eigen compositie. Beide leiden de identiteit af uit dezelfde bron.
+        # Workspace (north-star pass): het focal-systeem (ringen + medaillon) draagt
+        # de identiteit in het centrum; de NAAM staat in de kop van de scène — zoals
+        # de referentie-compositie (identiteit linksboven, centrum puur grafisch).
+        # Dossier: dezelfde taal, eigen compositie. Zelfde identiteitsbron.
         ws = _fn("wsAnchor")
-        for part in ("ws-orb", "ws-name", "initialen("):
+        for part in ("ws-orb", "initialen("):
             assert part in ws, f"anchor mist {part}"
+        assert "ws-name" in _fn("wsRender")                  # naam in de scène-kop
         dc = _fn("dcRender")
         for part in ("dc-orb", "dc-name", "initialen("):
             assert part in dc, f"dossier-kop mist {part}"
@@ -341,10 +344,18 @@ class TestAthleteCanvas:
             assert dead not in _CSS, f"legacy CSS {dead} nog aanwezig"
         assert "function wsToonLijst(" not in _APP               # rail-toggle is weg
 
-    def test_37_canvas_is_geen_dozenraster(self):
-        # Harde compositieregel: de scène tekent geen kaartcontainers meer.
-        for boxy in (".ws-field{", ".ws-line{"):
-            blok = _DS.split(boxy)[1][:220]
-            assert "border:1px solid" not in blok, f"{boxy} tekent weer een doos"
-        assert ".ws-amb{" in _DS                                  # diepte uit licht, niet uit randen
+    def test_37_canvas_bouwt_diepte_uit_glas_licht_en_overlap(self):
+        # North-star-contract (bewuste wijziging t.o.v. de "geen dozen"-regel):
+        # context leeft in TRANSLUCENT GLAS (gradient-achtergrond + blur, geen
+        # vlakke kaarten), de signaal-schijf is rond en overlapt het ringveld
+        # (negatieve marge = layering), en de achtergrond doet mee (ambient +
+        # orbits + vignette). Embedded regels (.ws-line) blijven randloos.
+        pane = _DS.split(".ws-pane{")[1][:420]
+        assert "backdrop-filter" in pane and "linear-gradient" in pane
+        blok = _DS.split(".ws-line{")[1][:220]
+        assert "border:1px solid" not in blok                     # regel blijft embedded
+        sig = _DS.split(".ws-signal{")[1][:420]
+        assert "border-radius:50%" in sig and "margin:-" in sig   # schijf + overlap
+        assert ".ws-amb{" in _DS                                  # ambient licht
+        assert ".ws-orbits" in _DS and ".ws-vig{" in _DS          # achtergrondlagen
         assert "prefers-reduced-motion" in _DS

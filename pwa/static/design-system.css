@@ -288,6 +288,8 @@
   .ds-metric-v{font-size:22px}
 }
 
+.ds-view #dc-detail{overflow:hidden}
+
 /* ═══════ Athlete-rail: de lijst wordt ONDERSTEUNEND, niet dominant ══════
    De master-detail blijft (routing/tests ongemoeid), maar de rail krijgt
    minder visueel gewicht zodat de gekozen atleet de actieve wereld is.     */
@@ -307,7 +309,7 @@
    Deze selectors bestaan nog (semantische hooks + testcontracten), maar krijgen
    nu de gedeelde ritmiek/typografie i.p.v. eigen module-styling. Stap 2 van de
    uitrol vervangt ze door `ds-*`-primitives.                                 */
-.ds-view .dc-sec{margin:0}
+.ds-view .dc-sec{margin:0;border-top:0;padding:0}
 .ds-view .dc-domains{gap:var(--ds-4)}
 .ds-view .dc-dom>summary{font-size:var(--ds-t-sm)}
 .ds-view .dc-reg{list-style:none;margin:0;padding:0}
@@ -416,9 +418,6 @@
    vanuit Home opent moet de context onmiddellijk dezelfde wereld voelen als
    Workspace/Dossier. Zelfde oppervlakken, zelfde ritmiek, zelfde acties.
    Puur presentatie: dezelfde markup, dezelfde optimistic-write-flow.          */
-.prio-detail{background:linear-gradient(168deg,rgba(17,43,84,.5),rgba(13,34,68,.3));
-  border:1px solid var(--ds-hairline);border-radius:var(--ds-r-lg);
-  padding:var(--ds-4);margin-top:var(--ds-2)}
 .pd-signalen{display:flex;flex-direction:column;gap:var(--ds-4)}
 .pd-s-blok{background:none;border:0;border-radius:0;padding:0}
 .pd-s-blok+.pd-s-blok{border-top:1px solid var(--ds-hairline);padding-top:var(--ds-4)}
@@ -498,33 +497,75 @@
 .ws-switch-sub{font-size:10.5px;color:var(--ds-text-3);line-height:1.2}
 .ws-switch .ic{color:var(--ds-text-3);width:16px;height:16px;flex:0 0 auto}
 
-.ws-canvas{position:relative;min-height:60vh}
+.ws-canvas{position:relative;min-height:60vh;overflow:hidden}
 .ws-loading{padding:var(--ds-8) 0}
 
 /* ── De scène ─────────────────────────────────────────────────────────────── */
-.ws-scene{position:relative;display:grid;gap:var(--ds-6);
-  grid-template-columns:1fr;padding:var(--ds-4) 0 var(--ds-10)}
-/* Ambient veld: één zachte, status-gekleurde lichtbron achter de anchor. Dit is de
-   diepte van het scherm — geen randen, geen dozen. */
-.ws-amb{position:absolute;inset:-8% -12% 20%;pointer-events:none;z-index:0;
+.ws-scene{position:relative;display:flex;flex-direction:column;gap:var(--ds-4);
+  padding:var(--ds-2) 0 var(--ds-6)}
+.ws-scene>*{position:relative;z-index:1}
+
+/* ── Achtergrond doet mee: haze + orbits + vignette (statisch, goedkoop) ────── */
+.ws-bg{position:absolute;inset:-60px -44px -12px;pointer-events:none;z-index:0;
+  overflow:hidden;border-radius:26px}
+.ws-amb{position:absolute;inset:0;
   background:
-    radial-gradient(46% 42% at 50% 34%,var(--tone-bg),transparent 72%),
-    radial-gradient(70% 55% at 50% 30%,rgba(94,230,235,.055),transparent 78%);
-  filter:blur(2px)}
-.ws-scene>.ws-col{position:relative;z-index:1}
+    radial-gradient(50% 44% at 50% 32%,var(--tone-bg),transparent 70%),
+    radial-gradient(38% 34% at 84% 10%,rgba(94,230,235,.08),transparent 74%),
+    radial-gradient(44% 40% at 10% 80%,rgba(94,230,235,.05),transparent 74%)}
+.ws-orbits{position:absolute;inset:0;width:100%;height:100%}
+.ws-orbits ellipse{fill:none;stroke:rgba(122,168,255,.06);stroke-width:1}
+.ws-orbits ellipse:nth-of-type(2){stroke:rgba(122,168,255,.045)}
+.ws-orbits ellipse:nth-of-type(3){stroke:rgba(94,230,235,.04);stroke-dasharray:1 7}
+.ws-star{fill:rgba(150,198,255,.5);opacity:.45}
+.ws-star:nth-of-type(odd){opacity:.25}
+.ws-vig{position:absolute;inset:0;
+  background:radial-gradient(115% 88% at 50% 40%,transparent 56%,rgba(3,9,20,.55) 100%)}
 
-.ws-col{display:flex;flex-direction:column;gap:var(--ds-8);min-width:0}
-.ws-col-c{align-items:center;text-align:center;gap:var(--ds-3)}
+/* ── Kop: identiteit links, athlete-nav rechts ──────────────────────────────── */
+.ws-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--ds-4);
+  flex-wrap:wrap;padding:0 var(--ds-2)}
+.ws-name{margin:0;font-size:clamp(30px,3vw,42px);font-weight:750;letter-spacing:-.03em;line-height:1.02}
+.ws-name-meta{display:flex;align-items:center;gap:var(--ds-3);flex-wrap:wrap;margin-top:7px;
+  font-size:var(--ds-t-sm);color:var(--ds-text-3)}
+.ws-head-nav{padding-bottom:3px}
+.ws-anchor .anav-chip,.ws-head .anav-chip{background:rgba(10,26,52,.5);border:1px solid rgba(122,168,255,.16);
+  color:var(--ds-text-2);border-radius:var(--ds-r-pill);padding:7px 15px;font-size:var(--ds-t-sm);
+  font-weight:600;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
+.ws-anchor .anav-chip:hover,.ws-head .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text)}
+.ws-head .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap}
 
-/* ── Contextveld (niveau 3): geen rand, wel een rustige tone-accentlijn ─────── */
-.ws-field{position:relative;padding-left:var(--ds-4);min-width:0}
-.ws-field::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:1px;
-  background:linear-gradient(180deg,var(--tone,var(--ds-hairline)),transparent 85%);opacity:.55}
-.ws-field>.ds-label{margin-bottom:var(--ds-3)}
-.ws-field-b{display:flex;flex-direction:column;gap:var(--ds-2);min-width:0}
+/* ── Stage: drie kolommen, bewust asymmetrisch ─────────────────────────────── */
+.ws-stage{display:grid;grid-template-columns:1fr;gap:var(--ds-4);align-items:start}
+.ws-col{display:flex;flex-direction:column;gap:var(--ds-4);min-width:0}
+.ws-col-c{align-items:center;text-align:center;gap:0;position:relative}
+
+/* ── Contextpane: translucent glas met gradient-rand en top-light ───────────── */
+.ws-pane{position:relative;border-radius:var(--ds-r-xl);padding:var(--ds-5);min-width:0;
+  background:linear-gradient(164deg,rgba(22,52,100,.5),rgba(9,24,48,.36));
+  border:1px solid rgba(122,168,255,.14);
+  box-shadow:0 18px 40px -18px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.055);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.ws-pane::before{content:"";position:absolute;inset:0 0 auto;height:1px;border-radius:inherit;
+  background:linear-gradient(90deg,transparent 8%,rgba(255,255,255,.16),transparent 92%)}
+.ws-pane.is-attention,.ws-pane.is-critical{border-color:var(--tone-bd);
+  box-shadow:0 18px 40px -18px rgba(0,0,0,.55),0 0 36px -12px var(--tone-bg),
+    inset 0 1px 0 rgba(255,255,255,.055)}
+.ws-pane.is-attention::before,.ws-pane.is-critical::before{
+  background:linear-gradient(90deg,transparent,var(--tone),transparent);opacity:.55}
+.ws-pane-h{display:flex;justify-content:space-between;align-items:baseline;gap:var(--ds-3);
+  margin-bottom:var(--ds-3)}
+.ws-pane-n{font-size:var(--ds-t-xs);color:var(--ds-text-3)}
+.ws-pane-b{display:flex;flex-direction:column;gap:var(--ds-2);min-width:0}
 .ws-calm{margin:0;font-size:var(--ds-t-sm);color:var(--ds-text-3);line-height:1.5}
+.ws-cta{margin-top:var(--ds-4);width:100%;padding:8px 12px;border-radius:var(--ds-r-md);
+  background:rgba(94,230,235,.07);border:1px solid rgba(94,230,235,.22);color:var(--ds-text);
+  font:inherit;font-size:var(--ds-t-sm);font-weight:650;cursor:pointer;
+  transition:background var(--ds-fast) var(--ds-ease),border-color var(--ds-fast) var(--ds-ease)}
+.ws-cta:hover{background:rgba(94,230,235,.13);border-color:var(--ds-accent)}
 
-/* Contextregel: embedded, geen kaart. */
+/* Contextregel: embedded in het pane. */
 .ws-line{display:flex;align-items:flex-start;gap:var(--ds-3);min-width:0}
 .ws-line-ic{color:var(--tone);flex:0 0 auto;margin-top:1px}
 .ws-line-ic .ic{width:16px;height:16px}
@@ -534,72 +575,138 @@
 .ws-line-v{font-size:var(--ds-t-sm);font-weight:700;color:var(--tone);flex:0 0 auto;
   font-variant-numeric:tabular-nums}
 
-/* ── De athlete-anchor: concentrische statusringen + medaillon ──────────────── */
-.ws-anchor{display:flex;flex-direction:column;align-items:center;gap:var(--ds-2)}
-.ws-orb{position:relative;width:250px;height:250px;display:grid;place-items:center;margin-bottom:calc(var(--ds-2)*-1)}
+/* ── Het focal-systeem: gelaagd ringveld + medaillon-kern ───────────────────── */
+.ws-anchor{position:relative;width:min(460px,100%);aspect-ratio:1;display:grid;
+  place-items:center;margin:calc(var(--ds-6)*-1) auto 0}
+/* De halo draagt ÁLLE grote gloed (een grote box-shadow-blur op het medaillon
+   rasterde als vierkant artefact — daarom hier, als ronde gradient-laag). */
+.ws-halo{position:absolute;inset:-16%;border-radius:50%;
+  background:
+    radial-gradient(circle at 50% 46%,var(--tone-bg) 0%,transparent 24%),
+    radial-gradient(circle at 50% 46%,var(--tone-bg) 0%,transparent 34%),
+    radial-gradient(circle at 50% 42%,var(--tone-bg) 0%,transparent 58%);
+  filter:blur(8px);opacity:1}
+.ws-orb{position:relative;width:100%;height:100%;display:grid;place-items:center}
 .ws-orb-rings{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-.ws-ring{fill:none;stroke:var(--tone);stroke-width:1;opacity:.34}
-.ws-ring.r2{opacity:.22} .ws-ring.r3{opacity:.14}
-/* Eén oplichtende boog = de status; geen decoratie, wel richting. */
-.ws-ring-arc{fill:none;stroke:var(--tone);stroke-width:2;stroke-linecap:round;opacity:.85;
-  stroke-dasharray:150 554;transform:rotate(-108deg);transform-origin:50% 50%;
-  filter:drop-shadow(0 0 10px var(--tone-bg))}
-.ws-orb-in{position:relative;width:124px;height:124px;border-radius:50%;display:grid;place-items:center;
-  font-size:38px;font-weight:750;letter-spacing:.01em;color:var(--tone);
-  background:radial-gradient(circle at 50% 30%,rgba(255,255,255,.10),transparent 58%),
-             radial-gradient(circle at 50% 46%,var(--tone-bg),rgba(12,30,58,.85) 76%);
+.ws-ring{fill:none;stroke:var(--tone)}
+.ws-ring.r0{opacity:.12}
+.ws-ring.rt{opacity:.26;stroke-dasharray:2 11;stroke-width:1.5}
+.ws-ring.r1{opacity:.42;stroke-width:1.2}
+.ws-ring.r2{opacity:.2}
+.ws-ring.rm{opacity:.3;stroke:var(--ds-accent);stroke-dasharray:1 6;stroke-width:1.4}
+.ws-ring-arc{fill:none;stroke-linecap:round;transform-origin:50% 50%}
+.ws-ring-arc.a1{stroke:var(--tone);stroke-width:3;stroke-dasharray:300 1119;opacity:.95;
+  transform:rotate(-108deg);
+  filter:drop-shadow(0 0 14px var(--tone-bg)) drop-shadow(0 0 5px var(--tone))}
+.ws-ring-arc.a2{stroke:var(--ds-accent);stroke-width:2;stroke-dasharray:170 1295;opacity:.8;
+  transform:rotate(-164deg);filter:drop-shadow(0 0 9px rgba(94,230,235,.5))}
+.ws-ring-arc.a3{stroke:var(--tone);stroke-width:2;stroke-dasharray:90 853;opacity:.6;
+  transform:rotate(118deg);filter:drop-shadow(0 0 8px var(--tone-bg))}
+.ws-sat{fill:var(--tone);filter:drop-shadow(0 0 6px var(--tone))}
+.ws-spin{transform-origin:50% 50%}
+.ws-spin.s1{animation:ws-rot 80s linear infinite}
+.ws-spin.s2{animation:ws-rot 56s linear infinite reverse}
+.ws-spin.s3{animation:ws-rot 68s linear infinite}
+@keyframes ws-rot{to{transform:rotate(360deg)}}
+.ws-orb-in{position:relative;width:198px;height:198px;border-radius:50%;display:grid;place-items:center;
+  font-size:56px;font-weight:750;letter-spacing:.04em;color:var(--tone);
+  background:
+    radial-gradient(circle at 50% 20%,rgba(255,255,255,.16),transparent 46%),
+    radial-gradient(circle at 30% 70%,rgba(94,230,235,.08),transparent 55%),
+    radial-gradient(circle at 50% 44%,var(--tone-bg) 0%,var(--tone-bg) 28%,rgba(13,30,58,.94) 78%);
+  border:1.5px solid var(--tone-bd);text-shadow:0 0 34px var(--tone),0 0 14px var(--tone-bg);
+  box-shadow:inset 0 2px 1px rgba(255,255,255,.14),inset 0 -18px 34px -18px var(--tone-bg),
+             0 0 0 7px rgba(255,255,255,.025),0 26px 60px -20px rgba(0,0,0,.6)}
+
+/* ── De signaal-schijf: tweede massa, overlapt het ringveld ─────────────────── */
+.ws-signal{position:relative;width:min(344px,92%);aspect-ratio:1;margin:-152px auto 0;z-index:2;
+  border-radius:50%;display:grid;place-items:center;text-align:center;
+  background:radial-gradient(circle at 50% 28%,rgba(40,76,132,.6),rgba(8,20,40,.86) 72%);
   border:1px solid var(--tone-bd);
-  text-shadow:0 0 22px var(--tone-bg);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.10),0 0 46px -6px var(--tone-bg),
-             0 0 120px -30px var(--tone)}
-.ws-name{margin:0;font-size:clamp(30px,3.4vw,46px);font-weight:750;letter-spacing:-.03em;line-height:1}
-.ws-name-meta{display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap;justify-content:center;
-  font-size:var(--ds-t-sm);color:var(--ds-text-3)}
-.ws-name-meta .sep{opacity:.35}
-.ws-anchor .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap;justify-content:center;margin-top:var(--ds-1)}
-.ws-anchor .anav-chip{background:var(--ds-well);border:1px solid var(--ds-hairline);color:var(--ds-text-2);
-  border-radius:var(--ds-r-pill);padding:6px 14px;font-size:var(--ds-t-sm);font-weight:600;cursor:pointer;
-  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
-.ws-anchor .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text)}
-
-/* ── Het dominante signaal: de enige plaat in de scène ──────────────────────── */
-.ws-signal{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;
-  padding:var(--ds-5) var(--ds-6) var(--ds-2);max-width:440px}
-/* Geen kaart: alleen een lichtlijn die het signaal aan de anchor koppelt. */
-.ws-signal::before{content:"";position:absolute;inset:0 auto auto 50%;transform:translateX(-50%);
-  width:54%;height:1px;background:linear-gradient(90deg,transparent,var(--tone),transparent);opacity:.5}
-.ws-signal-l{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
-  color:var(--tone);opacity:.9}
-.ws-signal-v{font-size:clamp(52px,6vw,80px);font-weight:800;line-height:1;letter-spacing:-.045em;
+  box-shadow:0 30px 70px -24px rgba(0,0,0,.7),0 0 60px -18px var(--tone-bg),
+    inset 0 1px 0 rgba(255,255,255,.08),inset 0 -34px 64px -34px var(--tone-bg);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.ws-signal-in{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;
+  gap:3px;transform:translateY(-14px);padding:0 var(--ds-6)}
+.ws-signal-l{font-size:10.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ds-text-3)}
+.ws-signal-w{font-size:15px;font-weight:650;color:var(--ds-text-2)}
+.ws-signal-v{font-size:64px;font-weight:800;line-height:1.02;letter-spacing:-.04em;
   color:var(--tone);font-variant-numeric:tabular-nums;
-  text-shadow:0 0 34px var(--tone-bg),0 0 88px var(--tone-bg)}
-.ws-signal-v i{font-style:normal;font-size:.34em;font-weight:700;margin-left:2px;opacity:.7}
-.ws-signal-s{font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.45;max-width:330px}
-.ws-signal .ds-metric-spark{width:220px;height:34px;margin-top:var(--ds-2);opacity:.9}
+  text-shadow:0 0 30px var(--tone-bg),0 0 80px var(--tone-bg)}
+.ws-signal-v.txt{font-size:34px;letter-spacing:-.02em}
+.ws-signal-v i{font-style:normal;font-size:.4em;font-weight:700;margin-left:2px;opacity:.7}
+.ws-signal-s{font-size:var(--ds-t-sm);color:var(--ds-text-2);max-width:250px;line-height:1.4}
+.ws-signal-chart{position:absolute;left:-9%;bottom:14%;width:118%;height:auto;z-index:1;
+  opacity:.95}
+.ws-signal-chart .ws-chart-line{stroke-width:2.6}
+.ws-signal-chart .ws-chart-dot{r:3.2}
+.ws-signal-chart .ws-chart-tip{r:4.6}
 
-/* ── Belasting-veld: groot getal blijft ondergeschikt aan het signaal ───────── */
-.ws-load{display:flex;flex-direction:column;gap:var(--ds-2)}
-.ws-load-n{font-size:26px;font-weight:750;line-height:1;letter-spacing:-.02em;color:var(--tone);
-  font-variant-numeric:tabular-nums}
-.ws-load-n i{font-style:normal;font-size:.46em;font-weight:600;color:var(--ds-text-3);margin-left:3px}
-.ws-load-m{display:flex;flex-direction:column;gap:1px;font-size:var(--ds-t-xs);color:var(--ds-text-3)}
-.ws-load .ds-metric-spark{height:36px;margin-top:var(--ds-2)}
+/* ── Grafiek (echte reeksen): glow-lijn met punt per meting ────────────────── */
+.ws-chart{display:block;width:100%;height:auto;color:var(--tone);overflow:visible}
+.ws-chart-line{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;
+  filter:drop-shadow(0 0 6px var(--tone-bg))}
+.ws-chart-dot{fill:currentColor;opacity:.8}
+.ws-chart-tip{fill:currentColor;filter:drop-shadow(0 0 6px currentColor)}
 
-/* ── Feedback-veld ─────────────────────────────────────────────────────────── */
-.ws-fb{display:flex;align-items:baseline;gap:var(--ds-2)}
-.ws-fb-n{font-size:26px;font-weight:750;color:var(--tone);line-height:1;font-variant-numeric:tabular-nums}
-.ws-fb-t{font-size:var(--ds-t-sm);color:var(--ds-text-3)}
+/* ── Belasting-overzicht in het pane ───────────────────────────────────────── */
+.ws-load{display:flex;flex-direction:column;gap:var(--ds-3)}
+.ws-load-n{font-size:30px;font-weight:750;line-height:1;letter-spacing:-.02em;color:var(--ds-text);
+  font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:7px}
+.ws-load-n i{font-style:normal;font-size:12.5px;font-weight:600;color:var(--ds-text-3);letter-spacing:0}
+.ws-pane.is-attention .ws-load-n,.ws-pane.is-critical .ws-load-n{color:var(--tone)}
+.ws-load-m{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:var(--ds-t-xs);color:var(--ds-text-3)}
 
-/* ── Acties: onderdeel van de centrale kolom, randloos ─────────────────────── */
-.ws-acts{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--ds-2);
-  max-width:470px;margin-top:var(--ds-3)}
-.ws-acts .ds-action{width:auto;flex:0 0 auto;gap:var(--ds-2);padding:7px 14px 7px 8px;
-  border-radius:var(--ds-r-pill);border-color:var(--ds-hairline)}
-.ws-acts .ds-action-ic{width:26px;height:26px}
-.ws-acts .ds-action-ic .ic{width:15px;height:15px}
-.ws-acts .ds-action-s{display:none}                 /* compacte cluster: alleen het werkwoord */
-.ws-acts .ds-action.ds-tone{background:none;border-color:var(--tone-bd)}
-.ws-acts .ds-action.ds-tone .ds-action-ic{background:var(--tone-bg)}
+/* ── Recente trainingen: echte runs, met volumebalkjes ─────────────────────── */
+.ws-runs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.ws-runs li{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:10px;
+  font-size:var(--ds-t-sm)}
+.ws-run-d{color:var(--ds-text-3);font-variant-numeric:tabular-nums;font-size:var(--ds-t-xs)}
+.ws-run-bar{height:4px;border-radius:2px;background:rgba(255,255,255,.06);overflow:hidden}
+.ws-run-bar i{display:block;height:100%;border-radius:inherit;
+  background:linear-gradient(90deg,var(--ds-accent),transparent 150%);opacity:.7}
+.ws-run-km{font-weight:650;color:var(--ds-text-2);font-variant-numeric:tabular-nums}
+
+/* ── Bronnen: per-source generation-freshness (echte data, geen extra read) ── */
+.ws-src{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+.ws-src li{display:flex;align-items:center;gap:9px;font-size:var(--ds-t-sm);min-width:0}
+.ws-src li span{color:var(--ds-text-2);flex:1}
+.ws-src li em{font-style:normal;font-size:var(--ds-t-xs);color:var(--ds-text-3);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.ws-src .ds-dot{width:7px;height:7px}
+
+/* ── Feedback-badge ────────────────────────────────────────────────────────── */
+.ws-fb{display:flex;align-items:center;gap:var(--ds-4)}
+.ws-fb-badge{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  font-size:22px;font-weight:750;color:var(--tone);font-variant-numeric:tabular-nums;
+  background:radial-gradient(circle at 50% 34%,var(--tone-bg),transparent 72%);
+  border:2px solid var(--tone-bd);
+  box-shadow:0 0 26px -8px var(--tone-bg),inset 0 0 18px -8px var(--tone-bg)}
+.ws-fb-t{font-size:var(--ds-t-sm);color:var(--ds-text-2)}
+
+/* ── Actiebalk: het dominante actiepunt + acties, in de scène ──────────────── */
+.ws-adv{display:flex;align-items:center;gap:var(--ds-4);padding:var(--ds-3) var(--ds-5);
+  border-radius:var(--ds-r-xl);margin:var(--ds-2) auto 0;width:min(780px,100%);
+  background:linear-gradient(164deg,rgba(22,52,100,.58),rgba(9,24,48,.44));
+  border:1px solid var(--tone-bd);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  box-shadow:0 20px 50px -20px rgba(0,0,0,.6),0 0 40px -16px var(--tone-bg),
+    inset 0 1px 0 rgba(255,255,255,.07)}
+.ws-adv-ic{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.ws-adv-ic .ic{width:18px;height:18px}
+.ws-adv-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.ws-adv-b b{font-size:var(--ds-t-body);font-weight:700;line-height:1.3}
+.ws-adv-b span{font-size:var(--ds-t-xs);color:var(--ds-text-3)}
+.ws-adv-a{display:flex;gap:var(--ds-2);flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end}
+.ws-adv-btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;
+  border-radius:var(--ds-r-pill);background:none;border:1px solid var(--ds-hairline);
+  color:var(--ds-text-2);font:inherit;font-size:var(--ds-t-sm);font-weight:650;cursor:pointer;
+  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease),
+    background var(--ds-fast) var(--ds-ease)}
+.ws-adv-btn:hover{border-color:var(--ds-accent);color:var(--ds-text)}
+.ws-adv-btn.primary{background:var(--tone-bg);border-color:var(--tone-bd);color:var(--tone)}
+.ws-adv-btn .ic{width:15px;height:15px}
 
 /* ── Lege scène ───────────────────────────────────────────────────────────── */
 .ws-empty{display:flex;flex-direction:column;align-items:center;gap:var(--ds-3);
@@ -610,37 +717,45 @@
 .ws-empty h2{margin:0;font-size:24px;font-weight:700}
 .ws-empty p{margin:0;max-width:420px;color:var(--ds-text-3);font-size:var(--ds-t-body);line-height:1.55}
 
-/* ── Ruimtelijke verdeling: asymmetrisch, met negatieve ruimte ──────────────── */
+/* ── Ruimtelijke verdeling: asymmetrisch, gevuld tot de randen ──────────────── */
 @media (min-width:1120px){
-  .ws-scene{grid-template-columns:minmax(230px,.92fr) minmax(430px,1.42fr) minmax(230px,1fr);
-    gap:var(--ds-10);align-items:center}
-  /* Bewuste asymmetrie: links zakt iets, rechts stijgt iets t.o.v. de anchor. */
-  .ws-col-l{transform:translateY(26px)}
-  .ws-col-r{transform:translateY(-22px)}
+  .ws-stage{grid-template-columns:minmax(248px,.92fr) minmax(440px,1.5fr) minmax(248px,.98fr);
+    gap:var(--ds-6);align-items:start}
+  /* Ruimer verticaal ritme in de zijkolommen; de scène vult zonder te forceren. */
+  .ws-col-l,.ws-col-r{gap:var(--ds-5)}
+  /* Bewuste asymmetrie: rechts start lager dan links; het centrum hangt vrij. */
+  .ws-col-r{transform:translateY(20px)}
+  .ws-col-l{transform:translateY(4px)}
 }
 @media (max-width:1119px){
   .ws-col-c{order:-1}                       /* de atleet blijft bovenaan */
-  .ws-scene{gap:var(--ds-6)}
+  .ws-anchor{margin-top:0}
 }
 @media (max-width:760px){
-  .ws-orb{width:180px;height:180px}
-  .ws-orb-in{width:98px;height:98px;font-size:28px}
-  .ws-signal{padding:var(--ds-3) var(--ds-5) var(--ds-4);max-width:none;width:100%}
+  .ws-anchor{width:min(320px,94%)}
+  .ws-orb-in{width:128px;height:128px;font-size:38px}
+  .ws-signal{width:min(280px,88%);margin-top:-120px}
   .ws-signal-v{font-size:46px}
-  .ws-signal .ds-metric-spark{width:170px}
-  .ws-col{gap:var(--ds-6)}
+  .ws-signal-in{transform:translateY(-8px)}
+  .ws-adv{flex-wrap:wrap}
+  .ws-adv-b{flex:1 1 60%}
+  .ws-adv-a{flex:1 1 100%;justify-content:flex-start}
+  .ws-bg{inset:-24px -16px -8px}
 }
 
-/* ── Motion: context komt rustig in beeld ──────────────────────────────────── */
-.ws-anchor{animation:ws-in 380ms var(--ds-ease) both}
-.ws-signal{animation:ws-in 380ms var(--ds-ease) both 90ms}
-.ws-col-l .ws-field{animation:ws-in 340ms var(--ds-ease) both 140ms}
-.ws-col-r .ws-field{animation:ws-in 340ms var(--ds-ease) both 190ms}
-.ws-amb{animation:ws-glow 520ms var(--ds-ease) both}
+/* ── Motion: de scène settelt rustig in ────────────────────────────────────── */
+.ws-head{animation:ws-in 340ms var(--ds-ease) both}
+.ws-anchor{animation:ws-in 380ms var(--ds-ease) both 40ms}
+.ws-signal{animation:ws-in 380ms var(--ds-ease) both 110ms}
+.ws-col-l .ws-pane{animation:ws-in 340ms var(--ds-ease) both 150ms}
+.ws-col-r .ws-pane{animation:ws-in 340ms var(--ds-ease) both 200ms}
+.ws-adv{animation:ws-in 340ms var(--ds-ease) both 250ms}
+.ws-bg{animation:ws-glow 520ms var(--ds-ease) both}
 @keyframes ws-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes ws-glow{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){
-  .ws-anchor,.ws-signal,.ws-field,.ws-amb{animation:none}
+  .ws-head,.ws-anchor,.ws-signal,.ws-pane,.ws-adv,.ws-bg{animation:none}
+  .ws-spin.s1,.ws-spin.s2,.ws-spin.s3{animation:none}
   .ws-switch{transition:none}
 }
 
@@ -650,46 +765,67 @@
    gestippeld vóór ons. Zelfde design-DNA als Workspace, andere compositie.
    ═══════════════════════════════════════════════════════════════════════════ */
 .dc-memory{position:relative;padding:var(--ds-4) 0 var(--ds-10)}
-.dc-amb{position:absolute;inset:-6% -10% 55% -6%;pointer-events:none;z-index:0;
-  background:radial-gradient(42% 46% at 22% 20%,var(--tone-bg),transparent 72%),
-             radial-gradient(60% 40% at 60% 6%,rgba(94,230,235,.05),transparent 78%);
-  filter:blur(2px)}
+.dc-bg{position:absolute;inset:-60px -44px -12px;pointer-events:none;z-index:0;
+  overflow:hidden;border-radius:26px}
+.dc-amb{position:absolute;inset:0;
+  background:radial-gradient(44% 48% at 20% 16%,var(--tone-bg),transparent 70%),
+             radial-gradient(38% 34% at 86% 8%,rgba(94,230,235,.07),transparent 74%),
+             radial-gradient(40% 40% at 70% 90%,rgba(94,230,235,.04),transparent 74%)}
 .dc-memory>*{position:relative;z-index:1}
 
-.dc-head2{display:flex;align-items:flex-start;gap:var(--ds-5);flex-wrap:wrap;margin-bottom:var(--ds-8)}
-.dc-id2{display:flex;align-items:center;gap:var(--ds-4);min-width:0}
-.dc-orb{width:74px;height:74px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
-  font-size:24px;font-weight:750;color:var(--tone);border:1px solid var(--tone-bd);
-  background:radial-gradient(circle at 50% 32%,rgba(255,255,255,.08),transparent 60%),
-             radial-gradient(circle at 50% 50%,var(--tone-bg),rgba(12,30,58,.8) 78%);
-  box-shadow:0 0 44px -12px var(--tone-bg)}
-.dc-name{margin:0;font-size:clamp(26px,2.8vw,36px);font-weight:750;letter-spacing:-.025em;line-height:1.05}
+.dc-head2{display:flex;align-items:center;justify-content:space-between;gap:var(--ds-5);flex-wrap:wrap;margin-bottom:var(--ds-8)}
+.dc-id2{display:flex;align-items:center;gap:var(--ds-5);min-width:0}
+.dc-orbwrap{position:relative;flex:0 0 auto;display:grid;place-items:center}
+.dc-orb-halo{position:absolute;inset:-55%;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,var(--tone-bg) 0%,var(--tone-bg) 18%,transparent 60%);
+  filter:blur(6px)}
+.dc-orb{position:relative;width:84px;height:84px;border-radius:50%;display:grid;place-items:center;
+  font-size:27px;font-weight:750;letter-spacing:.03em;color:var(--tone);
+  border:1.5px solid var(--tone-bd);text-shadow:0 0 22px var(--tone-bg);
+  background:radial-gradient(circle at 50% 22%,rgba(255,255,255,.14),transparent 48%),
+             radial-gradient(circle at 50% 46%,var(--tone-bg) 0%,var(--tone-bg) 26%,rgba(13,30,58,.94) 78%);
+  box-shadow:inset 0 2px 1px rgba(255,255,255,.12),0 0 0 6px rgba(255,255,255,.02)}
+.dc-name{margin:0;font-size:clamp(28px,2.9vw,40px);font-weight:750;letter-spacing:-.028em;line-height:1.05}
 .dc-sub{margin:5px 0 0;display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap;
   font-size:var(--ds-t-sm);color:var(--ds-text-3)}
 .dc-sub .sep{opacity:.35}
-.dc-nav2{margin-top:var(--ds-3)}
-.dc-nav2 .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap}
-.dc-nav2 .anav-chip{background:var(--ds-well);border:1px solid var(--ds-hairline);color:var(--ds-text-2);
-  border-radius:var(--ds-r-pill);padding:6px 14px;font-size:var(--ds-t-sm);font-weight:600;cursor:pointer;
+.dc-nav2{flex:0 0 auto}
+.dc-nav2 .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap;justify-content:flex-end}
+.dc-nav2 .anav-chip{background:rgba(10,26,52,.5);border:1px solid rgba(122,168,255,.16);
+  color:var(--ds-text-2);border-radius:var(--ds-r-pill);padding:7px 15px;font-size:var(--ds-t-sm);
+  font-weight:600;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
   transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
 .dc-nav2 .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text)}
 
 .dc-mem-grid{display:grid;grid-template-columns:1fr;gap:var(--ds-8);align-items:start}
 
-/* ── De spine: één doorlopende tijdlijn door alle era's heen ─────────────── */
-.dc-spine{position:relative;padding-left:var(--ds-6)}
-.dc-spine::before{content:"";position:absolute;left:5px;top:8px;bottom:0;width:1px;
-  background:linear-gradient(180deg,var(--tone) 0%,rgba(94,230,235,.28) 22%,
-             var(--ds-hairline) 62%,transparent 100%)}
+/* ── De spine: één doorlopende tijdlijn door alle era's heen ───────────────
+   Vandaag straalt (glow-kop op de lijn), historie verzwakt naar achteren,
+   planning ligt gestippeld vóór ons. De lijn is een grafisch element.        */
+.dc-spine{position:relative;padding-left:var(--ds-8)}
+.dc-spine::before{content:"";position:absolute;left:6px;top:8px;bottom:0;width:2px;
+  border-radius:2px;
+  background:linear-gradient(180deg,var(--tone) 0%,var(--tone) 7%,rgba(94,230,235,.35) 26%,
+             rgba(122,168,255,.14) 60%,transparent 100%);
+  box-shadow:0 0 18px -2px var(--tone-bg)}
+/* Glow-kop: het 'nu'-punt van de lijn licht op. */
+.dc-spine::after{content:"";position:absolute;left:-19px;top:-14px;width:52px;height:52px;
+  border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,var(--tone-bg) 0%,transparent 62%);filter:blur(2px)}
 .dc-era{margin-bottom:var(--ds-8)}
 .dc-era:last-child{margin-bottom:0}
-.dc-era-l{margin:0 0 var(--ds-4);opacity:.9}
+.dc-era-l{margin:0 0 var(--ds-4);opacity:.9;display:flex;align-items:center;gap:9px}
+.dc-era-l::before{content:"";width:7px;height:7px;border-radius:50%;flex:0 0 auto;
+  background:var(--tone);box-shadow:0 0 10px var(--tone-bg);margin-left:calc(var(--ds-8)*-1 + 3px)}
+.dc-ahead .dc-era-l::before{background:none;border:1.5px dashed var(--tone)}
 .dc-spine-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--ds-4)}
 
 /* Knooppunt: gewicht bepaalt contrast en schaal → tijd wordt zichtbaar. */
 .dc-node{position:relative;padding-left:var(--ds-5);min-width:0}
-.dc-node-dot{position:absolute;left:calc(var(--ds-6)*-1 + 1px);top:5px;width:11px;height:11px;
+.dc-node-dot{position:absolute;left:calc(var(--ds-8)*-1 + 1px);top:5px;width:11px;height:11px;
   border-radius:50%;background:var(--tone);box-shadow:0 0 0 4px var(--ds-canvas),0 0 16px var(--tone-bg)}
+.dc-now .dc-node-dot{box-shadow:0 0 0 4px var(--ds-canvas),0 0 0 7px var(--tone-bg),
+  0 0 22px var(--tone)}
 .dc-node.is-future .dc-node-dot{background:none;border:1.5px dashed var(--tone);
   box-shadow:0 0 0 4px var(--ds-canvas)}
 .dc-node-b{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -713,26 +849,40 @@
 .dc-empty-tl{margin:0 0 0 var(--ds-5);padding:0;background:none;border:0;
   font-size:var(--ds-t-sm);color:var(--ds-text-3);line-height:1.55;max-width:62ch}
 
-/* ── Bewijs (domeinen/bronnen) staat naast het verhaal, niet erin ────────── */
+/* ── Bewijs (domeinen/bronnen) staat naast het verhaal, niet erin ──────────
+   Zelfde glastaal als de Workspace-panes: het verhaal leeft op het canvas,
+   het bewijs zweeft ernaast — gedempt tot je het aanraakt.                  */
 .dc-evidence{display:flex;flex-direction:column;gap:var(--ds-3);min-width:0;
-  opacity:.82;transition:opacity var(--ds-base) var(--ds-ease)}
+  opacity:.86;transition:opacity var(--ds-base) var(--ds-ease)}
 .dc-evidence:hover,.dc-evidence:focus-within{opacity:1}
-.dc-evidence .ds-disc{background:none;border-color:var(--ds-hairline)}
-.dc-evidence .ds-disc>summary{font-size:var(--ds-t-sm);color:var(--ds-text-3)}
+.dc-evidence .ds-disc{border-radius:var(--ds-r-xl);
+  background:linear-gradient(164deg,rgba(22,52,100,.5),rgba(9,24,48,.36));
+  border:1px solid rgba(122,168,255,.16);
+  box-shadow:0 14px 34px -16px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.dc-evidence .ds-disc>summary{font-size:var(--ds-t-sm);color:var(--ds-text-2);
+  padding:var(--ds-4) var(--ds-5)}
+.dc-evidence .ds-disc-body{padding:0 var(--ds-5) var(--ds-4)}
 /* Bewijswaarden zijn lange strings (zones, provenance) → links uitlijnen leest beter. */
 .dc-evidence .dc-reg-main{flex-direction:column;align-items:flex-start;gap:1px}
 .dc-evidence .dc-val{text-align:left;font-size:var(--ds-t-sm)}
 .dc-evidence .dc-lbl{font-size:var(--ds-t-xs);letter-spacing:.04em;text-transform:uppercase}
 .dc-evidence .dc-domains{display:flex;flex-direction:column;gap:var(--ds-3)}
 
+@media (min-width:900px){
+  .view.ds-view[data-view="dossier"]{max-width:1520px}
+}
 @media (min-width:1100px){
-  .dc-mem-grid{grid-template-columns:minmax(0,1.35fr) minmax(300px,.85fr);gap:var(--ds-10)}
+  .dc-mem-grid{grid-template-columns:minmax(0,1.4fr) minmax(300px,.9fr);gap:var(--ds-10)}
 }
 @media (max-width:760px){
   .dc-head2{margin-bottom:var(--ds-6)}
-  .dc-orb{width:58px;height:58px;font-size:19px}
-  .dc-spine{padding-left:var(--ds-5)}
+  .dc-orb{width:60px;height:60px;font-size:20px}
+  .dc-spine{padding-left:var(--ds-6)}
   .dc-node{padding-left:var(--ds-4)}
+  .dc-node-dot{left:calc(var(--ds-6)*-1 + 1px)}
+  .dc-era-l::before{margin-left:calc(var(--ds-6)*-1 + 3px)}
+  .dc-bg{inset:-24px -16px -8px}
 }
 /* Motion: het verhaal settelt rustig in. */
 .dc-era{animation:ws-in 360ms var(--ds-ease) both}
@@ -746,24 +896,35 @@
    krijgt hij een BRIEFING: identiteit, reden, dominant signaal, ondersteunende
    feiten en de volgende stap — dezelfde productwereld als Workspace/Dossier. */
 .prio-item.open .prio-row{border-color:transparent}
-.pb{position:relative;padding:var(--ds-5) var(--ds-5) var(--ds-4);overflow:hidden;
-  border-radius:var(--ds-r-lg)}
-.pb-amb{position:absolute;inset:-40% 30% 40% -20%;pointer-events:none;
-  background:radial-gradient(50% 50% at 30% 50%,var(--tone-bg),transparent 72%)}
+.pb{position:relative;padding:var(--ds-6) var(--ds-6) var(--ds-5);overflow:hidden;
+  border-radius:var(--ds-r-xl)}
+/* De briefing is een glasobject in het klein: eigen ambient, eigen diepte. */
+.prio-detail{background:linear-gradient(164deg,rgba(22,52,100,.5),rgba(9,24,48,.38));
+  border:1px solid rgba(122,168,255,.15);border-radius:var(--ds-r-xl);
+  padding:0;margin-top:var(--ds-2);
+  box-shadow:0 22px 50px -22px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.pb-amb{position:absolute;inset:-40% 30% 20% -20%;pointer-events:none;
+  background:radial-gradient(46% 52% at 26% 44%,var(--tone-bg),transparent 70%),
+             radial-gradient(36% 42% at 88% 0%,rgba(94,230,235,.06),transparent 72%)}
 .pb>*{position:relative;z-index:1}
-.pb-head{display:flex;align-items:center;gap:var(--ds-4);margin-bottom:var(--ds-4)}
-.pb-orb{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
-  font-size:17px;font-weight:750;color:var(--tone);border:1px solid var(--tone-bd);
-  background:radial-gradient(circle at 50% 34%,rgba(255,255,255,.07),transparent 60%),
-             radial-gradient(circle at 50% 50%,var(--tone-bg),rgba(12,30,58,.7) 78%);
-  box-shadow:0 0 34px -12px var(--tone-bg)}
+.pb-head{display:flex;align-items:center;gap:var(--ds-5);margin-bottom:var(--ds-4)}
+.pb-orb{position:relative;width:62px;height:62px;border-radius:50%;display:grid;place-items:center;
+  flex:0 0 auto;font-size:20px;font-weight:750;letter-spacing:.03em;color:var(--tone);
+  border:1.5px solid var(--tone-bd);text-shadow:0 0 18px var(--tone-bg);
+  background:radial-gradient(circle at 50% 22%,rgba(255,255,255,.13),transparent 48%),
+             radial-gradient(circle at 50% 46%,var(--tone-bg) 0%,var(--tone-bg) 26%,rgba(13,30,58,.92) 78%);
+  box-shadow:inset 0 2px 1px rgba(255,255,255,.12)}
+.pb-orb::before{content:"";position:absolute;inset:-46%;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,var(--tone-bg) 0%,var(--tone-bg) 16%,transparent 60%);
+  filter:blur(5px)}
 .pb-id{flex:1;min-width:0}
-.pb-naam{margin:0;font-size:19px;font-weight:750;letter-spacing:-.015em}
-.pb-reden{margin:2px 0 0;font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.4}
+.pb-naam{margin:0;font-size:22px;font-weight:750;letter-spacing:-.02em}
+.pb-reden{margin:3px 0 0;font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.4}
 .pb-dom{flex:0 0 auto;display:flex;align-items:baseline;color:var(--tone);
-  font-variant-numeric:tabular-nums;text-shadow:0 0 22px var(--tone-bg)}
-.pb-dom b{font-size:34px;font-weight:780;letter-spacing:-.03em;line-height:1}
-.pb-dom i{font-style:normal;font-size:14px;font-weight:700;margin-left:1px;opacity:.75}
+  font-variant-numeric:tabular-nums;text-shadow:0 0 26px var(--tone-bg),0 0 60px var(--tone-bg)}
+.pb-dom b{font-size:44px;font-weight:800;letter-spacing:-.035em;line-height:1}
+.pb-dom i{font-style:normal;font-size:16px;font-weight:700;margin-left:2px;opacity:.75}
 .pb-acts{justify-content:flex-start}
 .pb-more{font-size:var(--ds-t-xs);color:var(--ds-text-3);font-weight:600;margin-top:var(--ds-1)}
 .pb-more:hover{color:var(--ds-accent)}
