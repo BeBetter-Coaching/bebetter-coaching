@@ -705,19 +705,23 @@
    onderaan, accent-glow ALLEEN bij de connector-node — nooit de hele lens getint.
    Externe-review-besluit: borderless losgelaten voor deze subtiele glaslenzen. */
 .ws-lens{position:absolute;z-index:-1;pointer-events:none;border-radius:15px;
-  background:linear-gradient(158deg,rgba(26,50,90,.5),rgba(12,26,50,.28) 56%,rgba(8,18,38,.12));
-  border:1px solid rgba(126,166,236,.11);
+  background:linear-gradient(158deg,rgba(28,54,96,.56),rgba(13,28,54,.33) 56%,rgba(8,18,38,.15));
+  border:1px solid rgba(130,170,240,.13);
   -webkit-backdrop-filter:blur(9px) saturate(1.04);backdrop-filter:blur(9px) saturate(1.04);
-  box-shadow:inset 0 1px 0 rgba(190,215,255,.10),0 26px 58px -34px rgba(2,8,20,.92);
+  box-shadow:inset 0 1px 0 rgba(192,217,255,.11),0 26px 58px -34px rgba(2,8,20,.94);
   -webkit-mask-image:linear-gradient(180deg,#000 82%,transparent 100%);
   mask-image:linear-gradient(180deg,#000 82%,transparent 100%)}
 .ws-lens::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
   border-top:1px solid rgba(184,212,255,.16);
   -webkit-mask-image:linear-gradient(180deg,#000,transparent 55%);mask-image:linear-gradient(180deg,#000,transparent 55%)}
-.ws-lens::after{content:"";position:absolute;width:70px;height:70px;top:calc(50% - 35px);border-radius:50%;
+/* accent-glow ALLEEN bij een lens met connector (.conn), exact op het instappunt
+   van de lijn (per-lens left/top hieronder). In calm zonder connector: geen glow. */
+.ws-lens.conn::after{content:"";position:absolute;width:70px;height:70px;border-radius:50%;
   pointer-events:none;background:radial-gradient(circle,var(--tone-bg),transparent 70%);filter:blur(5px);opacity:.9}
-.ws-lens.acc-r::after{right:-16px}
-.ws-lens.acc-l::after{left:-16px}
+.ws-frag-attn .ws-lens::after{left:261px;top:44px}
+.ws-frag-load .ws-lens::after{left:337px;top:5px}
+.ws-frag-plan .ws-lens::after{left:-23px;top:42px}
+.ws-frag-fb .ws-lens::after{left:-23px;top:25px}
 .ws-hang{display:none}
 
 .ws-frag-attn{left:12%;top:186px;width:270px;animation:ws-in 400ms var(--ds-ease) 1.05s both}

@@ -493,8 +493,13 @@ class TestAthleteCanvas:
         lens = _DS.split(".ws-lens{")[1][:600].replace(" ", "")
         assert "backdrop-filter:blur" in lens and "mask-image:linear-gradient" in lens
         assert "box-shadow:inset" in lens                       # licht-van-boven, geen web-card-shadow
-        # accent-glow ALLEEN bij de connector-node (niet de hele lens getint)
-        assert ".ws-lens::after" in _DS and ".ws-lens.acc-l::after" in _DS and ".ws-lens.acc-r::after" in _DS
+        # accent-glow ALLEEN bij een lens mét connector (.conn), exact op het
+        # instappunt (per-lens left/top) — geen generieke middenpositie.
+        assert ".ws-lens.conn::after" in _DS
+        for f in ("ws-frag-attn", "ws-frag-load", "ws-frag-plan", "ws-frag-fb"):
+            assert f".ws-frag-{f.split('-')[-1]} .ws-lens::after" in _DS or f"{f} .ws-lens::after" in _DS
+        # data-gestuurd: attn-lens krijgt .conn alleen bij echte aandacht
+        assert "ws-lens ${attn.length ? 'conn' : ''}" in ws.replace('"', "'")
         # bronnen blijft een subordinate strip (geen 5e lens); command blijft apart
         assert "ws-frag-src" in ws and "ws-src-rail" in ws
         assert 'ws-frag-src ws-lens' not in ws and 'ws-dock' in ws

@@ -5394,14 +5394,22 @@ function wsRender(wrap, vm) {
   // context krijgt een verbinding. Coords getuned voor 1440; verborgen < 1180px.
   const planWebTone = sc ? dsTone(sc.tier) : "is-calm";
   const fbTone = fb.status === "unknown" ? "is-unknown" : (fb.open ? "is-attention" : "is-success");
-  const webSeg = (t, hot, d, nx, ny, ex, ey) =>
-    `<g class="${t}"><path class="ws-webline${hot ? " hot" : ""}" pathLength="1" d="${d}"/>
+  // Lijn afgeleid van origin(orbit-node)→endpoint(lens-instappunt): de lijn eindigt
+  // dan ALTIJD exact op de endpoint-node, die exact op het lens-instappunt ligt.
+  const webSeg = (t, hot, nx, ny, ex, ey) => {
+    const c1x = nx + (ex - nx) * 0.34, c1y = ny + (ey - ny) * 0.12;
+    const c2x = nx + (ex - nx) * 0.72, c2y = ey - (ey - ny) * 0.14;
+    const d = `M${nx} ${ny} C${c1x.toFixed(0)} ${c1y.toFixed(0)} ${c2x.toFixed(0)} ${c2y.toFixed(0)} ${ex} ${ey}`;
+    return `<g class="${t}"><path class="ws-webline${hot ? " hot" : ""}" pathLength="1" d="${d}"/>
       <circle class="ws-webnode" cx="${nx}" cy="${ny}" r="5"/><circle class="ws-webend" cx="${ex}" cy="${ey}" r="3.5"/></g>`;
+  };
+  // endpoints = het exacte lens-instappunt (viewBox-coords, getuned voor 1440);
+  // de accent-glow op elke lens staat op dezelfde hoogte (zie .ws-frag-* .ws-lens::after).
   let web = "";
-  if (attn.length) web += webSeg(tone, true, "M566 350 C500 326 470 320 452 322", 566, 350, 452, 322);
-  if (bel.km_recent != null) web += webSeg(belTone, bel.actief, "M560 468 C500 508 452 548 430 556", 560, 468, 430, 556);
-  web += webSeg(planWebTone, false, "M838 346 C930 320 1000 314 1044 316", 838, 346, 1044, 316);
-  web += webSeg(fbTone, false, "M844 466 C934 506 1000 540 1044 548", 844, 466, 1044, 548);
+  if (attn.length) web += webSeg(tone, true, 566, 350, 514, 308);
+  if (bel.km_recent != null) web += webSeg(belTone, bel.actief, 560, 468, 515, 534);
+  web += webSeg(planWebTone, false, 838, 346, 977, 279);
+  web += webSeg(fbTone, false, 844, 466, 1022, 533);
   h += `<svg class="ws-web" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${web}</svg>`;
 
   // Z3 — fragmenten (borderless, ruimtelijk, asymmetrisch)
@@ -5415,7 +5423,7 @@ function wsRender(wrap, vm) {
     ? ((attn[0].soort === "belasting" && belZin) ? belZin : esc(attn[0].kort || ""))
     : "";
   h += `<div class="ws-frag ws-frag-attn ${tone}">
-      <span class="ws-lens acc-r" aria-hidden="true"></span>
+      <span class="ws-lens ${attn.length ? 'conn' : ''}" aria-hidden="true"></span>
       <span class="ws-tick"></span>
       <h3 class="ds-label">Aandacht nu</h3>
       ${attn.length ? `<p class="ws-attn-t">${attnTxt}</p>
@@ -5427,7 +5435,7 @@ function wsRender(wrap, vm) {
   let loadFrag = "";
   if (bel.km_recent != null) {
     loadFrag = `<div class="ws-frag ws-frag-load ${bel.actief ? belTone : ""}">
-      <span class="ws-lens acc-r" aria-hidden="true"></span>
+      <span class="ws-lens conn" aria-hidden="true"></span>
       <h3 class="ds-label">Belastingsinstrument · 7 dagen<em>${nRuns ? `${nRuns} runs` : ""}</em></h3>
       <div class="ws-kmrow"><span class="ws-km">${esc(nlNum(bel.km_recent))}<i> km deze week</i></span>
         ${ratioLbl ? `<span class="ws-rt">${esc(ratioLbl)}</span>` : ""}</div>
@@ -5437,7 +5445,7 @@ function wsRender(wrap, vm) {
     </div>`;
   } else {
     loadFrag = `<div class="ws-frag ws-frag-load">
-      <span class="ws-lens acc-r" aria-hidden="true"></span>
+      <span class="ws-lens" aria-hidden="true"></span>
       <h3 class="ds-label">Belasting</h3>
       <p class="ws-attn-t calm">Geen belastingstand bekend.</p></div>`;
   }
@@ -5447,7 +5455,7 @@ function wsRender(wrap, vm) {
   let planHead = sc ? wsLine({ tone: dsTone(sc.tier), icon: "clock",
     title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
   h += `<div class="ws-frag ws-frag-plan ${sc ? dsTone(sc.tier) : ""}">
-    <span class="ws-lens acc-l" aria-hidden="true"></span>
+    <span class="ws-lens conn" aria-hidden="true"></span>
     <h3 class="ds-label">Doel &amp; planning</h3>
     ${planHead}<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>
     <button type="button" class="ws-cta quiet" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button>
@@ -5458,7 +5466,7 @@ function wsRender(wrap, vm) {
     : `<div class="ws-fb ${fbTone}"><span class="ws-fb-badge">${fb.open || 0}</span>
         <span class="ws-fb-t">${fb.open ? `${fb.open} open reactie${fb.open !== 1 ? "s" : ""}<small>vraagt aandacht</small>` : `alles beantwoord<small>geen open reacties</small>`}</span></div>`;
   h += `<div class="ws-frag ws-frag-fb ${fbTone}">
-    <span class="ws-lens acc-l" aria-hidden="true"></span>
+    <span class="ws-lens conn" aria-hidden="true"></span>
     <h3 class="ds-label">Feedback</h3>${fbBody}
     <div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>
     <button type="button" class="ws-cta quiet" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit openen</button>
