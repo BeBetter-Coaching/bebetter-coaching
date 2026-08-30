@@ -5114,9 +5114,9 @@ function wsLoadInstrument(bel) {
   const xi = i => padL + (N > 1 ? (i / (N - 1)) * span : 0);
   const yCum = v => 100 - (v / cumMax) * 86;
   const bars = days.map((d, i) => { const x = xi(i);
-    if (!d.km) return `<rect class="li-bar rest" x="${(x - 6).toFixed(1)}" y="97" width="12" height="3" rx="1.5"/>`;
+    if (!d.km) return `<rect class="li-bar rest" x="${(x - 4.5).toFixed(1)}" y="97" width="9" height="3" rx="1.5"/>`;
     const h = (d.km / maxDaily) * 30;
-    return `<rect class="li-bar" x="${(x - 6).toFixed(1)}" y="${(100 - h).toFixed(1)}" width="12" height="${h.toFixed(1)}" rx="2"/>`;
+    return `<rect class="li-bar" x="${(x - 4.5).toFixed(1)}" y="${(100 - h).toFixed(1)}" width="9" height="${h.toFixed(1)}" rx="2.5"/>`;
   }).join("");
   const vals = days.map((d, i) => d.km
     ? `<text class="li-val" x="${xi(i).toFixed(1)}" y="${(100 - (d.km / maxDaily) * 30 - 4).toFixed(1)}">${esc(nlNum(Math.round(d.km * 10) / 10))}</text>`
@@ -5130,10 +5130,15 @@ function wsLoadInstrument(bel) {
   return `<svg class="ws-loadinst" viewBox="0 0 320 128" style="color:var(--tone)" aria-hidden="true">
     <defs><linearGradient id="ws-liarea" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="currentColor" stop-opacity=".24"/>
-      <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+      <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient>
+      <linearGradient id="ws-liref" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="var(--ds-accent)" stop-opacity="0"/>
+        <stop offset="0.22" stop-color="var(--ds-accent)" stop-opacity=".7"/>
+        <stop offset="0.8" stop-color="var(--ds-accent)" stop-opacity=".5"/>
+        <stop offset="1" stop-color="var(--ds-accent)" stop-opacity="0"/></linearGradient></defs>
     <line class="li-base" x1="14" y1="100" x2="306" y2="100"/>
     ${yRef != null ? `<line class="li-ref" x1="14" y1="${yRef.toFixed(1)}" x2="306" y2="${yRef.toFixed(1)}"/>
-      <text class="li-reflbl" x="14" y="${(yRef - 4).toFixed(1)}">REF ${esc(nlNum(ref))}</text>` : ""}
+      <text class="li-reflbl" x="46" y="${(yRef - 4).toFixed(1)}">REF ${esc(nlNum(ref))}</text>` : ""}
     ${bars}${vals}
     <path class="li-area" d="${area}"/>
     <path class="li-cum" d="${line}"/>
@@ -5198,6 +5203,11 @@ function wsCore(focal) {
           <stop offset="0.5" stop-color="rgba(150,198,255,.07)"/>
           <stop offset="1" stop-color="rgba(174,214,255,.55)"/>
         </linearGradient>
+        <radialGradient id="ws-ifield" cx="44%" cy="40%" r="60%">
+          <stop offset="0" stop-color="rgba(120,172,255,.16)"/>
+          <stop offset="58%" stop-color="rgba(58,108,190,.05)"/>
+          <stop offset="100%" stop-color="rgba(30,60,120,0)"/>
+        </radialGradient>
         <radialGradient id="ws-occ" cx="50%" cy="84%" r="48%">
           <stop offset="0" stop-color="rgba(2,7,18,.6)"/>
           <stop offset="100%" stop-color="rgba(2,7,18,0)"/>
@@ -5209,28 +5219,25 @@ function wsCore(focal) {
       <circle cx="340" cy="332" r="150" fill="url(#ws-wash)"/>
       <g clip-path="url(#ws-sph)">
         <circle cx="340" cy="332" r="150" fill="url(#ws-field)"/>
+        <circle cx="340" cy="332" r="112" fill="url(#ws-ifield)"/>
+        <path class="ws-shell-rim" d="M262 296 A112 112 0 0 1 356 224"/>
+        <path class="ws-shell-rim dim" d="M412 366 A112 112 0 0 1 372 428"/>
         <ellipse class="ws-readplane" cx="340" cy="300" rx="118" ry="44"/>
-        <ellipse class="ws-sph-grad" cx="340" cy="332" rx="52" ry="150"/>
-        <ellipse class="ws-sph-grad" cx="340" cy="332" rx="108" ry="150"/>
-        <ellipse class="ws-sph-line" cx="340" cy="332" rx="150" ry="46"/>
-        <ellipse class="ws-sph-line t" cx="340" cy="332" rx="150" ry="100"/>
-        <ellipse class="ws-sph-line" cx="340" cy="290" rx="146" ry="30" opacity=".4"/>
-        <ellipse class="ws-sph-line" cx="340" cy="374" rx="146" ry="30" opacity=".3"/>
-        <circle class="ws-sph-inner" cx="340" cy="332" r="112"/>
-        <path class="ws-shell-rim" d="M258 300 A112 112 0 0 1 356 224"/>
-        <g clip-path="url(#ws-sphi)">
-          <ellipse class="ws-sph-inner" cx="340" cy="332" rx="40" ry="112" opacity=".5"/>
-          <ellipse class="ws-sph-inner" cx="340" cy="332" rx="112" ry="34" opacity=".5"/>
-        </g>
+        <path class="ws-sph-grad" d="M338 188 A82 150 0 0 0 316 452"/>
+        <path class="ws-sph-grad" d="M352 214 A106 150 0 0 1 372 456"/>
+        <path class="ws-sph-line" d="M196 342 A150 46 0 0 0 408 360"/>
+        <path class="ws-sph-line t" d="M214 316 A150 100 0 0 0 300 430" opacity=".5"/>
+        <path class="ws-sph-line" d="M248 276 A146 30 0 0 1 372 269" opacity=".4"/>
+        <path class="ws-sph-line" d="M236 392 A150 40 0 0 0 344 404" opacity=".3"/>
         <g class="ws-dataflow">
-          <path class="ws-flow f1" d="M340 196 Q296 262 340 330"/>
-          <path class="ws-flow f2" d="M456 344 Q394 322 344 332"/>
-          <path class="ws-flow f3" d="M256 402 Q306 364 340 336"/>
+          <path class="ws-flow f1" d="M330 196 Q300 258 340 330"/>
+          <path class="ws-flow f2" d="M452 342 Q392 320 344 332"/>
+          <path class="ws-flow f3" d="M252 402 Q306 362 340 336"/>
+          <path class="ws-flow f4" d="M398 224 Q366 276 342 328"/>
         </g>
-        <path class="ws-sph-seg" d="M232 316 A150 46 0 0 1 268 300" opacity=".55"/>
-        <path class="ws-sph-seg" d="M412 300 A150 46 0 0 1 448 316" opacity=".38"/>
-        <path class="ws-sph-seg" d="M300 236 A150 100 0 0 1 344 230" opacity=".3"/>
-        <path class="ws-sph-seg" d="M372 430 A150 46 0 0 1 408 420" opacity=".26"/>
+        <path class="ws-sph-seg" d="M300 230 A140 118 0 0 1 416 286" opacity=".42"/>
+        <path class="ws-sph-seg" d="M232 316 A150 46 0 0 1 268 300" opacity=".5"/>
+        <path class="ws-sph-seg" d="M404 402 A150 46 0 0 1 440 384" opacity=".3"/>
         <circle class="ws-sph-dot t" cx="300" cy="300" r="1.5"/><circle class="ws-sph-dot" cx="386" cy="322" r="1.6"/>
         <circle class="ws-sph-dot" cx="352" cy="368" r="1.2"/><circle class="ws-sph-dot t" cx="312" cy="356" r="1.4"/>
         <circle class="ws-sph-dot" cx="372" cy="286" r="1.1"/><circle class="ws-sph-dot" cx="330" cy="398" r="1.3"/>
@@ -5323,7 +5330,7 @@ function wsRender(wrap, vm) {
   let h = genBanner(vm.generation);
   h += `<div class="ws-scene ${tone}">`;
   // Z0 — omgeving
-  h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
+  h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div><div class="ws-haze"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
   // Z1 — cockpitgeometrie: gebroken bogen, gidslijnen, data-nodes
   h += `<svg class="ws-geo" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
     <circle class="ws-arc a2" cx="700" cy="430" r="418" stroke-dasharray="600 2026" transform="rotate(-206 700 430)"/>

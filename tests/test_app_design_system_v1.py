@@ -384,9 +384,9 @@ class TestAthleteCanvas:
         assert 'class="ws-scrim"' in ws and ws.count('class="ws-scrim"') >= 3
         scrim = _DS.split(".ws-scrim{")[1][:260]
         assert "border:" not in scrim and "border-radius:50%" in scrim
-        # rijkere kern (intelligentie-object, geen platte bol): tweede inner shell,
-        # dovende meridianen, core-light — nog steeds volledig abstract (geen mens).
-        for rich in ("ws-sph-inner", "ws-sph-grad", "ws-corelight"):
+        # rijkere kern (intelligentie-object, geen platte bol): intermediate
+        # shell-rim, dovende meridiaan-fragmenten, core-light — abstract (geen mens).
+        for rich in ("ws-shell-rim", "ws-sph-grad", "ws-corelight"):
             assert rich in core, f"kern mist verrijking {rich}"
         # honest locale: NL-decimaalkomma, presentationeel (verzint geen waarde)
         assert "function nlNum(" in _APP and "nlNum(bel.km_recent)" in ws
@@ -425,3 +425,31 @@ class TestAthleteCanvas:
         assert 'class="ws-floor"' in ws and ".ws-floor " in _DS
         # discipline: nieuwe motion staat óók uit onder reduced-motion
         assert ".ws-flow,.ws-scan,.li-bar" in _DS.replace(" ", "")
+
+    def test_39_final_polish_pass(self):
+        # Polish-pass: geen "globe" meer maar een gelaagd intelligence-object;
+        # load minder chart-achtig; één extra dieptelaag; command-emanation.
+        core = _fn("wsCore")
+        ws = _fn("wsRender")
+        li = _fn("wsLoadInstrument")
+        # DE-GLOBE: geen VOLLEDIGE meridiaan/breedte-ellipsen meer als globe-grid;
+        # de structuur bestaat uit onvolledige/asymmetrische arc-fragmenten (paths).
+        assert 'class="ws-sph-grad" cx=' not in core           # geen complete ellipse-meridianen
+        assert '<path class="ws-sph-grad"' in core             # gebroken meridiaan-fragmenten
+        # DRIE dieptelagen: intermediate intelligence-field + eigen rand-highlight
+        assert "url(#ws-ifield)" in core and "ws-shell-rim" in core and "ws-shell-rim dim" in core
+        assert 'radialGradient id="ws-ifield"' in core          # intermediate-field gradient in de defs
+        # de bol-silhouet blijft (rim) zodat het volume leest, maar het interieur is gebroken
+        assert "ws-sph-rim" in core
+        # LOAD: referentie is een thin threshold-beam (fade-gradient), geen chart-gridline
+        assert 'linearGradient id="ws-liref"' in li             # beam-gradient in de instrument-defs
+        assert "url(#ws-liref)" in _DS                          # .li-ref gebruikt de fade-beam
+        assert 'stroke-dasharray:3 6' not in _DS.split(".li-ref{")[1][:80]  # geen dashed gridline meer
+        # DIEPTE: één extra ambient laag (horizontale haze), reduced-motion-safe
+        assert 'class="ws-haze"' in ws and ".ws-haze{" in _DS and "@keyframes ws-haze" in _DS
+        # COMMAND-EMANATION: output-node pulse + track-draw als eenmalige entree-sequence
+        assert "@keyframes ws-trackdraw" in _DS and "@keyframes ws-poutpulse" in _DS
+        # a11y: expliciete focus-indicator op de primaire actie
+        assert ".ws-cmd:focus-visible{outline" in _DS.replace(" ", "").replace("\n", "")
+        # motion-performance: geen transition:all in de workspace-laag
+        assert "transition:all" not in _DS.replace(" ", "")

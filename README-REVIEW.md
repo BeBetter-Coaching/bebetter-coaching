@@ -3,7 +3,58 @@
 **Branch:** `feature/app-design-system-athlete-shell-v1` · **commit:** zie COMMIT.txt
 **Base:** `main = 39d2453` (SW v97 live) — deze branch is NIET gemerged.
 
-## WORKSPACE FINAL 10% — ATHLETE CORE (merge-kandidaat `ac62b83` → finale)
+## WORKSPACE FINAL POLISH — ATHLETE CORE (merge-kandidaat `da1ed78` → finale)
+> Laatste polish-pass op de `da1ed78`-cockpit met de vier design-skills in de
+> voorgeschreven rol: `/artifact-design` (art-direction review), **ui-ux-pro-max**
+> (diepte/material/dataviz — bevestigde glassmorphism-multilayer + trend-endpoint),
+> **frontend-design** (guard tegen generiek: spend boldness in de Core, houd de
+> rest stil → de "perfecte globe" is de veilige sci-fi-default en moest gebroken),
+> **ui-animation** (entree-emanation), **web-design-guidelines** (a11y-audit).
+> Géén reset/avatar/nieuw concept; architectuur locked; frontend/presentation-only.
+
+**Vijf ingrepen (alles op echte data):**
+1. **Core: van globe naar gelaagd intelligence-object** — de complete latitude/
+   longitude-wireframe (de "veilige globe") is vervangen door **onvolledige,
+   asymmetrische shell-fragmenten** + **drie brightness-gescheiden dieptelagen**
+   (outer glass rim → intermediate intelligence-field `ws-ifield` met eigen
+   rand-highlight → inner active core-light). Datastromen convergeren nu coherent
+   (4e flow, opacity-taper). Bol-silhouet blijft via de rim → leest nog als volume.
+2. **Load-instrument minder chart** — dag-energie als **smalle glowing pulse-columns**;
+   referentie als **thin threshold-beam** (fade-gradient `ws-liref`, geen full-width
+   gridline meer); eind-node blijft de origin van de kern-connector.
+3. **Command uit het platform (causaal)** — eenmalige entree-sequence: output-node
+   pulseert → **light-track tekent zich** naar de command-plug (`ws-trackdraw`/
+   `ws-poutpulse`, reduced-motion-safe basis-state).
+4. **Eén extra dieptelaag** — horizontale **ambient depth-haze** (`ws-haze`) die
+   héél traag drift; de cockpit loopt door voorbij de UI.
+5. **A11y-audit** — expliciete `:focus-visible`-ring op command/utility/CTA; geen
+   `transition:all`, geen `outline:none` zonder vervanging; decoratieve SVG's
+   `aria-hidden`; nieuwe motion volledig onder `prefers-reduced-motion`.
+
+Behouden: geen mens, echte data, `nlNum`-locale, geen data→geen gauge (calm =
+serene kern), reduced-motion-centrering in de basis-regel.
+
+**Gewijzigde bestanden:** `pwa/static/app.js` (`wsCore` de-globe + `ws-ifield`,
+`wsLoadInstrument` beam/pulse-columns, haze), `pwa/static/design-system.css`
+(ifield/shell-rim/f4-flow, li-beam+glow, haze, platform-track-emanation,
+focus-visible), `pwa/static/index.html`+`sw.js` (v111a/v107),
+`tests/test_app_design_system_v1.py` (`test_37` bijgewerkt, nieuw `test_39`).
+Design-lab: `design-lab/workspace-athlete-core-final.html`. **Geen backend.**
+
+**Teststatus:** 1028 passed — vaste én random volgorde. **Performance/a11y:** 0
+horizontale overflow op 1440px en 390px; geen nieuwe console-errors (alleen
+pre-existing favicon-404 + vibrate-warning); reduced-motion centreert + bevriest
+alle nieuwe motion; alleen transform/opacity/SVG-draw-animaties; geen library/
+canvas/WebGL.
+
+**Acceptance-renders:** `review-screenshots/01-workspace-desktop.png` (flagship),
+`02-hero-closeup.png` (ontglobed kern), `08-calm-core.png`, `04-mobile-sanity.png`,
+`07-before-after.png` (`da1ed78` → finale), `05-northstar-comparison.png`,
+`09-entrance.gif`.
+
+---
+
+## WORKSPACE FINAL 10% — ATHLETE CORE (`ac62b83` → `da1ed78`)
 > Laatste refinement-pass op de `ac62b83`-cockpit. **Géén reset, géén avatar, géén
 > nieuw concept:** de abstracte **Athlete Core** + spatial cockpit blijven; de
 > architectuur blijft volledig locked (Coach Read / AthleteState / generation /

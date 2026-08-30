@@ -91,6 +91,12 @@ body{margin:0;background:
 .ws-star.tw{animation:tw 4.5s ease-in-out infinite}
 @keyframes tw{0%,100%{opacity:.4}50%{opacity:.1}}
 .ws-vig{position:absolute;inset:0;background:radial-gradient(115% 88% at 50% 40%,transparent 50%,rgba(2,6,14,.74) 100%)}
+/* één extra ruimtelijke dieptelaag: horizontale depth-haze die héél traag drift
+   (voelbaar, niet zichtbaar) — de cockpit loopt door voorbij de UI */
+.ws-haze{position:absolute;left:-12%;right:-12%;top:50%;height:240px;pointer-events:none;
+  background:radial-gradient(58% 100% at 50% 50%,rgba(94,150,220,.06),transparent 72%);
+  filter:blur(22px);animation:ws-haze 30s ease-in-out infinite}
+@keyframes ws-haze{0%,100%{transform:translateX(-16px);opacity:.75}50%{transform:translateX(16px);opacity:1}}
 
 /* ══ Z2 — ATHLETE CORE (abstract, geen mens) ══ */
 .ws-stagez{position:relative;z-index:2;width:min(660px,100%);margin:0 auto;height:812px}
@@ -158,7 +164,9 @@ body{margin:0;background:
 .ws-flow.f1{stroke-width:2.6;stroke-dasharray:15 175;animation:ws-flow 4.8s linear infinite}
 .ws-flow.f2{stroke-width:2.2;stroke-dasharray:12 165;animation:ws-flow 6s linear infinite .9s}
 .ws-flow.f3{stroke-width:2;stroke-dasharray:11 160;animation:ws-flow 6.9s linear infinite 1.7s}
+.ws-flow.f4{stroke-width:1.8;stroke-dasharray:10 165;opacity:.72;animation:ws-flow 5.6s linear infinite 2.8s}
 @keyframes ws-flow{from{stroke-dashoffset:190}to{stroke-dashoffset:0}}
+.ws-shell-rim.dim{opacity:.34;stroke:rgba(150,190,255,.34)}
 /* core-light: intelligentie-kern — child-lagen met kleine phase-offsets = heartbeat */
 .ws-corelight .cl-bloom{fill:var(--tone);filter:blur(10px);animation:hotp 6s ease-in-out 2.2s infinite}
 .ws-corelight .cl-col{fill:var(--tone);filter:blur(5px);animation:hotp 6s ease-in-out 2.4s infinite}
@@ -207,10 +215,16 @@ body{margin:0;background:
   filter:drop-shadow(0 0 6px var(--tone))}
 /* lichtkolom: verbindt core-light met het platform (diepte + herkomst) */
 .ws-plat .beam{fill:var(--tone);opacity:.13;filter:blur(7px)}
-/* platform-output: node + light-track waar de coachactie "afgeleverd" wordt */
-.ws-plat .ws-pout{fill:#FFF3EC;filter:drop-shadow(0 0 8px var(--tone))}
+/* platform-output: node + light-track waar de coachactie "afgeleverd" wordt.
+   Entree-sequence (eenmalig): platform settelt → output-node pulseert → track
+   tekent zich naar de command. Basis-state = volledig zichtbaar (reduced-motion-safe). */
+.ws-plat .ws-pout{fill:#FFF3EC;filter:drop-shadow(0 0 8px var(--tone));
+  transform-box:fill-box;transform-origin:center;animation:ws-poutpulse 1.1s var(--ds-ease) 1.15s 1 both}
 .ws-plat .ws-ptrack{fill:none;stroke:var(--tone);stroke-width:1.4;stroke-linecap:round;opacity:.5;
-  filter:drop-shadow(0 0 5px var(--tone))}
+  filter:drop-shadow(0 0 5px var(--tone));stroke-dasharray:72;
+  animation:ws-trackdraw .7s var(--ds-ease) 1.35s both}
+@keyframes ws-trackdraw{from{stroke-dashoffset:72;opacity:0}40%{opacity:.5}to{stroke-dashoffset:0;opacity:.5}}
+@keyframes ws-poutpulse{0%{opacity:.4;transform:scale(.6)}55%{opacity:1;transform:scale(1.25)}100%{opacity:1;transform:scale(1)}}
 
 /* ══ Z1 — verre cockpitgeometrie (gebroken bogen + telemetrie, buiten de core) ══ */
 .ws-geo{position:absolute;inset:-40px -20px 0;width:calc(100% + 40px);height:calc(100% + 40px);
@@ -283,9 +297,10 @@ body{margin:0;background:
 /* het geïntegreerde load-instrument (vervangt losse weekstrip + chart) */
 .ws-loadinst{display:block;width:100%;height:auto;color:var(--tone);overflow:visible;margin-top:10px}
 .li-base{stroke:rgba(150,198,255,.2);stroke-width:1}
-.li-ref{stroke:var(--ds-accent);stroke-width:1.1;stroke-dasharray:3 6;opacity:.55}
+.li-ref{stroke:url(#liRef);stroke-width:1.4}
 .li-reflbl{font-size:8px;font-weight:700;letter-spacing:.1em;fill:var(--ds-accent);opacity:.75}
-.li-bar{fill:var(--tone);opacity:.34;transform-box:fill-box;transform-origin:bottom;animation:grow .6s var(--ds-ease) 1.3s both}
+.li-bar{fill:var(--tone);opacity:.4;transform-box:fill-box;transform-origin:bottom;
+  filter:drop-shadow(0 0 4px var(--tone-bg));animation:grow .6s var(--ds-ease) 1.3s both}
 .li-bar.rest{opacity:.16;animation:none}
 .li-val{font-size:8px;font-weight:700;fill:var(--tone);opacity:.85;text-anchor:middle;font-variant-numeric:tabular-nums}
 .li-day{font-size:8px;font-weight:700;letter-spacing:.06em;fill:var(--ds-text-3);text-anchor:middle}
@@ -414,6 +429,7 @@ body{margin:0;background:
       <!-- Z0 -->
       <div class="ws-bg">
         <div class="ws-amb"></div>
+        <div class="ws-haze"></div>
         <svg class="ws-orbits" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
           <path class="ws-tr" d="M-40 640 C300 540 780 520 1480 610"/>
           <path class="ws-tr" d="M-40 720 C360 640 820 630 1480 700"/>
@@ -514,6 +530,13 @@ body{margin:0;background:
                 <stop offset="0.5" stop-color="rgba(150,198,255,.07)"/>
                 <stop offset="1" stop-color="rgba(174,214,255,.55)"/>
               </linearGradient>
+              <!-- intermediate intelligence field: aparte, dimmere glasschil (koel blauw,
+                   lichtbron linksboven) — de middelste van drie dieptelagen -->
+              <radialGradient id="ifield" cx="44%" cy="40%" r="60%">
+                <stop offset="0" stop-color="rgba(120,172,255,.16)"/>
+                <stop offset="58%" stop-color="rgba(58,108,190,.05)"/>
+                <stop offset="100%" stop-color="rgba(30,60,120,0)"/>
+              </radialGradient>
               <!-- occlusie onderin: geeft de bol volume/diepte -->
               <radialGradient id="occ" cx="50%" cy="84%" r="48%">
                 <stop offset="0" stop-color="rgba(2,7,18,.6)"/>
@@ -527,35 +550,32 @@ body{margin:0;background:
             <g clip-path="url(#sph)">
               <!-- inner field-glow -->
               <circle cx="340" cy="332" r="150" fill="url(#field)"/>
+              <!-- LAAG 2 — intermediate intelligence field (aparte, dimmere glasschil r112) -->
+              <circle cx="340" cy="332" r="112" fill="url(#ifield)"/>
+              <path class="ws-shell-rim" d="M262 296 A112 112 0 0 1 356 224"/>
+              <path class="ws-shell-rim dim" d="M412 366 A112 112 0 0 1 372 428"/>
               <!-- reading-plane: zachte tone-gloed achter de waarde (waarde komt uit de kern) -->
               <ellipse class="ws-readplane" cx="340" cy="300" rx="118" ry="44"/>
-              <!-- graduated meridianen (helder aan de rand) -->
-              <ellipse class="ws-sph-grad" cx="340" cy="332" rx="52" ry="150"/>
-              <ellipse class="ws-sph-grad" cx="340" cy="332" rx="108" ry="150"/>
-              <!-- fijne breedtecirkels -->
-              <ellipse class="ws-sph-line" cx="340" cy="332" rx="150" ry="46"/>
-              <ellipse class="ws-sph-line t" cx="340" cy="332" rx="150" ry="100"/>
-              <ellipse class="ws-sph-line" cx="340" cy="290" rx="146" ry="30" opacity=".4"/>
-              <ellipse class="ws-sph-line" cx="340" cy="374" rx="146" ry="30" opacity=".3"/>
-              <!-- tweede inner shell: parallax-diepte + eigen rand-highlight (aparte laag) -->
-              <circle class="ws-sph-inner" cx="340" cy="332" r="112"/>
-              <path class="ws-shell-rim" d="M258 300 A112 112 0 0 1 356 224"/>
-              <g clip-path="url(#sphInner)">
-                <ellipse class="ws-sph-inner" cx="340" cy="332" rx="40" ry="112" opacity=".5"/>
-                <ellipse class="ws-sph-inner" cx="340" cy="332" rx="112" ry="34" opacity=".5"/>
-              </g>
-              <!-- interne datastromen: korte luminous trajecten die naar het hart
-                   convergeren — abstracte systeemactiviteit, geen waarden/labels -->
+              <!-- structuur: ONVOLLEDIGE, asymmetrische shell-fragmenten (geen globe-grid).
+                   De bol-silhouet leest via de rim; het interieur is bewust gebroken. -->
+              <path class="ws-sph-grad" d="M338 188 A82 150 0 0 0 316 452"/>
+              <path class="ws-sph-grad" d="M352 214 A106 150 0 0 1 372 456"/>
+              <path class="ws-sph-line" d="M196 342 A150 46 0 0 0 408 360"/>
+              <path class="ws-sph-line t" d="M214 316 A150 100 0 0 0 300 430" opacity=".5"/>
+              <path class="ws-sph-line" d="M248 276 A146 30 0 0 1 372 269" opacity=".4"/>
+              <path class="ws-sph-line" d="M236 392 A150 40 0 0 0 344 404" opacity=".3"/>
+              <!-- interne datastromen: converging trajecten met opacity-taper naar het hart
+                   (abstracte systeemactiviteit — geen waarden/labels, geen globe-lijnen) -->
               <g class="ws-dataflow">
-                <path class="ws-flow f1" d="M340 196 Q296 262 340 330"/>
-                <path class="ws-flow f2" d="M456 344 Q394 322 344 332"/>
-                <path class="ws-flow f3" d="M256 402 Q306 364 340 336"/>
+                <path class="ws-flow f1" d="M330 196 Q300 258 340 330"/>
+                <path class="ws-flow f2" d="M452 342 Q392 320 344 332"/>
+                <path class="ws-flow f3" d="M252 402 Q306 362 340 336"/>
+                <path class="ws-flow f4" d="M398 224 Q366 276 342 328"/>
               </g>
-              <!-- sparse segmented arc-ticks op verschillende dieptes (asymmetrisch) -->
-              <path class="ws-sph-seg" d="M232 316 A150 46 0 0 1 268 300" opacity=".55"/>
-              <path class="ws-sph-seg" d="M412 300 A150 46 0 0 1 448 316" opacity=".38"/>
-              <path class="ws-sph-seg" d="M300 236 A150 100 0 0 1 344 230" opacity=".3"/>
-              <path class="ws-sph-seg" d="M372 430 A150 46 0 0 1 408 420" opacity=".26"/>
+              <!-- displaced/segment arcs (tone, asymmetrisch, meting-cue op verschillende dieptes) -->
+              <path class="ws-sph-seg" d="M300 230 A140 118 0 0 1 416 286" opacity=".42"/>
+              <path class="ws-sph-seg" d="M232 316 A150 46 0 0 1 268 300" opacity=".5"/>
+              <path class="ws-sph-seg" d="M404 402 A150 46 0 0 1 440 384" opacity=".3"/>
               <!-- inner particles, licht geclusterd -->
               <circle class="ws-sph-dot t" cx="300" cy="300" r="1.5"/><circle class="ws-sph-dot" cx="386" cy="322" r="1.6"/>
               <circle class="ws-sph-dot" cx="352" cy="368" r="1.2"/><circle class="ws-sph-dot t" cx="312" cy="356" r="1.4"/>
@@ -637,19 +657,24 @@ body{margin:0;background:
         <svg class="ws-loadinst" viewBox="0 0 320 128" style="color:var(--tone)">
           <defs><linearGradient id="liA" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stop-color="currentColor" stop-opacity=".24"/>
-            <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+            <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient>
+            <linearGradient id="liRef" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="var(--ds-accent)" stop-opacity="0"/>
+              <stop offset="0.22" stop-color="var(--ds-accent)" stop-opacity=".7"/>
+              <stop offset="0.8" stop-color="var(--ds-accent)" stop-opacity=".5"/>
+              <stop offset="1" stop-color="var(--ds-accent)" stop-opacity="0"/></linearGradient></defs>
           <line class="li-base" x1="14" y1="100" x2="306" y2="100"/>
-          <!-- referentiedrempel (19) op de cumulatieve schaal -->
+          <!-- referentiedrempel (19): thin threshold-beam die aan de randen wegfadet (geen chart-gridline) -->
           <line class="li-ref" x1="14" y1="55.1" x2="306" y2="55.1"/>
-          <text class="li-reflbl" x="14" y="51">REF 19</text>
-          <!-- dag-energie: pulsen op de baseline (rustdag = kleine tick) -->
-          <rect class="li-bar rest" x="24" y="97" width="12" height="3" rx="1.5"/>
-          <rect class="li-bar" x="67" y="84.8" width="12" height="15.2" rx="2"/>
-          <rect class="li-bar" x="110" y="77.8" width="12" height="22.2" rx="2"/>
-          <rect class="li-bar rest" x="153" y="97" width="12" height="3" rx="1.5"/>
-          <rect class="li-bar rest" x="196" y="97" width="12" height="3" rx="1.5"/>
-          <rect class="li-bar" x="239" y="70" width="12" height="30" rx="2"/>
-          <rect class="li-bar rest" x="282" y="97" width="12" height="3" rx="1.5"/>
+          <text class="li-reflbl" x="46" y="51">REF 19</text>
+          <!-- dag-energie: smalle pulse-columns op de baseline (rustdag = kleine tick) -->
+          <rect class="li-bar rest" x="25.5" y="97" width="9" height="3" rx="1.5"/>
+          <rect class="li-bar" x="68.5" y="84.8" width="9" height="15.2" rx="2.5"/>
+          <rect class="li-bar" x="111.5" y="77.8" width="9" height="22.2" rx="2.5"/>
+          <rect class="li-bar rest" x="154.5" y="97" width="9" height="3" rx="1.5"/>
+          <rect class="li-bar rest" x="197.5" y="97" width="9" height="3" rx="1.5"/>
+          <rect class="li-bar" x="240.5" y="70" width="9" height="30" rx="2.5"/>
+          <rect class="li-bar rest" x="283.5" y="97" width="9" height="3" rx="1.5"/>
           <text class="li-val" x="73" y="79">8,2</text>
           <text class="li-val" x="116" y="72">12</text>
           <text class="li-val" x="245" y="64">16,2</text>
