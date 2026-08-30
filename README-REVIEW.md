@@ -3,51 +3,56 @@
 **Branch:** `feature/app-design-system-athlete-shell-v1` · **commit:** zie COMMIT.txt
 **Base:** `main = 39d2453` (SW v97 live) — deze branch is NIET gemerged.
 
-## AFRONDING ZONDER AVATAR — ATHLETE CORE (huidige kandidaat)
-> Deze pass **vervangt** de menselijke presence uit `20ba128`/`e50bd20`. De hele
-> avatar-lijn (avatar/bust/portret/silhouet/pre-rendered human asset) is
-> **volledig verlaten en niet opnieuw geprobeerd** — de RESET v3-presence-tekst
-> verderop is daarmee achterhaald.
+## WORKSPACE FINAL REFINEMENT — ATHLETE CORE (merge-kandidaat)
+> Finale visuele refinement-pass op de `8f7a1cb`-richting. **Géén nieuw concept,
+> géén avatar:** de abstracte **Athlete Core** en de spatial cockpit blijven; de
+> architectuur blijft locked (Coach Read / AthleteState / generation /
+> `source_versions` / stores / routes ongemoeid). Doel: van ~85–90% naar een
+> overtuigende, merge-waardige eindstaat.
 
-**Waarom:** de menselijke presence overtuigde niet en trok de scène terug naar
-"dashboard met glows". De centrale hero is nu een abstracte, ruimtelijke
-**Athlete Core**: een glazen sphere (wireframe-meridianen + inner-particles +
-hotspot-bloom), omgeven door gekantelde orbit-ringen waarvan er ÉÉN de eerlijke
-load-ratio als instrument draagt, staand op een radar-basis. Het dominante
-signaal (`+92%` · `1,9× t.o.v. referentie`, of `Rustig` bij geen signaal) leeft
-geïntegreerd IN de kern — geen losse KPI-kaart, geen donut. De toon van de kern
-volgt het zwaarste open signaal; geen data → geen gauge (kalme atleet = serene
-groene kern zonder instrument).
+**Vier ingrepen (frontend-only):**
+1. **Rijkere kern** — glazen sphere is nu een intelligentie-object i.p.v. een
+   platte bol: tweede inner shell (parallax-diepte), meridianen die naar het hart
+   doven (helder aan de rand, `url(#ws-merid)`), zacht inner-field, glasrand-
+   refractie, sparse segment-ticks en een vertikale **core-light** (emaneert
+   omhoog i.p.v. een losse witte blob). Instrument-eindkap markeert de meting.
+2. **De context lost op in de scène** — Doel&planning / Feedback / Bronnen én het
+   belasting-cluster zijn **geen cards meer** (`.ws-field` verlaten). Ze hangen
+   borderless in de scène met een randloze **scrim** (leesbaarheid zonder kader)
+   en een hang-node; hiërarchie planning > feedback > bronnen(-telemetrie).
+3. **Rijkere periferie** — dunne gebroken traces, coördinaat-ticks en kleine
+   data-ankers die naar de kern wijzen. Puur ruimtelijke cue, **geen verzonnen
+   waarden** (geen tekstlabels met fake data).
+4. **Premium command-layer** — de pill is een **instrument-strip**: lead-in
+   (waaróm: "belastingssignaal verhoogd") + één dominante trigger op een dunne
+   command-rail + stille utility-commando's. Koppelt zichtbaar aan het platform.
 
-De rest van het spatiale contract blijft: Z0 omgeving, Z1 verre gebroken bogen,
-Z3 borderless fragmenten op z-vlakken, Z4 geïntegreerd commando. Twee zichtbare
-relaties: aandacht↔boog-node en belasting-fragment↔kern. Focus-rail-shell.
-Alleen echte data (geen fake readiness/ACWR/RPE/HRV/feedback-%/doelen); lege
-staten zijn ontworpen (o.a. "Nog geen doel vastgelegd").
+Plus: load↔kern-connector hertekend (duidelijke origin+destination), lichtkolom
+core→platform, en de **locale netjes** (`36,4` / `14,6` i.p.v. `36.4`, lokaal via
+`nlNum()` — ratio blijft `1,9×`). Reduced-motion-fix: de centrering van signaal
+én command staat nu in de **basis-regel** (overleeft `animation:none`).
 
-**Gewijzigde bestanden (deze pass):** `pwa/static/app.js` (`wsHuman`→`wsCore`,
-`wsSignal` verwijderd, Z2-blok + tweede connector in `wsRender`),
-`pwa/static/design-system.css` (Z2-CSS herschreven naar de kern; dock-/read-
-centrering-keyframes gefixt; mobiel + reduced-motion bijgewerkt),
-`pwa/static/index.html` + `pwa/static/sw.js` (asset-/cache-bump v108a/v104),
-`tests/test_app_design_system_v1.py` (test 8/13/37 → Athlete-Core-contract).
-Presence-assets `pwa/static/presence/*.webp` en `design-lab/presence-paint*.html`-
-afhankelijkheid verwijderd. Design-lab: `design-lab/workspace-athlete-core-final.html`.
+Behouden: geen mens, alleen echte data, geen fake readiness/ACWR/RPE/HRV/doelen;
+lege staten ontworpen; toon volgt het zwaarste signaal; geen data → geen gauge.
 
-**Verwijderd deze pass (grep-geverifieerd 0 restanten in `pwa/static`):**
-`wsHuman`, `wsSignal`, `.ws-human*`, `.ws-plat2`, `.ws-signal*`, `.ws-inst-b`,
-`presVar`/`geslacht`-selectie, `/static/presence/`-referenties, de webp-assets.
+**Gewijzigde bestanden:** `pwa/static/app.js` (rijkere `wsCore`, telemetrie in
+`wsRender` Z1, fragmenten ontkaderd, instrument-dock, `nlNum()`-locale),
+`pwa/static/design-system.css` (kern-verrijking, scrim/hang, command-instrument,
+reduced-motion-centrering), `pwa/static/index.html` + `pwa/static/sw.js`
+(asset/cache-bump v109a/v105), `tests/test_app_design_system_v1.py` (test 37 →
+refinement-contract). Design-lab: `design-lab/workspace-athlete-core-final.html`.
+**Geen backend-bestanden gewijzigd.**
 
 **Teststatus:** 1026 passed — vaste én random volgorde (`python3 -m pytest tests/ -q`).
-**Performance (headless Chrome, lokaal):** FCP ~1,37 s incl. deep-load; 0
-horizontale overflow op 1440px en 390px; geen nieuwe console-errors (alleen
-pre-existing favicon-404 + vibrate-warning); alleen compositor-animaties
-(orbit-rotatie/pulse); geen library/canvas/WebGL in productie.
+**Performance (headless Chrome, lokaal):** 0 horizontale overflow op 1440px en
+390px (body/doc scrollWidth == viewport); alleen compositor-animaties; geen
+nieuwe console-errors (alleen pre-existing favicon-404 + vibrate-warning); geen
+library/canvas/WebGL in productie.
 
 **Acceptance-renders:** `review-screenshots/01-workspace-desktop.png` (flagship),
-`02-hero-closeup.png` (kern), `04-mobile-sanity.png`, `08-calm-core.png` (geen
-signaal → geen gauge), `05-northstar-comparison.png`, `07-before-after.png`
-(afgekeurde mens vs. nieuwe kern).
+`02-hero-closeup.png` (kern), `08-calm-core.png` (geen signaal → geen gauge),
+`04-mobile-sanity.png`, `07-before-after.png` (`8f7a1cb` vs finale),
+`05-northstar-comparison.png`, `09-entrance.gif` (echte entree-interactie).
 
 ## Wat dit is
 De volledige stand van de Workspace visual-milestone bij SLUITING (closure-pass verwerkt):

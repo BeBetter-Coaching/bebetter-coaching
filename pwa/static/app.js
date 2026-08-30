@@ -4986,6 +4986,16 @@ function wsSkel(n) {
 // stand). Vloeiende curve (Catmull-Rom→bezier), area-verloop, punt per meting.
 // Geen library, geen canvas: één inline SVG-string. Leeg bij < 2 punten.
 let _wsChartN = 0;
+// Locale-presentatie (lokaal, geen app-brede formatter): NL-decimaalkomma.
+// Gehele getallen blijven schoon (36 → "36"), decimalen krijgen een komma
+// (36.4 → "36,4"). Puur presentationeel; verandert geen enkele waarde.
+function nlNum(x) {
+  if (x == null || x === "") return "";
+  const n = Number(x);
+  if (!isFinite(n)) return String(x);
+  return (Math.round(n * 100) / 100).toString().replace(".", ",");
+}
+
 function wsChart(vals, o) {
   o = o || {};
   const v = (vals || []).map(Number).filter(n => isFinite(n));
@@ -5001,7 +5011,7 @@ function wsChart(vals, o) {
   const yOf = n => h - pad - ((n - min) / span) * (h - pad * 3);
   const refLine = ref != null
     ? `<line class="ws-chart-ref" x1="${pad}" y1="${yOf(ref).toFixed(1)}" x2="${w - pad}" y2="${yOf(ref).toFixed(1)}"/>
-       <text class="ws-chart-reflbl" x="${pad + 2}" y="${(yOf(ref) - 5).toFixed(1)}">REF ${esc(ref)}</text>`
+       <text class="ws-chart-reflbl" x="${pad + 2}" y="${(yOf(ref) - 5).toFixed(1)}">REF ${esc(nlNum(ref))}</text>`
     : "";
   const pts = v.map((n, i) => [pad + (i / (v.length - 1)) * (w - pad * 2), yOf(n)]);
   let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
@@ -5069,7 +5079,7 @@ function wsWeekStrip(runs, standDatum) {
   }
   return `<div class="ws-wk">` + cols.map(c => {
     const hp = Math.round(c.km / max * 100);
-    const kmTxt = c.km ? String(Math.round(c.km * 10) / 10) : "";
+    const kmTxt = c.km ? nlNum(Math.round(c.km * 10) / 10) : "";
     return `<div class="${c.km ? "on" : "off"}"><em>${esc(kmTxt)}</em>
       <i style="height:${c.km ? Math.max(hp, 8) : 0}%"></i><span>${c.dag}</span></div>`;
   }).join("") + `</div>`;
@@ -5093,7 +5103,8 @@ function wsCore(focal) {
     inst = `<g transform="translate(340 332) rotate(22) scale(1 .60)">
       ${f.gaugeDim ? `<circle class="ws-inst-dim" r="${R}"/>` : ""}
       <circle class="ws-inst-v" r="${R}" transform="rotate(-90)"
-        style="stroke-dasharray:${dash.toFixed(1)} ${(C - dash).toFixed(1)};--wsd:${dash.toFixed(1)}"/></g>`;
+        style="stroke-dasharray:${dash.toFixed(1)} ${(C - dash).toFixed(1)};--wsd:${dash.toFixed(1)}"/>
+      <circle class="ws-inst-cap" cx="0" cy="-${R}" r="4.5"/></g>`;
   }
   const val = String(f.value == null ? "" : f.value);
   const big = val.length > 4 ? " txt" : "";
@@ -5109,7 +5120,7 @@ function wsCore(focal) {
     <svg class="ws-sphere" viewBox="0 0 680 680" aria-hidden="true">
       <defs>
         <radialGradient id="ws-glass" cx="42%" cy="36%" r="72%">
-          <stop offset="0" stop-color="rgba(120,180,255,.16)"/>
+          <stop offset="0" stop-color="rgba(120,180,255,.18)"/>
           <stop offset="42%" stop-color="rgba(30,64,120,.30)"/>
           <stop offset="82%" stop-color="rgba(10,26,52,.62)"/>
           <stop offset="100%" stop-color="rgba(6,16,34,.82)"/>
@@ -5119,24 +5130,50 @@ function wsCore(focal) {
           <stop offset="60%" stop-color="var(--tone)" stop-opacity=".05"/>
           <stop offset="100%" stop-color="var(--tone)" stop-opacity="0"/>
         </radialGradient>
+        <radialGradient id="ws-field" cx="50%" cy="52%" r="52%">
+          <stop offset="0" stop-color="var(--tone)" stop-opacity=".26"/>
+          <stop offset="46%" stop-color="var(--tone)" stop-opacity=".07"/>
+          <stop offset="100%" stop-color="var(--tone)" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="ws-merid" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+          <stop offset="0" stop-color="rgba(174,214,255,.55)"/>
+          <stop offset="0.5" stop-color="rgba(150,198,255,.07)"/>
+          <stop offset="1" stop-color="rgba(174,214,255,.55)"/>
+        </linearGradient>
         <clipPath id="ws-sph"><circle cx="340" cy="332" r="150"/></clipPath>
+        <clipPath id="ws-sphi"><circle cx="340" cy="332" r="112"/></clipPath>
       </defs>
       <circle cx="340" cy="332" r="150" fill="url(#ws-glass)"/>
       <circle cx="340" cy="332" r="150" fill="url(#ws-wash)"/>
       <g clip-path="url(#ws-sph)">
-        <ellipse class="ws-sph-line" cx="340" cy="332" rx="52" ry="150"/>
-        <ellipse class="ws-sph-line" cx="340" cy="332" rx="108" ry="150"/>
+        <circle cx="340" cy="332" r="150" fill="url(#ws-field)"/>
+        <ellipse class="ws-sph-grad" cx="340" cy="332" rx="52" ry="150"/>
+        <ellipse class="ws-sph-grad" cx="340" cy="332" rx="108" ry="150"/>
         <ellipse class="ws-sph-line" cx="340" cy="332" rx="150" ry="46"/>
         <ellipse class="ws-sph-line t" cx="340" cy="332" rx="150" ry="100"/>
         <ellipse class="ws-sph-line" cx="340" cy="290" rx="146" ry="30" opacity=".4"/>
-        <circle class="ws-sph-dot" cx="300" cy="300" r="1.3"/><circle class="ws-sph-dot" cx="386" cy="322" r="1.6"/>
-        <circle class="ws-sph-dot" cx="352" cy="368" r="1.2"/><circle class="ws-sph-dot" cx="312" cy="356" r="1.4"/>
+        <ellipse class="ws-sph-line" cx="340" cy="374" rx="146" ry="30" opacity=".3"/>
+        <circle class="ws-sph-inner" cx="340" cy="332" r="112"/>
+        <g clip-path="url(#ws-sphi)">
+          <ellipse class="ws-sph-inner" cx="340" cy="332" rx="40" ry="112" opacity=".5"/>
+          <ellipse class="ws-sph-inner" cx="340" cy="332" rx="112" ry="34" opacity=".5"/>
+        </g>
+        <path class="ws-sph-seg" d="M232 316 A150 46 0 0 1 268 300" opacity=".55"/>
+        <path class="ws-sph-seg" d="M412 300 A150 46 0 0 1 448 316" opacity=".38"/>
+        <circle class="ws-sph-dot t" cx="300" cy="300" r="1.5"/><circle class="ws-sph-dot" cx="386" cy="322" r="1.6"/>
+        <circle class="ws-sph-dot" cx="352" cy="368" r="1.2"/><circle class="ws-sph-dot t" cx="312" cy="356" r="1.4"/>
         <circle class="ws-sph-dot" cx="372" cy="286" r="1.1"/><circle class="ws-sph-dot" cx="330" cy="398" r="1.3"/>
-        <ellipse class="ws-hot" cx="340" cy="408" rx="66" ry="30" opacity=".5"/>
-        <ellipse class="ws-hot2" cx="340" cy="404" rx="24" ry="14"/>
+        <circle class="ws-sph-dot" cx="356" cy="312" r="1"/><circle class="ws-sph-dot" cx="318" cy="330" r="1.1"/>
+        <g class="ws-corelight">
+          <ellipse class="cl-bloom" cx="340" cy="356" rx="30" ry="64" opacity=".38"/>
+          <path class="cl-col" d="M334 300 L346 300 L343 392 L337 392 Z" opacity=".5"/>
+          <ellipse class="cl-mid" cx="340" cy="374" rx="11" ry="28" opacity=".6"/>
+          <ellipse class="cl-core" cx="340" cy="378" rx="5" ry="16" opacity=".95"/>
+        </g>
       </g>
       <circle class="ws-sph-rim" cx="340" cy="332" r="150"/>
-      <path class="ws-sph-rim" d="M232 250 A150 150 0 0 1 430 232" style="opacity:.7;stroke-width:1.6"/>
+      <path class="ws-sph-refr" d="M232 250 A150 150 0 0 1 430 232" style="opacity:.75;stroke-width:1.6"/>
+      <path class="ws-sph-refr" d="M250 430 A150 150 0 0 0 300 470" style="opacity:.28;stroke-width:1.1"/>
     </svg>
     <svg class="ws-front" viewBox="0 0 680 680" aria-hidden="true">
       <g transform="translate(340 332) rotate(22) scale(1 .60)">
@@ -5183,11 +5220,11 @@ function wsRender(wrap, vm) {
       word: bel.ernst === "hoog" ? "Verhoogd" : "Let op",
       value: (bel.pct > 0 ? "+" : "") + bel.pct, unit: "%",
       sub: bel.km_recent != null
-        ? `${bel.km_recent} km · referentie ${bel.km_basis_week} km/wk`
+        ? `${nlNum(bel.km_recent)} km · referentie ${nlNum(bel.km_basis_week)} km/wk`
         : (bel.reden || "") };
   } else if (bel.km_recent != null) {
-    focal = { owner: "bel-km", tone: "is-calm", label: "Weekvolume", value: bel.km_recent, unit: "km",
-      sub: bel.km_basis_week != null ? `referentie ${bel.km_basis_week} km/wk · binnen de marge` : "binnen de marge" };
+    focal = { owner: "bel-km", tone: "is-calm", label: "Weekvolume", value: nlNum(bel.km_recent), unit: "km",
+      sub: bel.km_basis_week != null ? `referentie ${nlNum(bel.km_basis_week)} km/wk · binnen de marge` : "binnen de marge" };
   } else if (attn.length) {
     focal = { owner: "attn", tone, label: "Aandacht", value: attn.length,
       unit: attn.length === 1 ? "punt" : "punten", sub: attn[0].kort || "" };
@@ -5222,6 +5259,16 @@ function wsRender(wrap, vm) {
     <circle class="ws-arc a1" cx="688" cy="452" r="272" stroke-dasharray="410 1299" transform="rotate(118 688 452)"/>
     <path class="ws-gd" d="M700 40 L700 132"/>
     <path class="ws-gd" d="M330 452 L262 452"/><path class="ws-gd" d="M1140 452 L1078 452"/>
+    <path class="ws-trace" d="M96 250 C240 232 360 250 470 300"/>
+    <path class="ws-trace t" d="M1330 250 C1200 236 1090 256 986 306"/>
+    <path class="ws-trace" d="M232 690 C360 654 470 640 560 636"/>
+    <path class="ws-trace t" d="M1208 700 C1080 662 980 648 900 640"/>
+    <g class="ws-cross"><path d="M300 150 h12 M306 144 v12"/></g>
+    <g class="ws-cross"><path d="M1128 158 h12 M1134 152 v12"/></g>
+    <g class="ws-cross"><path d="M214 552 h12 M220 546 v12"/></g>
+    <g class="ws-cross"><path d="M1214 552 h12 M1220 546 v12"/></g>
+    <circle class="ws-anode" cx="360" cy="196" r="1.6"/><circle class="ws-anode" cx="1086" cy="210" r="1.6"/>
+    <circle class="ws-anode" cx="470" cy="726" r="1.6"/><circle class="ws-anode" cx="972" cy="726" r="1.6"/>
     ${attn.length ? `<circle class="ws-nd" cx="497" cy="372" r="5"/>` : ""}
     <circle class="ws-nd2" cx="452" cy="641" r="3.5"/>
   </svg>`;
@@ -5232,6 +5279,7 @@ function wsRender(wrap, vm) {
     <div class="ws-id2">${wsAnchor(naam, tone)}<b class="ws-name">${esc(naam)}</b>${chip}${fresh}</div>
     ${wsCore(focal)}
     <div class="ws-plat" aria-hidden="true"><svg viewBox="0 0 600 172">
+      <path class="ws-beam" d="M286 -4 L314 -4 L338 66 L262 66 Z"/>
       <ellipse class="ws-pg" cx="300" cy="78" rx="250" ry="48"/>
       <ellipse class="ws-pe" cx="300" cy="78" rx="256" ry="52"/>
       <ellipse class="ws-pe d" cx="300" cy="80" rx="190" ry="38"/>
@@ -5246,7 +5294,7 @@ function wsRender(wrap, vm) {
   // Z3 — fragmenten (borderless, ruimtelijk, asymmetrisch)
   // Waarde-consistentie: belasting-zin uit dezelfde canonieke velden als het signaal.
   const belZin = (bel.pct != null && bel.km_recent != null && bel.km_basis_week != null)
-    ? `Volume <b>${bel.pct > 0 ? "+" : ""}${bel.pct}%</b> deze week — ${bel.km_recent} km tegenover een referentie van ${bel.km_basis_week} km/wk.`
+    ? `Volume <b>${bel.pct > 0 ? "+" : ""}${bel.pct}%</b> deze week — ${nlNum(bel.km_recent)} km tegenover een referentie van ${nlNum(bel.km_basis_week)} km/wk.`
     : "";
   const attnMeta = [attn.length ? (attn[0].tier || "") : "", bel.datum ? `stand ${bel.datum}` : ""]
     .concat(attn.slice(1).map(a => a.kort || "")).filter(Boolean).join(" · ");
@@ -5269,9 +5317,10 @@ function wsRender(wrap, vm) {
       .sort((a, b) => String(a.datum || "").localeCompare(String(b.datum || "")));
     let acc = 0;
     const cum = chrono.map(r => (acc += Number(r.km) || 0));
-    loadFrag = `<div class="ws-frag ws-frag-load ws-field ${bel.actief ? belTone : ""}">
+    loadFrag = `<div class="ws-frag ws-frag-load ${bel.actief ? belTone : ""}">
+      <span class="ws-scrim" aria-hidden="true"></span>
       <h3 class="ds-label">Belasting · 7 dagen<em>${nRuns ? `${nRuns} runs` : ""}</em></h3>
-      <div class="ws-kmrow"><span class="ws-km">${esc(bel.km_recent)}<i> km deze week</i></span>
+      <div class="ws-kmrow"><span class="ws-km">${esc(nlNum(bel.km_recent))}<i> km deze week</i></span>
         ${ratioLbl ? `<span class="ws-rt">${esc(ratioLbl)}</span>` : ""}</div>
       ${wsWeekStrip(bel.runs || [], bel.datum)}
       ${wsChart(cum, { w: 300, h: 56, min0: true, ref: bel.km_basis_week })}
@@ -5279,18 +5328,24 @@ function wsRender(wrap, vm) {
         ${nRuns ? `<span>laatste ${esc(String((bel.runs[nRuns - 1] || {}).datum || ""))}</span>` : ""}</div>
     </div>`;
   } else {
-    loadFrag = `<div class="ws-frag ws-frag-load ws-field">
+    loadFrag = `<div class="ws-frag ws-frag-load">
+      <span class="ws-scrim" aria-hidden="true"></span>
       <h3 class="ds-label">Belasting</h3>
       <p class="ws-attn-t calm">Geen belastingstand bekend.</p></div>`;
   }
   h += loadFrag;
-  // Zichtbare relatie belasting-fragment ↔ centrale kern (tweede verbinding).
+  // Zichtbare relatie belasting-fragment ↔ centrale kern (tweede verbinding):
+  // strak geïntegreerd — duidelijke origin (cluster) en destination (kern-node).
   if (bel.km_recent != null)
-    h += `<svg class="ws-conn2 ${bel.actief ? belTone : "is-calm"}" viewBox="0 0 130 110" aria-hidden="true"><path d="M2 98 C54 74 96 44 128 8"/></svg>`;
+    h += `<svg class="ws-conn2 ${bel.actief ? belTone : "is-calm"}" viewBox="0 0 150 132" aria-hidden="true">
+      <path class="d" d="M4 128 C40 120 66 108 84 86"/>
+      <path d="M84 86 C104 60 126 34 146 6"/>
+      <circle cx="4" cy="128" r="2.4"/></svg>`;
 
   let planHead = sc ? wsLine({ tone: dsTone(sc.tier), icon: "clock",
     title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
-  h += `<div class="ws-frag ws-frag-plan ws-field ${sc ? dsTone(sc.tier) : ""}">
+  h += `<div class="ws-frag ws-frag-plan ${sc ? dsTone(sc.tier) : ""}">
+    <span class="ws-scrim" aria-hidden="true"></span><span class="ws-hang" aria-hidden="true"></span>
     <h3 class="ds-label">Doel &amp; planning</h3>
     ${planHead}<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>
     <button type="button" class="ws-cta quiet" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button>
@@ -5301,7 +5356,8 @@ function wsRender(wrap, vm) {
     ? `<p class="ws-attn-t calm">Feedback-status wordt bijgewerkt…</p>`
     : `<div class="ws-fb ${fbTone}"><span class="ws-fb-badge">${fb.open || 0}</span>
         <span class="ws-fb-t">${fb.open ? `${fb.open} open reactie${fb.open !== 1 ? "s" : ""}<small>vraagt aandacht</small>` : `alles beantwoord<small>geen open reacties</small>`}</span></div>`;
-  h += `<div class="ws-frag ws-frag-fb ws-field ${fbTone}">
+  h += `<div class="ws-frag ws-frag-fb ${fbTone}">
+    <span class="ws-scrim" aria-hidden="true"></span><span class="ws-hang" aria-hidden="true"></span>
     <h3 class="ds-label">Feedback</h3>${fbBody}
     <div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>
     <button type="button" class="ws-cta quiet" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit openen</button>
@@ -5315,19 +5371,25 @@ function wsRender(wrap, vm) {
   };
   const sv = gen.source_versions || {};
   h += `<div class="ws-frag ws-frag-src">
+    <span class="ws-src-rail" aria-hidden="true"></span>
     <h3 class="ds-label">Bronnen</h3><ul class="ws-src">
     ${srcRow("Belasting", gfr.belasting, sv.belasting)}
     ${srcRow("Overzicht", gfr.home, sv.home)}
     ${srcRow("Feedback", gfr.feedback, sv.feedback)}</ul></div>`;
 
-  // Z4 — command: één dominante coachactie, stille secundaire controls
+  // Z4 — command: de natuurlijke uitgang van de cockpitbeslissing. Instrument-strip
+  // met lead-in (waaróm), één dominante trigger en stille secundaire controls.
   h += `<nav class="ws-dock ${attn.length ? tone : "is-calm"}">
-    <div class="ws-qc">
+    ${bel.actief ? `<div class="ws-cmd-lead">
+        <span class="ttl">Volgende actie</span>
+        <span class="st">belastingssignaal ${esc(bel.ernst === "hoog" ? "verhoogd" : "let op")}</span>
+      </div>
+      <button type="button" class="ws-cmd" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')"><span class="ws-cmd-chip">${ic("check")}</span>Belasting gezien</button>` : ""}
+    <div class="ws-util">
       <button type="button" onclick="deepAtleet('teampuls','${esc(key)}')">Teampuls</button>
       <button type="button" onclick="openAthleteModule('atleten','${esc(key)}')">Profiel</button>
+      ${athleteNav("workspace", key)}
     </div>
-    ${bel.actief ? `<button type="button" class="ws-cmd" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">${ic("check")}Belasting gezien</button>` : ""}
-    <div class="ws-qc">${athleteNav("workspace", key)}</div>
   </nav>`;
 
   h += `</div>`;

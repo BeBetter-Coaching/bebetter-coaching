@@ -375,11 +375,25 @@ class TestAthleteCanvas:
         assert "ws-frag-attn" in ws and "ws-frag-load" in ws and "ws-frag-plan" in ws
         assert "ws-frag-fb" in ws and "ws-frag-src" in ws
         assert 'class="ws-conn' in ws and "ws-conn2" in ws
-        assert 'class="ws-cmd"' in ws                              # geintegreerd commando
-        # borderless fragmenten: het veld heeft mask-fade en geen border
-        veld = _DS.split(".ws-field{")[1][:340]
-        assert "mask-image" in veld and "border:" not in veld
+        # command als instrument-strip: één dominante trigger + lead-in (waaróm) +
+        # stille secundaire controls — geen losse pill onderaan.
+        assert 'class="ws-cmd"' in ws and "ws-cmd-lead" in ws and "ws-util" in ws
+        # FINALE REFINEMENT — de context lost op in de scène: het card-veld is
+        # verlaten; een randloze scrim borgt de leesbaarheid (borderless, geen kader).
+        assert ".ws-field{" not in _DS
+        assert 'class="ws-scrim"' in ws and ws.count('class="ws-scrim"') >= 3
+        scrim = _DS.split(".ws-scrim{")[1][:260]
+        assert "border:" not in scrim and "border-radius:50%" in scrim
+        # rijkere kern (intelligentie-object, geen platte bol): tweede inner shell,
+        # dovende meridianen, core-light — nog steeds volledig abstract (geen mens).
+        for rich in ("ws-sph-inner", "ws-sph-grad", "ws-corelight"):
+            assert rich in core, f"kern mist verrijking {rich}"
+        # honest locale: NL-decimaalkomma, presentationeel (verzint geen waarde)
+        assert "function nlNum(" in _APP and "nlNum(bel.km_recent)" in ws
         assert ".ws-amb{" in _DS and ".ws-vig{" in _DS             # omgeving doet mee
-        # de centrerings-transform van het signaal mag niet door 'none' sneuvelen
+        # de centrerings-transform van signaal én command mag niet door 'none'
+        # sneuvelen: hij staat in de BASIS-regel, niet alleen in de entree-keyframe.
         assert "ws-readin" in _DS
         assert "prefers-reduced-motion" in _DS
+        read_rule = _DS.split(".ws-read{")[1][:200]
+        assert "translate(-50%,-50%)" in read_rule
