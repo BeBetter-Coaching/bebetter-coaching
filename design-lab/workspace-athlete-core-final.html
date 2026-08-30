@@ -159,8 +159,8 @@ body{margin:0;background:
 .ws-sph-inner{fill:none;stroke:rgba(150,198,255,.2);stroke-width:.8;opacity:.7}
 .ws-sph-seg{fill:none;stroke:var(--tone);stroke-width:2;stroke-linecap:round;opacity:.72;
   filter:drop-shadow(0 0 5px var(--tone))}
-.ws-sph-dot{fill:rgba(180,215,255,.55)}
-.ws-sph-dot.t{fill:var(--tone);opacity:.8}
+.ws-sph-dot{fill:rgba(186,220,255,.66);filter:drop-shadow(0 0 2px rgba(150,200,255,.5))}
+.ws-sph-dot.t{fill:var(--tone);opacity:.9;filter:drop-shadow(0 0 3px var(--tone))}
 /* reading-plane + inner-shell-rim (diepte-laag) */
 .ws-readplane{fill:var(--tone);opacity:.15;filter:blur(9px)}
 .ws-shell-rim{fill:none;stroke:rgba(200,224,255,.42);stroke-width:1;opacity:.8}
@@ -214,6 +214,8 @@ body{margin:0;background:
 .ws-plat svg{width:100%;height:100%;overflow:visible}
 .ws-plat .pe{fill:none;stroke:rgba(94,230,235,.3)}
 .ws-plat .pe.d{stroke:rgba(94,230,235,.16);stroke-dasharray:2 7}
+.ws-plat .pe.tk{stroke:rgba(150,198,255,.3);stroke-dasharray:1.5 7}
+.ws-plat .pcore{fill:var(--tone);opacity:.7;filter:blur(5px)}
 .ws-plat .pg{fill:var(--tone);opacity:.15;filter:blur(15px);stroke:none}
 .ws-plat .tick{stroke:rgba(150,198,255,.35);stroke-width:1.2}
 .ws-plat .lead{fill:none;stroke:var(--tone);stroke-width:2;opacity:.7;stroke-linecap:round;
@@ -548,8 +550,8 @@ body{margin:0;background:
                 <stop offset="100%" stop-color="rgba(30,60,120,0)"/>
               </radialGradient>
               <!-- occlusie onderin: geeft de bol volume/diepte -->
-              <radialGradient id="occ" cx="50%" cy="84%" r="48%">
-                <stop offset="0" stop-color="rgba(2,7,18,.6)"/>
+              <radialGradient id="occ" cx="50%" cy="86%" r="44%">
+                <stop offset="0" stop-color="rgba(2,7,18,.46)"/>
                 <stop offset="100%" stop-color="rgba(2,7,18,0)"/>
               </radialGradient>
               <clipPath id="sph"><circle cx="340" cy="332" r="150"/></clipPath>
@@ -640,6 +642,7 @@ body{margin:0;background:
             <path class="beam" d="M286 -4 L314 -4 L338 66 L262 66 Z"/>
             <ellipse class="pg" cx="300" cy="78" rx="250" ry="48"/>
             <ellipse class="pe" cx="300" cy="78" rx="256" ry="52"/>
+            <ellipse class="pe tk" cx="300" cy="78" rx="248" ry="50"/>
             <ellipse class="pe d" cx="300" cy="80" rx="190" ry="38"/>
             <ellipse class="pe" cx="300" cy="82" rx="120" ry="24" style="opacity:.6"/>
             <ellipse class="pe d" cx="300" cy="84" rx="64" ry="13"/>
@@ -647,6 +650,7 @@ body{margin:0;background:
             <line class="tick" x1="60" y1="78" x2="80" y2="78"/><line class="tick" x1="520" y1="78" x2="540" y2="78"/>
             <line class="tick" x1="120" y1="112" x2="134" y2="104"/><line class="tick" x1="480" y1="104" x2="466" y2="112"/>
             <line class="tick" x1="230" y1="128" x2="238" y2="120"/><line class="tick" x1="370" y1="120" x2="362" y2="128"/>
+            <ellipse class="pcore" cx="300" cy="58" rx="18" ry="7"/>
             <path class="lead" d="M120 62 A200 44 0 0 1 300 40"/>
             <!-- output-node + light-track: het platform levert de coachactie af -->
             <path class="ws-ptrack" d="M300 96 L300 168"/>

@@ -40,9 +40,21 @@ design-system.css` (`ws-web`/`ws-webline`/`ws-webnode` + draw-on, `ws-horizon`),
 `aria-hidden`, verborgen < 1180px, bevroren onder reduced-motion; reduced-motion
 centreert. Alleen transform/opacity/SVG-draw-animaties.
 
+**Reference-comparison (echte side-by-side).** Na de referentie als PNG te hebben
+ontvangen: `05-reference-comparison.png` legt de North-Star bóven de huidige
+Workspace. Beoordeling (compositie/diepte/premium richness/cockpit-feel): de
+kandidaat vangt nu de kern-elementen van de referentie — verbindingsweb, centrale
+sphere, orbit-ringen, radar-platform, planet-horizon, per-context accenten,
+shell+header. **Twee kleine convergentie-polishes toegepast:** (a) sphere
+luminanter (occlusie `.6→.46`, helderder particle-nebula), (b) radar-platform
+rijker (fijne tick-ring + heldere kern-glow). **Eén bewuste divergentie
+gemarkeerd, niet geforceerd:** de referentie gebruikt gedefinieerde glas-panelen
+voor de context; deze kandidaat houdt de eerder gemandateerde **borderless**
+richting aan (web + horizon i.p.v. cards). Die keuze is voor externe review.
+
 **Acceptance-renders:** `01-workspace-desktop.png`, `02-hero-closeup.png`,
 `08-calm-core.png`, `04-mobile-sanity.png`, `07-before-after.png` (`8d15492` →
-finale), `05-reference-comparison.png` (finale — leg naast jouw referentie),
+finale), `05-reference-comparison.png` (referentie ↔ huidige Workspace),
 `09-entrance.gif`.
 
 ---

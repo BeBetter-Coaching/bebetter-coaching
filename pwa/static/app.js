@@ -5208,8 +5208,8 @@ function wsCore(focal) {
           <stop offset="58%" stop-color="rgba(58,108,190,.05)"/>
           <stop offset="100%" stop-color="rgba(30,60,120,0)"/>
         </radialGradient>
-        <radialGradient id="ws-occ" cx="50%" cy="84%" r="48%">
-          <stop offset="0" stop-color="rgba(2,7,18,.6)"/>
+        <radialGradient id="ws-occ" cx="50%" cy="86%" r="44%">
+          <stop offset="0" stop-color="rgba(2,7,18,.46)"/>
           <stop offset="100%" stop-color="rgba(2,7,18,0)"/>
         </radialGradient>
         <clipPath id="ws-sph"><circle cx="340" cy="332" r="150"/></clipPath>
@@ -5375,12 +5375,14 @@ function wsRender(wrap, vm) {
       <path class="ws-beam" d="M286 -4 L314 -4 L338 66 L262 66 Z"/>
       <ellipse class="ws-pg" cx="300" cy="78" rx="250" ry="48"/>
       <ellipse class="ws-pe" cx="300" cy="78" rx="256" ry="52"/>
+      <ellipse class="ws-pe tk" cx="300" cy="78" rx="248" ry="50"/>
       <ellipse class="ws-pe d" cx="300" cy="80" rx="190" ry="38"/>
       <ellipse class="ws-pe" cx="300" cy="82" rx="120" ry="24" style="opacity:.6"/>
       <ellipse class="ws-pe d" cx="300" cy="84" rx="64" ry="13"/>
       <line class="ws-ptick" x1="60" y1="78" x2="80" y2="78"/><line class="ws-ptick" x1="520" y1="78" x2="540" y2="78"/>
       <line class="ws-ptick" x1="120" y1="112" x2="134" y2="104"/><line class="ws-ptick" x1="480" y1="104" x2="466" y2="112"/>
       <line class="ws-ptick" x1="230" y1="128" x2="238" y2="120"/><line class="ws-ptick" x1="370" y1="120" x2="362" y2="128"/>
+      <ellipse class="ws-pcore" cx="300" cy="58" rx="18" ry="7"/>
       <path class="ws-plead" d="M120 62 A200 44 0 0 1 300 40"/>
       ${bel.actief ? `<path class="ws-ptrack" d="M300 96 L300 168"/>
       <circle class="ws-pout" cx="300" cy="96" r="3.4"/>` : ""}</svg></div>
