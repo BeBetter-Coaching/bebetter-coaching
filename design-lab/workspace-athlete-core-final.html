@@ -254,13 +254,26 @@ body{margin:0;background:
 .ws-frag{position:absolute;z-index:3}
 .ws-frag>.ds-label{display:flex;justify-content:space-between;letter-spacing:.2em;font-size:9.5px;margin-bottom:8px}
 .ws-frag>.ds-label em{font-style:normal;letter-spacing:.04em;font-weight:500;font-size:10px;text-transform:none;color:var(--ds-text-3)}
-/* zachte, randloze scrim voor leesbaarheid zonder card: brede blur-radial, geen rechthoek */
-.ws-scrim{position:absolute;z-index:-1;pointer-events:none;border-radius:50%;filter:blur(26px);
-  background:radial-gradient(60% 60% at 50% 42%,rgba(8,20,40,.72),rgba(8,20,40,.28) 62%,transparent 82%)}
-/* node-anchor waar een cluster aan de scène hangt */
-.ws-hang{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--tone);
-  box-shadow:0 0 10px var(--tone);opacity:.9}
-.ws-hang::before{content:"";position:absolute;inset:-5px;border-radius:50%;border:1px solid var(--tone-bd);opacity:.5}
+/* premium spatial glass LENS (geen card): translucent donker glas dat in de scène
+   zweeft. Rand licht van boven, zachte ambient-diepteschaduw, fade naar de scène
+   onderaan, accent-glow ALLEEN bij de connector-node — nooit de hele lens getint. */
+.ws-lens{position:absolute;z-index:-1;pointer-events:none;border-radius:15px;
+  background:linear-gradient(158deg,rgba(26,50,90,.5),rgba(12,26,50,.28) 56%,rgba(8,18,38,.12));
+  border:1px solid rgba(126,166,236,.11);
+  -webkit-backdrop-filter:blur(9px) saturate(1.04);backdrop-filter:blur(9px) saturate(1.04);
+  box-shadow:inset 0 1px 0 rgba(190,215,255,.10),0 26px 58px -34px rgba(2,8,20,.92);
+  -webkit-mask-image:linear-gradient(180deg,#000 82%,transparent 100%);
+  mask-image:linear-gradient(180deg,#000 82%,transparent 100%)}
+/* rand varieert met licht: helderder bovenrand, dooft naar onderen (glasedge) */
+.ws-lens::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  border-top:1px solid rgba(184,212,255,.16);
+  -webkit-mask-image:linear-gradient(180deg,#000,transparent 55%);mask-image:linear-gradient(180deg,#000,transparent 55%)}
+/* accent-glow bij de connector-node (context-kleur), niet de hele lens */
+.ws-lens::after{content:"";position:absolute;width:70px;height:70px;top:calc(50% - 35px);border-radius:50%;
+  pointer-events:none;background:radial-gradient(circle,var(--tone-bg),transparent 70%);filter:blur(5px);opacity:.9}
+.ws-lens.acc-r::after{right:-16px}
+.ws-lens.acc-l::after{left:-16px}
+.ws-hang{display:none}
 
 /* AANDACHT (primaire duiding, links) */
 .ws-frag-attn{left:5.2%;top:150px;width:266px;animation:fin .4s var(--ds-ease) 1.05s both}
@@ -275,7 +288,8 @@ body{margin:0;background:
 
 /* BELASTING (data-cluster, links-onder — hangt in de scène, geen card) */
 .ws-frag-load{left:3%;top:436px;width:352px;animation:fin .4s var(--ds-ease) 1.15s both}
-.ws-frag-load .ws-scrim{inset:-14px -30px -22px -24px}
+.ws-frag-attn .ws-lens{inset:-15px -20px -26px -18px}
+.ws-frag-load .ws-lens{inset:-16px -22px -20px -22px}
 .ws-kmrow{display:flex;align-items:baseline;gap:9px}
 .ws-km{font-size:31px;font-weight:700;letter-spacing:-.02em;color:var(--ds-text);font-variant-numeric:tabular-nums}
 .ws-km i{font-style:normal;font-size:12px;color:var(--ds-text-3);font-weight:500}
@@ -324,7 +338,7 @@ body{margin:0;background:
 
 /* DOEL & PLANNING (secundair, rechtsboven — typografisch cluster) */
 .ws-frag-plan{right:4%;top:150px;width:280px;animation:fin .4s var(--ds-ease) 1.2s both}
-.ws-frag-plan .ws-scrim{inset:-16px -26px -26px -22px}
+.ws-frag-plan .ws-lens{inset:-15px -18px -26px -22px}
 .ws-frag-plan .ws-hang{left:-14px;top:3px}
 .ws-line{display:flex;align-items:flex-start;gap:12px;margin-bottom:8px}
 .ws-line-ic{color:var(--tone);flex:0 0 auto;margin-top:1px}
@@ -345,7 +359,7 @@ body{margin:0;background:
 
 /* FEEDBACK (tertiair, rechts-midden — typografisch cluster) */
 .ws-frag-fb{right:6%;top:436px;width:258px;opacity:.9;animation:fin .4s var(--ds-ease) 1.25s both}
-.ws-frag-fb .ws-scrim{inset:-16px -26px -24px -20px}
+.ws-frag-fb .ws-lens{inset:-16px -20px -22px -18px}
 .ws-frag-fb .ws-hang{left:-14px;top:3px}
 .ws-fb{display:flex;align-items:center;gap:12px;margin-bottom:10px}
 .ws-fb-badge{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
@@ -681,8 +695,11 @@ body{margin:0;background:
         </g>
       </svg>
 
-      <!-- ══ Z3 — context: borderless clusters ══ -->
+      <!-- ══ Z3 — context: premium spatial glass LENSES (geen cards). Elke lens is
+           een translucent glasoppervlak dat in de scène zweeft, met een accent-glow
+           alléén bij de connector-node en een zachte fade naar de scène. ══ -->
       <div class="ws-frag ws-frag-attn is-critical">
+        <span class="ws-lens acc-r"></span>
         <span class="ws-tick"></span>
         <h3 class="ds-label">Aandacht nu</h3>
         <p class="ws-attn-t">Volume <b>+92%</b> deze week — 36,4 km tegenover een referentie van 19 km/wk.</p>
@@ -690,7 +707,7 @@ body{margin:0;background:
       </div>
 
       <div class="ws-frag ws-frag-load is-critical">
-        <span class="ws-scrim"></span>
+        <span class="ws-lens acc-r"></span>
         <h3 class="ds-label">Belastingsinstrument · 7 dagen<em>4 runs</em></h3>
         <div class="ws-kmrow"><span class="ws-km">36,4<i> km deze week</i></span><span class="ws-rt">1,9×</span></div>
         <!-- ÉÉN geïntegreerd load-instrument: dag-energie (pulsen op de baseline) +
@@ -735,7 +752,7 @@ body{margin:0;background:
       </div>
 
       <div class="ws-frag ws-frag-plan is-calm">
-        <span class="ws-scrim"></span><span class="ws-hang"></span>
+        <span class="ws-lens acc-l"></span>
         <h3 class="ds-label">Doel &amp; planning</h3>
         <div class="ws-goal"><div class="ws-goal-ring"><i></i></div>
           <p>Nog geen doel vastgelegd.<small>Leg een race- of trainingsdoel vast — het masterbrein plant erop.</small></p></div>
@@ -744,7 +761,7 @@ body{margin:0;background:
       </div>
 
       <div class="ws-frag ws-frag-fb is-attention">
-        <span class="ws-scrim"></span><span class="ws-hang"></span>
+        <span class="ws-lens acc-l"></span>
         <h3 class="ds-label">Feedback</h3>
         <div class="ws-fb"><span class="ws-fb-badge">1</span>
           <span class="ws-fb-t">1 open reactie<small>vraagt aandacht</small></span></div>

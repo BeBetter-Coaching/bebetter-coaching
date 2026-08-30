@@ -700,15 +700,25 @@
   font-size:9.5px;margin-bottom:8px}
 .ws-frag>.ds-label em{font-style:normal;letter-spacing:.04em;font-weight:500;
   font-size:10px;text-transform:none}
-/* context lost op in de scène: geen card. Een zachte, randloze scrim borgt de
-   leesbaarheid boven de drukke kern zonder rechthoek/rand; een hang-node laat het
-   cluster aan de scène hangen. (De .ws-field-card is bewust verlaten.) */
-.ws-scrim{position:absolute;z-index:-1;pointer-events:none;border-radius:50%;filter:blur(26px);
-  background:radial-gradient(60% 60% at 50% 42%,rgba(8,20,40,.72),rgba(8,20,40,.28) 62%,transparent 82%)}
-.ws-hang{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--tone);
-  box-shadow:0 0 10px var(--tone);opacity:.9}
-.ws-hang::before{content:"";position:absolute;inset:-5px;border-radius:50%;
-  border:1px solid var(--tone-bd);opacity:.5}
+/* premium spatial glass LENS (geen card): translucent donker glas dat in de scène
+   zweeft. Rand licht van boven, zachte ambient-diepteschaduw, fade naar de scène
+   onderaan, accent-glow ALLEEN bij de connector-node — nooit de hele lens getint.
+   Externe-review-besluit: borderless losgelaten voor deze subtiele glaslenzen. */
+.ws-lens{position:absolute;z-index:-1;pointer-events:none;border-radius:15px;
+  background:linear-gradient(158deg,rgba(26,50,90,.5),rgba(12,26,50,.28) 56%,rgba(8,18,38,.12));
+  border:1px solid rgba(126,166,236,.11);
+  -webkit-backdrop-filter:blur(9px) saturate(1.04);backdrop-filter:blur(9px) saturate(1.04);
+  box-shadow:inset 0 1px 0 rgba(190,215,255,.10),0 26px 58px -34px rgba(2,8,20,.92);
+  -webkit-mask-image:linear-gradient(180deg,#000 82%,transparent 100%);
+  mask-image:linear-gradient(180deg,#000 82%,transparent 100%)}
+.ws-lens::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  border-top:1px solid rgba(184,212,255,.16);
+  -webkit-mask-image:linear-gradient(180deg,#000,transparent 55%);mask-image:linear-gradient(180deg,#000,transparent 55%)}
+.ws-lens::after{content:"";position:absolute;width:70px;height:70px;top:calc(50% - 35px);border-radius:50%;
+  pointer-events:none;background:radial-gradient(circle,var(--tone-bg),transparent 70%);filter:blur(5px);opacity:.9}
+.ws-lens.acc-r::after{right:-16px}
+.ws-lens.acc-l::after{left:-16px}
+.ws-hang{display:none}
 
 .ws-frag-attn{left:12%;top:186px;width:270px;animation:ws-in 400ms var(--ds-ease) 1.05s both}
 .ws-tick{position:absolute;left:-14px;top:2px;bottom:8px;width:2px;border-radius:2px;
@@ -733,7 +743,8 @@
 .ws-webend{fill:var(--tone);filter:drop-shadow(0 0 6px var(--tone))}
 
 .ws-frag-load{left:6.5%;top:456px;width:340px;animation:ws-in 400ms var(--ds-ease) 1.15s both}
-.ws-frag-load .ws-scrim{inset:-16px -30px -22px -24px}
+.ws-frag-attn .ws-lens{inset:-15px -20px -26px -18px}
+.ws-frag-load .ws-lens{inset:-16px -22px -20px -22px}
 .ws-kmrow{display:flex;align-items:baseline;gap:9px}
 .ws-km{font-size:30px;font-weight:700;letter-spacing:-.02em;color:var(--ds-text);
   font-variant-numeric:tabular-nums}
@@ -779,8 +790,7 @@
 .li-tip-o{fill:none;stroke:var(--tone);stroke-width:1;opacity:.5}
 
 .ws-frag-plan{right:7%;top:158px;width:280px;animation:ws-in 400ms var(--ds-ease) 1.2s both}
-.ws-frag-plan .ws-scrim{inset:-16px -26px -26px -22px}
-.ws-frag-plan .ws-hang{left:-14px;top:26px}
+.ws-frag-plan .ws-lens{inset:-15px -18px -26px -22px}
 .ws-line{display:flex;align-items:flex-start;gap:var(--ds-3);min-width:0;margin-bottom:6px}
 .ws-line-ic{color:var(--tone);flex:0 0 auto;margin-top:1px}
 .ws-line-ic .ic{width:15px;height:15px}
@@ -803,8 +813,7 @@
 .ws-cta.quiet:focus-visible{outline:2px solid var(--ds-accent);outline-offset:3px;border-radius:4px}
 
 .ws-frag-fb{right:5.5%;top:434px;width:258px;opacity:.9;animation:ws-in 400ms var(--ds-ease) 1.25s both}
-.ws-frag-fb .ws-scrim{inset:-16px -26px -24px -20px}
-.ws-frag-fb .ws-hang{left:-14px;top:26px}
+.ws-frag-fb .ws-lens{inset:-16px -20px -22px -18px}
 .ws-fb{display:flex;align-items:center;gap:12px;margin-bottom:10px}
 .ws-fb-badge{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
   font-size:16px;font-weight:700;color:var(--tone);border:2px solid var(--tone-bd);

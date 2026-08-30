@@ -379,12 +379,14 @@ class TestAthleteCanvas:
         # command als instrument-strip: één dominante trigger + lead-in (waaróm) +
         # stille secundaire controls — geen losse pill onderaan.
         assert 'class="ws-cmd"' in ws and "ws-cmd-lead" in ws and "ws-util" in ws
-        # FINALE REFINEMENT — de context lost op in de scène: het card-veld is
-        # verlaten; een randloze scrim borgt de leesbaarheid (borderless, geen kader).
+        # De context leeft in premium spatial GLASS LENSES (extern-review-besluit:
+        # borderless losgelaten). Geen klassiek card-veld; het is glas (translucent +
+        # backdrop-blur + fade naar de scène), geen dashboard-kaart.
         assert ".ws-field{" not in _DS
-        assert 'class="ws-scrim"' in ws and ws.count('class="ws-scrim"') >= 3
-        scrim = _DS.split(".ws-scrim{")[1][:260]
-        assert "border:" not in scrim and "border-radius:50%" in scrim
+        assert 'class="ws-lens' in ws and ws.count('class="ws-lens') >= 4
+        lens = _DS.split(".ws-lens{")[1][:600]
+        assert "backdrop-filter:blur" in lens.replace(" ", "")   # echt glas
+        assert "mask-image" in lens                              # fade naar de scène (geen harde kaart)
         # rijkere kern (intelligentie-object, geen platte bol): intermediate
         # shell-rim, dovende meridiaan-fragmenten, core-light — abstract (geen mens).
         for rich in ("ws-shell-rim", "ws-sph-grad", "ws-corelight"):
@@ -478,3 +480,25 @@ class TestAthleteCanvas:
         # discipline: web verborgen op mobiel + bevroren onder reduced-motion
         assert ".ws-web{display:none}" in _DS.replace(" ", "")
         assert ".ws-web,.ws-webnode" in _DS.replace(" ", "")
+
+    def test_41_glass_lenses(self):
+        # Extern-review-besluit: de 4 kern-contexten leven in premium spatial GLASS
+        # LENSES (borderless losgelaten). Het moet glas zijn (translucent + backdrop-
+        # blur + fade), geen dashboard-card; bronnen blijft subordinate; command apart.
+        ws = _fn("wsRender")
+        # precies de 4 betekenisvolle lenzen: aandacht, load, plan, feedback
+        assert 'ws-frag-attn' in ws and 'class="ws-lens' in ws
+        assert ws.count('class="ws-lens') >= 4                  # attn + load(2×) + plan + fb
+        # glas-materiaal, geen kaart
+        lens = _DS.split(".ws-lens{")[1][:600].replace(" ", "")
+        assert "backdrop-filter:blur" in lens and "mask-image:linear-gradient" in lens
+        assert "box-shadow:inset" in lens                       # licht-van-boven, geen web-card-shadow
+        # accent-glow ALLEEN bij de connector-node (niet de hele lens getint)
+        assert ".ws-lens::after" in _DS and ".ws-lens.acc-l::after" in _DS and ".ws-lens.acc-r::after" in _DS
+        # bronnen blijft een subordinate strip (geen 5e lens); command blijft apart
+        assert "ws-frag-src" in ws and "ws-src-rail" in ws
+        assert 'ws-frag-src ws-lens' not in ws and 'ws-dock' in ws
+        # Core blijft dominant: lens staat achter de content (z-index:-1)
+        assert "z-index:-1" in _DS.split(".ws-lens{")[1][:120]
+        # het oude scrim-primitive is echt vervangen (niet overlaagd)
+        assert 'class="ws-scrim"' not in ws

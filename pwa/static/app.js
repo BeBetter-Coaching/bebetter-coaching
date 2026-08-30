@@ -5415,6 +5415,7 @@ function wsRender(wrap, vm) {
     ? ((attn[0].soort === "belasting" && belZin) ? belZin : esc(attn[0].kort || ""))
     : "";
   h += `<div class="ws-frag ws-frag-attn ${tone}">
+      <span class="ws-lens acc-r" aria-hidden="true"></span>
       <span class="ws-tick"></span>
       <h3 class="ds-label">Aandacht nu</h3>
       ${attn.length ? `<p class="ws-attn-t">${attnTxt}</p>
@@ -5426,7 +5427,7 @@ function wsRender(wrap, vm) {
   let loadFrag = "";
   if (bel.km_recent != null) {
     loadFrag = `<div class="ws-frag ws-frag-load ${bel.actief ? belTone : ""}">
-      <span class="ws-scrim" aria-hidden="true"></span>
+      <span class="ws-lens acc-r" aria-hidden="true"></span>
       <h3 class="ds-label">Belastingsinstrument · 7 dagen<em>${nRuns ? `${nRuns} runs` : ""}</em></h3>
       <div class="ws-kmrow"><span class="ws-km">${esc(nlNum(bel.km_recent))}<i> km deze week</i></span>
         ${ratioLbl ? `<span class="ws-rt">${esc(ratioLbl)}</span>` : ""}</div>
@@ -5436,7 +5437,7 @@ function wsRender(wrap, vm) {
     </div>`;
   } else {
     loadFrag = `<div class="ws-frag ws-frag-load">
-      <span class="ws-scrim" aria-hidden="true"></span>
+      <span class="ws-lens acc-r" aria-hidden="true"></span>
       <h3 class="ds-label">Belasting</h3>
       <p class="ws-attn-t calm">Geen belastingstand bekend.</p></div>`;
   }
@@ -5446,7 +5447,7 @@ function wsRender(wrap, vm) {
   let planHead = sc ? wsLine({ tone: dsTone(sc.tier), icon: "clock",
     title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
   h += `<div class="ws-frag ws-frag-plan ${sc ? dsTone(sc.tier) : ""}">
-    <span class="ws-scrim" aria-hidden="true"></span><span class="ws-hang" aria-hidden="true"></span>
+    <span class="ws-lens acc-l" aria-hidden="true"></span>
     <h3 class="ds-label">Doel &amp; planning</h3>
     ${planHead}<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>
     <button type="button" class="ws-cta quiet" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button>
@@ -5457,7 +5458,7 @@ function wsRender(wrap, vm) {
     : `<div class="ws-fb ${fbTone}"><span class="ws-fb-badge">${fb.open || 0}</span>
         <span class="ws-fb-t">${fb.open ? `${fb.open} open reactie${fb.open !== 1 ? "s" : ""}<small>vraagt aandacht</small>` : `alles beantwoord<small>geen open reacties</small>`}</span></div>`;
   h += `<div class="ws-frag ws-frag-fb ${fbTone}">
-    <span class="ws-scrim" aria-hidden="true"></span><span class="ws-hang" aria-hidden="true"></span>
+    <span class="ws-lens acc-l" aria-hidden="true"></span>
     <h3 class="ds-label">Feedback</h3>${fbBody}
     <div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>
     <button type="button" class="ws-cta quiet" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit openen</button>

@@ -3,7 +3,51 @@
 **Branch:** `feature/app-design-system-athlete-shell-v1` · **commit:** zie COMMIT.txt
 **Base:** `main = 39d2453` (SW v97 live) — deze branch is NIET gemerged.
 
-## WORKSPACE NORTH-STAR CONVERGENCE — ATHLETE CORE (merge-kandidaat `8d15492` → finale)
+## WORKSPACE FINAL NORTH-STAR MATCH — GLASS LENSES (merge-kandidaat `83794f1` → finale)
+> Laatste visual-convergence-pass. **Extern-review-besluit:** de eerdere
+> volledig-borderless regel is losgelaten. Vier context-gebieden krijgen nu
+> **premium spatial glass lenses** (geen cards), zodat de material richness en
+> compositiekracht van de referentie daadwerkelijk benaderd worden. Skills in
+> volgorde: artifact-design → ui-ux-pro-max (glass-materiaal) → frontend-design
+> (guard: lens ≠ card) → ui-animation → web-design-guidelines. Design-lab eerst,
+> daarna production. Geen redesign/avatar/fake data/backend; architectuur locked.
+
+**De glass-lens (`.ws-lens`), geen dashboard-card:** translucent donker glas
+(`linear-gradient` navy), 1px subtiele rand die van bovenaf oplicht (`::before`),
+`backdrop-filter:blur(9px)`, zachte ambient-diepteschaduw (geen web-card-shadow),
+**mask-fade** naar de scène onderaan (zweeft, geen hard kader), en een
+**accent-glow alléén bij de connector-node** (`::after`, per-context kleur —
+nooit de hele lens getint). Niet-uniforme geometrie (verschillende insets/starts).
+Toegepast op de **4 kern-contexten**: Aandacht (links-boven), Belasting (links-
+onder, rijkst), Planning (rechts-boven, sterkst rechts), Feedback (rechts-midden).
+**Bronnen** blijft een subordinate strip (geen 5e lens); **command** blijft apart.
+
+Het **verbindingsweb termineert nu ín de lens** (node op de lensrand, accent-glow
+daar). **Data-gestuurd:** in calm tonen alleen plan+feedback een connector; de
+aandacht/belasting-lenzen dragen dan een echte lege-staat (geen fake alert), de
+scène blijft gebalanceerd (geen collapse). Core blijft het grootste/helderste
+object. Plus de eerder geaccepteerde 2 micro-polishes (sphere-luminantie, radar-
+platform) behouden.
+
+**Gewijzigde bestanden:** `pwa/static/app.js` (`wsRender`: `.ws-scrim`→`.ws-lens`
+op de 4 contexten, `acc-l`/`acc-r`), `pwa/static/design-system.css` (glass-lens-
+primitive + per-lens geometrie), `pwa/static/index.html`+`sw.js` (v114a/v110),
+`tests/test_app_design_system_v1.py` (`test_37` bijgewerkt, nieuw `test_41`).
+Design-lab bijgewerkt. **Geen backend.**
+
+**Teststatus:** 1030 passed — vast + random. **Performance/a11y:** 0 overflow
+1440/390; geen nieuwe console-errors; reduced-motion centreert; lenzen zijn
+`aria-hidden` glas met `backdrop-filter:blur(9px)` (performant), tekst-contrast
+verbetert boven het donkere glas; op mobiel stapelen de lenzen als volle panelen.
+
+**Echte side-by-side:** `05-reference-comparison.png` (North-Star bóven de finale
+Workspace, labels in de tussenruimte — niet over de UI). De vraag "same quality
+class?" → de glas-lenzen + web + core + platform + horizon brengen beide in
+dezelfde klasse.
+
+---
+
+## WORKSPACE NORTH-STAR CONVERGENCE — ATHLETE CORE (`8d15492` → `83794f1`)
 > Convergentie-pass richting de nieuwe referentie-afbeelding (visuele benchmark),
 > met de vijf skills in rol (artifact-design → ui-ux-pro-max → frontend-design →
 > ui-animation → web-design-guidelines). **Geen redesign, geen avatar, geen fake
