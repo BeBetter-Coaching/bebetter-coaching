@@ -97,6 +97,11 @@ body{margin:0;background:
   background:radial-gradient(58% 100% at 50% 50%,rgba(94,150,220,.06),transparent 72%);
   filter:blur(22px);animation:ws-haze 30s ease-in-out infinite}
 @keyframes ws-haze{0%,100%{transform:translateX(-16px);opacity:.75}50%{transform:translateX(16px);opacity:1}}
+/* planet-horizon: verre gekromde rand onderin → kosmische z-diepte (North Star).
+   Een grote cirkel wiens bovenrand als horizon leest, met zachte atmosfeer-gloed. */
+.ws-horizon{position:absolute;left:-40%;right:-40%;bottom:-118%;height:150%;border-radius:50%;pointer-events:none;
+  background:radial-gradient(120% 52% at 50% 0%,rgba(38,74,140,.12),rgba(10,24,50,.05) 42%,transparent 62%);
+  box-shadow:inset 0 2px 0 -0.5px rgba(130,178,255,.16),0 -14px 60px -18px rgba(80,140,230,.22)}
 
 /* ══ Z2 — ATHLETE CORE (abstract, geen mens) ══ */
 .ws-stagez{position:relative;z-index:2;width:min(660px,100%);margin:0 auto;height:812px}
@@ -284,11 +289,15 @@ body{margin:0;background:
 .ws-wk .on span{color:var(--ds-text-2)}
 .ws-wk em{font-style:normal;font-size:9px;color:var(--tone);font-weight:700;min-height:11px;font-variant-numeric:tabular-nums}
 @keyframes grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
-.ws-conn2{position:absolute;left:calc(3% + 300px);top:392px;width:150px;height:132px;z-index:2;pointer-events:none;overflow:visible;
-  animation:fglow .8s var(--ds-ease) 1.5s both}
-.ws-conn2 path{fill:none;stroke:var(--tone);stroke-width:1.3;opacity:.5}
-.ws-conn2 path.d{stroke-dasharray:2 7;opacity:.34}
-.ws-conn2 circle{fill:var(--tone);filter:drop-shadow(0 0 6px var(--tone))}
+/* het verbindingsweb: de kern voedt elke context (orbit-node → gekleurde lijn) */
+.ws-web{position:absolute;inset:-40px -20px 0;width:calc(100% + 40px);height:calc(100% + 40px);
+  z-index:2;pointer-events:none;overflow:visible;animation:fglow 1s var(--ds-ease) 1.1s both}
+.ws-webline{fill:none;stroke:var(--tone);stroke-width:1.4;opacity:.42;stroke-linecap:round;
+  filter:drop-shadow(0 0 5px var(--tone-bg));stroke-dasharray:1;animation:ws-webdraw .9s var(--ds-ease) 1.15s both}
+.ws-webline.hot{opacity:.62;stroke-width:1.6}
+@keyframes ws-webdraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+.ws-webnode{fill:#fff;filter:drop-shadow(0 0 8px var(--tone));animation:np 3.8s ease-in-out 2s infinite}
+.ws-webend{fill:var(--tone);filter:drop-shadow(0 0 6px var(--tone))}
 .ws-chart{display:block;width:100%;height:auto;color:var(--tone);overflow:visible;margin-top:6px}
 .ws-chart-line{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;filter:drop-shadow(0 0 6px var(--tone-bg))}
 .ws-chart-ref{stroke:var(--ds-accent);stroke-width:1.1;stroke-dasharray:3 6;opacity:.55}
@@ -395,7 +404,7 @@ body{margin:0;background:
 
 @media (prefers-reduced-motion:reduce){
   .ws-aura,.ws-rings,.ws-sphere,.ws-front,.ws-read,.ws-plat,.ws-conn,.ws-conn2,.ws-geo,.ws-dock,
-  .ws-frag,.ws-id2,.ws-ringspin,.ws-arc,.ws-onode,.ws-corelight,.ws-corelight *,.ws-flow,.ws-scan,
+  .ws-frag,.ws-id2,.ws-ringspin,.ws-arc,.ws-onode,.ws-corelight,.ws-corelight *,.ws-flow,.ws-scan,.ws-webline,.ws-webnode,
   .li-bar,.ws-goal-ring,.ws-inst-v,.ws-wk i,.ws-star.tw{
     animation:none!important}
 }
@@ -430,6 +439,7 @@ body{margin:0;background:
       <div class="ws-bg">
         <div class="ws-amb"></div>
         <div class="ws-haze"></div>
+        <div class="ws-horizon"></div>
         <svg class="ws-orbits" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
           <path class="ws-tr" d="M-40 640 C300 540 780 520 1480 610"/>
           <path class="ws-tr" d="M-40 720 C360 640 820 630 1480 700"/>
@@ -520,8 +530,8 @@ body{margin:0;background:
               </radialGradient>
               <!-- inner field: zacht kernveld dat vanuit het hart oplicht -->
               <radialGradient id="field" cx="50%" cy="52%" r="52%">
-                <stop offset="0" stop-color="var(--tone)" stop-opacity=".26"/>
-                <stop offset="46%" stop-color="var(--tone)" stop-opacity=".07"/>
+                <stop offset="0" stop-color="var(--tone)" stop-opacity=".34"/>
+                <stop offset="46%" stop-color="var(--tone)" stop-opacity=".09"/>
                 <stop offset="100%" stop-color="var(--tone)" stop-opacity="0"/>
               </radialGradient>
               <!-- graduated meridiaan-stroke: dooft naar het hart, helder aan de randen -->
@@ -576,11 +586,18 @@ body{margin:0;background:
               <path class="ws-sph-seg" d="M300 230 A140 118 0 0 1 416 286" opacity=".42"/>
               <path class="ws-sph-seg" d="M232 316 A150 46 0 0 1 268 300" opacity=".5"/>
               <path class="ws-sph-seg" d="M404 402 A150 46 0 0 1 440 384" opacity=".3"/>
-              <!-- inner particles, licht geclusterd -->
+              <!-- inner particle-nebula: dichter veld dat naar het hart verdicht (luminous
+                   energy-sphere i.p.v. lege bol), maar nog steeds sparse en abstract -->
               <circle class="ws-sph-dot t" cx="300" cy="300" r="1.5"/><circle class="ws-sph-dot" cx="386" cy="322" r="1.6"/>
               <circle class="ws-sph-dot" cx="352" cy="368" r="1.2"/><circle class="ws-sph-dot t" cx="312" cy="356" r="1.4"/>
               <circle class="ws-sph-dot" cx="372" cy="286" r="1.1"/><circle class="ws-sph-dot" cx="330" cy="398" r="1.3"/>
               <circle class="ws-sph-dot" cx="356" cy="312" r="1"/><circle class="ws-sph-dot" cx="318" cy="330" r="1.1"/>
+              <circle class="ws-sph-dot t" cx="344" cy="292" r="1.2"/><circle class="ws-sph-dot" cx="364" cy="344" r="1.3"/>
+              <circle class="ws-sph-dot" cx="322" cy="378" r="1"/><circle class="ws-sph-dot t" cx="376" cy="356" r="1.1"/>
+              <circle class="ws-sph-dot" cx="296" cy="338" r="1"/><circle class="ws-sph-dot" cx="408" cy="330" r="1.2"/>
+              <circle class="ws-sph-dot" cx="284" cy="316" r=".9"/><circle class="ws-sph-dot t" cx="338" cy="322" r="1.3"/>
+              <circle class="ws-sph-dot" cx="360" cy="298" r=".9"/><circle class="ws-sph-dot" cx="308" cy="288" r="1"/>
+              <circle class="ws-sph-dot" cx="392" cy="300" r="1"/><circle class="ws-sph-dot" cx="326" cy="356" r=".9"/>
               <!-- occlusie onderin (volume/diepte, vóór de core-light zodat die er doorheen gloeit) -->
               <circle cx="340" cy="332" r="150" fill="url(#occ)"/>
               <!-- core-light: intelligentie-kern in het hart (emaneert omhoog; child-lagen
@@ -638,6 +655,28 @@ body{margin:0;background:
         </div>
       </div>
 
+      <!-- ══ verbindingsweb: de kern voedt elke context (orbit-node → gekleurde lijn
+           → context-anchor). Per-context accent; attention-pad helderder. Sluit de
+           scène tot één cockpit (North-Star-convergentie). ══ -->
+      <svg class="ws-web" viewBox="0 0 1440 940" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <g class="is-critical">
+          <path class="ws-webline hot" pathLength="1" d="M602 348 C520 322 452 312 372 314"/>
+          <circle class="ws-webnode" cx="602" cy="348" r="5"/><circle class="ws-webend" cx="372" cy="314" r="3.5"/>
+        </g>
+        <g class="is-critical">
+          <path class="ws-webline hot" pathLength="1" d="M596 470 C512 512 452 556 372 566"/>
+          <circle class="ws-webnode" cx="596" cy="470" r="5"/><circle class="ws-webend" cx="372" cy="566" r="3.5"/>
+        </g>
+        <g class="is-calm">
+          <path class="ws-webline" pathLength="1" d="M842 344 C930 318 1000 310 1070 312"/>
+          <circle class="ws-webnode" cx="842" cy="344" r="5"/><circle class="ws-webend" cx="1070" cy="312" r="3.5"/>
+        </g>
+        <g class="is-success">
+          <path class="ws-webline" pathLength="1" d="M848 466 C934 506 1000 548 1070 556"/>
+          <circle class="ws-webnode" cx="848" cy="466" r="5"/><circle class="ws-webend" cx="1070" cy="556" r="3.5"/>
+        </g>
+      </svg>
+
       <!-- ══ Z3 — context: borderless clusters ══ -->
       <div class="ws-frag ws-frag-attn is-critical">
         <span class="ws-tick"></span>
@@ -645,7 +684,6 @@ body{margin:0;background:
         <p class="ws-attn-t">Volume <b>+92%</b> deze week — 36,4 km tegenover een referentie van 19 km/wk.</p>
         <p class="ws-attn-m">hoog · stand 2025-08-28</p>
       </div>
-      <svg class="ws-conn is-critical" viewBox="0 0 120 120"><path d="M2 10 C50 30 84 62 116 104"/></svg>
 
       <div class="ws-frag ws-frag-load is-critical">
         <span class="ws-scrim"></span>
@@ -691,12 +729,6 @@ body{margin:0;background:
         </svg>
         <div class="ws-load-m"><span>cumulatief weekvolume</span><span>laatste 2025-08-28</span></div>
       </div>
-      <!-- load ↔ core: strak geïntegreerde connector (origin=cluster, destination=core-node) -->
-      <svg class="ws-conn2 is-critical" viewBox="0 0 150 132">
-        <path class="d" d="M4 128 C40 120 66 108 84 86"/>
-        <path d="M84 86 C104 60 126 34 146 6"/>
-        <circle cx="4" cy="128" r="2.4"/>
-      </svg>
 
       <div class="ws-frag ws-frag-plan is-calm">
         <span class="ws-scrim"></span><span class="ws-hang"></span>

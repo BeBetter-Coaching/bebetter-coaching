@@ -5194,8 +5194,8 @@ function wsCore(focal) {
           <stop offset="100%" stop-color="var(--tone)" stop-opacity="0"/>
         </radialGradient>
         <radialGradient id="ws-field" cx="50%" cy="52%" r="52%">
-          <stop offset="0" stop-color="var(--tone)" stop-opacity=".26"/>
-          <stop offset="46%" stop-color="var(--tone)" stop-opacity=".07"/>
+          <stop offset="0" stop-color="var(--tone)" stop-opacity=".34"/>
+          <stop offset="46%" stop-color="var(--tone)" stop-opacity=".09"/>
           <stop offset="100%" stop-color="var(--tone)" stop-opacity="0"/>
         </radialGradient>
         <linearGradient id="ws-merid" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
@@ -5242,6 +5242,12 @@ function wsCore(focal) {
         <circle class="ws-sph-dot" cx="352" cy="368" r="1.2"/><circle class="ws-sph-dot t" cx="312" cy="356" r="1.4"/>
         <circle class="ws-sph-dot" cx="372" cy="286" r="1.1"/><circle class="ws-sph-dot" cx="330" cy="398" r="1.3"/>
         <circle class="ws-sph-dot" cx="356" cy="312" r="1"/><circle class="ws-sph-dot" cx="318" cy="330" r="1.1"/>
+        <circle class="ws-sph-dot t" cx="344" cy="292" r="1.2"/><circle class="ws-sph-dot" cx="364" cy="344" r="1.3"/>
+        <circle class="ws-sph-dot" cx="322" cy="378" r="1"/><circle class="ws-sph-dot t" cx="376" cy="356" r="1.1"/>
+        <circle class="ws-sph-dot" cx="296" cy="338" r="1"/><circle class="ws-sph-dot" cx="408" cy="330" r="1.2"/>
+        <circle class="ws-sph-dot" cx="284" cy="316" r=".9"/><circle class="ws-sph-dot t" cx="338" cy="322" r="1.3"/>
+        <circle class="ws-sph-dot" cx="360" cy="298" r=".9"/><circle class="ws-sph-dot" cx="308" cy="288" r="1"/>
+        <circle class="ws-sph-dot" cx="392" cy="300" r="1"/><circle class="ws-sph-dot" cx="326" cy="356" r=".9"/>
         <circle cx="340" cy="332" r="150" fill="url(#ws-occ)"/>
         <g class="ws-corelight">
           <ellipse class="cl-bloom" cx="340" cy="356" rx="30" ry="64" opacity=".38"/>
@@ -5330,7 +5336,7 @@ function wsRender(wrap, vm) {
   let h = genBanner(vm.generation);
   h += `<div class="ws-scene ${tone}">`;
   // Z0 — omgeving
-  h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div><div class="ws-haze"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
+  h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div><div class="ws-haze"></div><div class="ws-horizon"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
   // Z1 — cockpitgeometrie: gebroken bogen, gidslijnen, data-nodes
   h += `<svg class="ws-geo" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
     <circle class="ws-arc a2" cx="700" cy="430" r="418" stroke-dasharray="600 2026" transform="rotate(-206 700 430)"/>
@@ -5380,6 +5386,22 @@ function wsRender(wrap, vm) {
       <circle class="ws-pout" cx="300" cy="96" r="3.4"/>` : ""}</svg></div>
   </div>`;
 
+  // Verbindingsweb: de kern voedt elke aanwezige context (orbit-node → gekleurde
+  // lijn → context-anchor). Per-context accent; attention-pad helderder. Tekent de
+  // scène tot één cockpit (North-Star-convergentie). Data-gestuurd: alleen echte
+  // context krijgt een verbinding. Coords getuned voor 1440; verborgen < 1180px.
+  const planWebTone = sc ? dsTone(sc.tier) : "is-calm";
+  const fbTone = fb.status === "unknown" ? "is-unknown" : (fb.open ? "is-attention" : "is-success");
+  const webSeg = (t, hot, d, nx, ny, ex, ey) =>
+    `<g class="${t}"><path class="ws-webline${hot ? " hot" : ""}" pathLength="1" d="${d}"/>
+      <circle class="ws-webnode" cx="${nx}" cy="${ny}" r="5"/><circle class="ws-webend" cx="${ex}" cy="${ey}" r="3.5"/></g>`;
+  let web = "";
+  if (attn.length) web += webSeg(tone, true, "M566 350 C500 326 470 320 452 322", 566, 350, 452, 322);
+  if (bel.km_recent != null) web += webSeg(belTone, bel.actief, "M560 468 C500 508 452 548 430 556", 560, 468, 430, 556);
+  web += webSeg(planWebTone, false, "M838 346 C930 320 1000 314 1044 316", 838, 346, 1044, 316);
+  web += webSeg(fbTone, false, "M844 466 C934 506 1000 540 1044 548", 844, 466, 1044, 548);
+  h += `<svg class="ws-web" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${web}</svg>`;
+
   // Z3 — fragmenten (borderless, ruimtelijk, asymmetrisch)
   // Waarde-consistentie: belasting-zin uit dezelfde canonieke velden als het signaal.
   const belZin = (bel.pct != null && bel.km_recent != null && bel.km_basis_week != null)
@@ -5396,8 +5418,7 @@ function wsRender(wrap, vm) {
       ${attn.length ? `<p class="ws-attn-t">${attnTxt}</p>
         ${attnMeta ? `<p class="ws-attn-m">${esc(attnMeta)}</p>` : ""}`
       : `<p class="ws-attn-t calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`}
-    </div>
-    ${attn.length ? `<svg class="ws-conn" viewBox="0 0 56 92" aria-hidden="true"><path d="M0 8 C20 26 34 54 48 84"/></svg>` : ""}`;
+    </div>`;
 
   const nRuns = (bel.runs || []).length;
   let loadFrag = "";
@@ -5418,13 +5439,7 @@ function wsRender(wrap, vm) {
       <p class="ws-attn-t calm">Geen belastingstand bekend.</p></div>`;
   }
   h += loadFrag;
-  // Zichtbare relatie belasting-fragment ↔ centrale kern (tweede verbinding):
-  // strak geïntegreerd — duidelijke origin (cluster) en destination (kern-node).
-  if (bel.km_recent != null)
-    h += `<svg class="ws-conn2 ${bel.actief ? belTone : "is-calm"}" viewBox="0 0 150 132" aria-hidden="true">
-      <path class="d" d="M4 128 C40 120 66 108 84 86"/>
-      <path d="M84 86 C104 60 126 34 146 6"/>
-      <circle cx="4" cy="128" r="2.4"/></svg>`;
+  // (De belasting↔kern-relatie loopt nu via het verbindingsweb hierboven.)
 
   let planHead = sc ? wsLine({ tone: dsTone(sc.tier), icon: "clock",
     title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
@@ -5435,7 +5450,6 @@ function wsRender(wrap, vm) {
     <button type="button" class="ws-cta quiet" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button>
   </div>`;
 
-  const fbTone = fb.status === "unknown" ? "is-unknown" : (fb.open ? "is-attention" : "is-success");
   const fbBody = fb.status === "unknown"
     ? `<p class="ws-attn-t calm">Feedback-status wordt bijgewerkt…</p>`
     : `<div class="ws-fb ${fbTone}"><span class="ws-fb-badge">${fb.open || 0}</span>

@@ -374,7 +374,8 @@ class TestAthleteCanvas:
         # fragmenten + twee zichtbare relaties (attn↔node, load↔kern)
         assert "ws-frag-attn" in ws and "ws-frag-load" in ws and "ws-frag-plan" in ws
         assert "ws-frag-fb" in ws and "ws-frag-src" in ws
-        assert 'class="ws-conn' in ws and "ws-conn2" in ws
+        # zichtbare relaties: de kern voedt elke aanwezige context via het verbindingsweb
+        assert 'class="ws-web"' in ws and "ws-webline" in ws and "ws-webnode" in ws
         # command als instrument-strip: één dominante trigger + lead-in (waaróm) +
         # stille secundaire controls — geen losse pill onderaan.
         assert 'class="ws-cmd"' in ws and "ws-cmd-lead" in ws and "ws-util" in ws
@@ -453,3 +454,27 @@ class TestAthleteCanvas:
         assert ".ws-cmd:focus-visible{outline" in _DS.replace(" ", "").replace("\n", "")
         # motion-performance: geen transition:all in de workspace-laag
         assert "transition:all" not in _DS.replace(" ", "")
+
+    def test_40_north_star_convergence(self):
+        # Convergentie naar de referentie: de kern is een verbindings-hub die elke
+        # AANWEZIGE context voedt (data-gestuurd, per-context accent), een luminous
+        # particle-core, en een planet-horizon voor kosmische diepte.
+        core = _fn("wsCore")
+        ws = _fn("wsRender")
+        # verbindingsweb, data-gestuurd (alleen echte context krijgt een lijn)
+        assert 'class="ws-web"' in ws
+        assert "if (attn.length) web +=" in ws                 # geen aandacht-lijn zonder aandacht
+        assert "if (bel.km_recent != null) web +=" in ws       # geen belasting-lijn zonder data
+        # per-context accent via de tone-klasse op elk segment
+        assert "webSeg(tone" in ws and "webSeg(belTone" in ws
+        assert "webSeg(planWebTone" in ws and "webSeg(fbTone" in ws
+        assert ".ws-webline{" in _DS and ".ws-webnode{" in _DS
+        # de oude losse connectoren zijn vervangen door het web
+        assert "ws-conn2" not in ws and 'class="ws-conn"' not in ws
+        # luminous particle-core: dichter deeltjesveld dan de vorige pass
+        assert core.count("ws-sph-dot") >= 16
+        # planet-horizon: kosmische z-diepte (statisch, reduced-motion-neutraal)
+        assert 'class="ws-horizon"' in ws and ".ws-horizon{" in _DS
+        # discipline: web verborgen op mobiel + bevroren onder reduced-motion
+        assert ".ws-web{display:none}" in _DS.replace(" ", "")
+        assert ".ws-web,.ws-webnode" in _DS.replace(" ", "")

@@ -3,7 +3,51 @@
 **Branch:** `feature/app-design-system-athlete-shell-v1` · **commit:** zie COMMIT.txt
 **Base:** `main = 39d2453` (SW v97 live) — deze branch is NIET gemerged.
 
-## WORKSPACE FINAL POLISH — ATHLETE CORE (merge-kandidaat `da1ed78` → finale)
+## WORKSPACE NORTH-STAR CONVERGENCE — ATHLETE CORE (merge-kandidaat `8d15492` → finale)
+> Convergentie-pass richting de nieuwe referentie-afbeelding (visuele benchmark),
+> met de vijf skills in rol (artifact-design → ui-ux-pro-max → frontend-design →
+> ui-animation → web-design-guidelines). **Geen redesign, geen avatar, geen fake
+> data, architectuur locked, frontend-only.** Doel: het huidige Athlete-Core-
+> cockpit zichtbaar dichter bij de kwaliteit/ruimtelijkheid/WAUW van de referentie.
+
+**Vier ingrepen (alles op echte data):**
+1. **Verbindingsweb (grootste)** — de kern is nu een hub die **elke aanwezige
+   context** voedt: orbit-node → gekleurde lijn → context-anchor, per-context
+   accent (aandacht/belasting oranje, plan cyaan, feedback groen). **Data-gestuurd:**
+   alleen echte context krijgt een verbinding (calm = alleen plan+feedback, geen
+   verzonnen aandacht/belasting-lijnen). Vervangt de twee losse `ws-conn`/`ws-conn2`.
+   Lijnen **tekenen zich** van de kern naar buiten op entree (`ws-webdraw`).
+2. **Luminous particle-core** — dichter deeltjesveld + iets sterker centraal
+   bloom (`ws-field`): een actieve energy-sphere i.p.v. een donkere bol. Blijft
+   ontglobed (gebroken shell-fragmenten), rim-silhouet blijft.
+3. **Planet-horizon** — verre gekromde rand onderin (`ws-horizon`): kosmische
+   z-diepte zoals de referentie. Statisch, reduced-motion-neutraal.
+4. **Per-context accent-identiteit** — elk contextfragment krijgt via het web zijn
+   eigen statuskleur-node (echte semantiek: aandacht/actief=oranje, calm=cyaan,
+   feedback-status=groen/amber).
+
+Behouden: geen mens, echte data, `nlNum`-locale, geen data→geen gauge (calm =
+serene kern met alleen plan+feedback-verbinding), reduced-motion-centrering.
+
+**Gewijzigde bestanden:** `pwa/static/app.js` (`wsRender` verbindingsweb +
+`ws-horizon`; `wsCore` dichter particle-veld + helderder field), `pwa/static/
+design-system.css` (`ws-web`/`ws-webline`/`ws-webnode` + draw-on, `ws-horizon`),
+`pwa/static/index.html`+`sw.js` (v112a/v108), `tests/test_app_design_system_v1.py`
+(`test_37` bijgewerkt, nieuw `test_40`). Design-lab bijgewerkt. **Geen backend.**
+
+**Teststatus:** 1029 passed — vast + random. **Performance/a11y:** 0 overflow
+1440/390; geen nieuwe console-errors (alleen favicon-404 + vibrate); web is
+`aria-hidden`, verborgen < 1180px, bevroren onder reduced-motion; reduced-motion
+centreert. Alleen transform/opacity/SVG-draw-animaties.
+
+**Acceptance-renders:** `01-workspace-desktop.png`, `02-hero-closeup.png`,
+`08-calm-core.png`, `04-mobile-sanity.png`, `07-before-after.png` (`8d15492` →
+finale), `05-reference-comparison.png` (finale — leg naast jouw referentie),
+`09-entrance.gif`.
+
+---
+
+## WORKSPACE FINAL POLISH — ATHLETE CORE (`da1ed78` → `8d15492`)
 > Laatste polish-pass op de `da1ed78`-cockpit met de vier design-skills in de
 > voorgeschreven rol: `/artifact-design` (art-direction review), **ui-ux-pro-max**
 > (diepte/material/dataviz — bevestigde glassmorphism-multilayer + trend-endpoint),
