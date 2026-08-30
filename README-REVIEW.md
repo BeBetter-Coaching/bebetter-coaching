@@ -3,55 +3,59 @@
 **Branch:** `feature/app-design-system-athlete-shell-v1` · **commit:** zie COMMIT.txt
 **Base:** `main = 39d2453` (SW v97 live) — deze branch is NIET gemerged.
 
-## WORKSPACE FINAL REFINEMENT — ATHLETE CORE (merge-kandidaat)
-> Finale visuele refinement-pass op de `8f7a1cb`-richting. **Géén nieuw concept,
-> géén avatar:** de abstracte **Athlete Core** en de spatial cockpit blijven; de
-> architectuur blijft locked (Coach Read / AthleteState / generation /
-> `source_versions` / stores / routes ongemoeid). Doel: van ~85–90% naar een
-> overtuigende, merge-waardige eindstaat.
+## WORKSPACE FINAL 10% — ATHLETE CORE (merge-kandidaat `ac62b83` → finale)
+> Laatste refinement-pass op de `ac62b83`-cockpit. **Géén reset, géén avatar, géén
+> nieuw concept:** de abstracte **Athlete Core** + spatial cockpit blijven; de
+> architectuur blijft volledig locked (Coach Read / AthleteState / generation /
+> `source_versions` / stores / routes / focal-ladder / acties ongemoeid).
+> Frontend/presentation-only. Doel: de laatste ~10% kwaliteit — meer wauw,
+> futuristische intelligentie en ruimtelijke samenhang zónder de coachfunctie te
+> verliezen.
 
-**Vier ingrepen (frontend-only):**
-1. **Rijkere kern** — glazen sphere is nu een intelligentie-object i.p.v. een
-   platte bol: tweede inner shell (parallax-diepte), meridianen die naar het hart
-   doven (helder aan de rand, `url(#ws-merid)`), zacht inner-field, glasrand-
-   refractie, sparse segment-ticks en een vertikale **core-light** (emaneert
-   omhoog i.p.v. een losse witte blob). Instrument-eindkap markeert de meting.
-2. **De context lost op in de scène** — Doel&planning / Feedback / Bronnen én het
-   belasting-cluster zijn **geen cards meer** (`.ws-field` verlaten). Ze hangen
-   borderless in de scène met een randloze **scrim** (leesbaarheid zonder kader)
-   en een hang-node; hiërarchie planning > feedback > bronnen(-telemetrie).
-3. **Rijkere periferie** — dunne gebroken traces, coördinaat-ticks en kleine
-   data-ankers die naar de kern wijzen. Puur ruimtelijke cue, **geen verzonnen
-   waarden** (geen tekstlabels met fake data).
-4. **Premium command-layer** — de pill is een **instrument-strip**: lead-in
-   (waaróm: "belastingssignaal verhoogd") + één dominante trigger op een dunne
-   command-rail + stille utility-commando's. Koppelt zichtbaar aan het platform.
+**Vijf ingrepen (alles op echte data, geen fake density):**
+1. **Levende intelligence-core** — de glazen sphere is nu een actieve kern: interne
+   **datastromen** (`ws-dataflow`/`ws-flow` — comet-segmenten die naar het hart
+   convergeren, geen labels/waarden), een **reading-plane** (`ws-readplane`) zodat
+   de waarde uit de kern lijkt te komen, bodem-**occlusie** + inner-shell-rim
+   (≥3 dieptelagen), een phase-offset **heartbeat** (`cl-*`, serene staten koeler/
+   rustiger), rijkere asymmetrische segment-ticks en een eenmalige scan-cue.
+2. **Eén load-instrument** — `wsLoadInstrument()` fuseert weekstrip + curve tot één
+   cockpit-instrument: dag-energie (pulsen op de baseline) + **cumulatieve trend**
+   die daarbovenuit stijgt (VLAK op rustdagen) + referentiedrempel + **eind-node**
+   (= origin van de kern-connector). Zelfde bronvelden (`runs`/`km_recent`/
+   `km_basis_week`), geen plot-rechthoek, randen faden in de scène.
+3. **Command uit het platform** — het platform krijgt een **output-node + light-track**
+   (`ws-pout`/`ws-ptrack`, alleen bij een actie) en de command een **plug**
+   (`ws-plug`); de coachactie is zichtbaar de uitvoerzijde van de Core, niet een
+   losse onderbalk. Hover geeft rail-respons. Actie-semantiek onveranderd.
+4. **Ruimtelijke periferie** — een **vloer-perspectief** (`ws-floor`: convergerende
+   lijnen + concentrische ringen) onder het platform. Puur diepte, geen fake data.
+5. **Rechter context nog iets minder blok** — verschillende horizontale startlijnen +
+   diepte/opacity (planning > feedback > bronnen-als-infrastructuur), geen borders.
 
-Plus: load↔kern-connector hertekend (duidelijke origin+destination), lichtkolom
-core→platform, en de **locale netjes** (`36,4` / `14,6` i.p.v. `36.4`, lokaal via
-`nlNum()` — ratio blijft `1,9×`). Reduced-motion-fix: de centrering van signaal
-én command staat nu in de **basis-regel** (overleeft `animation:none`).
+Behouden: geen mens, alleen echte data, `nlNum()`-locale (`36,4`/`14,6`, ratio
+`1,9×`), toon volgt het zwaarste signaal, **geen data → geen gauge** (calm =
+serene kern zonder instrument), reduced-motion-centrering in de **basis-regel**.
 
-Behouden: geen mens, alleen echte data, geen fake readiness/ACWR/RPE/HRV/doelen;
-lege staten ontworpen; toon volgt het zwaarste signaal; geen data → geen gauge.
-
-**Gewijzigde bestanden:** `pwa/static/app.js` (rijkere `wsCore`, telemetrie in
-`wsRender` Z1, fragmenten ontkaderd, instrument-dock, `nlNum()`-locale),
-`pwa/static/design-system.css` (kern-verrijking, scrim/hang, command-instrument,
-reduced-motion-centrering), `pwa/static/index.html` + `pwa/static/sw.js`
-(asset/cache-bump v109a/v105), `tests/test_app_design_system_v1.py` (test 37 →
-refinement-contract). Design-lab: `design-lab/workspace-athlete-core-final.html`.
+**Gewijzigde bestanden:** `pwa/static/app.js` (levende `wsCore`, nieuwe
+`wsLoadInstrument`, platform-output + vloer + command-plug in `wsRender`),
+`pwa/static/design-system.css` (core-datastromen/reading-plane/heartbeat,
+load-instrument `li-*`, platform-track, command-plug, vloer-perspectief,
+context-stagger, reduced-motion), `pwa/static/index.html` + `pwa/static/sw.js`
+(asset/cache-bump v110a/v106), `tests/test_app_design_system_v1.py` (nieuw
+`test_38` → finale-10%-contract). Design-lab: `design-lab/workspace-athlete-core-final.html`.
 **Geen backend-bestanden gewijzigd.**
 
-**Teststatus:** 1026 passed — vaste én random volgorde (`python3 -m pytest tests/ -q`).
+**Teststatus:** 1027 passed — vaste én random volgorde (`python3 -m pytest tests/ -q`).
 **Performance (headless Chrome, lokaal):** 0 horizontale overflow op 1440px en
-390px (body/doc scrollWidth == viewport); alleen compositor-animaties; geen
-nieuwe console-errors (alleen pre-existing favicon-404 + vibrate-warning); geen
-library/canvas/WebGL in productie.
+390px (body/doc scrollWidth == viewport); alleen compositor-/kleine SVG-animaties;
+geen nieuwe console-errors (alleen pre-existing favicon-404 + vibrate-warning);
+geen library/canvas/WebGL in productie; reduced-motion centreert correct (read +
+command op scène-midden).
 
 **Acceptance-renders:** `review-screenshots/01-workspace-desktop.png` (flagship),
-`02-hero-closeup.png` (kern), `08-calm-core.png` (geen signaal → geen gauge),
-`04-mobile-sanity.png`, `07-before-after.png` (`8f7a1cb` vs finale),
+`02-hero-closeup.png` (levende kern), `08-calm-core.png` (geen signaal → geen
+gauge), `04-mobile-sanity.png`, `07-before-after.png` (`ac62b83` → finale),
 `05-northstar-comparison.png`, `09-entrance.gif` (echte entree-interactie).
 
 ## Wat dit is

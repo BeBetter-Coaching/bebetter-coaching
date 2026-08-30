@@ -549,6 +549,9 @@
 .ws-trace.t{stroke:var(--tone);opacity:.2}
 .ws-cross{stroke:rgba(150,198,255,.34);stroke-width:1.1;fill:none}
 .ws-anode{fill:rgba(180,215,255,.5)}
+/* vloer-perspectief: convergerende lijnen + concentrische ringen onder het platform
+   → ruimtelijke diepte (heel subtiel, nooit concurrerend met de kern) */
+.ws-floor path,.ws-floor ellipse{fill:none;stroke:rgba(122,168,255,.055);stroke-width:1}
 
 /* ── Z2 — athlete-vlak: identity + ATHLETE CORE (abstract, geen mens) ── */
 .ws-stagez{position:relative;z-index:2;width:min(660px,100%);margin:0 auto;height:812px}
@@ -608,13 +611,31 @@
   filter:drop-shadow(0 0 5px var(--tone))}
 .ws-sph-dot{fill:rgba(180,215,255,.55)}
 .ws-sph-dot.t{fill:var(--tone);opacity:.8}
-/* core-light: de intelligentie-kern in het hart (emaneert omhoog, geen platte blob) */
-.ws-corelight{animation:ws-corepulse 6s ease-in-out 2.2s infinite}
-.ws-corelight .cl-bloom{fill:var(--tone);filter:blur(10px)}
-.ws-corelight .cl-col{fill:var(--tone);filter:blur(5px)}
-.ws-corelight .cl-mid{fill:var(--tone);filter:blur(3px)}
-.ws-corelight .cl-core{fill:#FFF3EC;filter:blur(1px)}
+/* reading-plane: zachte tone-gloed achter de waarde (de waarde komt uit de kern) */
+.ws-readplane{fill:var(--tone);opacity:.15;filter:blur(9px)}
+/* inner-shell rand-highlight → aparte diepte-laag */
+.ws-shell-rim{fill:none;stroke:rgba(200,224,255,.42);stroke-width:1;opacity:.8}
+/* interne datastromen: bright "comet"-segmenten die naar het hart convergeren
+   (abstracte systeemactiviteit — geen waarden/labels, geen screensaver) */
+.ws-flow{fill:none;stroke:var(--tone);stroke-linecap:round;filter:drop-shadow(0 0 5px var(--tone))}
+.ws-flow.f1{stroke-width:2.6;stroke-dasharray:15 175;animation:ws-flow 4.8s linear infinite}
+.ws-flow.f2{stroke-width:2.2;stroke-dasharray:12 165;animation:ws-flow 6s linear infinite .9s}
+.ws-flow.f3{stroke-width:2;stroke-dasharray:11 160;animation:ws-flow 6.9s linear infinite 1.7s}
+@keyframes ws-flow{from{stroke-dashoffset:190}to{stroke-dashoffset:0}}
+/* core-light: intelligentie-kern — child-lagen met kleine phase-offsets = heartbeat */
+.ws-corelight .cl-bloom{fill:var(--tone);filter:blur(10px);animation:ws-corepulse 6s ease-in-out 2.2s infinite}
+.ws-corelight .cl-col{fill:var(--tone);filter:blur(5px);animation:ws-corepulse 6s ease-in-out 2.4s infinite}
+.ws-corelight .cl-mid{fill:var(--tone);filter:blur(3px);animation:ws-corerise 6s ease-in-out 2.2s infinite}
+.ws-corelight .cl-core{fill:#FFF3EC;filter:blur(1px);animation:ws-corerise 6s ease-in-out 2.35s infinite}
 @keyframes ws-corepulse{0%,100%{opacity:1}50%{opacity:.72}}
+@keyframes ws-corerise{0%,100%{opacity:.95;transform:translateY(0)}50%{opacity:.66;transform:translateY(-2px)}}
+/* eenmalige scan/focus-cue over de waarde (entree) */
+.ws-scan{stroke:var(--tone);stroke-width:1;opacity:0;filter:drop-shadow(0 0 6px var(--tone));
+  animation:ws-scan 2.6s var(--ds-ease) 1s 1}
+@keyframes ws-scan{0%{opacity:0;transform:translateY(-34px)}25%{opacity:.7}100%{opacity:0;transform:translateY(30px)}}
+/* toon-bewuste amplitude: serene staten (calm/success) rustiger; kleur = koeler via --tone */
+.ws-core.is-calm .cl-core,.ws-core.is-calm .cl-mid,.ws-core.is-calm .ws-flow,
+.ws-core.is-success .cl-core,.ws-core.is-success .cl-mid,.ws-core.is-success .ws-flow{animation-duration:8s}
 /* front-arc: kruist vóór de onderrand (diepte-cue) */
 .ws-front{z-index:3;pointer-events:none}
 .ws-front-arc{fill:none;stroke:var(--tone);stroke-width:2;opacity:.7;stroke-linecap:round;
@@ -643,6 +664,10 @@
 .ws-pg{fill:var(--tone);opacity:.15;filter:blur(15px);stroke:none!important}
 /* lichtkolom: koppelt de core-light aan het platform (herkomst + diepte) */
 .ws-beam{fill:var(--tone);opacity:.13;filter:blur(7px)}
+/* platform-output: node + light-track waarlangs de coachactie wordt afgeleverd */
+.ws-pout{fill:#FFF3EC;filter:drop-shadow(0 0 8px var(--tone))}
+.ws-ptrack{fill:none;stroke:var(--tone);stroke-width:1.4;stroke-linecap:round;opacity:.5;
+  filter:drop-shadow(0 0 5px var(--tone))}
 .ws-ptick{stroke:rgba(150,198,255,.35);stroke-width:1.2}
 .ws-plead{fill:none;stroke:var(--tone);stroke-width:2;opacity:.7;stroke-linecap:round;
   filter:drop-shadow(0 0 6px var(--tone))}
@@ -709,6 +734,23 @@
 .ws-chart-tip{fill:#FFE3D4;filter:drop-shadow(0 0 6px currentColor)}
 .ws-chart-ref{stroke:var(--ds-accent);stroke-width:1.1;stroke-dasharray:3 6;opacity:.55}
 .ws-chart-reflbl{font-size:8.5px;font-weight:700;letter-spacing:.08em;fill:var(--ds-accent);opacity:.75}
+/* het geïntegreerde belastingsinstrument (vervangt losse weekstrip + chart):
+   dag-energie op de baseline + cumulatieve trend + referentiedrempel + eind-node */
+.ws-loadinst{display:block;width:100%;height:auto;color:var(--tone);overflow:visible;margin-top:10px}
+.li-base{stroke:rgba(150,198,255,.2);stroke-width:1}
+.li-ref{stroke:var(--ds-accent);stroke-width:1.1;stroke-dasharray:3 6;opacity:.55}
+.li-reflbl{font-size:8px;font-weight:700;letter-spacing:.1em;fill:var(--ds-accent);opacity:.75}
+.li-bar{fill:var(--tone);opacity:.34;transform-box:fill-box;transform-origin:bottom;
+  animation:ws-grow .6s var(--ds-ease) 1.3s both}
+.li-bar.rest{opacity:.16;animation:none}
+.li-val{font-size:8px;font-weight:700;fill:var(--tone);opacity:.85;text-anchor:middle;font-variant-numeric:tabular-nums}
+.li-day{font-size:8px;font-weight:700;letter-spacing:.06em;fill:var(--ds-text-3);text-anchor:middle}
+.li-day.on{fill:var(--ds-text-2)}
+.li-area{fill:url(#ws-liarea)}
+.li-cum{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;
+  filter:drop-shadow(0 0 6px var(--tone-bg))}
+.li-tip{fill:#FFE3D4;filter:drop-shadow(0 0 7px var(--tone))}
+.li-tip-o{fill:none;stroke:var(--tone);stroke-width:1;opacity:.5}
 
 .ws-frag-plan{right:7%;top:158px;width:280px;animation:ws-in 400ms var(--ds-ease) 1.2s both}
 .ws-frag-plan .ws-scrim{inset:-16px -26px -26px -22px}
@@ -733,7 +775,7 @@
   font-size:11.5px;font-weight:700;color:var(--ds-accent)}
 .ws-cta.quiet:hover{text-decoration:underline}
 
-.ws-frag-fb{right:6.5%;top:428px;width:258px;animation:ws-in 400ms var(--ds-ease) 1.25s both}
+.ws-frag-fb{right:5.5%;top:434px;width:258px;opacity:.9;animation:ws-in 400ms var(--ds-ease) 1.25s both}
 .ws-frag-fb .ws-scrim{inset:-16px -26px -24px -20px}
 .ws-frag-fb .ws-hang{left:-14px;top:26px}
 .ws-fb{display:flex;align-items:center;gap:12px;margin-bottom:10px}
@@ -745,7 +787,7 @@
 .ws-fb-t small{display:block;font-size:10.5px;color:var(--ds-text-3)}
 .ws-frag-fb .ws-deep-slot{font-size:12px;color:var(--ds-text-2);line-height:1.45}
 
-.ws-frag-src{right:7%;bottom:148px;width:220px;opacity:.6;
+.ws-frag-src{right:7%;bottom:148px;width:220px;opacity:.48;
   animation:ws-in 400ms var(--ds-ease) 1.3s both}
 .ws-src-rail{position:absolute;left:-12px;top:24px;bottom:2px;width:1px;
   background:linear-gradient(180deg,transparent,rgba(122,168,255,.28),transparent)}
@@ -778,13 +820,20 @@
   background:linear-gradient(180deg,color-mix(in srgb,var(--tone) 22%,rgba(10,24,46,.7)),rgba(8,20,40,.72));
   box-shadow:0 0 30px -12px var(--tone),inset 0 1px 0 rgba(255,255,255,.06);
   transition:border-color var(--ds-fast) var(--ds-ease),box-shadow var(--ds-fast) var(--ds-ease)}
-.ws-cmd:hover{box-shadow:0 0 34px -10px var(--tone),inset 0 1px 0 rgba(255,255,255,.08)}
+.ws-cmd:hover,.ws-cmd:focus-visible{border-color:var(--tone);
+  box-shadow:0 0 34px -8px var(--tone),inset 0 1px 0 rgba(255,255,255,.09)}
 .ws-cmd-chip{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto;
   color:#12060a;background:linear-gradient(135deg,color-mix(in srgb,var(--tone) 60%,#fff),var(--tone));
   box-shadow:0 0 14px -3px var(--tone)}
 .ws-cmd-chip .ic{width:15px;height:15px}
 .ws-cmd::after{content:"";position:absolute;left:14px;right:14px;bottom:-9px;height:12px;border-radius:50%;
   background:var(--tone);opacity:.28;filter:blur(9px)}
+/* de plug: korte verticale stam die de command aan de platform-output koppelt */
+.ws-plug{position:absolute;left:50%;top:-19px;width:1px;height:15px;transform:translateX(-50%);
+  background:linear-gradient(180deg,transparent,var(--tone));opacity:.6;transition:opacity var(--ds-fast) var(--ds-ease)}
+.ws-plug::before{content:"";position:absolute;left:50%;top:-3px;width:5px;height:5px;transform:translateX(-50%);
+  border-radius:50%;background:var(--tone);box-shadow:0 0 8px var(--tone)}
+.ws-cmd:hover .ws-plug,.ws-cmd:focus-visible .ws-plug{opacity:.95}
 /* stille secundaire controls */
 .ws-util{display:flex;align-items:center}
 .ws-util button,.ws-util .anav-chip{background:none;border:0;font:inherit;font-size:12.5px;
@@ -841,7 +890,7 @@
   .ws-id2,.ws-aura,.ws-core,.ws-rings,.ws-sphere,.ws-front,.ws-read,.ws-plat,.ws-frag,
   .ws-conn,.ws-conn2,.ws-dock,.ws-geo,.ws-bg{animation:none}
   .ws-arc.a1,.ws-arc.a2,.ws-goal-ring,.ws-ringspin{animation:none}
-  .ws-inst-v,.ws-nd,.ws-onode,.ws-corelight,.ws-aura,.ws-wk i{animation:none}
+  .ws-inst-v,.ws-nd,.ws-onode,.ws-corelight,.ws-corelight *,.ws-flow,.ws-scan,.li-bar,.ws-aura,.ws-wk i{animation:none}
   .ws-star.tw{animation:none}
   .ws-switch{transition:none}
 }

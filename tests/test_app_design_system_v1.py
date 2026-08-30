@@ -397,3 +397,31 @@ class TestAthleteCanvas:
         assert "prefers-reduced-motion" in _DS
         read_rule = _DS.split(".ws-read{")[1][:200]
         assert "translate(-50%,-50%)" in read_rule
+
+    def test_38_final_10pct_refinement(self):
+        # Laatste 10%: levende intelligence-core, één load-instrument, command uit
+        # het platform, ruimtelijke periferie — alles presentation-only en op echte data.
+        core = _fn("wsCore")
+        ws = _fn("wsRender")
+        # A. levende core: interne datastromen (geen labels/waarden) + reading-plane
+        assert "ws-dataflow" in core and "ws-flow" in core
+        assert "ws-readplane" in core                          # waarde komt uit de kern
+        assert ".ws-flow{" in _DS and "@keyframes ws-flow" in _DS
+        # B. het load-cluster is ÉÉN instrument (weekstrip + curve gefuseerd), op
+        #    dezelfde bronvelden; cumulatief stijgt of blijft vlak (rustdag).
+        assert "function wsLoadInstrument(" in _APP and _APP.count("function wsLoadInstrument(") == 1
+        li = _fn("wsLoadInstrument")
+        assert "bel.runs" in li and "bel.km_basis_week" in li  # zelfde bron, geen nieuwe data
+        assert "d.cum = acc" in li and "acc += d.km" in li     # eerlijke cumulatie
+        assert "wsLoadInstrument(bel)" in ws
+        assert "esc(" in li                                    # geen XSS-regressie
+        assert ".ws-loadinst{" in _DS and ".li-cum{" in _DS
+        # C. command komt uit het platform: output-node + track (alleen bij een actie)
+        #    en een plug op de command. Bestaande actie-semantiek blijft.
+        assert "ws-ptrack" in ws and "ws-pout" in ws
+        assert 'class="ws-plug"' in ws
+        assert "wsMarkeerGezien(" in ws                        # actie intact
+        # D. ruimtelijke periferie: vloer-perspectief (geen fake data/labels)
+        assert 'class="ws-floor"' in ws and ".ws-floor " in _DS
+        # discipline: nieuwe motion staat óók uit onder reduced-motion
+        assert ".ws-flow,.ws-scan,.li-bar" in _DS.replace(" ", "")

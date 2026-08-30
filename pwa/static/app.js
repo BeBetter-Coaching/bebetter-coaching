@@ -5085,6 +5085,64 @@ function wsWeekStrip(runs, standDatum) {
   }).join("") + `</div>`;
 }
 
+// Belastingsinstrument: ÉÉN geïntegreerd cockpit-instrument i.p.v. losse weekstrip +
+// chart. Dag-energie (pulsen op de baseline) + cumulatieve trend die daarbovenuit
+// stijgt (VLAK op rustdagen — cumulatief stijgt of blijft gelijk) + referentiedrempel
+// + eind-node (= origin van de kern-connector). Zelfde bronvelden (runs/km_recent/
+// km_basis_week), geen nieuwe/afgeleide fake data; geen data → "" (caller toont leeg).
+function wsLoadInstrument(bel) {
+  const runs = (bel.runs || []);
+  const parse = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ""));
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+  const end = parse(bel.datum) || parse((runs[runs.length - 1] || {}).datum);
+  if (!end || !runs.length) return "";
+  const per = {};
+  for (const r of runs) { const k = String(r.datum || "").slice(0, 10);
+    per[k] = (per[k] || 0) + (Number(r.km) || 0); }
+  const DAG = ["ZO", "MA", "DI", "WO", "DO", "VR", "ZA"];
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(end.getFullYear(), end.getMonth(), end.getDate() - i);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    days.push({ dag: DAG[d.getDay()], km: per[k] || 0 });
+  }
+  let acc = 0; days.forEach(d => { acc += d.km; d.cum = acc; });
+  const ref = (bel.km_basis_week != null && isFinite(Number(bel.km_basis_week))) ? Number(bel.km_basis_week) : null;
+  const maxDaily = Math.max(1, ...days.map(d => d.km));
+  const cumMax = Math.max(1, acc, ref != null ? ref : 0);
+  const N = days.length, padL = 30, padR = 32, span = 320 - padL - padR;
+  const xi = i => padL + (N > 1 ? (i / (N - 1)) * span : 0);
+  const yCum = v => 100 - (v / cumMax) * 86;
+  const bars = days.map((d, i) => { const x = xi(i);
+    if (!d.km) return `<rect class="li-bar rest" x="${(x - 6).toFixed(1)}" y="97" width="12" height="3" rx="1.5"/>`;
+    const h = (d.km / maxDaily) * 30;
+    return `<rect class="li-bar" x="${(x - 6).toFixed(1)}" y="${(100 - h).toFixed(1)}" width="12" height="${h.toFixed(1)}" rx="2"/>`;
+  }).join("");
+  const vals = days.map((d, i) => d.km
+    ? `<text class="li-val" x="${xi(i).toFixed(1)}" y="${(100 - (d.km / maxDaily) * 30 - 4).toFixed(1)}">${esc(nlNum(Math.round(d.km * 10) / 10))}</text>`
+    : "").join("");
+  const dayl = days.map((d, i) => `<text class="li-day${d.km ? " on" : ""}" x="${xi(i).toFixed(1)}" y="116">${esc(d.dag)}</text>`).join("");
+  const pts = days.map((d, i) => [xi(i), yCum(d.cum)]);
+  const line = "M" + pts.map(p => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L");
+  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)} 100 L${pts[0][0].toFixed(1)} 100 Z`;
+  const tip = pts[pts.length - 1];
+  const yRef = ref != null ? yCum(ref) : null;
+  return `<svg class="ws-loadinst" viewBox="0 0 320 128" style="color:var(--tone)" aria-hidden="true">
+    <defs><linearGradient id="ws-liarea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="currentColor" stop-opacity=".24"/>
+      <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+    <line class="li-base" x1="14" y1="100" x2="306" y2="100"/>
+    ${yRef != null ? `<line class="li-ref" x1="14" y1="${yRef.toFixed(1)}" x2="306" y2="${yRef.toFixed(1)}"/>
+      <text class="li-reflbl" x="14" y="${(yRef - 4).toFixed(1)}">REF ${esc(nlNum(ref))}</text>` : ""}
+    ${bars}${vals}
+    <path class="li-area" d="${area}"/>
+    <path class="li-cum" d="${line}"/>
+    <circle class="li-tip-o" cx="${tip[0].toFixed(1)}" cy="${tip[1].toFixed(1)}" r="6"/>
+    <circle class="li-tip" cx="${tip[0].toFixed(1)}" cy="${tip[1].toFixed(1)}" r="3.4"/>
+    ${dayl}
+  </svg>`;
+}
+
 // De ATHLETE CORE: een abstracte, ruimtelijke intelligentie-kern — GEEN mens.
 // Geen avatar/bust/portret/silhouet; de menslijn is bewust verlaten. De kern is
 // een glazen sphere (wireframe-meridianen + inner-particles + hotspot-bloom),
@@ -5140,6 +5198,10 @@ function wsCore(focal) {
           <stop offset="0.5" stop-color="rgba(150,198,255,.07)"/>
           <stop offset="1" stop-color="rgba(174,214,255,.55)"/>
         </linearGradient>
+        <radialGradient id="ws-occ" cx="50%" cy="84%" r="48%">
+          <stop offset="0" stop-color="rgba(2,7,18,.6)"/>
+          <stop offset="100%" stop-color="rgba(2,7,18,0)"/>
+        </radialGradient>
         <clipPath id="ws-sph"><circle cx="340" cy="332" r="150"/></clipPath>
         <clipPath id="ws-sphi"><circle cx="340" cy="332" r="112"/></clipPath>
       </defs>
@@ -5147,6 +5209,7 @@ function wsCore(focal) {
       <circle cx="340" cy="332" r="150" fill="url(#ws-wash)"/>
       <g clip-path="url(#ws-sph)">
         <circle cx="340" cy="332" r="150" fill="url(#ws-field)"/>
+        <ellipse class="ws-readplane" cx="340" cy="300" rx="118" ry="44"/>
         <ellipse class="ws-sph-grad" cx="340" cy="332" rx="52" ry="150"/>
         <ellipse class="ws-sph-grad" cx="340" cy="332" rx="108" ry="150"/>
         <ellipse class="ws-sph-line" cx="340" cy="332" rx="150" ry="46"/>
@@ -5154,22 +5217,32 @@ function wsCore(focal) {
         <ellipse class="ws-sph-line" cx="340" cy="290" rx="146" ry="30" opacity=".4"/>
         <ellipse class="ws-sph-line" cx="340" cy="374" rx="146" ry="30" opacity=".3"/>
         <circle class="ws-sph-inner" cx="340" cy="332" r="112"/>
+        <path class="ws-shell-rim" d="M258 300 A112 112 0 0 1 356 224"/>
         <g clip-path="url(#ws-sphi)">
           <ellipse class="ws-sph-inner" cx="340" cy="332" rx="40" ry="112" opacity=".5"/>
           <ellipse class="ws-sph-inner" cx="340" cy="332" rx="112" ry="34" opacity=".5"/>
         </g>
+        <g class="ws-dataflow">
+          <path class="ws-flow f1" d="M340 196 Q296 262 340 330"/>
+          <path class="ws-flow f2" d="M456 344 Q394 322 344 332"/>
+          <path class="ws-flow f3" d="M256 402 Q306 364 340 336"/>
+        </g>
         <path class="ws-sph-seg" d="M232 316 A150 46 0 0 1 268 300" opacity=".55"/>
         <path class="ws-sph-seg" d="M412 300 A150 46 0 0 1 448 316" opacity=".38"/>
+        <path class="ws-sph-seg" d="M300 236 A150 100 0 0 1 344 230" opacity=".3"/>
+        <path class="ws-sph-seg" d="M372 430 A150 46 0 0 1 408 420" opacity=".26"/>
         <circle class="ws-sph-dot t" cx="300" cy="300" r="1.5"/><circle class="ws-sph-dot" cx="386" cy="322" r="1.6"/>
         <circle class="ws-sph-dot" cx="352" cy="368" r="1.2"/><circle class="ws-sph-dot t" cx="312" cy="356" r="1.4"/>
         <circle class="ws-sph-dot" cx="372" cy="286" r="1.1"/><circle class="ws-sph-dot" cx="330" cy="398" r="1.3"/>
         <circle class="ws-sph-dot" cx="356" cy="312" r="1"/><circle class="ws-sph-dot" cx="318" cy="330" r="1.1"/>
+        <circle cx="340" cy="332" r="150" fill="url(#ws-occ)"/>
         <g class="ws-corelight">
           <ellipse class="cl-bloom" cx="340" cy="356" rx="30" ry="64" opacity=".38"/>
           <path class="cl-col" d="M334 300 L346 300 L343 392 L337 392 Z" opacity=".5"/>
           <ellipse class="cl-mid" cx="340" cy="374" rx="11" ry="28" opacity=".6"/>
           <ellipse class="cl-core" cx="340" cy="378" rx="5" ry="16" opacity=".95"/>
         </g>
+        <line class="ws-scan" x1="236" y1="300" x2="444" y2="300"/>
       </g>
       <circle class="ws-sph-rim" cx="340" cy="332" r="150"/>
       <path class="ws-sph-refr" d="M232 250 A150 150 0 0 1 430 232" style="opacity:.75;stroke-width:1.6"/>
@@ -5271,6 +5344,13 @@ function wsRender(wrap, vm) {
     <circle class="ws-anode" cx="470" cy="726" r="1.6"/><circle class="ws-anode" cx="972" cy="726" r="1.6"/>
     ${attn.length ? `<circle class="ws-nd" cx="497" cy="372" r="5"/>` : ""}
     <circle class="ws-nd2" cx="452" cy="641" r="3.5"/>
+    <g class="ws-floor">
+      <path d="M60 940 L672 700"/><path d="M1380 940 L768 700"/>
+      <path d="M380 950 L700 700"/><path d="M1060 950 L740 700"/>
+      <ellipse cx="720" cy="726" rx="540" ry="98"/>
+      <ellipse cx="720" cy="732" rx="360" ry="66"/>
+      <ellipse cx="720" cy="738" rx="190" ry="36"/>
+    </g>
   </svg>`;
 
   // Z2 — athlete-vlak: identity (één keer, klein) + de abstracte Athlete Core
@@ -5288,7 +5368,9 @@ function wsRender(wrap, vm) {
       <line class="ws-ptick" x1="60" y1="78" x2="80" y2="78"/><line class="ws-ptick" x1="520" y1="78" x2="540" y2="78"/>
       <line class="ws-ptick" x1="120" y1="112" x2="134" y2="104"/><line class="ws-ptick" x1="480" y1="104" x2="466" y2="112"/>
       <line class="ws-ptick" x1="230" y1="128" x2="238" y2="120"/><line class="ws-ptick" x1="370" y1="120" x2="362" y2="128"/>
-      <path class="ws-plead" d="M120 62 A200 44 0 0 1 300 40"/></svg></div>
+      <path class="ws-plead" d="M120 62 A200 44 0 0 1 300 40"/>
+      ${bel.actief ? `<path class="ws-ptrack" d="M300 96 L300 168"/>
+      <circle class="ws-pout" cx="300" cy="96" r="3.4"/>` : ""}</svg></div>
   </div>`;
 
   // Z3 — fragmenten (borderless, ruimtelijk, asymmetrisch)
@@ -5313,17 +5395,12 @@ function wsRender(wrap, vm) {
   const nRuns = (bel.runs || []).length;
   let loadFrag = "";
   if (bel.km_recent != null) {
-    const chrono = (bel.runs || []).slice()
-      .sort((a, b) => String(a.datum || "").localeCompare(String(b.datum || "")));
-    let acc = 0;
-    const cum = chrono.map(r => (acc += Number(r.km) || 0));
     loadFrag = `<div class="ws-frag ws-frag-load ${bel.actief ? belTone : ""}">
       <span class="ws-scrim" aria-hidden="true"></span>
-      <h3 class="ds-label">Belasting · 7 dagen<em>${nRuns ? `${nRuns} runs` : ""}</em></h3>
+      <h3 class="ds-label">Belastingsinstrument · 7 dagen<em>${nRuns ? `${nRuns} runs` : ""}</em></h3>
       <div class="ws-kmrow"><span class="ws-km">${esc(nlNum(bel.km_recent))}<i> km deze week</i></span>
         ${ratioLbl ? `<span class="ws-rt">${esc(ratioLbl)}</span>` : ""}</div>
-      ${wsWeekStrip(bel.runs || [], bel.datum)}
-      ${wsChart(cum, { w: 300, h: 56, min0: true, ref: bel.km_basis_week })}
+      ${wsLoadInstrument(bel)}
       <div class="ws-load-m"><span>cumulatief weekvolume</span>
         ${nRuns ? `<span>laatste ${esc(String((bel.runs[nRuns - 1] || {}).datum || ""))}</span>` : ""}</div>
     </div>`;
@@ -5384,7 +5461,7 @@ function wsRender(wrap, vm) {
         <span class="ttl">Volgende actie</span>
         <span class="st">belastingssignaal ${esc(bel.ernst === "hoog" ? "verhoogd" : "let op")}</span>
       </div>
-      <button type="button" class="ws-cmd" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')"><span class="ws-cmd-chip">${ic("check")}</span>Belasting gezien</button>` : ""}
+      <button type="button" class="ws-cmd" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')"><span class="ws-plug" aria-hidden="true"></span><span class="ws-cmd-chip">${ic("check")}</span>Belasting gezien</button>` : ""}
     <div class="ws-util">
       <button type="button" onclick="deepAtleet('teampuls','${esc(key)}')">Teampuls</button>
       <button type="button" onclick="openAthleteModule('atleten','${esc(key)}')">Profiel</button>
