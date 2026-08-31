@@ -2494,6 +2494,17 @@ function fbRenderLoading() {                          // rustige "aan het bijwer
   $("#fb-info").innerHTML = `<span class="versen">Feedback bijwerken…</span>`;
   skeleton($("#fb-queue"), 4);
 }
+// P0 koude start: NIET blokkeren op de sweep. Render direct een bruikbare 3-zone
+// wacht-shell (queue "wordt bijgewerkt", case + context in neutrale wacht-staat);
+// de volledige sweep draait op de achtergrond (fbRefresh) en vult de queue atomair
+// zodra 'ie terug is. Geen fake items — alleen een eerlijke wacht-staat.
+function fbRenderColdWaiting() {
+  fbRenderLoading();                                 // queue-zone: skeleton
+  $("#fb-info").innerHTML = `<span class="versen">Feedback wordt bijgewerkt…</span>`;
+  const f = $("#fb-focus");
+  if (f) f.innerHTML = `<div class="fb-focus-empty">${ic("clock")}<p>Feedback wordt opgehaald… je kunt zo een training kiezen.</p></div>`;
+  const c = $("#fb-ctx-col"); if (c) c.innerHTML = "";
+}
 // Diagnostische queue-fetch (fase 2.2 punt 1): meet requestduur + Server-Timing en
 // geeft het backend-diag-blok terug voor de koude-start-analyse.
 async function fbQueueGet(refresh) {
@@ -2517,8 +2528,9 @@ async function fbEnter() {                            // eerste keer openen van 
   if (!r) { $("#fb-info").textContent = ""; if (!FB.items.length) $("#fb-queue").innerHTML = '<p class="muted center">Geen verbinding.</p>'; }
   else if (!r.fs) { $("#fb-info").textContent = "FinalSurge nog niet gekoppeld."; $("#fb-queue").innerHTML = ""; FB.loaded = true; }
   else if (r.pending && !(r.items && r.items.length)) {
-    // Koude/onbevestigde cache: NIET als definitief "niets te beoordelen" tonen.
-    FB.pendingInitial = true; fbRenderLoading(); fbLog("queue_empty_pending", { diag: r.diag || null });
+    // Koude/onbevestigde cache: NIET als definitief "niets te beoordelen" tonen én
+    // NIET blokkeren — direct een bruikbare wacht-shell, sweep draait op de achtergrond.
+    FB.pendingInitial = true; fbRenderColdWaiting(); fbLog("queue_empty_pending", { diag: r.diag || null });
   } else {
     FB.gepost = r.gepost || 0; FB.groups = r.groepen || [];
     fbApplyQueue(r.items || []); FB.loaded = true;
@@ -2542,7 +2554,11 @@ async function fbRefresh() {                          // achtergrond-SWR: NOOIT 
   if (FB.pendingInitial) {                            // eerste bevestigde sweep = de initiële lading
     FB.pendingInitial = false; FB.loaded = true;
     fbApplyQueue(fresh); fbLog("queue_apply", { reason: "initial", queue_length: fresh.length });
-    if (!fresh.length) fbLog("queue_empty_confirmed");
+    if (!fresh.length) { fbLog("queue_empty_confirmed"); return; }
+    // Koude sweep terug: eerste item volgens de SERVER-sortering auto-openen (geen client-resort;
+    // `fresh` draagt exact de servervolgorde) zodat de coach direct een bruikbare case ziet i.p.v.
+    // een lege focus. Alleen desktop + niets gekozen (op mobiel blijft de queue de instap).
+    if (isDesktop() && !FB.selId) fbOpen(fresh[0].id, "auto_first_cold");
     return;
   }
   const same = FB.items.map(i => i.id).join("|") === fresh.map(i => i.id).join("|");

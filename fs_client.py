@@ -15,10 +15,14 @@ from typing import Optional
 BASE_URL = "https://beta.finalsurge.com/api"
 TOKEN_FILE = os.path.expanduser("~/.fs_auth_token")
 
-# Connect-timeout 5s, read-timeout 30s — voorkomt dat de app oneindig hangt
-_TIMEOUT = (5, 30)
-# Max parallelle requests bij per-atleet loops
-_MAX_WORKERS = 8
+# Connect-timeout 5s, read-timeout 12s — P0 startup-repair: kapt FinalSurge
+# tail-latency zodat één hangende call een sweep-worker niet 30s bezet (geen
+# retry-loop; de bestaande "behoud laatste geldige snapshot"-fallback vangt een
+# gedropte atleet op en de volgende achtergrond-sweep haalt 'm alsnog).
+_TIMEOUT = (5, 12)
+# Max parallelle requests bij per-atleet loops (P0: 8→16, halveert het aantal
+# fanout-golven; pool schaalt mee via de mount hieronder → pool 16/32).
+_MAX_WORKERS = 16
 
 _token: Optional[str] = None
 _coach_key: Optional[str] = None
