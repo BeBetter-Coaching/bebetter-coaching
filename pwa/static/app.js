@@ -2749,13 +2749,17 @@ function focusNextAfterAction(next) {
 function renderFocusEmpty() {
   $("#fb-focus").innerHTML = `<div class="fb-focus-empty">${ic("message")}<p>Kies links een training om te beoordelen.</p></div>`;
 }
-function fbHeadHtml(naam, voornaam, datum, workout, cat, akey) {
+function fbHeadHtml(naam, voornaam, datum, workout, cat, akey, groepLabel) {
+  // Hero: volledige naam = dominant, fase + categorie eronder, training + datum rechts.
+  const catPill = cat ? `<span class="fbf-cat ${cat}">${FB_CAT[cat] || ""}</span>` : "";
+  const fase = groepLabel ? `<span class="fbf-fase">${esc(groepLabel)}</span>` : "";
+  const sub = (fase || catPill) ? `<p class="fbf-sub">${fase}${fase && catPill ? '<span class="sep">·</span>' : ""}${catPill}</p>` : "";
+  const meta = (workout || datum) ? `<span class="fbf-hmeta"><b>${esc(workout || "Training")}</b>${datum ? `<span>${esc(fbDateLabel(datum))}</span>` : ""}</span>` : "";
   return `<div class="fbf-head">
     <button class="fbf-back" id="fb-back" type="button" aria-label="Terug naar wachtrij">${ic("back")}</button>
     <span class="avatar">${initialen(naam)}</span>
-    <span class="fbf-htext"><h2>${esc(voornaam || naam || "")}</h2>
-      <p>${esc(workout || "Training")}<span class="sep">·</span>${esc(datum || "")}</p></span>
-    ${cat ? `<span class="fb-badge ${cat}">${FB_CAT[cat] || ""}</span>` : ""}
+    <span class="fbf-htext"><h2>${esc(naam || voornaam || "")}</h2>${sub}</span>
+    ${meta}
   </div>`;
 }
 function fbDockHtml(id) {
@@ -2763,14 +2767,16 @@ function fbDockHtml(id) {
     <div class="fb-dock-lbl"><b>Concept terugkoppeling</b><span class="fb-draft" id="fb-draft-badge">Concept · niet verzonden</span></div>
     <textarea id="fb-ta" rows="3" placeholder="Schrijf een reactie, of genereer met AI…">${esc(fbDraftGet(id))}</textarea>
     <div class="fb-dock-row">
-      <button class="btn" id="fb-gen" type="button">${ic("brain")} Genereer</button>
+      <button class="btn ghost small" id="fb-gen" type="button">${ic("brain")} Genereer</button>
       <button class="btn ghost small" id="fb-copy" type="button">${ic("copy")} Kopieer</button>
     </div>
-    <div class="fb-cta-row">
-      <button class="btn primary" id="fb-send" type="button">${ic("message")} Feedback sturen</button>
-      <button class="btn" id="fb-goschema" type="button">${ic("file")} Naar schema</button>
-      <button class="btn" id="fb-godossier" type="button">${ic("brain")} Open dossier</button>
-      <button class="btn" id="fb-skip" type="button">${ic("check")} Afgehandeld</button>
+    <div class="fb-cta">
+      <button class="btn primary fb-cta-primary" id="fb-send" type="button">${ic("message")} Feedback sturen</button>
+      <div class="fb-cta-sec">
+        <button class="btn ghost" id="fb-goschema" type="button">${ic("file")} Naar schema</button>
+        <button class="btn ghost" id="fb-godossier" type="button">${ic("brain")} Open dossier</button>
+        <button class="btn ghost" id="fb-skip" type="button">${ic("check")} Afgehandeld</button>
+      </div>
     </div>
   </div>`;
 }
@@ -2896,7 +2902,7 @@ function fbReanchorBottomAfterClose() {
 }
 function renderFocusSkeleton(id) {
   const it = FB.items.find(i => i.id === id) || {};
-  $("#fb-focus").innerHTML = fbHeadHtml(it.naam, it.voornaam, it.datum, it.workout, it.categorie)
+  $("#fb-focus").innerHTML = fbHeadHtml(it.naam, it.voornaam, it.datum, it.workout, it.categorie, "", it.groep_label)
     + `<div class="fbf-scroll"><div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div></div>`
     + fbDockHtml(id);
   fbBindDock(id);
@@ -2909,7 +2915,7 @@ function renderFocus(d) {
   }
   const it = FB.items.find(i => i.id === FB.selId) || {};
   const akey = it.athlete_key || "";
-  $("#fb-focus").innerHTML = fbHeadHtml(d.naam, d.voornaam, d.datum, d.workout, d.categorie, akey)
+  $("#fb-focus").innerHTML = fbHeadHtml(d.naam, d.voornaam, d.datum, d.workout, d.categorie, akey, it.groep_label)
     + `<div class="fbf-scroll">
         <div class="fbf-weeksel" id="fb-weeksel"></div>
         <div class="fb-metrics" id="fb-metrics">${fbMetricsHtml(d, null, null)}</div>

@@ -106,7 +106,8 @@ async function run(){
   FB.filter=p.get("filter")||"wachten";
   FB.items=QUEUE.slice();
   FB.detailCache["w-masja"]=DETAIL_MASJA;
-  const sel = p.get("empty")? null : (p.get("sel")||"w-masja");
+  const calmSel = !!p.get("calm");
+  const sel = p.get("empty")? null : (p.get("sel")|| (calmSel ? "w-carmen" : "w-masja"));
   FB.selId=sel;
   window.__fb.renderQueue();
   $$(".fbq-row").forEach(r=>r.addEventListener("click",()=>{FB.selId=r.dataset.q||r.getAttribute("data-id");window.__fb.renderQueue();}));
