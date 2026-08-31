@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dossier prod harness</title>
+<link rel="stylesheet" href="/pwa/static/styles.css">
+<link rel="stylesheet" href="/pwa/static/design-system.css">
+<style>
+  body{margin:0!important;background:radial-gradient(140% 100% at 50% -10%,#0b1f3d,#071129 55%,#03070f 100%),#081527;
+    color:#EAF2FF;font-family:"Space Grotesk",system-ui,sans-serif;
+    display:block!important;grid-template-columns:none!important;max-width:none!important;overflow:auto!important}
+  @font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-400.woff2) format("woff2");font-weight:400}
+  @font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-500.woff2) format("woff2");font-weight:500}
+  @font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-700.woff2) format("woff2");font-weight:700}
+  .frame{margin:0 auto;padding:0 40px}          /* emuleer #scroller padding */
+  .harness-lbl{position:fixed;top:8px;left:8px;z-index:99;font-size:11px;color:#7F97BC;background:rgba(6,14,30,.8);
+    padding:4px 10px;border-radius:99px}
+</style>
+</head>
+<body>
+<div class="harness-lbl" id="hl">laden…</div>
+<div id="mount"></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs id="sprite"></defs></svg>
+<script>
+// ── Sprite ophalen uit de echte index.html ─────────────────────────────────
+async function loadSprite(){
+  const t = await (await fetch("/pwa/static/index.html")).text();
+  const m = t.match(/<defs>([\s\S]*?)<\/defs>/);
+  if(m) document.getElementById("sprite").innerHTML = m[1];
+}
+// ── Shims (alleen wat de Dossier-render aanraakt) ───────────────────────────
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ic = n => `<svg class="ic"><use href="#ic-${n}"/></svg>`;
+function initialen(n){return String(n||"").split(/\s+/).map(w=>w[0]||"").join("").slice(0,2).toUpperCase();}
+const _DS_TONE={actie:"is-critical",aandacht:"is-attention",hoog:"is-critical",let_op:"is-attention",critical:"is-critical",attention:"is-attention",calm:"is-calm",success:"is-success",resolved:"is-success",ok:"is-calm",stale:"is-stale",red:"is-critical",amber:"is-attention",green:"is-calm",fresh:"is-calm",unknown:"is-unknown"};
+function dsTone(v){return _DS_TONE[String(v==null?"":v).toLowerCase()]||"is-calm";}
+const _DS_RANK={"is-critical":3,"is-attention":2,"is-stale":1,"is-unknown":1,"is-success":0,"is-calm":0};
+function dsWorstTone(t){return (t||[]).reduce((a,x)=>(_DS_RANK[x]||0)>(_DS_RANK[a]||0)?x:a,"is-calm");}
+function dsChip(text,tone){return `<span class="ds-chip ${tone||"is-calm"}">${esc(text)}</span>`;}
+function dsFresh(state,text){return `<span class="ds-fresh ${dsTone(state)}"><i class="ds-dot"></i>${esc(text)}</span>`;}
+function athleteNav(v,k){return `<div class="anav"><button class="anav-chip">Workspace</button><button class="anav-chip">Schema</button></div>`;}
+// no-ops zodat top-level statements in de slice niet crashen
+const $=()=>null, bindRefresh=()=>{}, api=()=>Promise.resolve({}), pushRoute=()=>{}, skeleton=()=>{},
+  isDesktop=()=>true, renderPicker=()=>({setItems(){},setSelected(){}}), openAthletePickerOverlay=()=>{},
+  openAthleteModule=()=>{}, openWorkspace=()=>{}, geladen={}, reset_session=()=>{};
+// wsOrbits leeft elders in app.js (buiten de Dossier-slice) — stub met een representatief veld
+function wsOrbits(){return `<svg class="ws-orbits" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <path style="fill:none;stroke:rgba(94,230,235,.06)" d="M-40 470 C300 400 800 400 1480 460"/>
+  <path style="fill:none;stroke:rgba(94,230,235,.06)" d="M-40 560 C360 500 900 500 1480 540"/>
+  ${[[150,120,1.3],[430,70,1],[900,54,1.3],[1230,120,1],[1330,420,1.2],[90,470,1.1],[240,800,1.2],[1150,780,1.1]].map(s=>`<circle cx="${s[0]}" cy="${s[1]}" r="${s[2]}" style="fill:rgba(200,224,255,.4)"/>`).join("")}
+</svg>`;}
+
+// ── Echte Dossier-code uit app.js snijden + evalueren ───────────────────────
+async function loadDossierCode(){
+  const t = await (await fetch("/pwa/static/app.js")).text();
+  const a = t.indexOf("const _DC_OVERALL");
+  const b = t.indexOf("// ══════════ Athlete Workspace");
+  if(a<0||b<0) throw new Error("markers niet gevonden a="+a+" b="+b);
+  const slice = t.slice(a,b) + "\n;window.__dc={dcRender};";
+  (0,eval)(slice);   // indirecte eval → globale functie-declaraties
+}
+
+// ── Realistische view-models (vorm = dossier_cockpit.py) ────────────────────
+const VM_CRIT = {
+  ok:true, key:"masja", naam:"Masja Bolk", groep:"5. Comfort",
+  status:{overall:"ATTENTION", insufficient:false, reliability:{level:"amber",core_gap:false,stale:true}},
+  attention:[
+    {id:"e1",kind:"load_signal",domain:"load",title:"Verhoogd belastingssignaal",why:"volume +180% t.o.v. referentie",strength:"HIGH",prov:{truth_type:"DERIVED",source:"fs.training_log",observed_at:"2026-08-29",status:"ACTIVE"}},
+    {id:"e2",kind:"complaint",domain:"health",title:"Klacht: kuit links — actief",why:"gevoelig na lange duurloop · 2026-08-24",strength:"MEDIUM",prov:{truth_type:"ATHLETE_REPORTED",source:"fs.training_log",observed_at:"2026-08-24",status:"ACTIVE"}},
+  ],
+  load_observation:{ernst:"hoog",signalen:"volumesprong; kuitgevoeligheid",afgehandeld:false,home_action:true,delta_pct:200,datum:"2026-08-29"},
+  changes:[
+    {title:"Klacht kuit links: recent gemeld",effective_at:"2026-08-24",entity:"kuit",transition:{to:"RECENT"},provenance_refs:["e2"]},
+    {title:"Trainingsonderbreking",effective_at:"2026-08-27",entity:"training",transition:{to:"INTERRUPTED"},provenance_refs:["e5"]},
+    {title:"Bron verouderd: Garmin-herstel",effective_at:"2026-08-22",entity:"recovery.garmin",transition:{to:"STALE"},provenance_refs:["e6"]},
+  ],
+  planning:{rows:[
+    {label:"Hoofddoel",value:"7-Heuvelenloop"},
+    {label:"Wedstrijddatum",value:"2026-10-05"},
+    {label:"Race-prioriteit",value:"hoog"},
+    {label:"Schema-blok (laatst geconfigureerd)",value:"2026-08-18 → 2026-09-12"},
+    {label:"Schema-status",value:"loopt — nog 12 dagen"},
+    {label:"Uitvoerwijze",value:"afstand (km)"},
+  ],onbekend:false},
+  domains:[
+    {key:"belastbaarheid",titel:"Belastbaarheid & trainingshistorie",onbekend:false,open:false,regels:[
+      {label:"Km/week (recent, run-only)",value:"58 km",prov:{truth_type:"DERIVED",source:"fs.training_log",observed_at:"2026-08-29"},evidence_id:"e10"},
+      {label:"Belastingstrend",value:"stijgend",prov:{truth_type:"DERIVED",source:"fs.training_log"},evidence_id:"e11"}]},
+    {key:"gezondheid",titel:"Gezondheid & klachten",onbekend:false,open:false,regels:[
+      {label:"Klacht",value:"kuit links (actief)",prov:{truth_type:"ATHLETE_REPORTED",source:"fs.training_log",observed_at:"2026-08-24"},evidence_id:"e2"}]},
+    {key:"herstel",titel:"Herstel & leefritme",onbekend:false,open:false,regels:[
+      {label:"Slaap",value:"7u gemiddeld",prov:{truth_type:"ATHLETE_REPORTED",source:"intake"},evidence_id:"e12"}]},
+    {key:"doelen",titel:"Doelen & agenda",onbekend:false,open:false,regels:[
+      {label:"Doel",value:"7-Heuvelenloop 15 km",prov:{truth_type:"COACH_REPORTED",source:"intake"},evidence_id:"e13"}]},
+    {key:"profiel",titel:"Profiel & voorkeuren",onbekend:true,open:false,regels:[]},
+    {key:"coach",titel:"Coachkennis",onbekend:false,open:false,regels:[
+      {label:"Coachgeheugen",value:"Reageert goed op rustige opbouw; niet forceren na klachtsignaal.",prov:{truth_type:"COACH_REPORTED",source:"coach"},evidence_id:"e14"},
+      {label:"Coach-notitie (intake)",value:"Kuithistorie: eerder gevoelig bij snelle volumesprongen.",prov:{truth_type:"COACH_REPORTED",source:"coach"},evidence_id:"e15"}]},
+  ],
+  timeline:{events:[],capture_mode:"off",empty_reason:"capture_off"},
+  source_health:[
+    {source:"Trainingslog",available:true,stale:false},
+    {source:"Intake",available:true,stale:false},
+    {source:"Garmin-herstel",available:true,stale:true},
+  ],
+  build_diagnostic:[],
+};
+const VM_CALM = JSON.parse(JSON.stringify(VM_CRIT));
+VM_CALM.naam="Anouk Rustig"; VM_CALM.status={overall:"GOOD",insufficient:false,reliability:{level:"green",core_gap:false,stale:false}};
+VM_CALM.attention=[]; VM_CALM.load_observation=null; VM_CALM.changes=[];
+VM_CALM.source_health=VM_CALM.source_health.map(s=>({...s,stale:false}));
+
+async function run(){
+  await Promise.all([loadSprite(), loadDossierCode()]);
+  const p = new URLSearchParams(location.search);
+  const vm = p.get("state")==="calm" ? VM_CALM : VM_CRIT;
+  const frame = document.createElement("div"); frame.className="frame";
+  const cw = p.get("cw"); if(cw) frame.style.maxWidth = (+cw + 80) + "px";   // content = cw (padding 40+40)
+  const view = document.createElement("div"); view.className="view ds-view on"; view.setAttribute("data-view","dossier");
+  view.style.display="block";
+  const wrap = document.createElement("div"); wrap.id="dc-detail";
+  view.appendChild(wrap); frame.appendChild(view); document.getElementById("mount").appendChild(frame);
+  window.__dc.dcRender(wrap, vm);
+  if(p.get("pick")) wrap.querySelectorAll(".dc-tl-item")[+p.get("pick")]?.click();
+  if(p.get("dom")) wrap.querySelector(`[data-dom="${p.get("dom")}"]`)?.click();
+  if(p.get("hidelbl")) document.getElementById("hl").style.display="none";
+  document.getElementById("hl").textContent = `w=${innerWidth} · ${vm.naam} · ${p.get("state")||"crit"}`;
+}
+run().catch(e=>{document.getElementById("hl").textContent="FOUT: "+e.message; console.error(e);});
+</script>
+</body>
+</html>

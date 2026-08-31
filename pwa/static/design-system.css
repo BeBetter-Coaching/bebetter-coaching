@@ -1017,132 +1017,292 @@
    sterkste punt op de lijn, ouder werk verzwakt naar achteren, planning ligt
    gestippeld vóór ons. Zelfde design-DNA als Workspace, andere compositie.
    ═══════════════════════════════════════════════════════════════════════════ */
-.dc-memory{position:relative;padding:var(--ds-4) 0 var(--ds-10)}
-.dc-bg{position:absolute;inset:-60px -44px -12px;pointer-events:none;z-index:0;
-  overflow:hidden;border-radius:26px}
-.dc-amb{position:absolute;inset:0;
-  background:radial-gradient(44% 48% at 20% 16%,var(--tone-bg),transparent 70%),
-             radial-gradient(38% 34% at 86% 8%,rgba(94,230,235,.07),transparent 74%),
-             radial-gradient(40% 40% at 70% 90%,rgba(94,230,235,.04),transparent 74%)}
+.dc-memory{position:relative;padding:var(--ds-4) 0 var(--ds-8);overflow:hidden}
 .dc-memory>*{position:relative;z-index:1}
+/* Z0 — dezelfde ambient wereld als Workspace: haze + orbits + vignette. */
+.dc-env{position:absolute;inset:-40px -32px -16px;pointer-events:none;z-index:0;overflow:hidden}
+.dc-haze{position:absolute;left:-12%;right:-12%;top:44%;height:280px;
+  background:radial-gradient(58% 120% at 50% 50%,var(--tone-bg),transparent 72%);
+  filter:blur(12px);opacity:.7;animation:dc-haze 26s ease-in-out infinite alternate}
+@keyframes dc-haze{from{transform:translateX(-16px)}to{transform:translateX(16px)}}
+.dc-env .ws-orbits{position:absolute;inset:0;width:100%;height:100%;opacity:.9}
+.dc-vig{position:absolute;inset:0;background:radial-gradient(120% 80% at 50% 42%,transparent 54%,rgba(3,7,15,.55) 100%)}
+@media (prefers-reduced-motion:reduce){.dc-haze{animation:none}}
 
-.dc-head2{display:flex;align-items:center;justify-content:space-between;gap:var(--ds-5);flex-wrap:wrap;margin-bottom:var(--ds-8)}
-.dc-id2{display:flex;align-items:center;gap:var(--ds-5);min-width:0}
-.dc-orbwrap{position:relative;flex:0 0 auto;display:grid;place-items:center}
-.dc-orb-halo{position:absolute;inset:-55%;border-radius:50%;pointer-events:none;
-  background:radial-gradient(circle,var(--tone-bg) 0%,var(--tone-bg) 18%,transparent 60%);
-  filter:blur(6px)}
-.dc-orb{position:relative;width:84px;height:84px;border-radius:50%;display:grid;place-items:center;
-  font-size:27px;font-weight:750;letter-spacing:.03em;color:var(--tone);
-  border:1.5px solid var(--tone-bd);text-shadow:0 0 22px var(--tone-bg);
-  background:radial-gradient(circle at 50% 22%,rgba(255,255,255,.14),transparent 48%),
-             radial-gradient(circle at 50% 46%,var(--tone-bg) 0%,var(--tone-bg) 26%,rgba(13,30,58,.94) 78%);
-  box-shadow:inset 0 2px 1px rgba(255,255,255,.12),0 0 0 6px rgba(255,255,255,.02)}
-.dc-name{margin:0;font-size:clamp(28px,2.9vw,40px);font-weight:750;letter-spacing:-.028em;line-height:1.05}
-.dc-sub{margin:5px 0 0;display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap;
+/* ── Header: kalm, één identiteit, centrale titel, echte navigatie ────────── */
+.dc-head2{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:var(--ds-5);margin-bottom:var(--ds-4)}
+.dc-id2{display:flex;align-items:center;gap:var(--ds-4);min-width:0}
+.dc-mono{width:52px;height:52px;border-radius:15px;flex:0 0 auto;display:grid;place-items:center;
+  font-size:17px;font-weight:700;letter-spacing:.03em;color:var(--tone);
+  background:radial-gradient(circle at 50% 24%,var(--tone-bg),transparent 60%),rgba(10,26,52,.6);
+  border:1px solid var(--tone-bd);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 22px -6px var(--tone-bg)}
+.dc-name{margin:0;font-size:clamp(19px,1.7vw,24px);font-weight:700;letter-spacing:-.022em;line-height:1.05;text-wrap:balance}
+.dc-sub{margin:4px 0 0;display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap;
   font-size:var(--ds-t-sm);color:var(--ds-text-3)}
 .dc-sub .sep{opacity:.35}
-.dc-nav2{flex:0 0 auto}
+.dc-title{text-align:center;min-width:0}
+.dc-title h1{margin:0;font-size:clamp(18px,1.6vw,23px);font-weight:700;letter-spacing:-.01em;
+  display:inline-flex;align-items:center;gap:11px}
+.dc-badge{font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ds-accent);
+  padding:4px 10px;border-radius:var(--ds-r-pill);border:1px solid rgba(94,230,235,.3);background:rgba(94,230,235,.07)}
+.dc-title p{margin:4px 0 0;font-size:var(--ds-t-sm);color:var(--ds-text-3)}
+.dc-nav2{justify-self:end}
 .dc-nav2 .anav{display:flex;gap:var(--ds-2);flex-wrap:wrap;justify-content:flex-end}
 .dc-nav2 .anav-chip{background:rgba(10,26,52,.5);border:1px solid rgba(122,168,255,.16);
-  color:var(--ds-text-2);border-radius:var(--ds-r-pill);padding:7px 15px;font-size:var(--ds-t-sm);
+  color:var(--ds-text-2);border-radius:var(--ds-r-pill);padding:7px 14px;font-size:var(--ds-t-sm);
   font-weight:600;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
   transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
 .dc-nav2 .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text)}
 
-.dc-mem-grid{display:grid;grid-template-columns:1fr;gap:var(--ds-8);align-items:start}
+/* ══ 3-ZONE GEHEUGENCOCKPIT (tijdlijn | geselecteerde herinnering | draden) ══ */
+/* Control-rij: echte, purposeful pillen (periode/telling/bronversheid). */
+.dc-ctrl{display:flex;align-items:center;gap:11px;margin:0 0 14px}
+.dc-ctrl-sp{flex:1}
+.dc-cpill{display:inline-flex;align-items:center;gap:11px;padding:9px 15px;border-radius:13px;
+  background:linear-gradient(180deg,rgba(18,40,76,.5),rgba(10,24,46,.4));border:1px solid rgba(122,168,255,.16)}
+.dc-cpill .cpi{width:26px;height:26px;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;color:var(--ds-text-3);
+  background:rgba(94,230,235,.08)}
+.dc-cpill .cpi .ic{width:14px;height:14px}
+.dc-cpill .cpt small{display:block;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3)}
+.dc-cpill .cpt b{display:block;font-size:12.5px;font-weight:600;color:var(--ds-text)}
 
-/* ── De spine: één doorlopende tijdlijn door alle era's heen ───────────────
-   Vandaag straalt (glow-kop op de lijn), historie verzwakt naar achteren,
-   planning ligt gestippeld vóór ons. De lijn is een grafisch element.        */
-.dc-spine{position:relative;padding-left:var(--ds-8)}
-.dc-spine::before{content:"";position:absolute;left:6px;top:8px;bottom:0;width:2px;
-  border-radius:2px;
-  background:linear-gradient(180deg,var(--tone) 0%,var(--tone) 7%,rgba(94,230,235,.35) 26%,
-             rgba(122,168,255,.14) 60%,transparent 100%);
-  box-shadow:0 0 18px -2px var(--tone-bg)}
-/* Glow-kop: het 'nu'-punt van de lijn licht op. */
-.dc-spine::after{content:"";position:absolute;left:-19px;top:-14px;width:52px;height:52px;
-  border-radius:50%;pointer-events:none;
-  background:radial-gradient(circle,var(--tone-bg) 0%,transparent 62%);filter:blur(2px)}
-.dc-era{margin-bottom:var(--ds-8)}
-.dc-era:last-child{margin-bottom:0}
-.dc-era-l{margin:0 0 var(--ds-4);opacity:.9;display:flex;align-items:center;gap:9px}
-.dc-era-l::before{content:"";width:7px;height:7px;border-radius:50%;flex:0 0 auto;
-  background:var(--tone);box-shadow:0 0 10px var(--tone-bg);margin-left:calc(var(--ds-8)*-1 + 3px)}
-.dc-ahead .dc-era-l::before{background:none;border:1.5px dashed var(--tone)}
-.dc-spine-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--ds-4)}
+.dc-grid{position:relative;display:grid;gap:17px;align-items:start;
+  grid-template-columns:minmax(244px,300px) minmax(0,1.66fr) minmax(268px,338px)}
+/* Één ruimtelijke cockpit i.p.v. drie losse kolommen: gedeeld licht-substraat dat
+   naar de geselecteerde herinnering (midden) convergeert en de zones aan elkaar bindt. */
+.dc-grid::before{content:"";position:absolute;inset:-30px -10px;z-index:0;pointer-events:none;border-radius:26px;
+  background:radial-gradient(58% 82% at 50% 34%,var(--tone-bg),transparent 72%),
+             radial-gradient(120% 120% at 50% 50%,rgba(94,230,235,.03),transparent 70%)}
+.dc-grid>*{position:relative;z-index:1}
+.dc-conn{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4;overflow:visible}
+.dc-conn path{fill:none;stroke-width:1.8;opacity:.68;filter:drop-shadow(0 0 4px currentColor)}
+.dc-conn .cnode{r:3.4}.dc-conn .cend{r:3}
 
-/* Knooppunt: gewicht bepaalt contrast en schaal → tijd wordt zichtbaar. */
-.dc-node{position:relative;padding-left:var(--ds-5);min-width:0}
-.dc-node-dot{position:absolute;left:calc(var(--ds-8)*-1 + 1px);top:5px;width:11px;height:11px;
-  border-radius:50%;background:var(--tone);box-shadow:0 0 0 4px var(--ds-canvas),0 0 16px var(--tone-bg)}
-.dc-now .dc-node-dot{box-shadow:0 0 0 4px var(--ds-canvas),0 0 0 7px var(--tone-bg),
-  0 0 22px var(--tone)}
-.dc-node.is-future .dc-node-dot{background:none;border:1.5px dashed var(--tone);
-  box-shadow:0 0 0 4px var(--ds-canvas)}
-.dc-node-b{display:flex;flex-direction:column;gap:2px;min-width:0}
-.dc-node-when{font-size:var(--ds-t-xs);letter-spacing:.06em;color:var(--ds-text-3);
-  text-transform:uppercase;font-weight:650}
-.dc-node-t{font-size:var(--ds-t-body);font-weight:650;color:var(--ds-text);line-height:1.4}
-.dc-node-s{font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.5}
-.dc-node-m{font-size:var(--ds-t-xs);color:var(--ds-text-3)}
-/* Tijd-gewicht: nu = vol, verder terug = zachter en kleiner. */
-.dc-node.w1 .dc-node-t{font-size:16.5px;font-weight:700}
-.dc-node.w1 .dc-node-dot{width:13px;height:13px}
-.dc-node.w2{opacity:.92}
-.dc-node.w3{opacity:.74}
-.dc-node.w3 .dc-node-t{font-size:13.5px;font-weight:600}
-.dc-node.w4{opacity:.55}
-.dc-node.w4 .dc-node-t{font-size:13px;font-weight:600}
-.dc-node.w4 .dc-node-dot{width:8px;height:8px}
-.dc-now .dc-node-t{color:var(--ds-text)}
-.dc-ahead .dc-node{opacity:.8}
-.dc-ahead .dc-node-t{font-weight:600}
-.dc-empty-tl{margin:0 0 0 var(--ds-5);padding:0;background:none;border:0;
-  font-size:var(--ds-t-sm);color:var(--ds-text-3);line-height:1.55;max-width:62ch}
+/* Glas-paneel (basis voor de drie zones). */
+.dc-pane{position:relative;border-radius:var(--ds-r-xl);
+  background:linear-gradient(162deg,rgba(24,48,90,.44),rgba(11,25,49,.3) 60%,rgba(8,18,38,.18));
+  border:1px solid rgba(122,168,255,.13);
+  -webkit-backdrop-filter:blur(12px) saturate(1.05);backdrop-filter:blur(12px) saturate(1.05);
+  box-shadow:inset 0 1px 0 rgba(192,217,255,.07),0 26px 56px -36px rgba(2,8,20,.9)}
+/* Zijzones lezen als verzonken velden (geen harde kaarten): dunnere rand, ijler glas. */
+.dc-tl-pane,.dc-rt-pane{background:linear-gradient(162deg,rgba(20,42,80,.3),rgba(10,22,44,.2) 62%,rgba(8,18,38,.1));
+  border-color:rgba(122,168,255,.09);box-shadow:inset 0 1px 0 rgba(192,217,255,.05),0 20px 46px -38px rgba(2,8,20,.85)}
+/* MIDDEN = de hero: verhoogd glas, toon-getinte rand + halo → ~12% meer overwicht. */
+.dc-center{background:linear-gradient(162deg,rgba(30,56,102,.56),rgba(12,27,52,.4) 58%,rgba(8,18,38,.26));
+  border:1px solid var(--tone-bd);border-radius:24px;
+  box-shadow:inset 0 1px 0 rgba(200,224,255,.12),0 34px 72px -34px rgba(2,8,20,.95),0 0 60px -26px var(--tone-bg)}
+.dc-center::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(120% 42% at 50% 0%,var(--tone-bg),transparent 60%);opacity:.6}
+.dc-center>*{position:relative}
+.dc-pane-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px 11px}
+.dc-pane-h b{font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ds-text-2)}
+.dc-pane-h .dc-pi{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;color:var(--ds-text-3);
+  border:1px solid rgba(122,168,255,.24);font-size:10px}
 
-/* ── Bewijs (domeinen/bronnen) staat naast het verhaal, niet erin ──────────
-   Zelfde glastaal als de Workspace-panes: het verhaal leeft op het canvas,
-   het bewijs zweeft ernaast — gedempt tot je het aanraakt.                  */
-.dc-evidence{display:flex;flex-direction:column;gap:var(--ds-3);min-width:0;
-  opacity:.86;transition:opacity var(--ds-base) var(--ds-ease)}
-.dc-evidence:hover,.dc-evidence:focus-within{opacity:1}
-.dc-evidence .ds-disc{border-radius:var(--ds-r-xl);
-  background:linear-gradient(164deg,rgba(22,52,100,.5),rgba(9,24,48,.36));
-  border:1px solid rgba(122,168,255,.16);
-  box-shadow:0 14px 34px -16px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05);
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-.dc-evidence .ds-disc>summary{font-size:var(--ds-t-sm);color:var(--ds-text-2);
-  padding:var(--ds-4) var(--ds-5)}
-.dc-evidence .ds-disc-body{padding:0 var(--ds-5) var(--ds-4)}
-/* Bewijswaarden zijn lange strings (zones, provenance) → links uitlijnen leest beter. */
-.dc-evidence .dc-reg-main{flex-direction:column;align-items:flex-start;gap:1px}
-.dc-evidence .dc-val{text-align:left;font-size:var(--ds-t-sm)}
-.dc-evidence .dc-lbl{font-size:var(--ds-t-xs);letter-spacing:.04em;text-transform:uppercase}
-.dc-evidence .dc-domains{display:flex;flex-direction:column;gap:var(--ds-3)}
+/* LINKS — tijdlijn (echte events; geselecteerde uitgelicht). */
+.dc-tl{padding:0 8px 12px}
+.dc-tl-item{position:relative;display:grid;grid-template-columns:34px 40px minmax(0,1fr) auto;gap:9px;align-items:center;
+  width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:11px 8px;border-radius:14px;border:1px solid transparent;
+  background:none;transition:background var(--ds-fast) var(--ds-ease),border-color var(--ds-fast) var(--ds-ease)}
+.dc-tl-item::before{content:"";position:absolute;left:62px;top:-6px;bottom:-6px;width:2px;
+  background:linear-gradient(180deg,transparent,var(--tl-line,rgba(122,168,255,.2)),transparent)}
+.dc-tl-item:first-child::before{top:28px}.dc-tl-item:last-child::before{bottom:auto;height:30px}
+.dc-tl-item .tl-when{font-size:10px;color:var(--ds-text-3);text-align:right;line-height:1.2}
+.dc-tl-item .tl-node{position:relative;z-index:1;width:38px;height:38px;border-radius:11px;justify-self:center;display:grid;place-items:center;
+  color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.dc-tl-item .tl-node .ic{width:18px;height:18px}
+.dc-tl-item .tl-b{min-width:0}
+.dc-tl-item .tl-t{display:block;font-size:13.5px;font-weight:650;color:var(--ds-text);line-height:1.3}
+.dc-tl-item .tl-s{display:block;font-size:10.5px;color:var(--ds-text-3);margin-top:1px}
+.dc-tl-item .tl-m{text-align:right;white-space:nowrap}
+.dc-tl-item .tl-m small{display:block;font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ds-text-3)}
+.dc-tl-item .tl-m b{font-size:12px;font-weight:700;color:var(--tone)}
+.dc-tl-item:hover{background:rgba(94,230,235,.04)}
+.dc-tl-item.sel{background:linear-gradient(180deg,var(--tone-bg),rgba(10,24,46,.18));border-color:var(--tone-bd);
+  box-shadow:0 10px 30px -20px var(--tone)}
+.dc-tl-item.sel .tl-t{color:#fff}
+.dc-tl-item.now .tl-node{box-shadow:0 0 20px -4px var(--tone),inset 0 0 12px -7px #fff}
+.dc-tl-item.future .tl-node{border-style:dashed}
+.dc-tl-item:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
 
-@media (min-width:900px){
-  .view.ds-view[data-view="dossier"]{max-width:1520px}
+/* MIDDEN — geselecteerde herinnering (de hero: beslissings-geheugenpaneel). */
+.dc-center{overflow:hidden}
+.dc-mem{position:relative}
+.dc-mem .mem-h{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px 24px 0}
+.dc-mem .mem-when{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3);
+  display:inline-flex;align-items:center;gap:9px}
+.dc-mem .sel-tag{color:var(--tone);border:1px solid var(--tone-bd);background:var(--tone-bg);padding:2px 8px;border-radius:var(--ds-r-pill);font-size:9px}
+.dc-mem .mem-rel{text-align:right;flex:0 0 auto}
+.dc-mem .mem-rel small{display:block;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ds-text-3)}
+.dc-mem .mem-rel b{font-size:13px;font-weight:700;color:var(--tone)}
+.dc-mem .mem-title{display:flex;align-items:center;gap:14px;padding:12px 24px 2px}
+.dc-mem .mi{width:44px;height:44px;border-radius:13px;flex:0 0 auto;display:grid;place-items:center;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd);box-shadow:0 0 22px -8px var(--tone)}
+.dc-mem .mi .ic{width:22px;height:22px}
+.dc-mem .mem-title h2{margin:0;font-size:24px;font-weight:750;letter-spacing:-.022em;line-height:1.1}
+.dc-mem .msub{font-size:11.5px;color:var(--ds-text-3);margin-top:2px}
+.dc-mem .mem-quote{margin:12px 24px 0;padding:13px 16px;border-radius:13px;font-size:14px;line-height:1.5;color:#F3E7D6;
+  background:var(--tone-bg);border:1px solid var(--tone-bd);border-left:3px solid var(--tone)}
+.dc-mem .mem-quote.plain{color:var(--ds-text);background:rgba(6,16,34,.4);border-color:rgba(122,168,255,.14);border-left-color:var(--tone-bd)}
+.dc-mem .mem-body{padding:6px 24px 2px}
+.dc-mem .mem-sec{display:grid;grid-template-columns:34px 1fr;gap:13px;padding:13px 0;border-top:1px solid rgba(255,255,255,.06)}
+.dc-mem .mem-sec:first-child{border-top:0}
+.dc-mem .si{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.dc-mem .si .ic{width:15px;height:15px}
+.dc-mem .sh{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ds-text-3);margin-bottom:4px}
+.dc-mem .mem-sec p{margin:0;font-size:13.5px;color:var(--ds-text-2);line-height:1.5}
+.dc-mem .mem-sec ul:not(.dc-reg){margin:5px 0 0;padding:0;list-style:none;display:grid;gap:4px}
+.dc-mem .mem-sec ul:not(.dc-reg) li{font-size:12.5px;color:var(--ds-text-2);line-height:1.45;padding-left:15px;position:relative}
+.dc-mem .mem-sec ul:not(.dc-reg) li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--tone);opacity:.75}
+.dc-mem .mem-prov{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.dc-mem .mem-prov .pv{font-size:10px;color:var(--ds-text-3);padding:3px 9px;border-radius:var(--ds-r-pill);
+  background:rgba(10,24,48,.5);border:1px solid rgba(122,168,255,.14)}
+.dc-mem .dc-why{margin-top:9px}
+.dc-mem .mem-foot{margin:6px 20px 16px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06);font-size:11px;color:var(--ds-text-3)}
+.dc-mem .mem-note{font-size:12.5px;color:var(--ds-text-3);margin:4px 0}
+
+/* RECHTS — gerelateerde draden (context; verbonden via connectoren). */
+.dc-rt{display:flex;flex-direction:column;gap:11px;padding:0 10px 12px;perspective:1000px}
+.dc-rt-card{position:relative;display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;
+  padding:13px 15px 12px;border-radius:15px;background:linear-gradient(160deg,rgba(22,45,84,.5),rgba(10,23,45,.32));
+  border:1px solid rgba(122,168,255,.15);
+  box-shadow:0 14px 30px -22px rgba(2,8,20,.9),inset 0 1px 0 rgba(192,217,255,.05);
+  transition:border-color var(--ds-fast) var(--ds-ease),transform var(--ds-fast) var(--ds-ease),box-shadow var(--ds-fast) var(--ds-ease)}
+.dc-rt-card:hover{border-color:var(--tone-bd);transform:translateX(-3px);box-shadow:0 20px 40px -22px var(--tone-bg),inset 0 1px 0 rgba(192,217,255,.08)}
+.dc-rt-card:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+/* Toon-accent als een verlichte ribbe langs de kaartrand → diepte + type-herkenning. */
+.dc-rt-card::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;
+  background:linear-gradient(180deg,transparent,var(--tone),transparent);box-shadow:0 0 10px -1px var(--tone)}
+/* Lichte receding-stack: elke volgende draad zakt ietsje terug (visuele diepte, geen
+   nieuwe betekenis — het volgt de bestaande volgorde). */
+.dc-rt-card{opacity:.98}
+.dc-rt-card:nth-child(3){opacity:.95}
+.dc-rt-card:nth-child(4){opacity:.9}
+.dc-rt-card:nth-child(5){opacity:.85}
+.dc-rt-card:nth-child(n+6){opacity:.8}
+.dc-rt-card:hover{opacity:1}
+.dc-rt-card .rt-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.dc-rt-card .rt-type{display:inline-flex;align-items:center;gap:7px;font-size:8.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--tone)}
+.dc-rt-card .ri{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.dc-rt-card .ri .ic{width:12px;height:12px}
+.dc-rt-card .rt-date{font-size:10px;color:var(--ds-text-3)}
+.dc-rt-card .rt-t{display:block;font-size:13.5px;font-weight:650;color:var(--ds-text);line-height:1.3}
+.dc-rt-card .rt-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px}
+.dc-rt-card .rt-metric{display:flex;align-items:center;gap:8px;min-width:0}
+.dc-rt-card .rt-metric small{font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ds-text-3)}
+.dc-rt-card .rt-scale{display:flex;gap:3px}
+.dc-rt-card .rt-scale i{width:12px;height:4px;border-radius:2px;background:rgba(122,168,255,.2)}
+.dc-rt-card .rt-scale i.on{background:var(--tone)}
+.dc-rt-card .rt-metric b{font-size:11.5px;font-weight:700;color:var(--tone)}
+.dc-rt-card .rt-arrow{width:23px;height:23px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.dc-rt-card .rt-arrow .ic{width:12px;height:12px}
+.dc-rt-empty{padding:14px;font-size:12px;color:var(--ds-text-3);line-height:1.5;text-align:center}
+
+/* Bewijs-domeinen als subordinate navigatie (drill → midden-hero), maar in dezelfde
+   premium glas-klasse als de rest: een verzonken rail met glas-chips. */
+.dc-domstrip{display:flex;flex-wrap:wrap;justify-content:center;gap:9px;margin-top:var(--ds-5);padding:12px 14px;border-radius:16px;
+  background:linear-gradient(180deg,rgba(12,27,52,.34),rgba(8,18,38,.2));border:1px solid rgba(122,168,255,.1);
+  -webkit-backdrop-filter:blur(9px);backdrop-filter:blur(9px)}
+.dc-domchip{display:inline-flex;align-items:center;gap:9px;padding:8px 14px;border-radius:var(--ds-r-pill);cursor:pointer;
+  font:inherit;font-size:11.5px;color:var(--ds-text-2);
+  background:linear-gradient(180deg,rgba(20,42,80,.5),rgba(10,23,45,.34));border:1px solid rgba(122,168,255,.14);
+  box-shadow:0 10px 22px -18px rgba(2,8,20,.9),inset 0 1px 0 rgba(192,217,255,.06);
+  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease),transform var(--ds-fast) var(--ds-ease)}
+.dc-domchip:hover,.dc-domchip.on{border-color:var(--ds-accent);color:var(--ds-text);transform:translateY(-1px)}
+.dc-domchip:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.dc-domchip .dcx{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;color:var(--ds-accent);
+  background:rgba(94,230,235,.1);border:1px solid rgba(94,230,235,.22)}
+.dc-domchip .dcx .ic{width:12px;height:12px}
+.dc-domchip .dcn{font-weight:700;color:var(--ds-accent);font-variant-numeric:tabular-nums}
+.dc-domchip.leeg{opacity:.5}.dc-domchip.leeg .dcx{color:var(--ds-text-3);background:rgba(122,168,255,.06);border-color:rgba(122,168,255,.12)}
+.dc-domchip.leeg .dcn{color:var(--ds-text-3)}
+
+/* Onder-actiebalk (echte routes). */
+.dc-actionbar{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:14px}
+.dc-act{display:flex;align-items:center;gap:11px;padding:12px 20px;border-radius:14px;cursor:pointer;font:inherit;color:inherit;
+  background:linear-gradient(180deg,rgba(18,40,76,.5),rgba(10,24,46,.4));border:1px solid rgba(122,168,255,.16);
+  transition:border-color var(--ds-fast) var(--ds-ease)}
+.dc-act:hover{border-color:var(--ds-accent)}
+.dc-act:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.dc-act .ai{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:var(--ds-accent);
+  background:rgba(94,230,235,.12);border:1px solid rgba(94,230,235,.3)}
+.dc-act .ai .ic{width:14px;height:14px}
+.dc-act .at{text-align:left}
+.dc-act .at b{display:block;font-size:12.5px;font-weight:650;color:var(--ds-text)}
+.dc-act .at small{display:block;font-size:10px;color:var(--ds-text-3)}
+
+/* Eerlijke lege-staat (capture OFF). */
+.dc-empty-note{display:flex;gap:12px;align-items:flex-start;margin-top:14px;padding:14px 18px}
+.dc-empty-note .enic{color:var(--ds-text-3);flex:0 0 auto}.dc-empty-note .enic .ic{width:20px;height:20px}
+.dc-empty-note p{margin:0;font-size:12.5px;color:var(--ds-text-2);line-height:1.55}
+.dc-empty-note p b{color:var(--ds-text)}
+
+/* Gedeeld met mobiel: dc-row (signalen/planning) + dc-quote (coachnotitie). */
+.dc-row{display:flex;align-items:center;gap:10px;padding:7px 0}
+.dc-row+.dc-row{border-top:1px solid rgba(255,255,255,.05)}
+.dc-row .dc-ic{width:24px;height:24px;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;
+  color:var(--rt,var(--ds-accent));background:color-mix(in srgb,var(--rt,var(--ds-accent)) 15%,transparent);
+  border:1px solid color-mix(in srgb,var(--rt,var(--ds-accent)) 38%,transparent)}
+.dc-row .dc-ic .ic{width:13px;height:13px}
+.dc-row .rb{flex:1;min-width:0}
+.dc-row .rt{display:block;font-size:12.5px;font-weight:600;color:var(--ds-text);line-height:1.3}
+.dc-row .rs{display:block;font-size:11px;color:var(--ds-text-3);margin-top:1px;overflow-wrap:anywhere}
+.dc-row .rv{font-size:12px;font-weight:700;color:var(--rt,var(--ds-text));white-space:nowrap}
+.dc-quote{font-size:12px;color:var(--ds-text-2);line-height:1.5;font-style:italic;
+  border-left:2px solid var(--tone-bd);padding-left:11px;margin:0 0 8px}
+.dc-quote:last-child{margin-bottom:0}.dc-quote.muted{color:var(--ds-text-3);font-style:normal}
+
+/* Veiligheids-fallback: als het 3-zone raster ooit te smal rendert, stapel het. */
+@media (max-width:1180px){ .dc-grid{grid-template-columns:1fr} .dc-conn{display:none} }
+
+/* ══ Mobiel: kalme verticale tijd-vertelling ══════════════════════════════ */
+.dc-stack{padding-bottom:var(--ds-6)}
+.dc-stack .dc-head2{grid-template-columns:1fr;gap:var(--ds-3);text-align:left}
+.dc-stack .dc-title{text-align:left}.dc-stack .dc-nav2{justify-self:start}
+.dc-stack .dc-nav2 .anav{justify-content:flex-start}
+.dcm-now{display:flex;align-items:center;gap:13px;padding:14px 16px;border-radius:16px;margin:var(--ds-4) 0;
+  background:linear-gradient(160deg,rgba(24,48,90,.5),rgba(10,24,46,.34));border:1px solid var(--tone-bd)}
+.dcm-sun{width:34px;height:34px;flex:0 0 auto;border-radius:50%;
+  background:radial-gradient(circle,#fff 0%,var(--tone) 45%,transparent 72%);box-shadow:0 0 22px 4px var(--tone-bg)}
+.dcm-now .dcm-k{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ds-text-3)}
+.dcm-now .dcm-t{font-size:15px;font-weight:650;color:var(--ds-text);line-height:1.3;margin-top:2px}
+.dcm-now .dcm-s{font-size:11.5px;color:var(--ds-text-3);margin-top:1px}
+.dcm-now .ds-chip{margin-left:auto;flex:0 0 auto}
+.dcm-spine{position:relative;padding-left:var(--ds-6);margin:var(--ds-4) 0}
+.dcm-spine::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;border-radius:2px;
+  background:linear-gradient(180deg,var(--tone),rgba(122,168,255,.14) 70%,transparent)}
+.dcm-node{position:relative;padding:8px 0 8px var(--ds-5)}
+.dcm-dot{position:absolute;left:calc(var(--ds-6)*-1 + 0px);top:13px;width:10px;height:10px;border-radius:50%;
+  background:var(--tone);box-shadow:0 0 0 3px var(--ds-canvas),0 0 12px var(--tone-bg)}
+.dcm-node.is-attention{--tone:var(--ds-attention);--tone-bg:var(--ds-attention-bg)}
+.dcm-node.is-critical{--tone:var(--ds-critical);--tone-bg:var(--ds-critical-bg)}
+.dcm-node.is-stale{--tone:var(--ds-stale);--tone-bg:var(--ds-stale-bg)}
+.dcm-node.future .dcm-dot{background:none;border:1.5px solid var(--ds-calm)}
+.dcm-b{display:flex;flex-direction:column;gap:1px;min-width:0}
+.dcm-when{font-size:var(--ds-t-xs);letter-spacing:.06em;text-transform:uppercase;color:var(--ds-text-3);font-weight:650}
+.dcm-tt{font-size:var(--ds-t-body);font-weight:600;color:var(--ds-text);line-height:1.35}
+.dcm-sig{font-size:var(--ds-t-sm);color:var(--ds-text-2)}
+.dcm-empty{display:flex;gap:11px;align-items:flex-start;padding:12px 14px;border-radius:14px;
+  background:rgba(11,26,50,.4);border:1px solid rgba(122,168,255,.12);color:var(--ds-text-3)}
+.dcm-empty .ic{width:20px;height:20px;flex:0 0 auto;margin-top:1px}
+.dcm-empty p{margin:0;font-size:var(--ds-t-sm);color:var(--ds-text-2);line-height:1.55}
+.dcm-empty p b{color:var(--ds-text)}
+.dcm-sec{margin:var(--ds-5) 0}
+.dcm-sec>.ds-label{margin:0 0 var(--ds-2)}
+.dc-infra.stack{justify-content:flex-start;margin-top:var(--ds-5)}
+
+@media (min-width:900px){ .view.ds-view[data-view="dossier"]{max-width:1520px} }
+
+/* ── Motion: de zones settelen rustig in; de draden tekenen zich naar buiten ── */
+@keyframes dc-fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.dc-ctrl,.dc-grid>.dc-pane,.dc-domstrip,.dc-actionbar{animation:dc-fade .5s var(--ds-ease) both}
+.dc-grid>.dc-center{animation-delay:.05s}.dc-grid>.dc-rt-pane{animation-delay:.1s}
+.dc-conn path{transition:stroke-dashoffset .5s var(--ds-ease)}
+@media (prefers-reduced-motion:reduce){
+  .dc-ctrl,.dc-grid>.dc-pane,.dc-domstrip,.dc-actionbar{animation:none}
 }
-@media (min-width:1100px){
-  .dc-mem-grid{grid-template-columns:minmax(0,1.4fr) minmax(300px,.9fr);gap:var(--ds-10)}
-}
-@media (max-width:760px){
-  .dc-head2{margin-bottom:var(--ds-6)}
-  .dc-orb{width:60px;height:60px;font-size:20px}
-  .dc-spine{padding-left:var(--ds-6)}
-  .dc-node{padding-left:var(--ds-4)}
-  .dc-node-dot{left:calc(var(--ds-6)*-1 + 1px)}
-  .dc-era-l::before{margin-left:calc(var(--ds-6)*-1 + 3px)}
-  .dc-bg{inset:-24px -16px -8px}
-}
-/* Motion: het verhaal settelt rustig in. */
-.dc-era{animation:ws-in 360ms var(--ds-ease) both}
-.dc-era:nth-child(3){animation-delay:60ms}
-.dc-era:nth-child(4){animation-delay:110ms}
-.dc-era:nth-child(5){animation-delay:160ms}
-@media (prefers-reduced-motion:reduce){.dc-era{animation:none}}
 
 /* ── HOME ATHLETE BRIEFING ────────────────────────────────────────────────
    Home blijft het team-/prioriteitenoverzicht. Opent de coach een atleet, dan

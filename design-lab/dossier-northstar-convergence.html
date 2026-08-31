@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dossier · North-Star Convergence (design-lab)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   DESIGN-LAB — DOSSIER NORTH-STAR CONVERGENCE (3-zone geheugencockpit)
+   Benchmark = neon_dossier_tijdlijn_dashboard.png. Drie zones:
+   LINKS  = TIJDLIJN (wat gebeurde, wanneer) — geselecteerd event uitgelicht;
+   MIDDEN = GESELECTEERDE HERINNERING (waarom het ertoe doet) — de HERO;
+   RECHTS = GERELATEERDE DRADEN (welke context hangt eraan) — connectoren.
+   Selected-event is de DEFAULT staat (geen leeg scherm). Alléén echte view-
+   model-velden; history-capture OFF → eerlijke lege-staat. Geen verzonnen
+   historie/metrics/causaliteit/coachnotities. Toon volgt data.
+   ───────────────────────────────────────────────────────────────────────── */
+@font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-400.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-500.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-700.woff2) format("woff2");font-weight:700;font-display:swap}
+:root{
+  --ds-canvas:#081527;--ds-text:#EAF2FF;--ds-text-2:#B4C7E6;--ds-text-3:#7F97BC;
+  --ds-accent:#5EE6EB;--ds-accent-soft:rgba(94,230,235,.12);
+  --ds-calm:#5EE6EB;--ds-calm-bg:rgba(94,230,235,.10);--ds-calm-bd:rgba(94,230,235,.36);
+  --ds-attention:#F0A62B;--ds-attention-bg:rgba(240,166,43,.12);--ds-attention-bd:rgba(240,166,43,.46);
+  --ds-critical:#F4744C;--ds-critical-bg:rgba(244,116,76,.14);--ds-critical-bd:rgba(244,116,76,.50);
+  --ds-success:#37D9A2;--ds-success-bg:rgba(55,217,162,.10);--ds-success-bd:rgba(55,217,162,.38);
+  --ds-stale:#8098BC;--ds-stale-bg:rgba(128,152,188,.10);--ds-stale-bd:rgba(128,152,188,.34);
+  --dc-mem:#EBA96A;
+  --ds-1:4px;--ds-2:8px;--ds-3:12px;--ds-4:16px;--ds-5:20px;--ds-6:24px;--ds-8:32px;--ds-10:40px;
+  --ds-r-sm:10px;--ds-r-md:14px;--ds-r-lg:18px;--ds-r-xl:22px;--ds-r-pill:999px;
+  --ds-ease:cubic-bezier(.2,.7,.3,1);--ds-fast:120ms;--ds-base:200ms;
+  --tone:var(--ds-calm);--tone-bg:var(--ds-calm-bg);--tone-bd:var(--ds-calm-bd);
+}
+.is-calm{--tone:var(--ds-calm);--tone-bg:var(--ds-calm-bg);--tone-bd:var(--ds-calm-bd)}
+.is-attention{--tone:var(--ds-attention);--tone-bg:var(--ds-attention-bg);--tone-bd:var(--ds-attention-bd)}
+.is-critical{--tone:var(--ds-critical);--tone-bg:var(--ds-critical-bg);--tone-bd:var(--ds-critical-bd)}
+.is-success{--tone:var(--ds-success);--tone-bg:var(--ds-success-bg);--tone-bd:var(--ds-success-bd)}
+.is-stale{--tone:var(--ds-stale);--tone-bg:var(--ds-stale-bg);--tone-bd:var(--ds-stale-bd)}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(150% 100% at 50% -10%,#0b1f3d,#071129 58%,#03070f 100%),var(--ds-canvas);
+  color:var(--ds-text);font-family:"Space Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  min-height:100vh;-webkit-font-smoothing:antialiased}
+
+.ds-label{font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ds-text-3);margin:0}
+.ds-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:var(--ds-r-pill);
+  font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd);white-space:nowrap}
+.num{font-variant-numeric:tabular-nums}
+
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+.dc{position:relative;width:1440px;max-width:100%;margin:0 auto;padding:22px 34px 20px;overflow:hidden}
+.dc-env{position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.dc-env .haze{position:absolute;left:20%;right:6%;top:34%;height:340px;filter:blur(16px);opacity:.5;
+  background:radial-gradient(60% 120% at 50% 50%,var(--tone-bg),transparent 72%)}
+.dc-env .vig{position:absolute;inset:0;background:radial-gradient(120% 84% at 60% 40%,transparent 56%,rgba(3,7,15,.5) 100%)}
+.dc>*{position:relative;z-index:1}
+
+/* Top bar */
+.dc-top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:var(--ds-5);margin-bottom:16px}
+.dc-id{display:flex;align-items:center;gap:13px;min-width:0}
+.dc-mono{width:50px;height:50px;border-radius:14px;flex:0 0 auto;display:grid;place-items:center;
+  font-size:16px;font-weight:700;color:var(--ds-accent);
+  background:radial-gradient(circle at 50% 24%,rgba(94,230,235,.18),transparent 60%),rgba(10,26,52,.6);
+  border:1px solid rgba(94,230,235,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.dc-nm{margin:0;font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.05}
+.dc-meta{margin:3px 0 0;font-size:12px;color:var(--ds-text-3)}.dc-meta b{color:var(--ds-text-2);font-weight:600}
+.dc-title{text-align:center}
+.dc-title h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em;display:inline-flex;align-items:center;gap:11px}
+.dc-title .bdg{font-size:9px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ds-accent);
+  padding:4px 10px;border-radius:var(--ds-r-pill);border:1px solid rgba(94,230,235,.3);background:rgba(94,230,235,.07)}
+.dc-title p{margin:4px 0 0;font-size:12px;color:var(--ds-text-3)}
+.dc-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px}
+.dc-sync{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ds-text-2)}
+.dc-sync .ok{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;font-size:11px;
+  color:var(--ds-success);background:rgba(55,217,162,.14);border:1px solid var(--ds-success-bd)}
+.dc-sync b{font-weight:600;color:var(--ds-text)}.dc-sync small{display:block;color:var(--ds-text-3);font-size:10px}
+.dc-navchips{display:flex;gap:8px}
+.dc-navchips button{font:inherit;font-size:12px;font-weight:600;color:var(--ds-text-2);cursor:pointer;
+  padding:8px 14px;border-radius:var(--ds-r-pill);background:rgba(10,26,52,.5);border:1px solid rgba(122,168,255,.18)}
+.dc-navchips button:hover{border-color:var(--ds-accent);color:var(--ds-text)}
+
+/* Control row */
+.dc-ctrl{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+.dc-ctrl .spacer{flex:1}
+.dc-pill{display:inline-flex;align-items:center;gap:11px;padding:9px 15px;border-radius:13px;cursor:pointer;
+  font:inherit;background:linear-gradient(180deg,rgba(18,40,76,.5),rgba(10,24,46,.4));border:1px solid rgba(122,168,255,.16)}
+.dc-pill .pi{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:var(--ds-text-3);
+  background:rgba(94,230,235,.08);flex:0 0 auto}
+.dc-pill .pi svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.7}
+.dc-pill .pt{text-align:left}
+.dc-pill .pt small{display:block;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3)}
+.dc-pill .pt b{display:block;font-size:12.5px;font-weight:600;color:var(--ds-text)}
+.dc-pill.ghost{background:rgba(10,26,52,.4)}
+
+/* 3-zone grid */
+.dc-grid{position:relative;display:grid;grid-template-columns:minmax(272px,318px) minmax(0,1.42fr) minmax(292px,360px);
+  gap:22px;align-items:start}
+.dc-conn{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;overflow:visible}
+.dc-conn path{fill:none;stroke-width:1.8;opacity:.7;filter:drop-shadow(0 0 4px currentColor)}
+.dc-conn .cnode{r:3.4}.dc-conn .cend{r:3}
+
+/* Glass panel base */
+.pane{position:relative;border-radius:var(--ds-r-xl);
+  background:linear-gradient(162deg,rgba(24,48,90,.46),rgba(11,25,49,.32) 60%,rgba(8,18,38,.2));
+  border:1px solid rgba(122,168,255,.14);
+  -webkit-backdrop-filter:blur(12px) saturate(1.05);backdrop-filter:blur(12px) saturate(1.05);
+  box-shadow:inset 0 1px 0 rgba(192,217,255,.08),0 26px 56px -34px rgba(2,8,20,.9)}
+.pane-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px 12px}
+.pane-h b{font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ds-text-2)}
+.pane-h .info{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;color:var(--ds-text-3);
+  border:1px solid rgba(122,168,255,.24);font-size:10px}
+
+/* ── LEFT: TIJDLIJN ─────────────────────────────────────────────────────── */
+.tl{padding:0 8px 12px}
+.tl-item{position:relative;display:grid;grid-template-columns:34px 40px minmax(0,1fr) auto;gap:9px;align-items:center;
+  padding:11px 8px;border-radius:14px;cursor:pointer;border:1px solid transparent;
+  transition:background var(--ds-fast) var(--ds-ease),border-color var(--ds-fast) var(--ds-ease)}
+.tl-item::before{content:"";position:absolute;left:62px;top:-6px;bottom:-6px;width:2px;
+  background:linear-gradient(180deg,transparent,var(--tl-line,rgba(122,168,255,.2)),transparent)}
+.tl-item:first-child::before{top:28px}.tl-item:last-child::before{bottom:auto;height:30px}
+.tl-when{font-size:10px;color:var(--ds-text-3);font-variant-numeric:tabular-nums;text-align:right;line-height:1.2}
+.tl-node{position:relative;z-index:1;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;justify-self:center;
+  color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.tl-node svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7}
+.tl-b{min-width:0}
+.tl-t{font-size:13.5px;font-weight:650;color:var(--ds-text);line-height:1.3}
+.tl-s{font-size:11px;color:var(--ds-text-3);margin-top:1px}
+.tl-m{text-align:right;white-space:nowrap;padding-top:1px}
+.tl-m small{display:block;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ds-text-3)}
+.tl-m b{font-size:12.5px;font-weight:700;color:var(--tone)}
+.tl-item:hover{background:rgba(94,230,235,.04)}
+.tl-item.sel{background:linear-gradient(180deg,var(--tone-bg),rgba(10,24,46,.2));border-color:var(--tone-bd);
+  box-shadow:0 0 0 1px var(--tone-bd),0 10px 30px -18px var(--tone)}
+.tl-item.sel .tl-t{color:#fff}
+.tl-item.now .tl-node{box-shadow:0 0 22px -4px var(--tone),inset 0 0 12px -6px #fff}
+.tl-item.future .tl-node{border-style:dashed}
+.tl-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 12px 0;padding:11px 14px;
+  border-radius:12px;cursor:pointer;font-size:12px;font-weight:600;color:var(--ds-text-2);
+  background:rgba(10,24,46,.4);border:1px solid rgba(122,168,255,.12)}
+.tl-foot:hover{border-color:var(--ds-accent);color:var(--ds-text)}
+.tl-foot svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8}
+
+/* ── CENTER: SELECTED MEMORY (hero) ─────────────────────────────────────── */
+.mem{position:relative}
+.mem-h{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px 22px 0}
+.mem-when{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3);
+  font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:9px}
+.mem-when .sel-tag{color:var(--tone);border:1px solid var(--tone-bd);background:var(--tone-bg);
+  padding:2px 8px;border-radius:var(--ds-r-pill);font-size:9px}
+.mem-rel{text-align:right;flex:0 0 auto}
+.mem-rel small{display:block;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ds-text-3)}
+.mem-rel b{font-size:13px;font-weight:700;color:var(--tone)}
+.mem-title{display:flex;align-items:center;gap:13px;padding:12px 22px 4px}
+.mem-title .mi{width:40px;height:40px;border-radius:12px;flex:0 0 auto;display:grid;place-items:center;
+  color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.mem-title .mi svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7}
+.mem-title h2{margin:0;font-size:22px;font-weight:750;letter-spacing:-.02em;line-height:1.1}
+.mem-title .sub{font-size:11.5px;color:var(--ds-text-3);margin-top:2px}
+.mem-quote{margin:12px 22px 0;padding:13px 16px;border-radius:13px;font-size:14px;line-height:1.5;color:#F3E7D6;
+  background:rgba(240,166,43,.06);border:1px solid rgba(240,166,43,.2);border-left:3px solid var(--tone-bd)}
+.mem-quote.plain{color:var(--ds-text);background:rgba(6,16,34,.4);border-color:rgba(122,168,255,.14);border-left-color:var(--tone-bd)}
+.mem-body{padding:8px 22px 4px}
+.mem-sec{display:grid;grid-template-columns:36px 1fr;gap:12px;padding:13px 0;border-top:1px solid rgba(255,255,255,.06)}
+.mem-sec:first-child{border-top:0}
+.mem-sec .si{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.mem-sec .si svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8}
+.mem-sec .sh{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ds-text-3);margin-bottom:4px}
+.mem-sec p{margin:0;font-size:13px;color:var(--ds-text-2);line-height:1.5}
+.mem-sec ul{margin:5px 0 0;padding:0;list-style:none;display:grid;gap:4px}
+.mem-sec li{font-size:12.5px;color:var(--ds-text-2);line-height:1.45;padding-left:15px;position:relative}
+.mem-sec li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--tone);opacity:.75}
+.mem-prov{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.mem-prov .pv{font-size:10px;color:var(--ds-text-3);padding:3px 9px;border-radius:var(--ds-r-pill);
+  background:rgba(10,24,48,.5);border:1px solid rgba(122,168,255,.14)}
+.mem-why{margin-top:8px;font-size:11.5px;font-weight:600;color:var(--ds-accent);cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px}
+.mem-why svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8}
+.mem-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 22px 18px;padding-top:13px;
+  border-top:1px solid rgba(255,255,255,.06);font-size:11px;color:var(--ds-text-3)}
+.mem-foot .fbtn{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:12px;font-weight:600;color:var(--ds-text-2);
+  cursor:pointer;padding:8px 14px;border-radius:11px;background:rgba(10,24,46,.5);border:1px solid rgba(122,168,255,.16)}
+.mem-foot .fbtn:hover{border-color:var(--ds-accent);color:var(--ds-text)}
+.mem-foot .fbtn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8}
+
+/* ── RIGHT: GERELATEERDE DRADEN ─────────────────────────────────────────── */
+.rt{display:flex;flex-direction:column;gap:11px;padding:0 4px 4px}
+.rt-card{position:relative;padding:13px 15px;border-radius:15px;cursor:pointer;
+  background:linear-gradient(160deg,rgba(20,42,80,.42),rgba(10,23,45,.3));border:1px solid rgba(122,168,255,.13);
+  transition:border-color var(--ds-fast) var(--ds-ease),transform var(--ds-fast) var(--ds-ease)}
+.rt-card:hover{border-color:var(--tone-bd);transform:translateX(-2px)}
+.rt-card::before{content:"";position:absolute;left:-1px;top:14px;bottom:14px;width:2px;border-radius:2px;background:var(--tone);opacity:.55}
+.rt-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.rt-type{display:inline-flex;align-items:center;gap:7px;font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--tone)}
+.rt-type .ri{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.rt-type .ri svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8}
+.rt-date{font-size:10px;color:var(--ds-text-3);font-variant-numeric:tabular-nums}
+.rt-t{font-size:13.5px;font-weight:650;color:var(--ds-text);line-height:1.3}
+.rt-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px}
+.rt-metric{display:flex;align-items:center;gap:8px}
+.rt-metric small{font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--ds-text-3)}
+.rt-scale{display:flex;gap:3px}
+.rt-scale i{width:12px;height:4px;border-radius:2px;background:rgba(122,168,255,.2)}
+.rt-scale i.on{background:var(--tone)}
+.rt-metric b{font-size:11.5px;font-weight:700;color:var(--tone)}
+.rt-arrow{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.rt-arrow svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2}
+.rt-empty{padding:16px;font-size:12px;color:var(--ds-text-3);line-height:1.55;text-align:center}
+
+/* ── Bottom action bar ──────────────────────────────────────────────────── */
+.dc-actionbar{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:16px}
+.dc-actionbar .act{display:flex;align-items:center;gap:11px;padding:12px 20px;border-radius:14px;cursor:pointer;
+  background:linear-gradient(180deg,rgba(18,40,76,.5),rgba(10,24,46,.4));border:1px solid rgba(122,168,255,.16)}
+.dc-actionbar .act:hover{border-color:var(--ds-accent)}
+.dc-actionbar .act .ai{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:var(--ds-accent);
+  background:rgba(94,230,235,.12);border:1px solid rgba(94,230,235,.3)}
+.dc-actionbar .act .ai svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8}
+.dc-actionbar .act .at{text-align:left}
+.dc-actionbar .act .at b{display:block;font-size:12.5px;font-weight:650;color:var(--ds-text)}
+.dc-actionbar .act .at small{display:block;font-size:10px;color:var(--ds-text-3)}
+.dc-actionbar .round{padding:12px;border-radius:12px}
+
+/* lab nav */
+.lab-nav{position:fixed;bottom:10px;left:10px;z-index:60;display:flex;gap:6px;padding:5px;border-radius:var(--ds-r-pill);
+  background:rgba(6,14,30,.85);border:1px solid rgba(122,168,255,.2)}
+.lab-nav a{font-size:11px;color:var(--ds-text-3);text-decoration:none;padding:6px 12px;border-radius:var(--ds-r-pill)}
+.lab-nav a.on{color:var(--ds-canvas);background:var(--ds-accent);font-weight:700}
+
+/* motion */
+@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes drawc{from{stroke-dashoffset:var(--l)}to{stroke-dashoffset:0}}
+.pane,.dc-actionbar{animation:fadein .5s var(--ds-ease) both}
+.dc-grid>*:nth-child(2){animation-delay:.05s}
+.dc-grid>*:nth-child(3){animation-delay:.1s}
+@media (prefers-reduced-motion:reduce){.pane,.dc-actionbar{animation:none}.dc-conn path{stroke-dashoffset:0!important}}
+</style>
+</head>
+<body>
+<nav class="lab-nav">
+  <a href="#selected" data-b="selected">Selected</a>
+  <a href="#calm" data-b="calm">Calm</a>
+  <a href="#mobile" data-b="mobile">Mobile</a>
+</nav>
+<div id="root"></div>
+<script>
+const IC={
+  alert:'<path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/>',
+  pulse:'<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+  flag:'<path d="M5 21V4h11l-2 4 2 4H5"/>',
+  cal:'<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',
+  trend:'<path d="M3 17l6-6 4 4 8-8"/><path d="M21 7v5h-5"/>',
+  note:'<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4"/><path d="M9 12h6M9 16h4"/>',
+  chat:'<path d="M4 5h16v11H9l-5 4z"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>',
+  book:'<path d="M4 5a2 2 0 012-2h13v18H6a2 2 0 01-2-2z"/><path d="M19 3v18"/>',
+  arw:'<path d="M5 12h14M13 6l6 6-6 6"/>',
+  cal2:'<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',
+  filter:'<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
+  period:'<rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h3"/>',
+  share:'<circle cx="6" cy="12" r="2.5"/><circle cx="17" cy="6" r="2.5"/><circle cx="17" cy="18" r="2.5"/><path d="M8.2 11L15 7M8.2 13L15 17"/>',
+  history:'<path d="M3 12a9 9 0 109-9 9 9 0 00-7 3.3M3 4v3h3"/><path d="M12 8v4l3 2"/>',
+  spark:'<path d="M12 3v6M12 15v6M3 12h6M15 12h6"/>',
+  sliders:'<path d="M4 8h9M17 8h3"/><circle cx="15" cy="8" r="2"/><path d="M4 16h3M11 16h9"/><circle cx="9" cy="16" r="2"/>',
+  check:'<path d="M5 12l4 4 10-11"/>',
+};
+const svg=(p)=>`<svg viewBox="0 0 24 24">${IC[p]||''}</svg>`;
+const toneHex={"is-calm":"#5EE6EB","is-attention":"#F0A62B","is-critical":"#F4744C","is-success":"#37D9A2","is-stale":"#8098BC"};
+
+// ── Masja-snapshot (vorm = view-model). Elk event draagt ALLEEN echte velden. ──
+const EVENTS_CRIT=[
+  {id:"e-bron",when:"22 aug",cls:"past",tone:"is-stale",icon:"clock",type:"Bron / betrouwbaarheid",
+   title:"Bron verouderd: Garmin-herstel",sub:"afgeleid",
+   detail:{changed:"Garmin-herstel raakte verouderd; herstelbeeld deels onzeker.",why:"",
+     bronnen:["Afgeleid uit state","Laatst vers: 22 aug"],prov:["afgeleid","state","22 aug","verouderd"],vervolg:""}},
+  {id:"e-klacht",when:"24 aug",cls:"past",tone:"is-attention",icon:"alert",type:"Signaal / klacht",
+   title:"Kuit links — actief",sub:"gezondheid",metric:{label:"Intensiteit",value:"Middel",scale:2},
+   detail:{quote:"Kuit links gevoelig na een lange duurloop.",
+     changed:"Klacht opnieuw in beeld — recent gemeld.",why:"Actieve klacht — meeweegbaar in opbouw.",
+     bronnen:["Atleet-gemeld: 24 aug","Bron: fs.training_log"],prov:["atleet-gemeld","fs.training_log","24 aug","actief"],vervolg:""}},
+  {id:"e-onderbr",when:"27 aug",cls:"past",tone:"is-stale",icon:"clock",type:"Training",
+   title:"Trainingsonderbreking",sub:"afgeleid",
+   detail:{changed:"Onderbreking in de trainingsopbouw.",why:"",
+     bronnen:["Afgeleid uit state","27 aug"],prov:["afgeleid","state","27 aug"],vervolg:""}},
+  {id:"e-belasting",when:"Vandaag",cls:"now",tone:"is-critical",icon:"pulse",type:"Signaal / belasting",
+   title:"Belasting hoog",sub:"Teampuls",metric:{label:"t.o.v. ref",value:"+200%",scale:3},sel:true,
+   detail:{quote:"Belasting fors verhoogd — +200% t.o.v. referentie.",
+     changed:"Volumesprong t.o.v. de referentie; kuit links gevoelig.",
+     why:"Open Home-actie · Teampuls-signaal ernst hoog.",
+     bronnen:["Belasting: +200% t.o.v. referentie","Signalen: volumesprong; kuitgevoeligheid","Bron: fs.training_log (afgeleid)"],
+     prov:["afgeleid","fs.training_log","29 aug","ernst hoog"],vervolg:"Richting 7-Heuvelenloop · 5 okt (hoofddoel)"}},
+  {id:"e-race",when:"5 okt",cls:"future",tone:"is-calm",icon:"flag",type:"Doel / beslissing",
+   title:"7-Heuvelenloop",sub:"hoofddoel",metric:{label:"Prioriteit",value:"Hoog",scale:3},
+   detail:{changed:"Wedstrijddatum vastgelegd — 5 okt.",why:"Bepaalt de opbouw en piek.",
+     bronnen:["Race-prioriteit: hoog","Afstand: 15 km","Bron: intake"],prov:["coach-gemeld","intake","hoofddoel"],vervolg:""}},
+  {id:"e-schema",when:"loopt",cls:"future",tone:"is-calm",icon:"cal",type:"Trainingsplan",
+   title:"Schema-blok",sub:"18 aug → 12 sep",metric:{label:"Status",value:"nog 12d",scale:1},
+   detail:{changed:"Actief opbouwblok richting hoofddoel.",why:"Bepaalt de komende belasting.",
+     bronnen:["18 aug → 12 sep","Uitvoerwijze: afstand (km)","Bron: intake"],prov:["afgeleid","intake","laatst geconfigureerd"],vervolg:""}},
+];
+const COACH=[
+  {q:"Reageert goed op rustige opbouw; niet forceren na klachtsignaal."},
+  {q:"Kuithistorie: eerder gevoelig bij snelle volumesprongen."},
+];
+const DOMAINS=[
+  {ic:"pulse",t:"Belastbaarheid & trainingshistorie",n:2},{ic:"alert",t:"Gezondheid & klachten",n:1},
+  {ic:"clock",t:"Herstel & leefritme",n:1},{ic:"flag",t:"Doelen & agenda",n:1},
+  {ic:"spark",t:"Profiel & voorkeuren",n:0},{ic:"book",t:"Coachkennis",n:2},
+];
+const HEAD={naam:"Masja Bolk",mono:"MB",groep:"5. Comfort"};
+
+function scaleDots(n){let s="";for(let i=0;i<3;i++)s+=`<i class="${i<n?'on':''}"></i>`;return s;}
+
+function timelineItem(ev,selId){
+  const m=ev.metric;
+  return `<div class="tl-item ${ev.cls} ${ev.tone} ${ev.id===selId?'sel':''}" data-ev="${ev.id}" style="--tl-line:${toneHex[ev.tone]}44">
+    <span class="tl-when">${ev.when}</span>
+    <span class="tl-node">${svg(ev.icon)}</span>
+    <div class="tl-b"><span class="tl-t">${ev.title}</span><span class="tl-s">${ev.type}</span></div>
+    ${m?`<div class="tl-m"><small>${m.label}</small><b>${m.value}</b></div>`:`<div class="tl-m"></div>`}
+  </div>`;
+}
+
+function relCard(ev){
+  const m=ev.metric;
+  return `<div class="rt-card ${ev.tone}" data-ev="${ev.id}">
+    <div class="rt-top"><span class="rt-type"><span class="ri">${svg(ev.icon)}</span>${ev.type}</span><span class="rt-date num">${ev.when}</span></div>
+    <div class="rt-t">${ev.title}</div>
+    <div class="rt-foot">
+      ${m?`<div class="rt-metric"><small>${m.label}</small><span class="rt-scale">${scaleDots(m.scale)}</span><b>${m.value}</b></div>`:`<div class="rt-metric"><small>${ev.sub}</small></div>`}
+      <span class="rt-arrow">${svg('arw')}</span></div>
+  </div>`;
+}
+
+function memPanel(ev){
+  const d=ev.detail||{};
+  const secs=[];
+  if(d.changed) secs.push({ic:"pulse",h:ev.cls==="future"?"Wat staat te gebeuren":"Wat veranderde",body:`<p>${d.changed}</p>`});
+  if(d.why) secs.push({ic:"target",h:"Waarom relevant",body:`<p>${d.why}</p>`});
+  if(d.bronnen&&d.bronnen.length) secs.push({ic:"note",h:"Bronnen",body:`<ul>${d.bronnen.map(b=>`<li>${b}</li>`).join("")}</ul>
+    <div class="mem-prov">${(d.prov||[]).map(p=>`<span class="pv">${p}</span>`).join("")}</div>
+    <div class="mem-why">${svg('spark')}Volledige provenance-keten</div>`});
+  if(d.vervolg) secs.push({ic:"flag",h:"Vervolg / context",body:`<p>${d.vervolg}</p>`});
+  return `<div class="pane mem ${ev.tone}">
+    <div class="mem-h"><span class="mem-when">${ev.when}${ev.detail&&ev.detail.time?` · ${ev.detail.time}`:""} <span class="sel-tag">Geselecteerd</span></span>
+      ${ev.metric?`<span class="mem-rel"><small>${ev.metric.label}</small><b>${ev.metric.value}</b></span>`:""}</div>
+    <div class="mem-title"><span class="mi">${svg(ev.icon)}</span><div><h2>${ev.title}</h2><div class="sub">${ev.type}</div></div></div>
+    ${d.quote?`<p class="mem-quote ${ev.tone==='is-attention'||ev.tone==='is-critical'?'':'plain'}">"${d.quote}"</p>`:""}
+    <div class="mem-body">${secs.map(s=>`<div class="mem-sec"><span class="si">${svg(s.ic)}</span><div><div class="sh">${s.h}</div>${s.body}</div></div>`).join("")}</div>
+    <div class="mem-foot"><span>Uit het atleetgeheugen · alleen vastgelegde bronnen</span>
+      <span class="fbtn">${svg('cal')} Naar schema</span></div>
+  </div>`;
+}
+
+function build(state){
+  const calm = state==="calm";
+  let events = EVENTS_CRIT;
+  if(calm){
+    events = EVENTS_CRIT.filter(e=>e.cls!=="past").map(e=>({...e}));
+    // kalme atleet: nu = serene 'geen open signaal'
+    events = [
+      {id:"e-now",when:"Vandaag",cls:"now",tone:"is-success",icon:"check",type:"Actuele staat",title:"Geen open klacht of signaal",sub:"bronnen vers",sel:true,
+        detail:{quote:"Geen actieve klacht of signaal — bronnen vers.",changed:"",why:"",bronnen:["Overall: goed","Alle bronnen vers"],prov:["afgeleid","state","vandaag","vers"],vervolg:"Richting 7-Heuvelenloop · 5 okt (hoofddoel)"}},
+      ...events.filter(e=>e.cls==="future").map(e=>({...e,sel:false})),
+    ];
+  }
+  const selId = (events.find(e=>e.sel)||events[0]).id;
+  const sel = events.find(e=>e.id===selId);
+  const related = events.filter(e=>e.id!==selId);
+
+  const top=`<header class="dc-top">
+    <div class="dc-id"><span class="dc-mono">${HEAD.mono}</span>
+      <div><h2 class="dc-nm">${HEAD.naam}</h2><p class="dc-meta"><b>${HEAD.groep}</b> · Premium · Dossier</p></div></div>
+    <div class="dc-title"><h1>Dossier <span class="bdg">Levend geheugencockpit</span></h1>
+      <p>Levende geheugenlijn · oorzaken · veranderingen · context</p></div>
+    <div class="dc-actions"><div class="dc-sync"><span class="ok">✓</span><div><b>Dossier actueel</b><small>gesynchroniseerd: zojuist</small></div></div>
+      <div class="dc-navchips"><button>Workspace</button><button>Schema</button></div></div>
+  </header>`;
+
+  const ctrl=`<div class="dc-ctrl">
+    <div class="dc-pill"><span class="pi">${svg('period')}</span><span class="pt"><small>Periode</small><b>${calm?'—':'22 aug – 5 okt'}</b></span></div>
+    <div class="dc-pill ghost"><span class="pi">${svg('filter')}</span><span class="pt"><small>Categorieën</small><b>${calm?'2 actief':'5 actief'}</b></span></div>
+    <div class="spacer"></div>
+    <div class="dc-pill ghost"><span class="pi">${svg('sliders')}</span><span class="pt"><small>Weergave</small><b>Legenda &amp; filters</b></span></div>
+  </div>`;
+
+  const left=`<div class="pane"><div class="pane-h"><b>Tijdlijn</b><span>${calm?'nu + vooruit':'22 aug → vooruit'}</span></div>
+    <div class="tl">${events.map(e=>timelineItem(e,selId)).join("")}</div>
+    <div class="tl-foot">Bekijk volledige geschiedenis ${svg('arw')}</div></div>`;
+
+  const center = memPanel(sel);
+
+  const rightCards = related.length
+    ? related.map(relCard).join("")
+    : `<div class="rt-empty">Nog geen andere vastgelegde draden voor dit moment.</div>`;
+  const right=`<div class="pane"><div class="pane-h"><b>Gerelateerde draden</b><span class="info">i</span></div>
+    <div class="rt">${rightCards}</div></div>`;
+
+  const emptyNote = calm ? `<div class="pane" style="margin-top:14px;padding:14px 18px;display:flex;gap:12px;align-items:flex-start">
+    <span style="color:var(--ds-text-3);flex:0 0 auto">${svg('clock')}</span>
+    <p style="margin:0;font-size:12.5px;color:var(--ds-text-2);line-height:1.55">De longitudinale geheugenlijn wordt <b style="color:var(--ds-text)">vanaf nu</b> opgebouwd. ‘Geen events’ betekent hier niet ‘geen historie’ — alleen dat er nog niets is vastgelegd.</p></div>` : "";
+
+  const actionbar=`<div class="dc-actionbar">
+    <div class="act"><span class="ai">${svg('cal')}</span><span class="at"><b>Naar schema</b><small>pas plan aan</small></span></div>
+    <div class="act"><span class="ai">${svg('history')}</span><span class="at"><b>Volledige geschiedenis</b><small>open tijdlijn</small></span></div>
+    <div class="act"><span class="ai">${svg('book')}</span><span class="at"><b>Volledig dossier</b><small>alle kennis</small></span></div>
+    <div class="act round"><span class="ai">${svg('sliders')}</span></div>
+  </div>`;
+
+  const html=`<div class="dc ${sel.tone}">
+    <div class="dc-env"><div class="haze"></div><div class="vig"></div></div>
+    ${top}${ctrl}
+    <div class="dc-grid" id="grid">
+      <svg class="dc-conn" id="conn" preserveAspectRatio="none"></svg>
+      ${left}${center}${right}
+    </div>
+    ${emptyNote}
+    ${actionbar}
+  </div>`;
+  return {html, selTone:sel.tone};
+}
+
+// mobiel = verticale stack (kort, verwijst naar bestaande dcStack-richting)
+function buildMobile(){
+  const events=EVENTS_CRIT; const sel=events.find(e=>e.sel);
+  return `<div class="dc ${sel.tone}" style="width:390px;padding:18px 16px">
+    <div class="dc-env"><div class="vig"></div></div>
+    <header style="margin-bottom:14px"><div class="dc-id"><span class="dc-mono">MB</span>
+      <div><h2 class="dc-nm">Masja Bolk</h2><p class="dc-meta"><b>5. Comfort</b> · Dossier</p></div></div>
+      <h1 style="margin:14px 0 0;font-size:20px;font-weight:700">Dossier <span class="bdg">Levend geheugen</span></h1></header>
+    ${memPanel(sel).replace('class="pane mem','class="pane mem" style="margin-bottom:14px" data-x="')}
+    <div class="pane"><div class="pane-h"><b>Tijdlijn</b><span>22 aug → vooruit</span></div>
+      <div class="tl">${events.map(e=>timelineItem(e,sel.id)).join("")}</div></div>
+  </div>`;
+}
+
+function drawConnectors(selTone){
+  const grid=document.getElementById("grid"), conn=document.getElementById("conn");
+  if(!grid||!conn) return;
+  const gr=grid.getBoundingClientRect();
+  conn.setAttribute("viewBox",`0 0 ${gr.width} ${gr.height}`);
+  const center=grid.querySelector(".mem"); if(!center) return;
+  const cr=center.getBoundingClientRect();
+  const ox=cr.right-gr.left-6, oy=cr.top-gr.top+cr.height*0.5;
+  let s="";
+  grid.querySelectorAll(".rt-card").forEach(card=>{
+    const r=card.getBoundingClientRect();
+    const ex=r.left-gr.left+2, ey=r.top-gr.top+r.height/2;
+    const tone=[...card.classList].find(c=>c.startsWith("is-"))||selTone;
+    const col=toneHex[tone]||"#5EE6EB";
+    const c1x=ox+(ex-ox)*0.5;
+    s+=`<path d="M${ox} ${oy} C${c1x} ${oy} ${c1x} ${ey} ${ex} ${ey}" style="stroke:${col};color:${col}"/>
+        <circle class="cnode" cx="${ox}" cy="${oy}" style="fill:${col}"/><circle class="cend" cx="${ex}" cy="${ey}" style="fill:${col}"/>`;
+  });
+  conn.innerHTML=s;
+}
+
+function render(){
+  const h=(location.hash||"#selected").slice(1);
+  const state=["selected","calm","mobile"].includes(h)?h:"selected";
+  const root=document.getElementById("root");
+  document.querySelectorAll(".lab-nav a").forEach(a=>a.classList.toggle("on",a.dataset.b===state));
+  if(state==="mobile"){ root.innerHTML=buildMobile(); return; }
+  const {html,selTone}=build(state);
+  root.innerHTML=html;
+  requestAnimationFrame(()=>drawConnectors(selTone));
+  root.querySelectorAll("[data-ev]").forEach(el=>el.addEventListener("click",()=>{
+    // klik = herselecteer (lab: alleen crit heeft meerdere events)
+    const id=el.dataset.ev;
+    const {html:h2,selTone:t2}=rebuild(state,id);
+    root.innerHTML=h2; requestAnimationFrame(()=>drawConnectors(t2));
+    bindClicks(state);
+  }));
+}
+function bindClicks(state){
+  document.getElementById("root").querySelectorAll("[data-ev]").forEach(el=>el.addEventListener("click",()=>{
+    const {html:h2,selTone:t2}=rebuild(state,el.dataset.ev);
+    document.getElementById("root").innerHTML=h2; requestAnimationFrame(()=>drawConnectors(t2)); bindClicks(state);
+  }));
+}
+function rebuild(state,selId){
+  // herbouw met een expliciet geselecteerde id
+  const calm=state==="calm";
+  let events=calm? null : EVENTS_CRIT.map(e=>({...e,sel:e.id===selId}));
+  if(calm) return build(state);
+  const sel=events.find(e=>e.id===selId)||events[0];
+  const related=events.filter(e=>e.id!==sel.id);
+  const _b=build.__proto__; // no-op
+  // hergebruik build() door tijdelijk EVENTS te selecteren
+  const saved=EVENTS_CRIT.map(e=>e.sel);
+  EVENTS_CRIT.forEach(e=>e.sel=(e.id===selId));
+  const out=build("selected");
+  EVENTS_CRIT.forEach((e,i)=>e.sel=saved[i]);
+  return out;
+}
+window.addEventListener("hashchange",render);
+window.addEventListener("resize",()=>{const st=(location.hash||"#selected").slice(1); if(st!=="mobile"){const sc=document.querySelector(".dc"); drawConnectors(sc?[...sc.classList].find(c=>c.startsWith("is-")):"is-calm");}});
+render();
+</script>
+</body>
+</html>

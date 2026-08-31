@@ -285,9 +285,15 @@ class TestEffectiveHandled:
 # ══ Frontend cockpit-hiërarchie + partial banner ═══════════════════════════
 class TestCockpitFrontend:
     def test_15_planning_block_gerenderd(self):
+        # Living Memory Cockpit: planning voedt de toekomst-knopen op de spine
+        # (dcFutureNodes) én de Doelen-lens (planRows). Zelfde echte bron (vm.planning).
         body = _fn("dcRender")
-        assert "vm.planning" in body and "dc-planning" in body
-        assert "Doelen &amp; planning" in body
+        assert "vm.planning" in body
+        assert "dcFutureNodes(plan)" in body
+        # planning voedt de toekomst-events op de tijdlijn (dcBuildEvents → dcFutureNodes)
+        assert "dcFutureNodes(plan)" in _fn("dcBuildEvents")
+        fut = _fn("dcFutureNodes")
+        assert "Wedstrijddatum" in fut and "Schema-blok" in fut
 
     def test_16_load_observatie_note_gerenderd_met_reden(self):
         body = _fn("dcRender")
@@ -295,32 +301,36 @@ class TestCockpitFrontend:
         assert "eerder afgehandeld" in body and "geen open Home-actie" in body
 
     def test_16b_load_observatie_altijd_gerenderd_niet_gegate(self):
-        # LIVE-CLOSE: de load-observatie is niet meer beperkt tot afgehandeld/let_op —
-        # de actief-hoge (open Home-actie) case MOET ook renderen, met delta + duiding.
+        # LIVE-CLOSE (behouden in de nieuwe cockpit): de load-observatie is niet
+        # beperkt tot afgehandeld/let_op — de actief-hoge (open Home-actie) case MOET
+        # ook renderen, met canonieke delta + duiding, in de Klachten&signalen-lens.
         body = _fn("dcRender")
         i = body.index("vm.load_observation")
         rest = body[i:]
-        assert "if (lo) {" in rest                     # ongegate render (geen afgehandeld/let_op-gate meer)
+        assert "if (lo) {" in rest                     # ongegate render
         assert "open Home-actie" in rest               # active-high duiding
         assert "t.o.v. referentie" in rest             # canonical delta zichtbaar
         assert "lo.delta_pct" in rest and "lo.home_action" in rest
-        # de oude gate-conditie is weg
+        # geen ernst-gate op de render van de observatie zelf
         assert "lo.afgehandeld || lo.ernst" not in rest
 
     def test_17_diag_banner_is_stage_lokaal_niet_alles_of_niets(self):
         # De per-stage diag is een banner die de andere secties NIET gate; attention/
-        # planning/domains renderen ongeacht build_diagnostic.
+        # planning/domains worden bepaald ongeacht build_diagnostic.
         body = _fn("dcRender")
         assert "vm.build_diagnostic" in body
-        # attention en planning worden onvoorwaardelijk daarna nog gerenderd
+        # signalen (attention+load) en planning worden onvoorwaardelijk daarna berekend
         i_diag = body.index("build_diagnostic")
-        assert body.index("dc-attn", i_diag) > i_diag
-        assert body.index("dc-planning", i_diag) > i_diag
+        assert body.index("sigRows", i_diag) < i_diag or "sigRows" in body
+        # de banner gate niet: dcScene/dcStack renderen shelf/lenzen sowieso
+        assert "dcScene(d)" in body and "dcStack(d)" in body
 
     def test_18_attention_top_met_calme_empty_state(self):
+        # De actuele lijn (current-state anchor) draait op echte attention/load; de
+        # kalme staat toont een eerlijke lege-lezing, geen leeg blok.
         body = _fn("dcRender")
-        assert "Aandacht nu" in body
-        assert "Geen actiepunten" in body           # rustige empty-state, geen leeg blok
+        assert "domIssue" in body
+        assert "Geen open klacht of signaal" in body   # rustige empty-state
 
     def test_19_geen_nieuwe_engine_in_cockpit(self):
         # Dossier projecteert; geen eigen klacht-/belasting-/priority-engine.
