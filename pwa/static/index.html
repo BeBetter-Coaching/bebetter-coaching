@@ -9,8 +9,8 @@
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-400.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-700.woff2">
-  <link rel="stylesheet" href="/static/styles.css?v=118a">
-  <link rel="stylesheet" href="/static/design-system.css?v=118a">
+  <link rel="stylesheet" href="/static/styles.css?v=119a">
+  <link rel="stylesheet" href="/static/design-system.css?v=119a">
 </head>
 <body>
   <!-- Iconen-sprite (lijn-iconen, werken offline) -->
@@ -216,28 +216,34 @@
     </section>
 
     <!-- ════════ FEEDBACK — workbench (inbox → focus) ════════ -->
-    <section class="view" data-view="feedback">
-      <div class="fb-split">
-        <div class="fb-queue-col">
-          <header class="appbar"><h1>Feedback</h1>
-            <button class="fb-dbg-btn" id="fb-dbg" type="button" aria-label="Feedback-debug">Debug</button>
-            <button class="iconbtn" id="fb-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
-          </header>
-          <!-- Tijdelijke testfunctie (fase 2.x). Standaard verborgen; los te verwijderen. -->
-          <div class="fb-dbg-panel" id="fb-dbg-panel" hidden>
-            <div class="fb-dbg-acts">
-              <button id="fb-log-toggle" class="btn small" type="button">Logging aan</button>
-              <button id="fb-log-copy" class="btn small" type="button"><svg class="ic"><use href="#ic-copy"/></svg> Kopieer</button>
-              <button id="fb-log-clear" class="btn small" type="button">Wis</button>
-            </div>
-            <p class="hint" id="fb-log-status">Logging staat uit · 0 events</p>
-            <textarea id="fb-log-out" rows="6" readonly hidden></textarea>
-          </div>
+    <section class="view ds-view fb-cockpit" data-view="feedback">
+      <header class="fb-top">
+        <div><h1>Feedback</h1><p>Analyseer trainingen, geef feedback en stuur bij.</p></div>
+        <div class="fb-top-acts">
+          <button class="fb-dbg-btn" id="fb-dbg" type="button" aria-label="Feedback-debug">Debug</button>
+          <button class="iconbtn" id="fb-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+        </div>
+      </header>
+      <!-- Debug (fase 2.x). Standaard verborgen. -->
+      <div class="fb-dbg-panel" id="fb-dbg-panel" hidden>
+        <div class="fb-dbg-acts">
+          <button id="fb-log-toggle" class="btn small" type="button">Logging aan</button>
+          <button id="fb-log-copy" class="btn small" type="button"><svg class="ic"><use href="#ic-copy"/></svg> Kopieer</button>
+          <button id="fb-log-clear" class="btn small" type="button">Wis</button>
+        </div>
+        <p class="hint" id="fb-log-status">Logging staat uit · 0 events</p>
+        <textarea id="fb-log-out" rows="6" readonly hidden></textarea>
+      </div>
+      <div class="fb-grid">
+        <!-- LINKS — wachtrij / coachtriage -->
+        <div class="fb-queue-col pane">
+          <div class="fbq-head"><span class="fbq-title">Wachten op feedback <span class="fbq-count" id="fb-count">–</span></span>
+            <button class="fbq-hicon" id="fb-refresh2" type="button" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button></div>
+          <div class="fbq-tabs" id="fb-tabs" role="tablist"></div>
           <div class="fb-groups" id="fb-groups" hidden></div>
           <button class="fb-nieuw" id="fb-nieuw" type="button" hidden></button>
           <p class="hint" id="fb-info">laden…</p>
-          <section id="fb-queue" class="fb-queue"></section>
-          <!-- Sessie-samenvatting: alleen zichtbaar zodra ≥1 feedback deze sessie is gepost -->
+          <section id="fb-queue" class="fb-queue" role="listbox" aria-label="Feedback-wachtrij" tabindex="0"></section>
           <div class="fb-summary" id="fb-summary" hidden>
             <button class="btn small primary" id="fb-sum-gen" type="button"><svg class="ic"><use href="#ic-message"/></svg> <span id="fb-sum-gen-lbl">Sessie-samenvatting</span></button>
             <div class="fb-sum-panel" id="fb-sum-panel" hidden>
@@ -251,9 +257,12 @@
             </div>
           </div>
         </div>
+        <!-- MIDDEN — geselecteerde case (hero) -->
         <div class="fb-focus-col" id="fb-focus-col" aria-hidden="true">
-          <div id="fb-focus" class="fb-focus"></div>
+          <div id="fb-focus" class="fb-focus pane"></div>
         </div>
+        <!-- RECHTS — context & Masterbrein -->
+        <aside class="fb-ctx-col" id="fb-ctx-col" aria-label="Context en Masterbrein"></aside>
       </div>
     </section>
 
@@ -431,6 +440,6 @@
     </article>
   </template>
 
-  <script src="/static/app.js?v=118a"></script>
+  <script src="/static/app.js?v=119a"></script>
 </body>
 </html>

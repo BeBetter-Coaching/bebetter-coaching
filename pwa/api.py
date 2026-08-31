@@ -481,8 +481,25 @@ def feedback_summary(body: SamenvattingReq):
     return {"ok": True, "tekst": tekst}
 
 
+@app.get("/api/feedback/week")           # ISO-kalenderweek (ma–zo) dag-volume voor de chart
+def feedback_week(key: str, date: str = ""):
+    """Presentatie-only kalenderweek-VOLUME (ma–zo) voor het Feedback-weekoverzicht.
+    GEEN nieuwe belastings-waarheid: de canonieke belasting-% blijft rolling-7 via
+    /api/cockpit.load_observation. Read-only."""
+    import feedback_week as FW
+    from datetime import date as _date
+    try:
+        ref = _date.fromisoformat((date or "")[:10]) if date else _date.today()
+    except ValueError:
+        ref = _date.today()
+    try:
+        return {"ok": True, **FW.week_for_athlete(key, ref)}
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Weekoverzicht mislukt: {e}"}, status_code=500)
+
+
 # NB: deze pad-parameter-route staat BEWUST ná /queue, /generate, /post, /thread,
-# /skip zodat die literals niet als workout_key worden opgevat.
+# /skip, /week zodat die literals niet als workout_key worden opgevat.
 @app.get("/api/feedback/{workout_key}")  # lazy focus-detail (samenvatting/zones/afwijking)
 def feedback_detail(workout_key: str):
     t0 = time.perf_counter()
