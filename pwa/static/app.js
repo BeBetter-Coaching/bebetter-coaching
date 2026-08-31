@@ -2332,6 +2332,8 @@ const FB = {
   pendingInitial: false,// koude cache: eerste verse sweep is nog de INITIËLE lading (geen "N nieuwe")
   groups: [],           // [{key,label,count}] uit de backend-samenvatting
   group: "alle",        // actieve groep-filter (blijft binnen de sessie behouden)
+  filter: "wachten",    // coachtriage-tab (wachten/vandaag/aandacht/afgerond) — client-view, geen re-sort
+  ctxCache: {},         // athlete_key -> {cockpit, week} (per-case context, lazy)
   selId: null,          // gefocuste workout
   gepost: 0,            // vandaag verstuurd (lokaal bijgewerkt)
   detailCache: {},      // id -> detailpayload
@@ -2611,14 +2613,53 @@ function fbDateLabel(d) {
 // ── Queue renderen: DATUM-first (Feedback v1 E). De backend levert de ENIGE sort-waarheid
 //    (datum → groep → categorie → athlete); we renderen die volgorde met datumkoppen, oudste
 //    eerst, zodat de coach chronologisch werkt. Groep is een filter-pill; categorie zit op de rij. ─
+// ISO-kalenderweek (ma–zo) uit een YYYY-MM-DD-string — presentatie, verzint niets.
+function fbIsoWeek(ds) {
+  const m = String(ds || "").match(/(\d{4})-(\d{2})-(\d{2})/); if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  const day = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - y0) / 86400000) + 1) / 7);
+}
+// Een feedback-item verdient 'aandacht' als de atleet zelf iets aankaartte (reactie).
+function fbIsAandacht(it) { return it.categorie === "reactie"; }
+const _FB_TABS = [["wachten", "Wachten"], ["vandaag", "Vandaag"], ["aandacht", "Aandacht", "att"], ["afgerond", "Afgerond"]];
+function fbFilterItems() {
+  const vandaag = fbLocalISO ? fbLocalISO() : new Date().toISOString().slice(0, 10);
+  if (FB.filter === "vandaag") return FB.items.filter(i => (i.datum || "") === vandaag);
+  if (FB.filter === "aandacht") return FB.items.filter(fbIsAandacht);
+  if (FB.filter === "afgerond") return [];                 // afgerond = deze-sessie geposte items (apart gerenderd)
+  return FB.items;                                          // 'wachten' = de volledige open wachtrij
+}
+function renderTabs() {
+  const bar = $("#fb-tabs"); if (!bar) return;
+  const vandaag = fbLocalISO ? fbLocalISO() : new Date().toISOString().slice(0, 10);
+  const counts = {
+    wachten: FB.items.length,
+    vandaag: FB.items.filter(i => (i.datum || "") === vandaag).length,
+    aandacht: FB.items.filter(fbIsAandacht).length,
+    afgerond: FB.summaryLog.length,
+  };
+  bar.innerHTML = _FB_TABS.map(([k, lbl, cls]) =>
+    `<button type="button" class="fbq-tab ${cls || ""} ${FB.filter === k ? "on" : ""}" data-tab="${k}" role="tab" aria-selected="${FB.filter === k}">${lbl} <span class="c">${counts[k]}</span></button>`).join("");
+  $$(".fbq-tab", bar).forEach(t => t.addEventListener("click", () => { FB.filter = t.dataset.tab; renderQueue(); }));
+  const cnt = $("#fb-count"); if (cnt) cnt.innerHTML = `${FB.items.length}<i> / 30</i>`;
+}
 function renderQueue() {
   const box = $("#fb-queue"); if (!box) return;
   renderGroupsBar();
-  // valt de actieve groep weg uit de queue? dan terug naar Alle (nooit vast op leeg)
-  if (FB.group !== "alle" && !FB.items.some(i => i.groep === FB.group)) FB.group = "alle";
-  const shown = FB.group === "alle" ? FB.items : FB.items.filter(i => i.groep === FB.group);
+  renderTabs();
+  if (FB.filter === "afgerond") {                           // deze sessie afgehandeld (workflow-state)
+    box.innerHTML = FB.summaryLog.length
+      ? FB.summaryLog.map(s => `<div class="fbq-row done" aria-disabled="true"><span class="fbq-av"><span class="avatar">${initialen(s.athlete_name || "")}</span></span>
+          <span class="fbq-body"><span class="fbq-naam">${esc(s.athlete_name || "")}</span><span class="fbq-sub">${esc(s.workout_name || "")}</span></span>
+          <span class="fbq-r"><span class="fbq-stat done">Afgehandeld</span></span></div>`).join("")
+      : `<div class="leeg">${ic("check")}<p>Nog niets afgehandeld deze sessie.</p></div>`;
+    return;
+  }
+  const shown = fbFilterItems();
   if (!shown.length) {
-    box.innerHTML = `<div class="leeg">${ic("check")}<p>Niks te beoordelen — netjes bijgewerkt.</p></div>`;
+    box.innerHTML = `<div class="leeg">${ic("check")}<p>${FB.items.length ? "Geen items in deze filter." : "Niks te beoordelen — netjes bijgewerkt."}</p></div>`;
     return;
   }
   // Groepeer per datum in de door de server geleverde volgorde (die is al datum-first).
@@ -2626,24 +2667,34 @@ function renderQueue() {
   const seen = [], byDate = {};
   shown.forEach(i => { const d = i.datum || ""; if (!(d in byDate)) { byDate[d] = []; seen.push(d); } byDate[d].push(i); });
   seen.forEach(d => {
-    const rows = byDate[d];
-    html += `<p class="fbq-groep">${esc(fbDateLabel(d))}<span>${rows.length}</span></p>`;
-    html += rows.map(fbRowHtml).join("");
+    html += `<p class="fbq-groep">${esc(fbDateLabel(d))}<span>${byDate[d].length}</span></p>`;
+    html += byDate[d].map(fbRowHtml).join("");
   });
   box.innerHTML = html;
   $$(".fbq-row", box).forEach(r => r.addEventListener("click", () => fbOpen(r.dataset.id, "row_tap")));
 }
 function fbRowHtml(it) {
   const sel = it.id === FB.selId ? " on" : "";
-  const badge = `<span class="fb-badge ${it.categorie}">${FB_CAT[it.categorie] || ""}</span>`;
+  const att = fbIsAandacht(it) ? " att" : "";
+  const wk = fbIsoWeek(it.datum);
+  const meta = [wk ? `Week ${wk}` : "", FB_CAT[it.categorie] || ""].filter(Boolean).join(" · ");
   const prev = it.preview ? `<span class="fbq-prev">${esc(it.preview)}</span>` : "";
-  return `<button class="fbq-row${sel}" data-id="${esc(it.id)}">
-    <span class="avatar">${initialen(it.naam)}</span>
+  return `<button class="fbq-row${sel}${att}" data-id="${esc(it.id)}" role="option" aria-selected="${!!sel}">
+    <span class="fbq-av"><span class="avatar">${initialen(it.naam)}</span>${att ? '<i class="fbq-dot"></i>' : ""}</span>
     <span class="fbq-body">
-      <span class="fbq-top"><span class="fbq-naam">${esc(it.voornaam || it.naam)}</span>${badge}</span>
-      <span class="fbq-meta">${esc(it.datum)} · ${esc(it.workout)}</span>
-      ${prev}
-    </span>${ic("chevron")}</button>`;
+      <span class="fbq-naam">${esc(it.voornaam || it.naam)}</span>
+      <span class="fbq-sub">${esc(it.workout)}</span>
+      ${meta ? `<span class="fbq-wk">${esc(meta)}</span>` : ""}${prev}
+    </span>
+    <span class="fbq-r"><span class="fbq-time">${esc(fbShortTime(it))}</span><span class="fbq-stat">Wachten</span></span>
+  </button>`;
+}
+function fbShortTime(it) {
+  const ts = it.athlete_ts || "";
+  const m = String(ts).match(/(\d{2}):(\d{2})/);
+  const vandaag = fbLocalISO ? fbLocalISO() : new Date().toISOString().slice(0, 10);
+  if ((it.datum || "") === vandaag && m) return `${m[1]}:${m[2]}`;
+  return fbDateLabel(it.datum || "");
 }
 
 // ── Focus (detail) ───────────────────────────────────────────────────────────
@@ -2671,7 +2722,10 @@ function fbPreloadNext(id) {                          // volgende 1–2 vast oph
 async function fbOpen(id, reason) {
   FB.selId = id; renderQueue();
   const col = $("#fb-focus-col"); col.classList.add("on"); col.setAttribute("aria-hidden", "false");
-  fbLockQueue(true);                                  // click-through hard blokkeren zolang focus open is
+  // 3-zone desktop: alle kolommen blijven zichtbaar én de wachtrij interactief
+  // (snel wisselen tussen cases). Alleen op mobiel is de case een overlay → lock.
+  if (!isDesktop()) fbLockQueue(true); else fbLockQueue(false);
+  document.body.classList.toggle("fb-focus-open", !isDesktop());
   fbLog("focus_open", { reason: reason || "open" });
   if (FB.detailCache[id]) renderFocus(FB.detailCache[id]);
   else { renderFocusSkeleton(id); const d = await fbFetchDetail(id); if (FB.selId === id) renderFocus(d); }
@@ -2695,25 +2749,34 @@ function focusNextAfterAction(next) {
 function renderFocusEmpty() {
   $("#fb-focus").innerHTML = `<div class="fb-focus-empty">${ic("message")}<p>Kies links een training om te beoordelen.</p></div>`;
 }
-function fbHeadHtml(naam, voornaam, datum, workout, cat) {
+function fbHeadHtml(naam, voornaam, datum, workout, cat, akey, groepLabel) {
+  // Hero: volledige naam = dominant, fase + categorie eronder, training + datum rechts.
+  const catPill = cat ? `<span class="fbf-cat ${cat}">${FB_CAT[cat] || ""}</span>` : "";
+  const fase = groepLabel ? `<span class="fbf-fase">${esc(groepLabel)}</span>` : "";
+  const sub = (fase || catPill) ? `<p class="fbf-sub">${fase}${fase && catPill ? '<span class="sep">·</span>' : ""}${catPill}</p>` : "";
+  const meta = (workout || datum) ? `<span class="fbf-hmeta"><b>${esc(workout || "Training")}</b>${datum ? `<span>${esc(fbDateLabel(datum))}</span>` : ""}</span>` : "";
   return `<div class="fbf-head">
-    <button class="fbf-back" id="fb-back" type="button" aria-label="Terug">${ic("back")}</button>
+    <button class="fbf-back" id="fb-back" type="button" aria-label="Terug naar wachtrij">${ic("back")}</button>
     <span class="avatar">${initialen(naam)}</span>
-    <span class="fbf-htext"><h2>${esc(voornaam || naam || "")}</h2>
-      <p>${esc(datum || "")} · ${esc(workout || "Training")}</p></span>
-    ${cat ? `<span class="fb-badge ${cat}">${FB_CAT[cat] || ""}</span>` : ""}
+    <span class="fbf-htext"><h2>${esc(naam || voornaam || "")}</h2>${sub}</span>
+    ${meta}
   </div>`;
 }
 function fbDockHtml(id) {
   return `<div class="fb-dock">
+    <div class="fb-dock-lbl"><b>Concept terugkoppeling</b><span class="fb-draft" id="fb-draft-badge">Concept · niet verzonden</span></div>
     <textarea id="fb-ta" rows="3" placeholder="Schrijf een reactie, of genereer met AI…">${esc(fbDraftGet(id))}</textarea>
     <div class="fb-dock-row">
-      <button class="btn" id="fb-gen" type="button">${ic("brain")} Genereer</button>
-      <button class="btn primary" id="fb-send" type="button">${ic("message")} Versturen</button>
-    </div>
-    <div class="fb-dock-sec">
+      <button class="btn ghost small" id="fb-gen" type="button">${ic("brain")} Genereer</button>
       <button class="btn ghost small" id="fb-copy" type="button">${ic("copy")} Kopieer</button>
-      <button class="btn ghost small" id="fb-skip" type="button">Overslaan</button>
+    </div>
+    <div class="fb-cta">
+      <button class="btn primary fb-cta-primary" id="fb-send" type="button">${ic("message")} Feedback sturen</button>
+      <div class="fb-cta-sec">
+        <button class="btn ghost" id="fb-goschema" type="button">${ic("file")} Naar schema</button>
+        <button class="btn ghost" id="fb-godossier" type="button">${ic("brain")} Open dossier</button>
+        <button class="btn ghost" id="fb-skip" type="button">${ic("check")} Afgehandeld</button>
+      </div>
     </div>
   </div>`;
 }
@@ -2738,6 +2801,10 @@ function fbBindDock(id) {
   fbBindPrimary($("#fb-send"), () => fbSend(id));
   const c = $("#fb-copy"); if (c) c.onclick = () => { navigator.clipboard?.writeText($("#fb-ta")?.value || "").then(() => melding("Gekopieerd.")); };
   const sk = $("#fb-skip"); if (sk) sk.onclick = () => fbSkip(id);
+  // Doorlopen naar schema/dossier voor DEZE atleet (bestaande routes, geen nieuwe flow).
+  const it = FB.items.find(i => i.id === id) || {};
+  const gs = $("#fb-goschema"); if (gs) gs.onclick = () => { if (it.athlete_key) openAthleteModule("schema", it.athlete_key); };
+  const gd = $("#fb-godossier"); if (gd) gd.onclick = () => { if (it.athlete_key) openAthleteModule("dossier", it.athlete_key); };
 }
 // Bind een primaire composer-actie zó dat een tap de editor NIET blurt (keyboard
 // blijft open, geen reflow) en de click meteen afvuurt.
@@ -2835,7 +2902,7 @@ function fbReanchorBottomAfterClose() {
 }
 function renderFocusSkeleton(id) {
   const it = FB.items.find(i => i.id === id) || {};
-  $("#fb-focus").innerHTML = fbHeadHtml(it.naam, it.voornaam, it.datum, it.workout, it.categorie)
+  $("#fb-focus").innerHTML = fbHeadHtml(it.naam, it.voornaam, it.datum, it.workout, it.categorie, "", it.groep_label)
     + `<div class="fbf-scroll"><div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div></div>`
     + fbDockHtml(id);
   fbBindDock(id);
@@ -2846,11 +2913,163 @@ function renderFocus(d) {
       + `<div class="fbf-scroll"><p class="muted center">${esc(d && d.err || "Kon detail niet laden.")}</p></div>`;
     const b = $("#fb-back"); if (b) b.onclick = fbClose; return;
   }
-  $("#fb-focus").innerHTML = fbHeadHtml(d.naam, d.voornaam, d.datum, d.workout, d.categorie)
-    + `<div class="fbf-scroll">${fbCtxHtml(d)}${fbPaHtml(d)}${fbThreadHtml(d)}</div>`
+  const it = FB.items.find(i => i.id === FB.selId) || {};
+  const akey = it.athlete_key || "";
+  $("#fb-focus").innerHTML = fbHeadHtml(d.naam, d.voornaam, d.datum, d.workout, d.categorie, akey, it.groep_label)
+    + `<div class="fbf-scroll">
+        <div class="fbf-weeksel" id="fb-weeksel"></div>
+        <div class="fb-metrics" id="fb-metrics">${fbMetricsHtml(d, null, null)}</div>
+        ${fbBerichtMbHtml(d, null)}
+        <div id="fb-weekchart" class="fb-weekchart-slot"></div>
+        ${fbCtxHtml(d)}${fbPaHtml(d)}${fbThreadHtml(d)}
+       </div>`
     + fbDockHtml(d.id);
   fbBindDock(d.id);
-  fbScrollThreadBottom();                              // desktop: onderkant meteen in beeld
+  fbScrollThreadBottom();
+  // Rechter contextkolom leeg-skeleton tot de cockpit binnen is
+  const cc = $("#fb-ctx-col"); if (cc) cc.innerHTML = fbCtxColSkeleton();
+  if (akey) fbLoadContext(akey, d.datum, d);           // lazy: cockpit-context + ISO-weekoverzicht
+}
+
+// ── Case-hero: metrics · atleetbericht + Masterbrein · weekoverzicht ─────────
+// Weekvolume = ISO-kalenderweek (ma–zo, /api/feedback/week). Duur/tempo = DEZE
+// training (detail.uitgevoerd). Belasting-% = canonieke rolling-7 (cockpit) —
+// bewust een ander concept dan het kalenderweek-volume, niet als één metriek.
+function fbMetricsHtml(d, week, cockpit) {
+  const u = d.uitgevoerd || {};
+  const wv = week && week.weekvolume_km != null ? nlNum(week.weekvolume_km) : "–";
+  const duur = u.min != null ? fbMin2hms(u.min) : "–";
+  const tempo = u.pace ? esc(u.pace) : "–";
+  const rpe = d.rpe != null ? esc(String(d.rpe)) : "–";
+  const lo = cockpit && cockpit.load_observation;
+  const belV = (lo && lo.delta_pct != null) ? `${lo.delta_pct > 0 ? "+" : ""}${lo.delta_pct}%` : "–";
+  const belHot = (lo && lo.delta_pct != null && lo.delta_pct > 0) ? " hot" : "";
+  return [
+    `<div class="fb-metric"><b>${wv}<i>km</i></b><small>Weekvolume (ma–zo)</small></div>`,
+    `<div class="fb-metric"><b>${duur}</b><small>Duur (deze training)</small></div>`,
+    `<div class="fb-metric"><b>${tempo}<i>${u.pace ? "/km" : ""}</i></b><small>Tempo</small></div>`,
+    `<div class="fb-metric"><b>${rpe}</b><small>RPE</small></div>`,
+    `<div class="fb-metric${belHot}"><b>${belV}</b><small>Belasting vs ref.</small></div>`,
+  ].join("");
+}
+function fbMin2hms(min) {
+  const s = Math.round(Number(min) * 60); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}` : `${m}:${String(ss).padStart(2, "0")}`;
+}
+// Atleetbericht (echt) + Masterbrein-samenvatting (deterministisch uit cockpit-signalen).
+function fbBerichtMbHtml(d, cockpit) {
+  const atl = (d.gesprek || []).filter(m => !m.coach);
+  const bericht = atl.length ? esc(atl.map(m => m.tekst).join(" ")) : "";
+  const berichtPanel = bericht
+    ? `<div class="fb-sub"><div class="sh">Atleet bericht ${ic("message")}</div><div class="fb-bericht">${bericht}</div></div>`
+    : `<div class="fb-sub"><div class="sh">Atleet bericht</div><div class="fb-bericht muted">Geen bericht van de atleet — reageer op de uitvoering.</div></div>`;
+  const mb = fbMasterbreinBullets(d, cockpit);
+  const mbPanel = `<div class="fb-sub" id="fb-mb"><div class="sh">${ic("brain")} Masterbrein-samenvatting</div>${mb}</div>`;
+  return `<div class="fb-2col">${berichtPanel}${mbPanel}</div>`;
+}
+// Bullets ALLEEN uit echte signalen (cockpit attention/load + detail afwijking). Geen
+// AI-call, geen verzonnen inzicht. Leeg → eerlijke regel.
+function fbMasterbreinBullets(d, cockpit) {
+  const b = [];
+  if (cockpit) {
+    const lo = cockpit.load_observation;
+    if (lo && lo.delta_pct != null && lo.delta_pct > 0) b.push(`Belasting deze week verhoogd (+${lo.delta_pct}% t.o.v. referentie).`);
+    (cockpit.attention || []).slice(0, 3).forEach(c => { if (c.kind !== "load_signal") b.push(esc(c.title) + (c.why ? ` — ${esc(String(c.why))}` : "")); });
+  }
+  const afw = d.afwijking || {};
+  if (afw.relevance && afw.relevance !== "ignore" && afw.relevance !== "n/a" && afw.report) b.push(esc(afw.report));
+  if (!b.length) return `<p class="fb-mb-empty">Geen bijzondere signalen — beoordeel op de uitvoering.</p>`;
+  return `<ul class="fb-mb-list">${b.slice(0, 4).map(x => `<li>${x}</li>`).join("")}</ul>`;
+}
+
+// ── Lazy context: cockpit (canonieke waarheid) + ISO-weekoverzicht ───────────
+async function fbLoadContext(akey, datum, d) {
+  const cached = FB.ctxCache[akey];
+  if (cached) { if (FB.selId === d.id) fbApplyContext(cached.cockpit, cached.week, d); return; }
+  const [ck, wk] = await Promise.all([
+    api("/api/cockpit?key=" + encodeURIComponent(akey)).catch(() => null),
+    api("/api/feedback/week?key=" + encodeURIComponent(akey) + "&date=" + encodeURIComponent(datum || "")).catch(() => null),
+  ]);
+  const cockpit = (ck && ck.ok) ? ck : null, week = (wk && wk.ok) ? wk : null;
+  FB.ctxCache[akey] = { cockpit, week };
+  if (FB.selId !== d.id) return;                       // leak guard: andere case gekozen
+  fbApplyContext(cockpit, week, d);
+}
+function fbApplyContext(cockpit, week, d) {
+  const mEl = $("#fb-metrics"); if (mEl) mEl.innerHTML = fbMetricsHtml(d, week, cockpit);
+  const mb = $("#fb-mb"); if (mb) mb.innerHTML = `<div class="sh">${ic("brain")} Masterbrein-samenvatting</div>${fbMasterbreinBullets(d, cockpit)}`;
+  const wc = $("#fb-weekchart"); if (wc) wc.innerHTML = week ? fbWeekChartHtml(week) : "";
+  const ws = $("#fb-weeksel"); if (ws && week) ws.innerHTML = fbWeekSelHtml(week);
+  const cc = $("#fb-ctx-col"); if (cc) cc.innerHTML = cockpit ? fbCtxColHtml(cockpit) : fbCtxColEmpty();
+}
+function fbWeekSelHtml(week) {
+  return `<span class="fbw-sel">${ic("file")}<b>Week ${week.week}</b><span class="fbw-r">· ${esc(week.range_label || "")}</span></span>`;
+}
+// Kalenderweek-VOLUME (ma–zo). Bewust GEEN belasting-%-lijn: dat is de canonieke
+// rolling-7-waarde en leeft apart (metric + rechter kolom) — niet dezelfde metriek.
+function fbWeekChartHtml(week) {
+  const dagen = week.dagen || []; if (!dagen.length) return "";
+  const W = 520, H = 132, padB = 20, padT = 8, padR = 6, padL = 6;
+  const iw = W - padL - padR, ih = H - padT - padB, n = dagen.length;
+  const maxKm = Math.max(...dagen.map(d => d.km), 1) * 1.15;
+  const bw = iw / n * 0.52;
+  let bars = "", labels = "";
+  dagen.forEach((d, i) => {
+    const cx = padL + iw * (i + 0.5) / n;
+    const h = Math.max(2, (d.km / maxKm) * ih);
+    bars += d.is_future
+      ? `<rect x="${(cx - bw / 2).toFixed(1)}" y="${(padT + ih - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="none" stroke="rgba(94,230,235,.4)" stroke-dasharray="3 3"/>`
+      : `<rect x="${(cx - bw / 2).toFixed(1)}" y="${(padT + ih - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="url(#fbvol)"/>`;
+    labels += `<text x="${cx.toFixed(1)}" y="${H - 5}" text-anchor="middle" font-size="9.5" fill="#7F97BC">${esc(d.label.toUpperCase())}</text>`;
+    if (d.km > 0 && !d.is_future) labels += `<text x="${cx.toFixed(1)}" y="${(padT + ih - h - 4).toFixed(1)}" text-anchor="middle" font-size="9" fill="#B4C7E6">${esc(nlNum(d.km))}</text>`;
+  });
+  return `<div class="fb-weekchart"><div class="fbw-h"><b>Weekoverzicht · week ${week.week}</b>
+      <span class="fbw-leg"><i class="v"></i>Volume (km) · ma–zo</span>
+      <span class="fbw-tot">${esc(nlNum(week.weekvolume_km))} km</span></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Weekvolume per dag">
+      <defs><linearGradient id="fbvol" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5EE6EB" stop-opacity=".85"/><stop offset="1" stop-color="#5EE6EB" stop-opacity=".32"/></linearGradient></defs>
+      ${bars}${labels}</svg></div>`;
+}
+// Rechter kolom: echte cockpit-context (zelfde waarheid als Dossier). Geen fake relaties.
+function fbCtxColSkeleton() { return `<div class="fb-ctx-h">Context &amp; Masterbrein</div><div class="fb-card fb-skel">Context laden…</div>`; }
+function fbCtxColEmpty() { return `<div class="fb-ctx-h">Context &amp; Masterbrein</div><div class="fb-card muted" style="text-align:center;padding:22px 14px">Context tijdelijk niet beschikbaar — interne fout, geen bronfout.</div>`; }
+function fbCtxColHtml(vm) {
+  const lo = vm.load_observation, rel = (vm.status && vm.status.reliability) || {};
+  const attn = vm.attention || [], plan = vm.planning || { rows: [] };
+  const coach = (vm.domains || []).find(d => d.key === "coach");
+  const belTone = lo ? dsTone(lo.ernst) : "is-calm";
+  // Belasting & trend (canonieke rolling-7 uit de cockpit — niet herberekend).
+  const belCard = lo ? `<div class="fb-card ${belTone}"><div class="fbcard-h"><span class="ci">${ic("activity")}</span><b>Belasting &amp; trend</b></div>
+      <div class="fb-bel"><div class="fbring">${fbRing(lo.delta_pct, belTone)}<span>${lo.delta_pct != null ? (lo.delta_pct > 0 ? "+" : "") + lo.delta_pct + "%" : "—"}<small>vs ref.</small></span></div>
+        <div class="fb-belt">${lo.ernst === "hoog" ? "Belasting sterk verhoogd." : "Belasting boven referentie."}${lo.signalen ? `<span class="s">${esc(lo.signalen)}</span>` : ""}<span class="s">Rolling-7-daags · Teampuls-signaal</span></div></div></div>`
+    : `<div class="fb-card is-calm"><div class="fbcard-h"><span class="ci">${ic("activity")}</span><b>Belasting &amp; trend</b></div><p class="fb-cq">Geen verhoogd belastingssignaal.</p></div>`;
+  // Klachten & signalen
+  const compl = attn.filter(c => c.kind === "complaint" || c.kind === "recovery_neg" || c.kind === "possible_relation");
+  const klCard = compl.length ? `<div class="fb-card is-attention"><div class="fbcard-h"><span class="ci">${ic("alert")}</span><b>Klachten &amp; signalen</b></div>
+      ${compl.slice(0, 2).map(c => `<div class="fb-kl"><div class="kt">${esc(c.title)}</div>${c.why ? `<div class="ks">${esc(String(c.why))}</div>` : ""}</div>`).join("")}</div>`
+    : `<div class="fb-card is-calm"><div class="fbcard-h"><span class="ci">${ic("check")}</span><b>Klachten &amp; signalen</b></div><p class="fb-cq">Geen actieve klacht bekend.</p></div>`;
+  // Doel & planning
+  const doel = plan.rows.find(r => /hoofddoel/i.test(r.label)) || plan.rows.find(r => /wedstrijd/i.test(r.label));
+  const plCard = plan.rows.length ? `<div class="fb-card is-calm"><div class="fbcard-h"><span class="ci">${ic("flag")}</span><b>Doel &amp; planning</b></div>
+      ${doel ? `<div class="fb-doel">${esc(doel.value)}</div>` : ""}
+      <div class="fb-plrows">${plan.rows.filter(r => !/hoofddoel/i.test(r.label)).slice(0, 3).map(r => `<div><span>${esc(r.label)}</span><b>${esc(r.value)}</b></div>`).join("")}</div></div>`
+    : `<div class="fb-card is-calm"><div class="fbcard-h"><span class="ci">${ic("flag")}</span><b>Doel &amp; planning</b></div><p class="fb-cq">Geen doel vastgelegd.</p></div>`;
+  // Coachkennis
+  const kCard = (coach && !coach.onbekend) ? `<div class="fb-card is-calm"><div class="fbcard-h"><span class="ci">${ic("brain")}</span><b>Coachkennis</b></div>
+      <ul class="fb-kennis">${coach.regels.slice(0, 3).map(r => `<li>${ic("check")}${esc(r.value)}</li>`).join("")}</ul></div>` : "";
+  // Bronnen
+  const src = vm.source_health || [];
+  const relTxt = rel.level === "green" ? "bronnen vers" : rel.core_gap ? "kernbron uitgevallen" : "let op: bron(nen) verouderd";
+  const brCard = `<div class="fb-card fb-bron"><span class="upd">${dsFresh(rel.level || "unknown", relTxt)}</span>
+      ${src.slice(0, 4).map(x => `<span class="src ${x.available ? (x.stale ? "warn" : "ok") : "bad"}"><i></i>${esc(x.source)}</span>`).join("")}</div>`;
+  return `<div class="fb-ctx-h">Context &amp; Masterbrein</div>${belCard}${klCard}${plCard}${kCard}${brCard}`;
+}
+function fbRing(pct, tone) {
+  const col = { "is-critical": "#F4744C", "is-attention": "#F0A62B", "is-calm": "#5EE6EB", "is-success": "#37D9A2", "is-stale": "#8098BC" }[tone] || "#5EE6EB";
+  const frac = Math.min(1, Math.abs(Number(pct) || 0) / 300 || .5);
+  const r = 30, c = 2 * Math.PI * r, off = c * (1 - frac);
+  return `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="${r}" fill="none" stroke="rgba(122,168,255,.14)" stroke-width="5"/>
+    <circle cx="36" cy="36" r="${r}" fill="none" stroke="${col}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 36 36)" style="filter:drop-shadow(0 0 5px ${col})"/></svg>`;
 }
 // Recente context — pas in fase 4 gevuld; informatief (cyaan), amber zéér terughoudend.
 function fbCtxHtml(d) {
@@ -3022,6 +3241,7 @@ $("#fb-refresh").addEventListener("click", async () => {
     if (btn) { btn.classList.remove("spinning"); btn.disabled = false; btn.dataset.busy = ""; }
   }
 });
+$("#fb-refresh2")?.addEventListener("click", () => $("#fb-refresh")?.click());  // queue-kop-refresh → zelfde flow
 document.addEventListener("keydown", e => {
   if (huidigeView !== "feedback") return;
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { if (FB.selId) { e.preventDefault(); fbSend(FB.selId); } return; }
@@ -3034,10 +3254,11 @@ document.addEventListener("keydown", e => {
   else if (e.key === "Escape") { e.preventDefault(); fbClose(); }
 });
 function fbMove(dir) {
-  if (!FB.items.length) return;
-  let idx = FB.items.findIndex(i => i.id === FB.selId);
-  idx = idx < 0 ? (dir > 0 ? 0 : FB.items.length - 1) : Math.max(0, Math.min(FB.items.length - 1, idx + dir));
-  fbOpen(FB.items[idx].id, "keyboard_nav");
+  const list = FB.filter === "afgerond" ? [] : fbFilterItems();   // navigeer de zichtbare (gefilterde) view
+  if (!list.length) return;
+  let idx = list.findIndex(i => i.id === FB.selId);
+  idx = idx < 0 ? (dir > 0 ? 0 : list.length - 1) : Math.max(0, Math.min(list.length - 1, idx + dir));
+  fbOpen(list[idx].id, "keyboard_nav");
 }
 // Click-through hard blokkeren: zolang de mobiele focus open is, mag de
 // achterliggende queue/kolom NIET interactief zijn (geen tap die op een
