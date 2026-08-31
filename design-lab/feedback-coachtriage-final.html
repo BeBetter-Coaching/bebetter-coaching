@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Feedback · Coachtriage-cockpit (design-lab)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   DESIGN-LAB — FEEDBACK COACHTRIAGE-COCKPIT (3-zone werkscherm)
+   Benchmark = BEBETTER-FEEDBACK-COACHTRIAGE-NORTHSTAR-v1.png. Operationeel
+   coach-scherm voor ±30 open feedback-items:
+   LINKS  = WACHTRIJ / triage (scanbaar, filter-tabs, urgentie, status);
+   MIDDEN = GESELECTEERDE CASE (hero-beslissingspaneel: metrics · atleetbericht ·
+            Masterbrein-duiding · weekoverzicht ma–zo · concept-terugkoppeling · CTA's);
+   RECHTS = CONTEXT & MASTERBREIN (belasting/trend · klachten · doel/planning ·
+            coachkennis · bronnen).
+   Week-logica = kalenderweek ma–zo. Zelfde premium familie als Workspace/Dossier.
+   Alléén echte data / bestaande projecties; eerlijke lege-staat.
+   ───────────────────────────────────────────────────────────────────────── */
+@font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-400.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-500.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Space Grotesk";src:url(/pwa/static/fonts/sg-700.woff2) format("woff2");font-weight:700;font-display:swap}
+:root{
+  --ds-canvas:#081527;--ds-text:#EAF2FF;--ds-text-2:#B4C7E6;--ds-text-3:#7F97BC;
+  --ds-accent:#5EE6EB;--ds-accent-soft:rgba(94,230,235,.12);
+  --ds-calm:#5EE6EB;--ds-calm-bg:rgba(94,230,235,.10);--ds-calm-bd:rgba(94,230,235,.36);
+  --ds-attention:#F0A62B;--ds-attention-bg:rgba(240,166,43,.12);--ds-attention-bd:rgba(240,166,43,.46);
+  --ds-critical:#F4744C;--ds-critical-bg:rgba(244,116,76,.14);--ds-critical-bd:rgba(244,116,76,.50);
+  --ds-success:#37D9A2;--ds-success-bg:rgba(55,217,162,.10);--ds-success-bd:rgba(55,217,162,.38);
+  --ds-stale:#8098BC;--ds-stale-bg:rgba(128,152,188,.10);--ds-stale-bd:rgba(128,152,188,.34);
+  --ds-1:4px;--ds-2:8px;--ds-3:12px;--ds-4:16px;--ds-5:20px;--ds-6:24px;--ds-8:32px;--ds-10:40px;
+  --ds-r-sm:10px;--ds-r-md:14px;--ds-r-lg:18px;--ds-r-xl:22px;--ds-r-pill:999px;
+  --ds-ease:cubic-bezier(.2,.7,.3,1);--ds-fast:120ms;--ds-base:200ms;
+  --tone:var(--ds-calm);--tone-bg:var(--ds-calm-bg);--tone-bd:var(--ds-calm-bd);
+}
+.is-calm{--tone:var(--ds-calm);--tone-bg:var(--ds-calm-bg);--tone-bd:var(--ds-calm-bd)}
+.is-attention{--tone:var(--ds-attention);--tone-bg:var(--ds-attention-bg);--tone-bd:var(--ds-attention-bd)}
+.is-critical{--tone:var(--ds-critical);--tone-bg:var(--ds-critical-bg);--tone-bd:var(--ds-critical-bd)}
+.is-success{--tone:var(--ds-success);--tone-bg:var(--ds-success-bg);--tone-bd:var(--ds-success-bd)}
+.is-stale{--tone:var(--ds-stale);--tone-bg:var(--ds-stale-bg);--tone-bd:var(--ds-stale-bd)}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(150% 100% at 50% -10%,#0b1f3d,#071129 58%,#03070f 100%),var(--ds-canvas);
+  color:var(--ds-text);font-family:"Space Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  min-height:100vh;-webkit-font-smoothing:antialiased}
+.ds-label{font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ds-text-3);margin:0}
+.ds-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:var(--ds-r-pill);
+  font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd);white-space:nowrap}
+.num{font-variant-numeric:tabular-nums}
+.av{border-radius:12px;flex:0 0 auto;display:grid;place-items:center;font-weight:700;letter-spacing:.02em;
+  color:var(--tone);background:radial-gradient(circle at 50% 24%,var(--tone-bg),transparent 62%),rgba(10,26,52,.6);
+  border:1px solid var(--tone-bd)}
+
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+.fb{position:relative;width:1400px;max-width:100%;margin:0 auto;padding:20px 30px 22px}
+.fb-env{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.fb-env .vig{position:absolute;inset:0;background:radial-gradient(120% 84% at 50% 30%,transparent 58%,rgba(3,7,15,.5) 100%)}
+.fb>*{position:relative;z-index:1}
+
+/* View header */
+.fb-top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:16px}
+.fb-top h1{margin:0;font-size:26px;font-weight:750;letter-spacing:-.02em}
+.fb-top p{margin:3px 0 0;font-size:12.5px;color:var(--ds-text-3)}
+.fb-search{display:flex;align-items:center;gap:9px;width:320px;max-width:34vw;padding:10px 15px;border-radius:12px;
+  background:rgba(10,24,46,.55);border:1px solid rgba(122,168,255,.16);color:var(--ds-text-3);font-size:13px}
+.fb-search svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;flex:0 0 auto}
+
+/* 3-zone grid */
+.fb-grid{display:grid;gap:16px;align-items:start;
+  grid-template-columns:minmax(300px,344px) minmax(0,1.42fr) minmax(300px,364px)}
+.pane{position:relative;border-radius:var(--ds-r-xl);
+  background:linear-gradient(162deg,rgba(22,45,86,.4),rgba(10,23,45,.28) 62%,rgba(8,18,38,.16));
+  border:1px solid rgba(122,168,255,.12);
+  -webkit-backdrop-filter:blur(12px) saturate(1.04);backdrop-filter:blur(12px) saturate(1.04);
+  box-shadow:inset 0 1px 0 rgba(192,217,255,.06),0 24px 54px -38px rgba(2,8,20,.9)}
+
+/* ── LINKS: WACHTRIJ ────────────────────────────────────────────────────── */
+.q-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 16px 10px}
+.q-head .qt{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ds-text-2)}
+.q-head .qn{color:var(--ds-accent);font-weight:700}.q-head .qn i{color:var(--ds-text-3);font-style:normal;font-weight:600}
+.q-head .qicon{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:var(--ds-text-3);
+  background:rgba(94,230,235,.07);border:1px solid rgba(122,168,255,.14)}
+.q-head .qicon svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8}
+.q-search{display:flex;align-items:center;gap:9px;margin:0 14px 10px;padding:9px 13px;border-radius:11px;
+  background:rgba(6,16,34,.5);border:1px solid rgba(122,168,255,.13);color:var(--ds-text-3);font-size:12.5px}
+.q-search svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8}
+.q-search .flt{margin-left:auto;color:var(--ds-text-3)}
+.q-tabs{display:flex;gap:6px;padding:0 14px 12px;flex-wrap:wrap}
+.q-tab{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:var(--ds-r-pill);cursor:pointer;
+  font:inherit;font-size:11px;font-weight:600;color:var(--ds-text-3);background:rgba(10,24,46,.4);border:1px solid rgba(122,168,255,.1)}
+.q-tab .c{font-size:10px;font-weight:700;padding:1px 6px;border-radius:var(--ds-r-pill);background:rgba(122,168,255,.14);color:var(--ds-text-2)}
+.q-tab.on{color:var(--ds-canvas);background:var(--ds-accent);border-color:transparent}
+.q-tab.on .c{background:rgba(8,18,38,.28);color:var(--ds-canvas)}
+.q-tab.att.on{background:var(--ds-attention)}
+.q-list{padding:0 10px 8px;max-height:660px;overflow:auto;scrollbar-width:thin}
+.q-group{font-size:9.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ds-text-3);padding:10px 6px 6px}
+.q-item{position:relative;display:grid;grid-template-columns:44px 1fr auto;gap:11px;align-items:center;width:100%;text-align:left;
+  font:inherit;color:inherit;cursor:pointer;padding:11px 10px;border-radius:14px;border:1px solid transparent;background:none;
+  transition:background var(--ds-fast) var(--ds-ease),border-color var(--ds-fast) var(--ds-ease)}
+.q-item .qav{width:44px;height:44px;font-size:14px;position:relative}
+.q-item .qav .dot{position:absolute;top:-2px;right:-2px;width:11px;height:11px;border-radius:50%;
+  border:2px solid var(--ds-canvas);background:var(--tone)}
+.q-item .qb{min-width:0;display:flex;flex-direction:column;gap:2px}
+.q-item .qn2{display:block;font-size:14px;font-weight:650;color:var(--ds-text);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.q-item .qtr{font-size:12px;color:var(--ds-text-2);line-height:1.3;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.q-item .qwk{font-size:11px;color:var(--ds-text-3);margin-top:2px}
+.q-item .qr{text-align:right;align-self:start;flex:0 0 auto}
+.q-item .qtime{display:block;font-size:11px;color:var(--ds-text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.q-item .qstat{display:block;margin-top:7px;font-size:10px;font-weight:700;letter-spacing:.02em}
+.q-item .qstat.wacht{color:var(--ds-accent)}.q-item .qstat.done{color:var(--ds-success)}
+.q-item:hover{background:rgba(94,230,235,.04)}
+.q-item.sel{background:linear-gradient(180deg,rgba(94,230,235,.1),rgba(10,24,46,.25));border-color:var(--ds-calm-bd);
+  box-shadow:0 0 0 1px var(--ds-calm-bd),0 12px 30px -20px var(--ds-accent)}
+.q-item.sel .qn2{color:#fff}
+.q-item:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.q-more{display:flex;align-items:center;justify-content:center;gap:8px;margin:6px 14px 12px;padding:11px;border-radius:12px;
+  cursor:pointer;font:inherit;font-size:12px;font-weight:600;color:var(--ds-text-2);background:rgba(10,24,46,.4);border:1px solid rgba(122,168,255,.12)}
+.q-more svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8}
+
+/* ── MIDDEN: GESELECTEERDE CASE ─────────────────────────────────────────── */
+.case{padding:0}
+.case-h{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:17px 20px 14px;border-bottom:1px solid rgba(255,255,255,.05)}
+.case-id{display:flex;align-items:center;gap:13px;min-width:0}
+.case-id .cav{width:48px;height:48px;font-size:15px;position:relative}
+.case-id .cav .dot{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;border:2px solid var(--ds-canvas);background:var(--tone)}
+.case-id h2{margin:0;font-size:20px;font-weight:750;letter-spacing:-.02em;line-height:1.1;display:flex;align-items:center;gap:9px}
+.case-id .sub{font-size:12px;color:var(--ds-text-3);margin-top:3px;display:flex;align-items:center;gap:8px}
+.case-tr{text-align:right;flex:0 0 auto}
+.case-tr .trn{display:flex;align-items:center;gap:8px;justify-content:flex-end;font-size:14px;font-weight:650;color:var(--ds-text)}
+.case-tr .trn svg{width:17px;height:17px;fill:none;stroke:var(--ds-accent);stroke-width:1.7}
+.case-tr .trd{font-size:11.5px;color:var(--ds-text-3);margin-top:3px}
+.case-body{padding:14px 20px 18px}
+/* week selector */
+.wk-sel{display:inline-flex;align-items:center;gap:11px;padding:8px 12px;border-radius:11px;margin-bottom:14px;
+  background:rgba(10,24,46,.5);border:1px solid rgba(122,168,255,.14)}
+.wk-sel .wc{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;color:var(--ds-text-3);background:rgba(94,230,235,.07)}
+.wk-sel .wc svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8}
+.wk-sel b{font-size:13px;font-weight:650}.wk-sel .wr{font-size:12px;color:var(--ds-text-3)}
+.wk-sel .nav{display:flex;gap:4px;margin-left:6px}
+.wk-sel .nav button{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;cursor:pointer;color:var(--ds-text-2);
+  background:rgba(94,230,235,.06);border:1px solid rgba(122,168,255,.14)}
+.wk-sel .nav button svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2}
+/* metrics */
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;border-radius:14px;overflow:hidden;
+  background:rgba(122,168,255,.08);border:1px solid rgba(122,168,255,.1);margin-bottom:16px}
+.metric{padding:13px 15px;background:linear-gradient(180deg,rgba(14,30,58,.6),rgba(9,20,40,.5))}
+.metric b{display:block;font-size:20px;font-weight:750;letter-spacing:-.02em;line-height:1}
+.metric b i{font-size:12px;font-weight:600;font-style:normal;color:var(--ds-text-3);margin-left:2px}
+.metric small{display:block;font-size:10.5px;color:var(--ds-text-3);margin-top:5px}
+.metric.hot b{color:var(--ds-critical)}
+/* two panels */
+.case-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+.subpanel{padding:14px 16px;border-radius:14px;background:rgba(8,18,38,.4);border:1px solid rgba(122,168,255,.1)}
+.subpanel .sh{display:flex;align-items:center;gap:8px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3);margin-bottom:9px}
+.subpanel .sh svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8}
+.subpanel .sh .q{margin-left:auto;color:var(--ds-text-3);opacity:.5}
+.subpanel .sh .q svg{width:16px;height:16px}
+.bericht{font-size:13px;color:var(--ds-text-2);line-height:1.55}
+.bericht .meta{font-size:11px;color:var(--ds-text-3);margin-top:9px}
+.mb-list{margin:0;padding:0;list-style:none;display:grid;gap:7px}
+.mb-list li{font-size:12.5px;color:var(--ds-text-2);line-height:1.4;padding-left:15px;position:relative}
+.mb-list li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--ds-attention)}
+.mb-list li.ok::before{background:var(--ds-success)}
+/* weekoverzicht chart */
+.wk-chart{padding:15px 16px;border-radius:14px;background:rgba(8,18,38,.4);border:1px solid rgba(122,168,255,.1);margin-bottom:16px}
+.wk-chart .ch{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.wk-chart .ch b{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3)}
+.wk-chart .leg{display:flex;gap:14px;margin-left:6px;font-size:10.5px;color:var(--ds-text-3)}
+.wk-chart .leg i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.wk-chart .leg .v{background:var(--ds-accent)}.wk-chart .leg .b{background:var(--ds-critical);border-radius:50%}
+.wk-chart .badge{margin-left:auto;font-size:10px;font-weight:700;color:var(--ds-critical);padding:3px 9px;border-radius:var(--ds-r-pill);
+  background:var(--ds-critical-bg);border:1px solid var(--ds-critical-bd)}
+.wk-chart .ch svg{width:15px;height:15px;flex:0 0 auto;fill:none;stroke:var(--ds-text-3);stroke-width:1.8}
+.wk-chart>svg{width:100%;height:150px;display:block}
+/* concept terugkoppeling */
+.reply{border-radius:14px;background:rgba(8,18,38,.45);border:1px solid rgba(122,168,255,.14);overflow:hidden}
+.reply .rh{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 15px 8px}
+.reply .rh b{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3)}
+.reply .rh .draft{font-size:9.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ds-attention);
+  padding:3px 9px;border-radius:var(--ds-r-pill);background:var(--ds-attention-bg);border:1px solid var(--ds-attention-bd)}
+.reply .rtext{padding:2px 15px 12px;font-size:13.5px;color:var(--ds-text);line-height:1.55;min-height:78px}
+.reply .rtext em{color:var(--ds-text-2)}
+.reply .rbar{display:flex;align-items:center;gap:4px;padding:9px 13px;border-top:1px solid rgba(255,255,255,.05)}
+.reply .rbar button{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;cursor:pointer;color:var(--ds-text-3);
+  background:none;border:0;font-weight:700}
+.reply .rbar button:hover{color:var(--ds-text);background:rgba(94,230,235,.08)}
+.reply .rbar button svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8}
+.reply .rbar .cnt{margin-left:auto;font-size:11px;color:var(--ds-text-3);font-variant-numeric:tabular-nums}
+/* CTA row */
+.cta-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+.cta{display:inline-flex;align-items:center;gap:9px;padding:12px 18px;border-radius:12px;cursor:pointer;font:inherit;
+  font-size:13px;font-weight:650;color:var(--ds-text);background:rgba(10,24,46,.5);border:1px solid rgba(122,168,255,.16)}
+.cta svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8}
+.cta.primary{color:var(--ds-canvas);background:linear-gradient(180deg,#6ff0f4,var(--ds-accent));border-color:transparent;
+  box-shadow:0 12px 30px -12px var(--ds-accent)}
+.cta:hover{border-color:var(--ds-accent)}.cta.primary:hover{filter:brightness(1.05)}
+
+/* ── RECHTS: CONTEXT & MASTERBREIN ──────────────────────────────────────── */
+.ctx{display:flex;flex-direction:column;gap:13px}
+.ctx-h{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ds-text-2);padding:2px 2px 0}
+.card{padding:15px 16px;border-radius:16px;background:linear-gradient(162deg,rgba(20,42,80,.4),rgba(10,23,45,.26));
+  border:1px solid rgba(122,168,255,.12)}
+.card .ch{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+.card .ch .ci{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.card .ch .ci svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8}
+.card .ch b{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-2)}
+.card .ch .det{margin-left:auto;font-size:11px;font-weight:600;color:var(--ds-accent);cursor:pointer}
+/* belasting ring */
+.bel{display:flex;align-items:center;gap:15px}
+.bel .ring{width:88px;height:88px;flex:0 0 auto;position:relative}
+.bel .ring b{position:absolute;inset:0;display:grid;place-items:center;text-align:center;line-height:1.1}
+.bel .ring b span{font-size:19px;font-weight:750;color:var(--ds-critical)}
+.bel .ring b small{display:block;font-size:9px;color:var(--ds-text-3);margin-top:1px}
+.bel .bt{font-size:14px;font-weight:650;color:var(--ds-text);line-height:1.3}
+.bel .bs{font-size:11.5px;color:var(--ds-text-3);margin-top:6px;line-height:1.5}
+.bel .bs b{color:var(--ds-text-2);font-weight:600}
+.bel .trend{color:var(--ds-critical)}
+/* klacht */
+.klacht .kt{font-size:14px;font-weight:650;color:var(--ds-text)}
+.klacht .kr{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;font-size:12px;color:var(--ds-text-3)}
+.klacht .scale{display:flex;gap:3px}.klacht .scale i{width:13px;height:5px;border-radius:2px;background:rgba(122,168,255,.2)}
+.klacht .scale i.on{background:var(--ds-attention)}
+.klacht .kr b{color:var(--ds-attention);font-weight:700}
+.klacht .sig{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:11px;padding-top:10px;border-top:1px solid rgba(255,255,255,.05);font-size:11.5px;color:var(--ds-text-3)}
+.klacht .sig .arw{color:var(--ds-text-3)}
+/* doel */
+.doel .dt{font-size:15px;font-weight:700;color:var(--ds-text);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.doel .dt .tag{font-size:8.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:2px 7px;border-radius:var(--ds-r-pill)}
+.doel .dt .tag.h{color:var(--ds-success);background:var(--ds-success-bg);border:1px solid var(--ds-success-bd)}
+.doel .dt .tag.p{color:var(--ds-accent);background:rgba(94,230,235,.1);border:1px solid var(--ds-calm-bd)}
+.doel .dm{font-size:12px;color:var(--ds-text-3);margin-top:8px;line-height:1.6}
+.doel .dm b{color:var(--ds-text-2);font-weight:600}
+/* coachkennis */
+.kennis{margin:0;padding:0;list-style:none;display:grid;gap:9px}
+.kennis li{display:flex;align-items:flex-start;gap:9px;font-size:12.5px;color:var(--ds-text-2);line-height:1.4}
+.kennis li svg{width:15px;height:15px;flex:0 0 auto;margin-top:1px;fill:none;stroke:var(--ds-success);stroke-width:2}
+/* bronnen */
+.bronnen{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;font-size:11px;color:var(--ds-text-3);padding:2px}
+.bronnen .upd{width:100%;display:flex;align-items:center;gap:7px;margin-bottom:4px;color:var(--ds-text-3)}
+.bronnen .upd svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8}
+.bronnen .src{display:inline-flex;align-items:center;gap:6px}
+.bronnen .src svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;opacity:.7}
+
+/* lab nav */
+.lab-nav{position:fixed;bottom:10px;left:10px;z-index:60;display:flex;gap:6px;padding:5px;border-radius:var(--ds-r-pill);
+  background:rgba(6,14,30,.85);border:1px solid rgba(122,168,255,.2)}
+.lab-nav a{font-size:11px;color:var(--ds-text-3);text-decoration:none;padding:6px 12px;border-radius:var(--ds-r-pill)}
+.lab-nav a.on{color:var(--ds-canvas);background:var(--ds-accent);font-weight:700}
+
+@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.pane{animation:fadein .5s var(--ds-ease) both}
+.fb-grid>*:nth-child(2){animation-delay:.05s}.fb-grid>*:nth-child(3){animation-delay:.1s}
+@media (prefers-reduced-motion:reduce){.pane{animation:none}}
+</style>
+</head>
+<body>
+<nav class="lab-nav">
+  <a href="#queue" data-b="queue">Queue+case</a>
+  <a href="#attention" data-b="attention">Aandacht-case</a>
+  <a href="#empty" data-b="empty">Lege staat</a>
+  <a href="#mobile" data-b="mobile">Mobiel</a>
+</nav>
+<style>
+/* Mobiel: gestapelde triage-vertelling. */
+.fbm{width:390px;max-width:100%;margin:0 auto;padding:16px 14px 24px}
+.fbm h1{margin:0;font-size:22px;font-weight:750}.fbm .sub{font-size:12px;color:var(--ds-text-3);margin:2px 0 14px}
+.fbm .mtabs{display:flex;gap:6px;overflow:auto;margin-bottom:12px;padding-bottom:2px}
+.fbm .mtabs .q-tab{flex:0 0 auto}
+.fbm .mcase{border-radius:var(--ds-r-xl);background:linear-gradient(162deg,rgba(24,48,90,.5),rgba(11,25,49,.34));
+  border:1px solid var(--tone-bd);padding:0;margin-bottom:14px;overflow:hidden}
+.fbm .mch{display:flex;align-items:center;gap:11px;padding:14px 15px;border-bottom:1px solid rgba(255,255,255,.05)}
+.fbm .mch .av{width:44px;height:44px;font-size:14px;position:relative}
+.fbm .mch h2{margin:0;font-size:17px;font-weight:750}.fbm .mch .s{font-size:11.5px;color:var(--ds-text-3);margin-top:2px;display:flex;align-items:center;gap:7px}
+.fbm .mch .back{margin-left:auto;color:var(--ds-text-3);font-size:12px;display:flex;align-items:center;gap:5px}
+.fbm .mbody{padding:14px 15px}
+.fbm .mmetrics{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}
+.fbm .mmetric{padding:10px 12px;border-radius:11px;background:rgba(8,18,38,.4);border:1px solid rgba(122,168,255,.1)}
+.fbm .mmetric b{display:block;font-size:16px;font-weight:750}.fbm .mmetric.hot b{color:var(--ds-critical)}
+.fbm .mmetric small{display:block;font-size:9.5px;color:var(--ds-text-3);margin-top:3px}
+.fbm .msec{margin-bottom:13px}
+.fbm .mlist{display:flex;flex-direction:column;gap:9px}
+</style>
+<div id="root"></div>
+<script>
+const IC={
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/>',
+  sliders:'<path d="M4 8h9M17 8h3"/><circle cx="15" cy="8" r="2"/><path d="M4 16h3M11 16h9"/><circle cx="9" cy="16" r="2"/>',
+  run:'<circle cx="14" cy="5" r="2"/><path d="M11 21l2-5-3-2 1-5 4 3h3M6 13l3-1"/>',
+  cal:'<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',
+  chevL:'<path d="m15 6-6 6 6 6"/>',chevR:'<path d="m9 6 6 6-6 6"/>',chevD:'<path d="m6 9 6 6 6-6"/>',
+  quote:'<path d="M7 7H4v5h3zm10 0h-3v5h3z"/>',
+  brain:'<path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5 3 3 0 0 0 2 5 2.5 2.5 0 0 0 5 .3V4.5A2 2 0 0 0 9 4z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5 3 3 0 0 1-2 5 2.5 2.5 0 0 1-5 .3"/>',
+  send:'<path d="M4 12l16-8-6 16-3-6z"/>',
+  flag:'<path d="M5 21V4h11l-2 4 2 4H5"/>',
+  file:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+  check:'<path d="M5 12l4 4 10-11"/>',
+  checkc:'<circle cx="12" cy="12" r="9"/><path d="M8.5 12l2.5 2.5 5-5"/>',
+  alert:'<path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/>',
+  trend:'<path d="M3 17l6-6 4 4 8-8"/><path d="M21 7v5h-5"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>',
+  book:'<path d="M4 5a2 2 0 012-2h13v18H6a2 2 0 01-2-2z"/><path d="M19 3v18"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  heart:'<path d="M12 20S4 14 4 8.5A3.5 3.5 0 0112 6a3.5 3.5 0 018 2.5C20 14 12 20 12 20z"/>',
+  bold:'<path d="M6 4h6a3.5 3.5 0 010 7H6zM6 11h7a3.5 3.5 0 010 7H6z"/>',
+  ital:'<path d="M10 4h6M8 20h6M14 4l-4 16"/>',
+  list:'<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+  listn:'<path d="M9 6h11M9 12h11M9 18h11M4 5v3M4 12h1M4 16h1"/>',
+  link:'<path d="M9 15l6-6M10 6l1-1a3.5 3.5 0 015 5l-1 1M14 18l-1 1a3.5 3.5 0 01-5-5l1-1"/>',
+  emoji:'<circle cx="12" cy="12" r="9"/><path d="M9 10h.01M15 10h.01M8.5 14a4 4 0 007 0"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  pulse:'<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+};
+const svg=(p,cls)=>`<svg viewBox="0 0 24 24" class="${cls||''}">${IC[p]||''}</svg>`;
+const toneHex={"is-calm":"#5EE6EB","is-attention":"#F0A62B","is-critical":"#F4744C","is-success":"#37D9A2","is-stale":"#8098BC"};
+
+// ── Coach-snapshot (vorm = bestaande projecties; presentatie verzint niets) ──
+const QUEUE=[
+  {id:"masja",naam:"Masja Bolk",ini:"MB",tone:"is-attention",att:true,time:"08:23",tr:"Lange duurloop 16 km",wk:"Week 35",rpe:"5.1",status:"wachten",group:"vandaag"},
+  {id:"linsy",naam:"Linsy Hanegraaf",ini:"LH",tone:"is-attention",att:true,time:"08:22",tr:"2 van 3 trainingen gemist",wk:"Week 35",rpe:"",status:"wachten",group:"vandaag"},
+  {id:"carmen",naam:"Carmen Megens",ini:"CM",tone:"is-success",time:"Gisteren",tr:"Herstelloop 5 km",wk:"Week 35",rpe:"3.2",status:"done",group:"vandaag"},
+  {id:"anouk",naam:"Anouk Van son",ini:"AS",tone:"is-success",time:"Gisteren",tr:"HYROX-specifiek 6x1km",wk:"Week 35",rpe:"6.1",status:"done",group:"vandaag"},
+  {id:"daan",naam:"Daan Minnema",ini:"DM",tone:"is-success",time:"Gisteren",tr:"Progressieve duurloop 14 km",wk:"Week 35",rpe:"4.3",status:"done",group:"vandaag"},
+  {id:"iris",naam:"Iris Van Schaijk",ini:"IS",tone:"is-calm",time:"23 aug",tr:"Kracht + intervallen",wk:"Week 34",rpe:"7.2",status:"wachten",group:"2 dagen geleden"},
+  {id:"jelle",naam:"Jelle Verhoeven",ini:"JV",tone:"is-calm",time:"23 aug",tr:"Tempoloop 10 km",wk:"Week 34",rpe:"6.0",status:"wachten",group:"2 dagen geleden"},
+  {id:"noa",naam:"Noa Prins",ini:"NP",tone:"is-calm",time:"22 aug",tr:"Duurloop 12 km",wk:"Week 34",rpe:"5.5",status:"wachten",group:"2 dagen geleden"},
+  {id:"sven",naam:"Sven de Wit",ini:"SW",tone:"is-attention",att:true,time:"22 aug",tr:"Interval 8x400m",wk:"Week 34",rpe:"8.1",status:"wachten",group:"2 dagen geleden"},
+];
+const CASES={
+  masja:{
+    naam:"Masja Bolk",ini:"MB",tone:"is-attention",att:"Aandacht",groep:"5. Comfort",
+    tr:"Lange duurloop",trdate:"Maandag 23 aug 2026 · 08:12",
+    week:"Week 35",wkrange:"ma 24 aug – zo 30 aug",
+    metrics:[{v:"48,4",u:"km",l:"Weekvolume"},{v:"2:57:36",l:"Totale duur"},{v:"5:14",u:"/km",l:"Gem. tempo"},{v:"5.1",l:"RPE"},{v:"+202%",l:"Belasting vs ref.",hot:true}],
+    bericht:{q:"Voelde me goed tijdens de run, maar laatste 3 km werd het zwaar in mijn linker kuit. Verder geen pijntjes.",meta:"Verzonden: 23 aug 08:12"},
+    mb:[{t:"Belasting deze week sterk verhoogd (+202%).",tone:"att"},{t:"Linker kuit gevoelig in de laatste kilometers.",tone:"att"},{t:"Herstel-score lager dan normaal (62%).",tone:"att"}],
+    // weekoverzicht: ma..zo daily volume (km) + belasting % vs ref (echte week-logica ma–zo)
+    days:["ma 24","di 25","wo 26","do 27","vr 28","za 29","zo 30"],
+    vol:[15.5,7.2,1.0,13.6,2.0,22.5,0],volProjected:6,
+    bel:[120,150,175,155,190,235,80],belProjected:true,
+    reply:"Goed gedaan deze week Masja! Mooie duurprikkel. Let op je linker kuit: houd de komende dagen in de gaten en geef aan als het verergert. We bouwen rustig verder. 💪",
+    ctx:{
+      bel:{pct:"+202%",tekst:"Belasting deze week sterk verhoogd.",vol:"48,4 km",ref:"16,0 km",trend:"Stijgend"},
+      klacht:{naam:"Klacht: kuit links",intensiteit:"Middel",scale:2,sig:"23 aug 08:12"},
+      doel:{naam:"7-Heuvelenloop",tags:[["Hoofddoel","h"],["A-prioriteit","p"]],datum:"5 okt 2026 · Nog 6 weken",target:"Doel: < 1:10:00"},
+      kennis:["Reageert goed op rustige opbouw","Kuit links gevoelig bij hoge belasting","Slaapt gemiddeld 7u 12m"],
+      bronnen:{upd:"23 aug 08:20",items:[["Atleet bericht","quote"],["Training log","file"],["Herstel meting","heart"],["Historie","clock"]]},
+    },
+  },
+  sven:{
+    naam:"Sven de Wit",ini:"SW",tone:"is-attention",att:"Aandacht",groep:"3. Prestatie",
+    tr:"Interval 8x400m",trdate:"Vrijdag 22 aug 2026 · 19:40",
+    week:"Week 34",wkrange:"ma 17 aug – zo 23 aug",
+    metrics:[{v:"52,1",u:"km",l:"Weekvolume"},{v:"3:21:04",l:"Totale duur"},{v:"4:38",u:"/km",l:"Gem. tempo"},{v:"8.1",l:"RPE"},{v:"+64%",l:"Belasting vs ref.",hot:true}],
+    bericht:{q:"Intervallen gingen hard, laatste 2 waren zwaar. Rechter hamstring voelde wat strak na afloop.",meta:"Verzonden: 22 aug 19:40"},
+    mb:[{t:"Zeer hoge RPE (8.1) op een intervalsessie.",tone:"att"},{t:"Rechter hamstring-strakheid gemeld.",tone:"att"},{t:"Weekbelasting +64% t.o.v. referentie.",tone:"att"}],
+    days:["ma 17","di 18","wo 19","do 20","vr 21","za 22","zo 23"],
+    vol:[10,8.4,0,12.2,0,9.5,12],volProjected:-1,
+    bel:[90,110,60,140,70,175,120],belProjected:false,
+    reply:"Sterke sessie Sven. Die hamstring-strakheid houden we in de gaten — kort mobiliseren en morgen rustig. Als het strak blijft, meld het even.",
+    ctx:{
+      bel:{pct:"+64%",tekst:"Belasting boven referentie.",vol:"52,1 km",ref:"31,8 km",trend:"Stijgend"},
+      klacht:{naam:"Signaal: hamstring rechts",intensiteit:"Licht",scale:1,sig:"22 aug 19:40"},
+      doel:{naam:"Marathon Rotterdam",tags:[["Hoofddoel","h"]],datum:"12 apr 2026 · Nog 32 weken",target:"Doel: sub 3:00"},
+      kennis:["Hoge trainbaarheid, herstelt snel","Neigt naar te hard op intervallen","Blessuregevoelig bij volumesprong"],
+      bronnen:{upd:"22 aug 19:45",items:[["Atleet bericht","quote"],["Training log","file"],["Historie","clock"]]},
+    },
+  },
+};
+
+function ring(pct,tone){
+  const col=toneHex[tone]||"#F4744C";
+  const frac=Math.min(1,Math.abs(parseInt(pct))/300||.67);
+  const r=39,c=2*Math.PI*r,off=c*(1-frac);
+  return `<svg viewBox="0 0 88 88"><circle cx="44" cy="44" r="${r}" fill="none" stroke="rgba(122,168,255,.14)" stroke-width="6"/>
+    <circle cx="44" cy="44" r="${r}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round"
+      stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 44 44)" style="filter:drop-shadow(0 0 6px ${col})"/></svg>`;
+}
+function weekChart(c){
+  const W=560,H=150,padL=8,padR=34,padB=22,padT=8;
+  const iw=W-padL-padR, ih=H-padT-padB, n=c.days.length;
+  const maxVol=Math.max(...c.vol,1)*1.15;
+  const bw=iw/n*0.5;
+  let bars="",line="",dots="",axis="",labels="";
+  // belasting as % (right axis 0-300)
+  const belY=v=>padT+ih-(Math.min(v,300)/300)*ih;
+  const volY=v=>padT+ih-(v/maxVol)*ih;
+  c.days.forEach((d,i)=>{
+    const cx=padL+iw*(i+0.5)/n;
+    const h=Math.max(2,(c.vol[i]/maxVol)*ih);
+    const proj=(i===c.volProjected);
+    bars+=`<rect x="${cx-bw/2}" y="${padT+ih-h}" width="${bw}" height="${h}" rx="3"
+      fill="${proj?'none':'url(#volg)'}" stroke="${proj?'rgba(94,230,235,.5)':'none'}" stroke-dasharray="${proj?'3 3':'0'}"/>`;
+    const by=belY(c.bel[i]);
+    dots+=`<circle cx="${cx}" cy="${by}" r="2.6" fill="#F4744C"/>`;
+    line+=(i?'L':'M')+cx+' '+by+' ';
+    labels+=`<text x="${cx}" y="${H-6}" text-anchor="middle" font-size="10" fill="#7F97BC">${d.split(' ')[0].toUpperCase()} ${d.split(' ')[1]}</text>`;
+  });
+  [0,100,200,300].forEach(v=>{const y=belY(v);axis+=`<text x="${W-padR+6}" y="${y+3}" font-size="9" fill="#7F97BC">${v}%</text>
+    <line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="rgba(122,168,255,.06)"/>`;});
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:150px">
+    <defs><linearGradient id="volg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5EE6EB" stop-opacity=".85"/><stop offset="1" stop-color="#5EE6EB" stop-opacity=".35"/></linearGradient></defs>
+    ${axis}${bars}<path d="${line}" fill="none" stroke="#F4744C" stroke-width="2" stroke-dasharray="1 4" stroke-linecap="round"/>${dots}${labels}</svg>`;
+}
+
+function queueRow(it,selId){
+  const done=it.status==="done";
+  return `<button type="button" class="q-item ${it.tone} ${it.id===selId?'sel':''}" data-q="${it.id}">
+    <span class="av qav">${it.ini}${it.att?'<span class="dot"></span>':''}</span>
+    <span class="qb"><span class="qn2">${it.naam}</span><span class="qtr">${it.tr}</span><span class="qwk">${it.wk}${it.rpe?` · RPE ${it.rpe}`:''}</span></span>
+    <span class="qr"><span class="qtime">${it.time}</span><span class="qstat ${done?'done':'wacht'}">${done?'Afgerond':'Wachten'}</span></span>
+  </button>`;
+}
+
+function renderQueue(selId,filter){
+  const counts={wachten:QUEUE.filter(q=>q.status==='wachten').length,vandaag:QUEUE.filter(q=>q.group==='vandaag').length,
+    aandacht:QUEUE.filter(q=>q.att).length,afgerond:QUEUE.filter(q=>q.status==='done').length};
+  let items=QUEUE;
+  if(filter==='wachten') items=QUEUE.filter(q=>q.status==='wachten');
+  else if(filter==='vandaag') items=QUEUE.filter(q=>q.group==='vandaag');
+  else if(filter==='aandacht') items=QUEUE.filter(q=>q.att);
+  else if(filter==='afgerond') items=QUEUE.filter(q=>q.status==='done');
+  const tabs=[['wachten','Wachten',counts.wachten],['vandaag','Vandaag',counts.vandaag],['aandacht','Aandacht',counts.aandacht,'att'],['afgerond','Afgerond',counts.afgerond]];
+  let list="",lastG="";
+  items.forEach(it=>{ if(it.group!==lastG){ list+=`<div class="q-group">${it.group==='vandaag'?'Vandaag':it.group}</div>`; lastG=it.group; } list+=queueRow(it,selId); });
+  return `<div class="pane">
+    <div class="q-head"><span class="qt">Wachten op feedback <span class="qn">${counts.wachten}<i> / 30</i></span></span>
+      <span class="qicon">${svg('run')}</span></div>
+    <div class="q-search">${svg('search')}<span>Zoek atleet…</span><span class="flt">${svg('sliders')}</span></div>
+    <div class="q-tabs">${tabs.map(t=>`<button type="button" class="q-tab ${t[3]||''} ${filter===t[0]?'on':''}" data-flt="${t[0]}">${t[1]} <span class="c">${t[2]}</span></button>`).join('')}</div>
+    <div class="q-list">${list}</div>
+    <button type="button" class="q-more">Meer laden ${svg('chevD')}</button>
+  </div>`;
+}
+
+function renderCase(c){
+  const metrics=c.metrics.map(m=>`<div class="metric ${m.hot?'hot':''}"><b>${m.v}${m.u?`<i>${m.u}</i>`:''}</b><small>${m.l}</small></div>`).join('');
+  const mb=c.mb.map(m=>`<li class="${m.tone==='ok'?'ok':''}">${m.t}</li>`).join('');
+  return `<div class="pane case ${c.tone}">
+    <div class="case-h">
+      <div class="case-id"><span class="av cav">${c.ini}<span class="dot"></span></span>
+        <div><h2>${c.naam}</h2><div class="sub">${c.groep} <span class="ds-chip ${c.tone}">${c.att}</span></div></div></div>
+      <div class="case-tr"><div class="trn">${svg('run')} ${c.tr}</div><div class="trd">${c.trdate}</div></div>
+    </div>
+    <div class="case-body">
+      <div class="wk-sel"><span class="wc">${svg('cal')}</span><b>${c.week}</b><span class="wr">· ${c.wkrange}</span>
+        <span class="nav"><button>${svg('chevL')}</button><button>${svg('chevR')}</button></span></div>
+      <div class="metrics">${metrics}</div>
+      <div class="case-2col">
+        <div class="subpanel"><div class="sh">Atleet bericht <span class="q">${svg('quote')}</span></div>
+          <div class="bericht">${c.bericht.q}<div class="meta">${c.bericht.meta}</div></div></div>
+        <div class="subpanel"><div class="sh">${svg('brain')} Masterbrein samenvatting</div><ul class="mb-list">${mb}</ul></div>
+      </div>
+      <div class="wk-chart"><div class="ch"><b>Weekoverzicht – ${c.week}</b> ${svg('info','')}
+        <span class="leg"><span><i class="v"></i>Volume (km)</span><span><i class="b"></i>Belasting</span></span>
+        <span class="badge">+202% vs ref</span></div>${weekChart(c)}</div>
+      <div class="reply"><div class="rh"><b>Concept terugkoppeling</b><span class="draft">Concept · niet verzonden</span></div>
+        <div class="rtext">${c.reply}</div>
+        <div class="rbar"><button>${svg('bold')}</button><button>${svg('ital')}</button><button>${svg('list')}</button><button>${svg('listn')}</button><button>${svg('link')}</button><button>${svg('emoji')}</button><span class="cnt">${c.reply.length} / 600</span></div></div>
+      <div class="cta-row">
+        <button class="cta primary">${svg('send')} Feedback sturen</button>
+        <button class="cta">${svg('cal')} Naar schema</button>
+        <button class="cta">${svg('file')} Open dossier</button>
+        <button class="cta">${svg('checkc')} Afgehandeld</button></div>
+    </div>
+  </div>`;
+}
+
+function renderCtx(c){
+  const x=c.ctx;
+  const kscale=n=>{let s="";for(let i=0;i<4;i++)s+=`<i class="${i<n?'on':''}"></i>`;return s;};
+  return `<div class="ctx">
+    <div class="ctx-h">Context &amp; Masterbrein</div>
+    <div class="card is-critical"><div class="ch"><span class="ci">${svg('trend')}</span><b>Belasting &amp; trend</b><span class="det">Details</span></div>
+      <div class="bel"><div class="ring">${ring(x.bel.pct,'is-critical')}<b><span>${x.bel.pct}</span><small>vs referentie</small></b></div>
+        <div><div class="bt">${x.bel.tekst}</div><div class="bs">Volume <b>${x.bel.vol}</b> vs referentie ${x.bel.ref}<br>Trend <span class="trend">↗ ${x.bel.trend}</span></div></div></div></div>
+    <div class="card is-attention"><div class="ch"><span class="ci">${svg('alert')}</span><b>Klachten &amp; signalen</b><span class="det">Details</span></div>
+      <div class="klacht"><div class="kt">${x.klacht.naam}</div>
+        <div class="kr"><span>Intensiteit</span><span class="scale">${kscale(x.klacht.scale)}</span><b>${x.klacht.intensiteit}</b></div>
+        <div class="sig"><span>Laatste signaal</span><span>${x.klacht.sig} <span class="arw">›</span></span></div></div></div>
+    <div class="card is-calm"><div class="ch"><span class="ci">${svg('flag')}</span><b>Doel &amp; planning</b><span class="det">Details</span></div>
+      <div class="doel"><div class="dt">${x.doel.naam} ${x.doel.tags.map(t=>`<span class="tag ${t[1]}">${t[0]}</span>`).join('')}</div>
+        <div class="dm">${x.doel.datum}<br><b>${x.doel.target}</b></div></div></div>
+    <div class="card is-calm"><div class="ch"><span class="ci">${svg('brain')}</span><b>Coachkennis</b><span class="det">Details</span></div>
+      <ul class="kennis">${x.kennis.map(k=>`<li>${svg('check')} ${k}</li>`).join('')}</ul></div>
+    <div class="card" style="padding:13px 16px"><div class="bronnen"><span class="upd">${svg('clock')} Laatste update: ${x.bronnen.upd}</span>
+      ${x.bronnen.items.map(b=>`<span class="src">${svg(b[1])} ${b[0]}</span>`).join('')}</div></div>
+  </div>`;
+}
+
+let curSel="masja", curFilter="wachten";
+function build(state){
+  const selId = state==="attention" ? "sven" : curSel;
+  const c=CASES[selId]||CASES.masja;
+  const empty = state==="empty";
+  const grid = empty
+    ? `<div class="fb-grid"><div>${renderQueueEmpty()}</div>${renderCaseEmpty()}<div>${emptyCtx()}</div></div>`
+    : `<div class="fb-grid">
+        <div id="fb-queue">${renderQueue(selId,curFilter)}</div>
+        <div id="fb-case">${renderCase(c)}</div>
+        <div id="fb-ctx">${renderCtx(c)}</div></div>`;
+  return `<div class="fb">
+    <div class="fb-env"><div class="vig"></div></div>
+    <header class="fb-top"><div><h1>Feedback</h1><p>Analyseer trainingen, geef feedback en stuur bij.</p></div>
+      <div class="fb-search">${svg('search')}<span>Zoek atleet, training of bericht…</span></div></header>
+    ${grid}
+  </div>`;
+}
+function renderQueueEmpty(){
+  return `<div class="pane"><div class="q-head"><span class="qt">Wachten op feedback <span class="qn">0<i> / 30</i></span></span><span class="qicon">${svg('run')}</span></div>
+    <div class="q-tabs"><button class="q-tab on">Wachten <span class="c">0</span></button><button class="q-tab">Vandaag <span class="c">0</span></button><button class="q-tab att">Aandacht <span class="c">0</span></button><button class="q-tab">Afgerond <span class="c">18</span></button></div>
+    <div style="padding:40px 20px;text-align:center;color:var(--ds-text-3)"><div style="width:52px;height:52px;margin:0 auto 14px;border-radius:14px;display:grid;place-items:center;color:var(--ds-success);background:var(--ds-success-bg);border:1px solid var(--ds-success-bd)">${svg('checkc')}</div>
+      <div style="font-size:15px;font-weight:650;color:var(--ds-text)">Wachtrij leeg</div>
+      <p style="font-size:12.5px;line-height:1.55;margin:8px 0 0">Alle openstaande feedback is afgehandeld. Nieuwe check-ins verschijnen hier zodra atleten trainingen loggen.</p></div></div>`;
+}
+function renderCaseEmpty(){
+  return `<div id="fb-case"><div class="pane" style="min-height:520px;display:grid;place-items:center;text-align:center;padding:40px">
+    <div><div style="width:56px;height:56px;margin:0 auto 16px;border-radius:15px;display:grid;place-items:center;color:var(--ds-text-3);background:rgba(94,230,235,.06);border:1px solid rgba(122,168,255,.14)">${svg('brain')}</div>
+    <div style="font-size:17px;font-weight:700">Geen case geselecteerd</div>
+    <p style="font-size:13px;color:var(--ds-text-3);max-width:340px;margin:10px auto 0;line-height:1.55">Kies links een atleet uit de wachtrij om de training, het Masterbrein-oordeel en je terugkoppeling te openen.</p></div></div></div>`;
+}
+function emptyCtx(){ return `<div class="ctx"><div class="ctx-h">Context &amp; Masterbrein</div>
+  <div class="card" style="text-align:center;color:var(--ds-text-3);padding:26px 16px;font-size:12.5px;line-height:1.55">Context verschijnt hier zodra je een case selecteert.</div></div>`; }
+
+function buildMobile(){
+  const c=CASES.masja;
+  const metrics=c.metrics.slice(0,3).concat([c.metrics[4]]).slice(0,3);
+  const mm=[c.metrics[0],c.metrics[3],c.metrics[4]].map(m=>`<div class="mmetric ${m.hot?'hot':''}"><b>${m.v}${m.u?`<i style="font-size:10px;color:var(--ds-text-3)">${m.u}</i>`:''}</b><small>${m.l}</small></div>`).join('');
+  return `<div class="fb ${c.tone}"><div class="fbm">
+    <h1>Feedback</h1><div class="sub">6 wachten · 3 aandacht · Week 35</div>
+    <div class="mtabs"><button class="q-tab on">Wachten <span class="c">6</span></button><button class="q-tab">Vandaag <span class="c">5</span></button><button class="q-tab att">Aandacht <span class="c">3</span></button><button class="q-tab">Afgerond <span class="c">3</span></button></div>
+    <div class="mcase ${c.tone}">
+      <div class="mch"><span class="av">${c.ini}<span style="position:absolute;top:-2px;right:-2px;width:11px;height:11px;border-radius:50%;border:2px solid var(--ds-canvas);background:var(--tone)"></span></span>
+        <div><h2>${c.naam}</h2><div class="s">${c.tr} <span class="ds-chip ${c.tone}">${c.att}</span></div></div>
+        <span class="back">${svg('chevL')} Wachtrij</span></div>
+      <div class="mbody">
+        <div class="wk-sel" style="margin-bottom:12px"><span class="wc">${svg('cal')}</span><b>${c.week}</b><span class="wr">· ${c.wkrange}</span></div>
+        <div class="mmetrics">${mm}</div>
+        <div class="msec"><div class="subpanel"><div class="sh">${svg('brain')} Masterbrein samenvatting</div><ul class="mb-list">${c.mb.map(m=>`<li>${m.t}</li>`).join('')}</ul></div></div>
+        <div class="msec"><div class="wk-chart" style="margin:0"><div class="ch"><b>Weekoverzicht</b><span class="badge" style="margin-left:auto">+202% vs ref</span></div>${weekChart(c)}</div></div>
+        <div class="reply"><div class="rh"><b>Concept terugkoppeling</b><span class="draft">Concept</span></div><div class="rtext">${c.reply}</div>
+          <div class="rbar"><button>${svg('bold')}</button><button>${svg('ital')}</button><button>${svg('emoji')}</button><span class="cnt">${c.reply.length}/600</span></div></div>
+        <div class="cta-row" style="margin-top:14px"><button class="cta primary" style="flex:1;justify-content:center">${svg('send')} Feedback sturen</button><button class="cta">${svg('checkc')}</button></div>
+      </div>
+    </div>
+    <div class="ctx">${renderCtx(c).replace('<div class="ctx">','').replace(/<\/div>\s*$/,'')}</div>
+  </div></div>`;
+}
+function render(){
+  const h=(location.hash||"#queue").slice(1);
+  const state=["queue","attention","empty","mobile"].includes(h)?h:"queue";
+  if(state==="attention") curSel="sven"; else if(state==="queue") curSel="masja";
+  document.querySelectorAll(".lab-nav a").forEach(a=>a.classList.toggle("on",a.dataset.b===state));
+  if(state==="mobile"){ document.getElementById("root").innerHTML=buildMobile(); return; }
+  document.getElementById("root").innerHTML=build(state);
+  document.querySelectorAll(".lab-nav a").forEach(a=>a.classList.toggle("on",a.dataset.b===state));
+  wire(state);
+}
+function wire(state){
+  const root=document.getElementById("root");
+  root.querySelectorAll("[data-q]").forEach(el=>el.addEventListener("click",()=>{curSel=el.dataset.q;refresh(state);}));
+  root.querySelectorAll("[data-flt]").forEach(el=>el.addEventListener("click",()=>{curFilter=el.dataset.flt;refresh(state);}));
+}
+function refresh(state){
+  const c=CASES[curSel]||CASES.masja;
+  const q=document.getElementById("fb-queue"), cs=document.getElementById("fb-case"), cx=document.getElementById("fb-ctx");
+  if(q) q.innerHTML=renderQueue(curSel,curFilter);
+  if(cs&&CASES[curSel]) cs.innerHTML=renderCase(c);
+  if(cx&&CASES[curSel]) cx.innerHTML=renderCtx(c);
+  wire(state);
+}
+window.addEventListener("hashchange",render);
+render();
+</script>
+</body>
+</html>
