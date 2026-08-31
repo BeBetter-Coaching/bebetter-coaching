@@ -2535,6 +2535,10 @@ async function fbEnter() {                            // eerste keer openen van 
     FB.gepost = r.gepost || 0; FB.groups = r.groepen || [];
     fbApplyQueue(r.items || []); FB.loaded = true;
     fbLog("queue_cache_loaded", { cached: !!r.cached, queue_length: FB.items.length });
+    // Directe LKG bruikbaar → op desktop meteen de eerste case openen volgens de
+    // SERVER-sortering (FB.items is al server-gesorteerd; geen client-resort). Detail +
+    // context laden daarna lazy; de sweep hieronder blijft volledig achtergrond.
+    if (isDesktop() && !FB.selId && FB.items.length) fbOpen(FB.items[0].id, "auto_first_warm");
   }
   fbRefresh();                                        // achtergrond: verse sweep
 }

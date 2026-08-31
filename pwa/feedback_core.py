@@ -685,18 +685,20 @@ def _snapshot_leeftijd_sec(snap: dict):
 
 
 def _durable_load_diag() -> tuple[dict, int, str]:
-    """(snapshot, duur_ms, uitkomst). uitkomst ∈ success|empty|missing|invalid|error:<type>."""
+    """(snapshot, duur_ms, uitkomst). uitkomst ∈ success|empty|missing|invalid|error:<type>,
+    met een bron-suffix (`:github` | `:local_mirror` | `:none`) uit de LKG-resiliente read."""
     t0 = time.perf_counter()
     try:
         durable = intake_store.load_feedback_queue()
     except Exception as e:
         return {}, int((time.perf_counter() - t0) * 1000), "error:" + type(e).__name__
     ms = int((time.perf_counter() - t0) * 1000)
+    src = getattr(intake_store, "last_feedback_queue_source", lambda: "durable")()
     if not durable:
-        return {}, ms, "missing"
+        return {}, ms, "missing:" + src
     if not _queue_valid(durable):
-        return durable, ms, "invalid"
-    return durable, ms, ("empty" if not durable.get("items") else "success")
+        return durable, ms, "invalid:" + src
+    return durable, ms, ("empty:" if not durable.get("items") else "success:") + src
 
 
 def _queue_current_diag() -> tuple[dict, dict]:
@@ -710,8 +712,31 @@ def _queue_current_diag() -> tuple[dict, dict]:
     if _queue_valid(durable):
         _QUEUE_MEM = durable
         _herstel_cache(durable)
-        return durable, {"bron": "durable", "durable_load_ms": ms, "durable_uitkomst": uitkomst}
+        src = getattr(intake_store, "last_feedback_queue_source", lambda: "durable")()
+        bron = "local_mirror" if src == "local_mirror" else "durable"
+        return durable, {"bron": bron, "durable_load_ms": ms,
+                         "durable_uitkomst": uitkomst, "source": src}
     return {}, {"bron": "none", "durable_load_ms": ms, "durable_uitkomst": uitkomst}
+
+
+def prewarm_queue() -> dict:
+    """Feedback-only startup pre-warm: laad de durable LKG één keer → warmt `_QUEUE_MEM`
+    + `_cache`, zodat de eerste Feedback-open direct uit geheugen serveert (onafhankelijk
+    van GitHub-latency op dat moment). Non-fataal en Feedback-gescoped: raakt geen andere
+    module/store en heeft géén FinalSurge-token nodig (de durable-read gebruikt de GitHub-
+    store). Geeft een diag terug voor server-side logging."""
+    t0 = time.perf_counter()
+    try:
+        snap, bron = _queue_current_diag()               # zet _QUEUE_MEM + _cache bij succes
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__ + ": " + str(e)[:120],
+                "prewarm_ms": int((time.perf_counter() - t0) * 1000)}
+    ms = int((time.perf_counter() - t0) * 1000)
+    n = len(snap.get("items", [])) if snap else 0
+    return {"ok": bool(snap), "source": bron.get("bron"),
+            "durable_uitkomst": bron.get("durable_uitkomst"),
+            "durable_load_ms": bron.get("durable_load_ms"),
+            "items": n, "prewarm_ms": ms}
 
 
 def _queue_current() -> dict:

@@ -768,17 +768,83 @@ def save_home_handled(data: dict) -> tuple[bool, str]:
 
 _FEEDBACK_QUEUE_LOCAL = os.path.join(_BASE_DIR, ".feedback_queue.json")
 
+# LKG-observability (Feedback-only): bron van de laatste load — github|local_mirror|none.
+_LAST_FQ_SOURCE = "none"
+
+
+def _fq_valid(d) -> bool:
+    """Structurele geldigheid van een Feedback-queue-snapshot (zelfde contract als de app)."""
+    return bool(isinstance(d, dict) and d.get("fs") and isinstance(d.get("items"), list))
+
+
+def _fq_mirror_write(data: dict) -> None:
+    """Feedback-only lokale LKG-mirror bijwerken; non-fataal."""
+    try:
+        with open(_FEEDBACK_QUEUE_LOCAL, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _fq_mirror_read() -> dict:
+    try:
+        if os.path.exists(_FEEDBACK_QUEUE_LOCAL):
+            with open(_FEEDBACK_QUEUE_LOCAL) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
 
 def load_feedback_queue() -> dict:
-    """Laatst-geldige Feedback-queue-snapshot (lichte lijst, gedeeld/duurzaam) zodat
-    Feedback ná restart/deploy direct bruikbaar is. Leeg dict = nog nooit opgebouwd."""
-    return _load_json("feedback_queue.json", _FEEDBACK_QUEUE_LOCAL)
+    """Laatst-geldige Feedback-queue-snapshot met LKG-resilience (Feedback-only).
+
+    GitHub eerst; een geslaagde, structureel-geldige load ververst de lokale mirror.
+    Een GitHub-timeout/fout/404 valt terug op de lokale mirror als die structureel geldig
+    is. Een bekende geldige LKG wordt NOOIT door leeg vervangen: leeg dict volgt alleen als
+    géén enkele bron (GitHub én mirror) een geldige snapshot geeft. Deze resilience is
+    bewust beperkt tot de Feedback-queue (aparte functie, niet de generieke `_load_json`)."""
+    global _LAST_FQ_SOURCE
+    token = _gh_token()
+    if token:
+        try:
+            resp = requests.get(_api_url("feedback_queue.json"),
+                                headers=_gh_headers(token), timeout=10)
+            if resp.status_code == 200:
+                content = base64.b64decode(resp.json()["content"]).decode("utf-8")
+                data = json.loads(content)
+                if _fq_valid(data):
+                    _fq_mirror_write(data)                # mirror = verse LKG bij geslaagde load
+                    _LAST_FQ_SOURCE = "github"
+                    return data
+                # remote bestaat maar is structureel ongeldig → val terug op mirror
+            elif resp.status_code == 404:
+                pass                                      # remote nog niet opgebouwd → mirror
+            # andere status → mirror
+        except Exception:
+            pass                                          # timeout/fout → mirror (nooit naar leeg)
+    mirror = _fq_mirror_read()
+    if _fq_valid(mirror):
+        _LAST_FQ_SOURCE = "local_mirror"
+        return mirror
+    _LAST_FQ_SOURCE = "none"
+    return {}
+
+
+def last_feedback_queue_source() -> str:
+    """Bron van de laatste load_feedback_queue()-aanroep: github|local_mirror|none."""
+    return _LAST_FQ_SOURCE
 
 
 def save_feedback_queue(data: dict) -> tuple[bool, str]:
-    """Sla de Feedback-queue-snapshot op. Geeft (gelukt, foutmelding) terug."""
-    return _save_json("feedback_queue.json", _FEEDBACK_QUEUE_LOCAL, data,
-                      "Update feedback-queue via app")
+    """Sla de Feedback-queue-snapshot op (GitHub via `_save_json`) én — bij een geslaagde,
+    geldige persist — de lokale LKG-mirror, zodat een latere GitHub-read-fout terug kan
+    vallen op een verse snapshot. Geeft (gelukt, foutmelding) terug."""
+    ok, err = _save_json("feedback_queue.json", _FEEDBACK_QUEUE_LOCAL, data,
+                         "Update feedback-queue via app")
+    if ok and _fq_valid(data):
+        _fq_mirror_write(data)                            # Feedback-only: mirror = verse LKG
+    return ok, err
 
 
 _LAATSTE_INTAKE_LOCAL = os.path.join(_BASE_DIR, ".laatste_intakes.json")

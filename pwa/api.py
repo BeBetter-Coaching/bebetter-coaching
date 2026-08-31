@@ -17,6 +17,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import time
@@ -46,6 +47,22 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _STATIC = os.path.join(_HERE, "static")
 
 app = FastAPI(title="BeBetter PWA (proto)")
+
+_log = logging.getLogger("uvicorn.error")
+
+
+@app.on_event("startup")
+def _prewarm_feedback_queue():
+    """Feedback-only startup pre-warm: warm de laatst-geldige queue (LKG) in het geheugen,
+    zodat de EERSTE Feedback-open ná deploy direct serveert i.p.v. te wachten op een
+    (soms trage) per-open GitHub-read. Uitsluitend de Feedback-queue; géén brede prewarm
+    van andere modules/stores. Non-fataal: faalt de durable-read, dan start de server
+    gewoon door en valt Feedback terug op het normale lazy-load-pad."""
+    try:
+        info = feedback.prewarm_queue()
+        _log.info("feedback_prewarm %s", info)
+    except Exception as e:                                # nooit de startup breken op een LKG-read
+        _log.warning("feedback_prewarm_failed %s: %s", type(e).__name__, str(e)[:200])
 
 
 # ── Inlog: eigen sessie-cookie i.p.v. de lelijke HTTP Basic-popup ───────────
@@ -379,6 +396,12 @@ def feedback_queue(refresh: bool = False):
     t0 = time.perf_counter()
     data = feedback.queue(refresh=refresh)
     dur = int((time.perf_counter() - t0) * 1000)
+    d = (data or {}).get("diag") or {}
+    _log.info("feedback_queue refresh=%s ms=%s bron=%s durable_load_ms=%s uitkomst=%s "
+              "items=%s total_refresh_ms=%s roster_ms=%s workouts_fanout_ms=%s comments_ms=%s",
+              refresh, dur, d.get("bron"), d.get("durable_load_ms"), d.get("durable_uitkomst"),
+              len((data or {}).get("items") or []), d.get("total_refresh_ms"),
+              d.get("roster_ms"), d.get("workouts_fanout_ms"), d.get("comments_ms"))
     return JSONResponse(data, headers={"Server-Timing": f"queue;dur={dur}"})
 
 
