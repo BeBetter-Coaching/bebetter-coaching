@@ -290,7 +290,8 @@ class TestCockpitFrontend:
         body = _fn("dcRender")
         assert "vm.planning" in body
         assert "dcFutureNodes(plan)" in body
-        assert "Doelen &amp; beslissingen" in _fn("dcScene")   # planning-lens (koers)
+        # planning voedt de toekomst-events op de tijdlijn (dcBuildEvents → dcFutureNodes)
+        assert "dcFutureNodes(plan)" in _fn("dcBuildEvents")
         fut = _fn("dcFutureNodes")
         assert "Wedstrijddatum" in fut and "Schema-blok" in fut
 

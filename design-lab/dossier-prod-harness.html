@@ -122,7 +122,7 @@ async function run(){
   const wrap = document.createElement("div"); wrap.id="dc-detail";
   view.appendChild(wrap); frame.appendChild(view); document.getElementById("mount").appendChild(frame);
   window.__dc.dcRender(wrap, vm);
-  if(p.get("sel")) wrap.querySelector(".dc-node")?.click();
+  if(p.get("pick")) wrap.querySelectorAll(".dc-tl-item")[+p.get("pick")]?.click();
   if(p.get("dom")) wrap.querySelector(`[data-dom="${p.get("dom")}"]`)?.click();
   if(p.get("hidelbl")) document.getElementById("hl").style.display="none";
   document.getElementById("hl").textContent = `w=${innerWidth} · ${vm.naam} · ${p.get("state")||"crit"}`;

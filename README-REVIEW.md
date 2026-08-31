@@ -5,7 +5,63 @@
 
 ---
 
-## DOSSIER — LIVING MEMORY COCKPIT v1 (nieuwe milestone)
+## DOSSIER — NORTH-STAR CONVERGENCE v3 (3-zone geheugencockpit)
+
+> Gerichte convergentie-pass op de meegeleverde Dossier North-Star PNG
+> (`neon_dossier_tijdlijn_dashboard.png`). De v1-richting (Living Memory) was goed
+> maar de desktop zat onder het referentieniveau. Deze pass pivot de desktop naar
+> de **3-zone informatie-architectuur** van de referentie. Skills in volgorde:
+> artifact-design → ui-ux-pro-max → frontend-design (guard: geen CRM-feed / generic
+> timeline / modal / kaartraster / SaaS-toolbar / tweede Workspace) → implementatie
+> → ui-animation → web-design-guidelines. Design-lab eerst
+> (`design-lab/dossier-northstar-convergence.html`), daarna production.
+
+**3-ZONE DESKTOP:** **LINKS = TIJDLIJN** (wat gebeurde — echte events met datum,
+type, icoon en metric-indien-echt; geselecteerde uitgelicht) · **MIDDEN =
+GESELECTEERDE HERINNERING** (de HERO, **default-staat**: Wat veranderde / Waarom
+relevant / Bronnen+provenance / Vervolg — een beslissings-geheugenpaneel, geen
+popup) · **RECHTS = GERELATEERDE DRADEN** (de andere echte events, zichtbaar
+verbonden aan de hero via **connectoren** met semantische kleur). Bovenaan een
+echte control-rij (Periode uit event-range · aantal events · bron-versheid),
+onderaan een echte actiebalk (Naar schema · Workspace); bewijsdomeinen als
+**subordinate strip + drill** naar de hero.
+
+**Convergentie vs f772726 (5 acceptance-punten, §16):** (A) selected-event
+dominance — de midden-hero is onmiskenbaar de focus; (B) relationele context —
+de draden verbinden zichtbaar via connectoren; (C) informatie-dichtheid — fors
+hoger, veel minder dode ruimte; (D) coach-actionability — control-shell +
+actiebalk + Naar schema; (E) North-Star-gelijkenis — zelfde productklasse.
+Herselecteren = ín de scène (midden + rechts + tijdlijn-highlight + connectoren
+hertekenen), geen modal/route. Klik een tijdlijn-event of draad → die wordt de hero.
+
+**HARDE HONESTHEIDSREGEL gehandhaafd:** de referentie-PNG is een geïdealiseerde
+mock vol data die het view-model NIET heeft — 7 verzonnen events met intensiteits-
+metrics, een gefabriceerde gestructureerde coachnotitie + ACTIE-lijst + "aangemaakt
+door Josephine" + "historisch patroon aug '23" + notitie-bewerken-write. **Niets
+daarvan is nagemaakt.** De cockpit toont **6 echte events**, per-event **metric
+alléén waar echt** (strength→Intensiteit, load→+%, race→Prioriteit), de load-
+observatie met de behouden **open-Home-actie-duiding**, en de **eerlijke lege-staat**
+(capture OFF → "geheugenlijn bouwt vanaf-nu op", geen verzonnen knopen; toon volgt
+data → kalme atleet = serene groene hero). Dubbele klacht-rij ontdubbeld (klacht
+één keer, gedateerd + actief).
+
+**Contract bewaakt:** geen backend/truth/store/route/generation-wijziging —
+`dossier_cockpit.py` byte-identiek. Presentatie-only in `app.js`/`design-system.css`/
+`index.html`; **SW v113, assets `?v=117a`**. Oude spine-`dcScene` vervangen door
+`dcBuildEvents`/`dcScene`(3-zone)/`dcMemPanel`/`dcTlItem`/`dcRelCard`/`dcDrawConnectors`/
+`dcSelectEvent`; mobiel (`dcStack`) ongewijzigd. **1043 tests groen (vast + random)**,
+Dossier-contracttests herschreven naar het 3-zone-contract. 0 overflow (1440/390),
+reduced-motion bevriest alle zone-animaties, `:focus-visible` op alle controls
+(tijdlijn-events, draden, domeinen, acties zijn echte `<button>`s). Renders:
+`review-screenshots/0{1..5}-dossier-*.png` + **verplichte** `06-reference-comparison.png`
+en `07-before-after-f772726.png`.
+
+**Zelf-verdict:** aantoonbaar dichter bij de North-Star; geen zelf-GO; wacht op
+Jips visuele acceptance; NIET gemerged (`main = 0c09b11`).
+
+---
+
+## DOSSIER — LIVING MEMORY COCKPIT v1 (voorgaande pass, spine)
 
 > Volgende milestone na Workspace. **Andere cognitieve taak:** niet "wat is er
 > nu?" (Workspace) maar **"wat is er over tijd veranderd, welke beslissingen zijn

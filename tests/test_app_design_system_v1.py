@@ -97,7 +97,7 @@ class TestStatusSemantics:
 
 # ── 3. Gedeelde primitives bestaan en worden hergebruikt ────────────────────
 class TestPrimitives:
-    PRIMS = ["wsAnchor", "wsCore", "wsLine", "dcNodeEl", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
+    PRIMS = ["wsAnchor", "wsCore", "wsLine", "dcTlItem", "dcMemPanel", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
              "dsKv", "dsStream", "dsAction", "dsEmpty", "dsSpark", "dsRing"]
 
     def test_8_alle_primitives_bestaan_eenmalig(self):
@@ -165,7 +165,7 @@ class TestAthleteShell:
         # Elke view kiest de presentatievorm die bij haar doel past, maar put uit
         # dezelfde primitives-familie en dezelfde toon-mapper.
         assert "dsAttnCard(" in _fn("prioDetailHtml")         # Home-detail: briefing-kaart
-        assert "dcNodeEl(" in _fn("dcScene")                  # Dossier: knooppunt op de tijd-spine
+        assert "dcTlItem(" in _fn("dcScene")                  # Dossier: event op de tijdlijn
         assert "wsLine(" in _fn("wsRender")                   # Workspace: embedded regel op het canvas
 
     def test_15_geen_tweede_athlete_nav(self):
@@ -215,9 +215,8 @@ class TestLockedFunctionalityPreserved:
                      "t.o.v. referentie", "monitoring — nog geen coachactie"):
             assert copy in body, f"copy-contract mist: {copy}"
         scene = _fn("dcScene")
-        for copy in ("Laatste veranderingen", "Klachten &amp; signalen",
-                     "Doelen &amp; beslissingen", "Coachkennis", "Actuele lijn"):
-            assert copy in scene, f"lens-copy mist: {copy}"
+        for copy in ("Tijdlijn", "Gerelateerde draden", "Periode", "Naar schema"):
+            assert copy in scene, f"cockpit-copy mist: {copy}"
 
     def test_20_cohesion_route_contract_byte_identiek(self):
         assert '_ATHLETE_VIEWS = new Set(["atleten", "schema", "dossier"])' in _APP
@@ -319,21 +318,17 @@ class TestAthleteCanvas:
         assert "belZin" in body and "bel.pct" in body
         assert 'owns("bel-pct") ? "1" : ""' in body
 
-    def test_33_dossier_spine_maakt_tijd_ruimtelijk(self):
-        # Living Memory Cockpit: ÉÉN memory-spine met een lichtgevend VANDAAG-ankerpunt.
-        # Verleden (warm) uit changes[], toekomst (koel, gestippeld) uit planning — de
-        # kern draagt de dominante toon. Tijd wordt ruimte, geen verticale lijsttijdlijn.
+    def test_33_dossier_3zone_geheugencockpit(self):
+        # Living Memory Cockpit (North-Star 3-zone): tijdlijn (echte events) → geselecteerde
+        # herinnering (hero) → gerelateerde draden (connectoren). Geen verticale lijst-tijdlijn.
         rn = _fn("dcRender")
-        assert "dcPastNodes(chg)" in rn                          # verleden = echte changes
-        assert "dcFutureNodes(plan)" in rn                       # toekomst = planning
-        assert "coreTone" in rn                                  # kern draagt dominante toon
-        assert "future: true" in _fn("dcFutureNodes")            # planning ligt vóór ons
+        assert "dcBuildEvents(" in rn                            # events uit echte velden
+        assert "dcDrawConnectors(wrap)" in rn                    # relationele connectoren
         scene = _fn("dcScene")
-        assert "dc-rail" in scene and "dcHex(coreTone)" in scene  # warm→toon→koel spine
-        assert "Vandaag" in scene                                 # lichtgevend ankerpunt
-        # tijd is ook echt visueel gestyled: rail, dots, gestippelde toekomst, kern-sun
-        for sel in (".dc-rail-future", ".dc-dot", ".dc-coredot", ".dc-node.future"):
-            assert sel in _DS, f"tijd-primitive {sel} niet gestyled"
+        assert "dc-grid" in scene and "dcTlItem(" in scene and "dcMemPanel(sel)" in scene and "dcRelCard" in scene
+        # de drie zones + connectoren zijn ook echt visueel gestyled
+        for sel in (".dc-grid", ".dc-tl-item", ".dc-mem", ".dc-rt-card", ".dc-conn path"):
+            assert sel in _DS, f"3-zone-primitive {sel} niet gestyled"
 
     def test_34_home_briefing_is_geen_uitgeklapt_paneel(self):
         body = _fn("prioDetailHtml")

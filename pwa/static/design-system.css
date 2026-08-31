@@ -1054,76 +1054,157 @@
   transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
 .dc-nav2 .anav-chip:hover{border-color:var(--ds-accent);color:var(--ds-text)}
 
-/* ══ MEMORY SPINE — het ruimtelijke geheugen-tableau (fluïde) ══════════════ */
-.dc-scene{position:relative;height:480px;margin-top:var(--ds-2)}
-.dc-rail{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-.dc-rail .dc-rail-l{fill:none;stroke-width:2.2;stroke-linecap:round}
-.dc-rail .dc-rail-glow{fill:none;stroke-width:8;filter:blur(7px)}
-.dc-rail .dc-rail-future{fill:none;stroke:var(--ds-calm);stroke-width:1.8;stroke-dasharray:2 9;stroke-linecap:round;opacity:.75}
-.dc-rail .dc-origin{fill:none;stroke:#C98C55;stroke-width:1.4;stroke-dasharray:1 7;stroke-linecap:round;opacity:.45}
+/* ══ 3-ZONE GEHEUGENCOCKPIT (tijdlijn | geselecteerde herinnering | draden) ══ */
+/* Control-rij: echte, purposeful pillen (periode/telling/bronversheid). */
+.dc-ctrl{display:flex;align-items:center;gap:11px;margin:0 0 14px}
+.dc-ctrl-sp{flex:1}
+.dc-cpill{display:inline-flex;align-items:center;gap:11px;padding:9px 15px;border-radius:13px;
+  background:linear-gradient(180deg,rgba(18,40,76,.5),rgba(10,24,46,.4));border:1px solid rgba(122,168,255,.16)}
+.dc-cpill .cpi{width:26px;height:26px;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;color:var(--ds-text-3);
+  background:rgba(94,230,235,.08)}
+.dc-cpill .cpi .ic{width:14px;height:14px}
+.dc-cpill .cpt small{display:block;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3)}
+.dc-cpill .cpt b{display:block;font-size:12.5px;font-weight:600;color:var(--ds-text)}
 
-/* Ronde laag: dots + core-sun (HTML → geen ellipsen bij horizontale stretch). */
-.dc-round{position:absolute;inset:0;pointer-events:none}
-.dc-dot{position:absolute;top:250px;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:50%;
-  background:var(--tone);box-shadow:0 0 0 4px var(--ds-canvas),0 0 14px 1px var(--tone-bg)}
-.dc-dot.is-attention{--tone:var(--ds-attention);--tone-bg:var(--ds-attention-bg)}
-.dc-dot.is-critical{--tone:var(--ds-critical);--tone-bg:var(--ds-critical-bg)}
-.dc-dot.is-stale{--tone:var(--ds-stale);--tone-bg:var(--ds-stale-bg)}
-.dc-dot.is-success{--tone:var(--ds-success);--tone-bg:var(--ds-success-bg)}
-.dc-dot.fut{background:none;border:1.5px solid var(--ds-calm);box-shadow:0 0 0 4px var(--ds-canvas)}
-.dc-coredot{position:absolute;left:50%;top:250px;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;
-  background:radial-gradient(circle,#fff 0%,#fff 22%,var(--tone) 55%,transparent 72%);
-  box-shadow:0 0 0 5px var(--ds-canvas),0 0 26px 6px var(--tone),0 0 80px 30px var(--tone-bg)}
-.dc-coredot::before,.dc-coredot::after{content:"";position:absolute;border-radius:50%;
-  left:50%;top:50%;transform:translate(-50%,-50%);border:1px solid var(--tone);pointer-events:none}
-.dc-coredot::before{width:44px;height:44px;opacity:.55}
-.dc-coredot::after{width:78px;height:78px;opacity:.28}
+.dc-grid{position:relative;display:grid;gap:20px;align-items:start;
+  grid-template-columns:minmax(258px,318px) minmax(0,1.45fr) minmax(280px,352px)}
+.dc-conn{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4;overflow:visible}
+.dc-conn path{fill:none;stroke-width:1.8;opacity:.68;filter:drop-shadow(0 0 4px currentColor)}
+.dc-conn .cnode{r:3.4}.dc-conn .cend{r:3}
 
-/* Vandaag-tekstblok (pure lichtankerpunt; GEEN groot getal → geen Workspace-gauge). */
-.dc-core{position:absolute;left:50%;top:250px;transform:translate(-50%,-50%);width:200px;text-align:center;z-index:2}
-.dc-core .core-lbl{font-size:12px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--ds-text);
-  text-shadow:0 0 20px var(--tone-bg)}
-.dc-core .core-date{font-size:11px;color:var(--ds-text-3);margin-top:2px}
-.dc-core .core-orb{width:74px;height:74px;margin:14px auto 12px}
-.dc-core .core-chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.05em;
-  text-transform:uppercase;color:var(--tone);padding:4px 12px;border-radius:var(--ds-r-pill);
+/* Glas-paneel (basis voor de drie zones). */
+.dc-pane{position:relative;border-radius:var(--ds-r-xl);
+  background:linear-gradient(162deg,rgba(24,48,90,.44),rgba(11,25,49,.3) 60%,rgba(8,18,38,.18));
+  border:1px solid rgba(122,168,255,.13);
+  -webkit-backdrop-filter:blur(12px) saturate(1.05);backdrop-filter:blur(12px) saturate(1.05);
+  box-shadow:inset 0 1px 0 rgba(192,217,255,.07),0 26px 56px -36px rgba(2,8,20,.9)}
+.dc-pane-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px 11px}
+.dc-pane-h b{font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ds-text-2)}
+.dc-pane-h .dc-pi{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;color:var(--ds-text-3);
+  border:1px solid rgba(122,168,255,.24);font-size:10px}
+
+/* LINKS — tijdlijn (echte events; geselecteerde uitgelicht). */
+.dc-tl{padding:0 8px 12px}
+.dc-tl-item{position:relative;display:grid;grid-template-columns:34px 40px minmax(0,1fr) auto;gap:9px;align-items:center;
+  width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:11px 8px;border-radius:14px;border:1px solid transparent;
+  background:none;transition:background var(--ds-fast) var(--ds-ease),border-color var(--ds-fast) var(--ds-ease)}
+.dc-tl-item::before{content:"";position:absolute;left:62px;top:-6px;bottom:-6px;width:2px;
+  background:linear-gradient(180deg,transparent,var(--tl-line,rgba(122,168,255,.2)),transparent)}
+.dc-tl-item:first-child::before{top:28px}.dc-tl-item:last-child::before{bottom:auto;height:30px}
+.dc-tl-item .tl-when{font-size:10px;color:var(--ds-text-3);text-align:right;line-height:1.2}
+.dc-tl-item .tl-node{position:relative;z-index:1;width:38px;height:38px;border-radius:11px;justify-self:center;display:grid;place-items:center;
+  color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.dc-tl-item .tl-node .ic{width:18px;height:18px}
+.dc-tl-item .tl-b{min-width:0}
+.dc-tl-item .tl-t{display:block;font-size:13.5px;font-weight:650;color:var(--ds-text);line-height:1.3}
+.dc-tl-item .tl-s{display:block;font-size:10.5px;color:var(--ds-text-3);margin-top:1px}
+.dc-tl-item .tl-m{text-align:right;white-space:nowrap}
+.dc-tl-item .tl-m small{display:block;font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ds-text-3)}
+.dc-tl-item .tl-m b{font-size:12px;font-weight:700;color:var(--tone)}
+.dc-tl-item:hover{background:rgba(94,230,235,.04)}
+.dc-tl-item.sel{background:linear-gradient(180deg,var(--tone-bg),rgba(10,24,46,.18));border-color:var(--tone-bd);
+  box-shadow:0 10px 30px -20px var(--tone)}
+.dc-tl-item.sel .tl-t{color:#fff}
+.dc-tl-item.now .tl-node{box-shadow:0 0 20px -4px var(--tone),inset 0 0 12px -7px #fff}
+.dc-tl-item.future .tl-node{border-style:dashed}
+.dc-tl-item:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+
+/* MIDDEN — geselecteerde herinnering (de hero: beslissings-geheugenpaneel). */
+.dc-center{overflow:hidden}
+.dc-mem{position:relative}
+.dc-mem .mem-h{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:17px 20px 0}
+.dc-mem .mem-when{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3);
+  display:inline-flex;align-items:center;gap:9px}
+.dc-mem .sel-tag{color:var(--tone);border:1px solid var(--tone-bd);background:var(--tone-bg);padding:2px 8px;border-radius:var(--ds-r-pill);font-size:9px}
+.dc-mem .mem-rel{text-align:right;flex:0 0 auto}
+.dc-mem .mem-rel small{display:block;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ds-text-3)}
+.dc-mem .mem-rel b{font-size:13px;font-weight:700;color:var(--tone)}
+.dc-mem .mem-title{display:flex;align-items:center;gap:13px;padding:11px 20px 2px}
+.dc-mem .mi{width:40px;height:40px;border-radius:12px;flex:0 0 auto;display:grid;place-items:center;color:var(--tone);
   background:var(--tone-bg);border:1px solid var(--tone-bd)}
-.dc-core .core-chip i{width:5px;height:5px;border-radius:50%;background:var(--tone);box-shadow:0 0 8px var(--tone)}
+.dc-mem .mi .ic{width:20px;height:20px}
+.dc-mem .mem-title h2{margin:0;font-size:21px;font-weight:750;letter-spacing:-.02em;line-height:1.12}
+.dc-mem .msub{font-size:11.5px;color:var(--ds-text-3);margin-top:2px}
+.dc-mem .mem-quote{margin:11px 20px 0;padding:12px 15px;border-radius:13px;font-size:13.5px;line-height:1.5;color:#F3E7D6;
+  background:var(--tone-bg);border:1px solid var(--tone-bd);border-left:3px solid var(--tone)}
+.dc-mem .mem-quote.plain{color:var(--ds-text);background:rgba(6,16,34,.4);border-color:rgba(122,168,255,.14);border-left-color:var(--tone-bd)}
+.dc-mem .mem-body{padding:6px 20px 2px}
+.dc-mem .mem-sec{display:grid;grid-template-columns:34px 1fr;gap:12px;padding:12px 0;border-top:1px solid rgba(255,255,255,.06)}
+.dc-mem .mem-sec:first-child{border-top:0}
+.dc-mem .si{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.dc-mem .si .ic{width:15px;height:15px}
+.dc-mem .sh{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ds-text-3);margin-bottom:4px}
+.dc-mem .mem-sec p{margin:0;font-size:13px;color:var(--ds-text-2);line-height:1.5}
+.dc-mem .mem-sec ul:not(.dc-reg){margin:5px 0 0;padding:0;list-style:none;display:grid;gap:4px}
+.dc-mem .mem-sec ul:not(.dc-reg) li{font-size:12.5px;color:var(--ds-text-2);line-height:1.45;padding-left:15px;position:relative}
+.dc-mem .mem-sec ul:not(.dc-reg) li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--tone);opacity:.75}
+.dc-mem .mem-prov{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.dc-mem .mem-prov .pv{font-size:10px;color:var(--ds-text-3);padding:3px 9px;border-radius:var(--ds-r-pill);
+  background:rgba(10,24,48,.5);border:1px solid rgba(122,168,255,.14)}
+.dc-mem .dc-why{margin-top:9px}
+.dc-mem .mem-foot{margin:6px 20px 16px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06);font-size:11px;color:var(--ds-text-3)}
+.dc-mem .mem-note{font-size:12.5px;color:var(--ds-text-3);margin:4px 0}
 
-/* Spine-knopen (labels) */
-.dc-nodes{position:absolute;inset:0;z-index:2}
-.dc-node{position:absolute;top:250px;width:186px;text-align:center;cursor:pointer;
-  background:none;border:0;font:inherit;padding:0;color:inherit;
-  transition:opacity var(--ds-base) var(--ds-ease),transform var(--ds-base) var(--ds-ease)}
-.dc-node.above{transform:translate(-50%,calc(-100% - 20px))}
-.dc-node.below{transform:translate(-50%,20px)}
-.dc-node .lbl{display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3)}
-.dc-node .ttl{display:block;font-size:13px;font-weight:650;color:var(--ds-text);line-height:1.28;margin-top:2px;text-wrap:balance}
-.dc-node .sig{display:block;font-size:11px;color:var(--ds-text-2);line-height:1.35;margin-top:2px}
-.dc-node.past .ttl{color:#F0DFC8}.dc-node.past .lbl{color:#B79167}
-.dc-node.future .lbl{color:#78C7CF}.dc-node.future .ttl{color:#CFEFF2;font-weight:600}
-.dc-node:hover .ttl{color:#fff}
-.dc-node:focus-visible{outline:2px solid var(--ds-accent);outline-offset:4px;border-radius:8px}
+/* RECHTS — gerelateerde draden (context; verbonden via connectoren). */
+.dc-rt{display:flex;flex-direction:column;gap:10px;padding:0 8px 10px}
+.dc-rt-card{position:relative;display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;
+  padding:12px 14px;border-radius:15px;background:linear-gradient(160deg,rgba(20,42,80,.42),rgba(10,23,45,.28));
+  border:1px solid rgba(122,168,255,.13);transition:border-color var(--ds-fast) var(--ds-ease),transform var(--ds-fast) var(--ds-ease)}
+.dc-rt-card:hover{border-color:var(--tone-bd);transform:translateX(-2px)}
+.dc-rt-card:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.dc-rt-card::before{content:"";position:absolute;left:-1px;top:14px;bottom:14px;width:2px;border-radius:2px;background:var(--tone);opacity:.55}
+.dc-rt-card .rt-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.dc-rt-card .rt-type{display:inline-flex;align-items:center;gap:7px;font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tone)}
+.dc-rt-card .ri{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.dc-rt-card .ri .ic{width:12px;height:12px}
+.dc-rt-card .rt-date{font-size:10px;color:var(--ds-text-3)}
+.dc-rt-card .rt-t{display:block;font-size:13.5px;font-weight:650;color:var(--ds-text);line-height:1.3}
+.dc-rt-card .rt-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px}
+.dc-rt-card .rt-metric{display:flex;align-items:center;gap:8px;min-width:0}
+.dc-rt-card .rt-metric small{font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ds-text-3)}
+.dc-rt-card .rt-scale{display:flex;gap:3px}
+.dc-rt-card .rt-scale i{width:12px;height:4px;border-radius:2px;background:rgba(122,168,255,.2)}
+.dc-rt-card .rt-scale i.on{background:var(--tone)}
+.dc-rt-card .rt-metric b{font-size:11.5px;font-weight:700;color:var(--tone)}
+.dc-rt-card .rt-arrow{width:23px;height:23px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.dc-rt-card .rt-arrow .ic{width:12px;height:12px}
+.dc-rt-empty{padding:14px;font-size:12px;color:var(--ds-text-3);line-height:1.5;text-align:center}
 
-/* ── Glas-lenzen (context zweeft om de tijd) ──────────────────────────────── */
-.dc-lens{position:absolute;z-index:3;width:clamp(214px,23.5%,286px);padding:15px 17px 14px;border-radius:16px;
-  background:linear-gradient(158deg,rgba(26,50,92,.5),rgba(12,26,50,.34) 58%,rgba(8,18,38,.16));
-  border:1px solid rgba(130,170,240,.14);
-  -webkit-backdrop-filter:blur(11px) saturate(1.05);backdrop-filter:blur(11px) saturate(1.05);
-  box-shadow:inset 0 1px 0 rgba(192,217,255,.1),0 30px 60px -34px rgba(2,8,20,.95);
-  -webkit-mask-image:linear-gradient(180deg,#000 84%,transparent 106%);
-          mask-image:linear-gradient(180deg,#000 84%,transparent 106%)}
-.dc-lens::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
-  background:linear-gradient(180deg,rgba(255,255,255,.05),transparent 24%)}
-.dc-lens>*{position:relative}
-.dc-lens .lh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px}
-.dc-lens .lh b{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ds-text-2)}
-.dc-lens .lh span{font-size:10px;color:var(--ds-text-3)}
-.dc-l-empty .en-row{display:flex;gap:11px;align-items:flex-start}
-.dc-l-empty .en-row .ic{width:20px;height:20px;flex:0 0 auto;color:var(--ds-text-3);margin-top:1px}
-.dc-l-empty .en-row p{margin:0;font-size:12px;color:var(--ds-text-2);line-height:1.55}
-.dc-l-empty .en-row p b{color:var(--ds-text)}
+/* Bewijs-domeinen als subordinate navigatie (drill → midden-hero). */
+.dc-domstrip{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:var(--ds-4)}
+.dc-domchip{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:var(--ds-r-pill);cursor:pointer;
+  font:inherit;font-size:11px;color:var(--ds-text-2);background:rgba(11,26,50,.4);border:1px solid rgba(122,168,255,.11);
+  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
+.dc-domchip:hover,.dc-domchip.on{border-color:var(--ds-accent);color:var(--ds-text)}
+.dc-domchip:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.dc-domchip .dcx{width:16px;height:16px;border-radius:5px;display:grid;place-items:center;color:var(--ds-text-3);background:rgba(94,230,235,.08)}
+.dc-domchip .dcx .ic{width:10px;height:10px}
+.dc-domchip .dcn{font-weight:700;color:var(--ds-accent)}
+.dc-domchip.leeg{opacity:.5}.dc-domchip.leeg .dcn{color:var(--ds-text-3)}
 
+/* Onder-actiebalk (echte routes). */
+.dc-actionbar{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:14px}
+.dc-act{display:flex;align-items:center;gap:11px;padding:12px 20px;border-radius:14px;cursor:pointer;font:inherit;color:inherit;
+  background:linear-gradient(180deg,rgba(18,40,76,.5),rgba(10,24,46,.4));border:1px solid rgba(122,168,255,.16);
+  transition:border-color var(--ds-fast) var(--ds-ease)}
+.dc-act:hover{border-color:var(--ds-accent)}
+.dc-act:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.dc-act .ai{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:var(--ds-accent);
+  background:rgba(94,230,235,.12);border:1px solid rgba(94,230,235,.3)}
+.dc-act .ai .ic{width:14px;height:14px}
+.dc-act .at{text-align:left}
+.dc-act .at b{display:block;font-size:12.5px;font-weight:650;color:var(--ds-text)}
+.dc-act .at small{display:block;font-size:10px;color:var(--ds-text-3)}
+
+/* Eerlijke lege-staat (capture OFF). */
+.dc-empty-note{display:flex;gap:12px;align-items:flex-start;margin-top:14px;padding:14px 18px}
+.dc-empty-note .enic{color:var(--ds-text-3);flex:0 0 auto}.dc-empty-note .enic .ic{width:20px;height:20px}
+.dc-empty-note p{margin:0;font-size:12.5px;color:var(--ds-text-2);line-height:1.55}
+.dc-empty-note p b{color:var(--ds-text)}
+
+/* Gedeeld met mobiel: dc-row (signalen/planning) + dc-quote (coachnotitie). */
 .dc-row{display:flex;align-items:center;gap:10px;padding:7px 0}
 .dc-row+.dc-row{border-top:1px solid rgba(255,255,255,.05)}
 .dc-row .dc-ic{width:24px;height:24px;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;
@@ -1138,71 +1219,8 @@
   border-left:2px solid var(--tone-bd);padding-left:11px;margin:0 0 8px}
 .dc-quote:last-child{margin-bottom:0}.dc-quote.muted{color:var(--ds-text-3);font-style:normal}
 
-/* Actuele lijn — current-state anchor onder de kern */
-.dc-nowline{position:absolute;z-index:3;left:50%;top:340px;transform:translateX(-50%);
-  width:min(420px,50%);display:flex;align-items:center;gap:14px;padding:12px 18px;border-radius:15px;
-  background:linear-gradient(180deg,rgba(15,32,60,.44),rgba(9,20,40,.3));border:1px solid rgba(122,168,255,.12);
-  -webkit-backdrop-filter:blur(9px);backdrop-filter:blur(9px)}
-.dc-nowline .nl-pulse{width:36px;height:36px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;
-  color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
-.dc-nowline .nl-pulse .ic{width:17px;height:17px}
-.dc-nowline .nl-b{min-width:0}
-.dc-nowline .nl-k{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ds-text-3)}
-.dc-nowline .nl-t{font-size:14px;font-weight:600;color:var(--ds-text);line-height:1.3;margin-top:2px}
-.dc-nowline .nl-s{font-size:11.5px;color:var(--ds-text-3);margin-top:1px}
-
-/* ── Bewijs-shelf (subordinate) + bron-infra ──────────────────────────────── */
-.dc-shelf{display:flex;flex-wrap:wrap;justify-content:center;gap:9px;margin-top:var(--ds-4)}
-.dc-chip2{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border-radius:var(--ds-r-pill);cursor:pointer;
-  font:inherit;font-size:11.5px;color:var(--ds-text-2);background:rgba(11,26,50,.42);border:1px solid rgba(122,168,255,.12);
-  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
-.dc-chip2:hover{border-color:var(--ds-accent);color:var(--ds-text)}
-.dc-chip2:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
-.dc-chip2 .cn{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;color:var(--ds-text-3);
-  background:rgba(94,230,235,.08)}
-.dc-chip2 .cn .ic{width:11px;height:11px}
-.dc-chip2 b{color:var(--ds-text);font-weight:600}
-.dc-chip2 .cnum{font-weight:700;color:var(--ds-accent)}
-.dc-chip2.leeg{opacity:.5}.dc-chip2.leeg .cnum{color:var(--ds-text-3)}
-.dc-infra{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:16px;
-  margin-top:var(--ds-4);font-size:10.5px;color:var(--ds-text-3)}
-.dc-infra .s{display:inline-flex;align-items:center;gap:6px}
-.dc-infra .s i{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--ds-stale)}
-.dc-infra .s.ok i{background:var(--ds-success)}.dc-infra .s.warn i{background:var(--ds-attention)}
-.dc-infra .s.bad i{background:var(--ds-critical)}
-
-/* ── Geselecteerd event: spatial forward (geen modal) ─────────────────────── */
-.dc-detail{position:absolute;z-index:8;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);
-  width:min(440px,84%);max-height:94%;overflow:auto;padding:22px 24px 20px;border-radius:20px;
-  opacity:0;pointer-events:none;transition:opacity var(--ds-base) var(--ds-ease),transform var(--ds-base) var(--ds-ease);
-  background:linear-gradient(162deg,rgba(30,56,100,.66),rgba(11,26,50,.54) 60%,rgba(8,18,38,.44));
-  border:1px solid var(--tone-bd);
-  -webkit-backdrop-filter:blur(16px) saturate(1.1);backdrop-filter:blur(16px) saturate(1.1);
-  box-shadow:0 40px 90px -30px rgba(2,8,20,.9),0 0 60px -20px var(--tone-bg),inset 0 1px 0 rgba(255,255,255,.1)}
-.dc-scene.sel .dc-detail{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
-.dc-scene.sel .dc-lens,.dc-scene.sel .dc-nowline,.dc-scene.sel .dc-node:not(.is-sel),
-.dc-scene.sel .dc-round{opacity:.26;transition:opacity var(--ds-base) var(--ds-ease)}
-.dc-detail-close{position:absolute;top:13px;right:13px;width:32px;height:32px;border-radius:50%;cursor:pointer;
-  display:grid;place-items:center;color:var(--ds-text-3);background:rgba(8,18,38,.5);border:1px solid rgba(122,168,255,.16);
-  transition:color var(--ds-fast) var(--ds-ease),border-color var(--ds-fast) var(--ds-ease)}
-.dc-detail-close:hover{color:var(--ds-text);border-color:var(--ds-accent)}
-.dc-detail-close:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
-.dc-detail-close .ic{width:13px;height:13px}
-.dt-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
-.dt-ic{width:38px;height:38px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;color:var(--tone);
-  background:var(--tone-bg);border:1px solid var(--tone-bd)}
-.dt-ic .ic{width:19px;height:19px}
-.dt-when{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ds-text-3)}
-.dt-ttl{margin:2px 0 0;font-size:18px;font-weight:700;letter-spacing:-.01em;line-height:1.15}
-.dt-sec{margin-top:12px}
-.dt-sec .dt-k{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;letter-spacing:.09em;
-  text-transform:uppercase;color:var(--ds-text-3);margin-bottom:6px}
-.dt-sec .dt-k .ic{width:12px;height:12px;color:var(--tone)}
-.dt-sec p{margin:0;font-size:12.5px;color:var(--ds-text-2);line-height:1.5}
-.dt-sec ul:not(.dc-reg){margin:0;padding:0;list-style:none;display:grid;gap:5px}
-.dt-sec ul:not(.dc-reg) li{font-size:12px;color:var(--ds-text-2);line-height:1.45;padding-left:15px;position:relative}
-.dt-sec ul:not(.dc-reg) li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--tone);opacity:.7}
-.dc-detail .dc-why{margin-top:12px}
+/* Veiligheids-fallback: als het 3-zone raster ooit te smal rendert, stapel het. */
+@media (max-width:1180px){ .dc-grid{grid-template-columns:1fr} .dc-conn{display:none} }
 
 /* ══ Mobiel: kalme verticale tijd-vertelling ══════════════════════════════ */
 .dc-stack{padding-bottom:var(--ds-6)}
@@ -1242,17 +1260,13 @@
 
 @media (min-width:900px){ .view.ds-view[data-view="dossier"]{max-width:1520px} }
 
-/* ── Motion: de tijd settelt van de kern naar buiten ──────────────────────── */
-@keyframes dc-fade{from{opacity:0}to{opacity:1}}
-@keyframes dc-corein{0%{opacity:0;transform:translate(-50%,-50%) scale(.7)}60%{opacity:1}100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}
-@keyframes dc-nodein{from{opacity:0;transform:translate(-50%,var(--dc-nodeoff,-40%))}}
-@keyframes dc-pulse{0%,100%{opacity:.85}50%{opacity:1}}
-.dc-coredot{animation:dc-corein .8s var(--ds-ease) both}
-.dc-core{animation:dc-corein .8s var(--ds-ease) both}
-.dc-lens,.dc-nowline,.dc-shelf,.dc-infra{animation:dc-fade .55s var(--ds-ease) both}
-.dc-node{animation:dc-fade .5s var(--ds-ease) both}
+/* ── Motion: de zones settelen rustig in; de draden tekenen zich naar buiten ── */
+@keyframes dc-fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.dc-ctrl,.dc-grid>.dc-pane,.dc-domstrip,.dc-actionbar{animation:dc-fade .5s var(--ds-ease) both}
+.dc-grid>.dc-center{animation-delay:.05s}.dc-grid>.dc-rt-pane{animation-delay:.1s}
+.dc-conn path{transition:stroke-dashoffset .5s var(--ds-ease)}
 @media (prefers-reduced-motion:reduce){
-  .dc-coredot,.dc-core,.dc-lens,.dc-nowline,.dc-shelf,.dc-infra,.dc-node{animation:none}
+  .dc-ctrl,.dc-grid>.dc-pane,.dc-domstrip,.dc-actionbar{animation:none}
 }
 
 /* ── HOME ATHLETE BRIEFING ────────────────────────────────────────────────
