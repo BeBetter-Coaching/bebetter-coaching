@@ -40,3 +40,12 @@ __pycache__/
 .brain_snapshot.json
 .home_handled.json
 .feedback_queue.json
+
+# review-artefacten horen niet in de repo
+bebetter-*.zip
+chatgpt-review-pack/
+bebetter-athlete-canvas-review-*/
+.claude/
+bebetter-fable-northstar-review-*/
+bebetter-workspace-closure-*/
+COMMIT.txt

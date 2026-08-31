@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Presence Paint Lab</title>
+<style>
+/* Painterly digital-human bust — gestapelde soft-gradients (sculpt-lagen).
+   Doel: pre-rendered alpha-asset voor de Workspace spatial cockpit.
+   Transparante achtergrond; capture met --default-background-color=00000000. */
+html,body{margin:0;background:transparent;width:900px;height:1040px;overflow:hidden}
+svg{display:block;width:900px;height:1040px}
+.b{filter:blur(26px)}   /* grote vormen        */
+.m{filter:blur(14px)}   /* middenvormen        */
+.f{filter:blur(7px)}    /* fijne modellering   */
+.x{filter:blur(3px)}    /* accenten            */
+</style>
+</head>
+<body>
+<svg viewBox="0 0 900 1040" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset=".62" stop-color="#fff"/>
+      <stop offset=".97" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="dissolve"><rect width="900" height="1040" fill="url(#fade)"/></mask>
+  </defs>
+
+  <g mask="url(#dissolve)">
+    <!-- ══ 1. BASISMASSA (silhouet in soft volume) ══ -->
+    <g class="b" fill="#274F7C">
+      <ellipse cx="450" cy="228" rx="108" ry="138"/>                  <!-- schedel -->
+      <rect x="398" y="330" width="104" height="120" rx="46"/>        <!-- hals -->
+      <path d="M450 416 C580 424 720 468 790 542 C820 584 834 646 838 724 L838 1000 L62 1000 L62 724 C66 646 80 584 110 542 C180 468 320 424 450 416 Z"/>
+    </g>
+
+    <!-- ══ 2. HAAR (v): massa + staart ══ -->
+    <g class="m" fill="#12253F">
+      <ellipse cx="442" cy="170" rx="118" ry="104"/>                  <!-- haarkap -->
+      <ellipse cx="360" cy="200" rx="40" ry="76"/>                    <!-- zijmassa links -->
+    </g>
+    <g class="f" fill="#1C3A61">
+      <ellipse cx="452" cy="150" rx="112" ry="80"/>                   <!-- haar sheen-basis -->
+    </g>
+    <g class="x" fill="#3E6E9E" opacity=".5">
+      <path d="M380 112 C424 92 492 90 534 112 C492 102 424 102 380 112 Z" opacity=".5"/> <!-- haarlijn glans -->
+    </g>
+
+    <!-- ══ 3. GEZICHT: vormvlakken (sculpt, geen portret) ══ -->
+    <!-- gezichtsveld iets lichter dan basis -->
+    <g class="m" fill="#3A6C9E">
+      <ellipse cx="456" cy="250" rx="76" ry="108"/>
+    </g>
+    <!-- voorhoofd licht -->
+    <g class="f" fill="#63A8D8">
+      <ellipse cx="456" cy="188" rx="62" ry="40"/>
+    </g>
+    <!-- oogkas-schaduwband (ogen in schaduw — menselijk zonder identiteit) -->
+    <g class="f" fill="#132A47">
+      <ellipse cx="424" cy="246" rx="30" ry="16"/>
+      <ellipse cx="492" cy="246" rx="30" ry="16"/>
+    </g>
+    <g class="m" fill="#16304F" opacity=".85">
+      <ellipse cx="458" cy="242" rx="72" ry="20"/>
+    </g>
+    <!-- wenkbrauwrichel licht boven de schaduwband -->
+    <g class="x" fill="#7CBCE4" opacity=".8">
+      <ellipse cx="427" cy="229" rx="20" ry="5" transform="rotate(2 427 229)"/>
+      <ellipse cx="489" cy="229" rx="20" ry="5" transform="rotate(-2 489 229)"/>
+    </g>
+    <!-- neusbrug + neuspunt -->
+    <g class="f" fill="#7CBCE4">
+      <rect x="450" y="238" width="13" height="58" rx="6"/>
+    </g>
+    <g class="x" fill="#9AD2EF" opacity=".9">
+      <ellipse cx="457" cy="300" rx="12" ry="9"/>
+    </g>
+    <g class="f" fill="#152C49" opacity=".8">
+      <ellipse cx="457" cy="313" rx="10" ry="4"/>                      <!-- neus-onderschaduw -->
+    </g>
+    <!-- jukbeenderen -->
+    <g class="f" fill="#63A8D8" opacity=".9">
+      <ellipse cx="408" cy="272" rx="18" ry="24"/>
+      <ellipse cx="506" cy="270" rx="18" ry="24"/>
+    </g>
+    <!-- wangschaduw (holte) -->
+    <g class="m" fill="#1B3659" opacity=".8">
+      <ellipse cx="410" cy="314" rx="14" ry="20"/>
+      <ellipse cx="504" cy="312" rx="14" ry="20"/>
+    </g>
+    <!-- mondzone: zachte donkere band + kinlicht -->
+    <g class="m" fill="#1A3355" opacity=".55">
+      <ellipse cx="457" cy="341" rx="16" ry="5"/>
+    </g>
+    <g class="x" fill="#5290C2" opacity=".7">
+      <ellipse cx="457" cy="352" rx="16" ry="5"/>
+    </g>
+    <g class="f" fill="#63A8D8">
+      <ellipse cx="457" cy="372" rx="22" ry="14"/>                     <!-- kin -->
+    </g>
+    <!-- kaaklijn-schaduw -->
+    <g class="m" fill="#122540" opacity=".45">
+      <path d="M380 330 C400 372 430 396 458 398 C486 396 514 372 534 328 C520 380 492 410 458 412 C424 410 396 378 380 330 Z"/>
+    </g>
+
+    <!-- ══ 4. HALS: cilinder + spieren ══ -->
+    <g class="f" fill="#16304F" opacity=".9">
+      <rect x="398" y="360" width="20" height="100" rx="10"/>
+      <rect x="482" y="360" width="20" height="100" rx="10"/>
+    </g>
+    <g class="f" fill="#5290C2" opacity=".7">
+      <rect x="442" y="372" width="18" height="88" rx="9"/>           <!-- keellicht -->
+    </g>
+    <g class="f" fill="#63A8D8" opacity=".35">
+      <path d="M414 380 C420 420 432 450 448 468 C436 452 424 420 418 382 Z"/>
+      <path d="M488 378 C482 418 470 448 456 466 C468 450 480 418 484 380 Z"/>
+    </g>
+    <!-- onder-kin kernschaduw -->
+    <g class="m" fill="#0E2036" opacity=".95">
+      <ellipse cx="452" cy="404" rx="46" ry="22"/>
+    </g>
+
+    <!-- ══ 5. SCHOUDERS / TRAPEZIUS / BORST ══ -->
+    <g class="m" fill="#1B3659">
+      <path d="M450 430 C540 436 640 472 706 536 C650 500 545 470 450 466 C355 470 250 500 194 536 C260 472 360 436 450 430 Z"/>
+    </g>
+    <!-- doorlopende schouderband: nek → trapezius → deltoid (één lichtvorm per zijde) -->
+    <g class="m" fill="#5290C2" opacity=".75">
+      <path d="M414 452 C340 462 250 492 178 548 C150 572 134 600 130 628 C160 584 210 548 268 522 C322 498 376 482 420 476 Z"/>
+      <path d="M486 452 C560 462 650 492 722 548 C750 572 766 600 770 628 C740 584 690 548 632 522 C578 498 524 482 480 476 Z"/>
+    </g>
+    <!-- sleutelbeen-schaduw net onder de band -->
+    <g class="f" fill="#152C49" opacity=".5">
+      <ellipse cx="348" cy="522" rx="58" ry="9" transform="rotate(6 348 522)"/>
+      <ellipse cx="552" cy="522" rx="58" ry="9" transform="rotate(-6 552 522)"/>
+    </g>
+    <!-- sternum-veld: één uitwaaierend borstlicht -->
+    <g class="b" fill="#3A6C9E" opacity=".9">
+      <ellipse cx="450" cy="620" rx="150" ry="150"/>
+    </g>
+    <g class="m" fill="#5290C2" opacity=".5">
+      <ellipse cx="450" cy="560" rx="60" ry="90"/>
+    </g>
+    <!-- flankschaduwen -->
+    <g class="b" fill="#0C1D33" opacity=".85">
+      <ellipse cx="180" cy="760" rx="80" ry="180"/>
+      <ellipse cx="720" cy="760" rx="80" ry="180"/>
+    </g>
+
+    <!-- ══ 6. RIM LIGHTS ══ -->
+    <g class="f" fill="#9FE8FF" opacity=".6">
+      <path d="M368 140 C344 186 334 240 340 292 C344 322 354 348 368 366 C356 340 350 312 348 282 C346 232 354 182 368 140 Z"/>
+      <path d="M196 552 C172 592 158 650 154 716 C164 656 180 604 204 568 Z"/>
+    </g>
+    <g class="f" fill="#BCEBFF" opacity=".42">
+      <path d="M548 148 C568 190 576 240 572 290 C568 318 560 342 548 358 C558 334 564 308 566 280 C568 234 560 190 548 148 Z"/>
+      <path d="M700 552 C726 594 738 652 740 716 C732 656 716 604 694 568 Z"/>
+    </g>
+    <!-- haar-rim -->
+
+  </g>
+</svg>
+</body>
+</html>

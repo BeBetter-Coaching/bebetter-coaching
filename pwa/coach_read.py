@@ -272,9 +272,16 @@ def _athlete_belasting(user_key: str, stand: dict | None = None) -> dict:
         return {"actief": False, "ernst": "", "pct": None,
                 "datum": stand.get("datum")}
     lm = load_metric(res)
+    # `runs` = de al berekende recente runs uit DEZELFDE captured stand (presentatie:
+    # de UI tekent er een sparkline mee). Puur doorgeven van bestaande waarheid —
+    # geen nieuwe berekening, geen nieuwe bron, geen extra read.
+    runs = [{"datum": r.get("datum"), "km": r.get("km")}
+            for r in ((res.get("metrics") or {}).get("runs_recent") or [])
+            if isinstance(r, dict)]
     return {"actief": True, "ernst": lm["ernst"], "pct": lm["pct"],
             "km_recent": lm["km_recent"], "km_basis_week": lm["km_basis_week"],
             "signalen": lm["signalen"], "reden": lm["reden"],
+            "runs": runs,
             "datum": stand.get("datum")}
 
 

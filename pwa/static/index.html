@@ -7,7 +7,10 @@
   <title>BeBetter Coaching</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-400.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-700.woff2">
+  <link rel="stylesheet" href="/static/styles.css?v=115a">
+  <link rel="stylesheet" href="/static/design-system.css?v=115a">
 </head>
 <body>
   <!-- Iconen-sprite (lijn-iconen, werken offline) -->
@@ -114,8 +117,14 @@
     </section>
 
     <!-- ════════ DOSSIER (read-only Masterbrein-cockpit) ════════ -->
-    <section class="view" data-view="dossier">
-      <header class="appbar"><h1>Dossier</h1>
+    <section class="view ds-view" data-view="dossier">
+      <header class="appbar ws-bar"><h1 class="dc-title">Dossier</h1>
+        <button class="ws-switch" id="dc-switch" type="button" aria-haspopup="dialog">
+          <span class="ws-switch-av" id="dc-switch-av">—</span>
+          <span class="ws-switch-t"><span class="ws-switch-nm" id="dc-switch-nm">Kies atleet</span>
+            <span class="ws-switch-sub" id="dc-switch-sub">Geheugen &amp; verantwoording</span></span>
+          <svg class="ic"><use href="#ic-chevron"/></svg>
+        </button>
         <button class="iconbtn" id="dc-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
       </header>
       <div class="md-split">
@@ -128,17 +137,17 @@
     </section>
 
     <!-- ════════ WORKSPACE (Athlete Workspace / Coach Cockpit v2) ════════ -->
-    <section class="view" data-view="workspace">
-      <header class="appbar"><h1>Workspace</h1>
+    <section class="view ds-view ws-view" data-view="workspace">
+      <header class="appbar ws-bar">
+        <button class="ws-switch" id="ws-switch" type="button" aria-haspopup="dialog">
+          <span class="ws-switch-av" id="ws-switch-av">—</span>
+          <span class="ws-switch-t"><span class="ws-switch-nm" id="ws-switch-nm">Kies atleet</span>
+            <span class="ws-switch-sub" id="ws-switch-sub">Workspace</span></span>
+          <svg class="ic"><use href="#ic-chevron"/></svg>
+        </button>
         <button class="iconbtn" id="ws-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
       </header>
-      <div class="md-split">
-        <div class="md-list">
-          <div class="search"><svg class="ic"><use href="#ic-search"/></svg><input id="ws-zoek" placeholder="Zoek atleet"></div>
-          <section id="ws-lijst" class="lijst"></section>
-        </div>
-        <div id="ws-detail" class="md-detail" hidden></div>
-      </div>
+      <div id="ws-detail" class="ws-canvas"></div>
     </section>
 
     <!-- ════════ INTAKE ════════ -->
@@ -421,6 +430,6 @@
     </article>
   </template>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=115a"></script>
 </body>
 </html>

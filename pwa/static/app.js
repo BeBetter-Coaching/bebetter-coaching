@@ -271,6 +271,143 @@ function athleteNav(activeView, user_key) {
   return all ? `<div class="anav" role="group" aria-label="Ga naar voor deze atleet">${all}</div>` : "";
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// Design System v1 — gedeelde UI-primitives (Workspace, Dossier, Home-detail)
+// --------------------------------------------------------------------------
+// ÉÉN visuele + interactionele taal. Deze functies geven HTML-strings terug en
+// zijn PUUR presentatie: ze lezen alleen wat de server al als waarheid levert en
+// verzinnen niets. Statussemantiek loopt via `dsTone()` — de enige plek waar een
+// betekenis (actie/aandacht/hoog/let_op/stale/…) een kleur krijgt, zodat dezelfde
+// betekenis nooit meer per module een andere kleur kan krijgen.
+// ══════════════════════════════════════════════════════════════════════════
+
+// DE statusmapping. Server-vocabulaires (tier, ernst, reliability-level,
+// freshness) → één set toon-klassen uit design-system.css.
+const _DS_TONE = {
+  actie: "is-critical", aandacht: "is-attention",
+  hoog: "is-critical", let_op: "is-attention",
+  critical: "is-critical", attention: "is-attention", calm: "is-calm",
+  success: "is-success", resolved: "is-success", ok: "is-calm",
+  stale: "is-stale", refreshing: "is-stale",
+  unknown: "is-unknown", partial: "is-unknown",
+  red: "is-critical", amber: "is-attention", green: "is-calm",
+  fresh: "is-calm",
+};
+function dsTone(v) { return _DS_TONE[String(v == null ? "" : v).toLowerCase()] || "is-calm"; }
+
+// Zwaarste toon uit een set (actie wint van aandacht wint van rustig).
+const _DS_RANK = { "is-critical": 3, "is-attention": 2, "is-stale": 1, "is-unknown": 1, "is-success": 0, "is-calm": 0 };
+function dsWorstTone(tones) {
+  return (tones || []).reduce((a, t) => (_DS_RANK[t] || 0) > (_DS_RANK[a] || 0) ? t : a, "is-calm");
+}
+
+function dsChip(text, tone) { return `<span class="ds-chip ${tone || "is-calm"}">${esc(text)}</span>`; }
+
+// Bron/versheid — één component voor Home, Workspace, Dossier en Teampuls.
+function dsFresh(state, text) {
+  const t = dsTone(state);
+  return `<span class="ds-fresh ${t}"><i class="ds-dot"></i>${esc(text)}</span>`;
+}
+
+// Sparkline uit ECHTE reeksen (bv. de recente runs uit de belasting-stand).
+// Geen library, geen canvas: één inline SVG-pad. Leeg bij < 2 punten — we
+// tekenen liever niets dan een verzonnen lijn.
+function dsSpark(vals) {
+  const v = (vals || []).map(Number).filter(n => isFinite(n));
+  if (v.length < 2) return "";
+  const w = 100, h = 30, min = Math.min(...v), max = Math.max(...v), span = (max - min) || 1;
+  const pts = v.map((n, i) => [(i / (v.length - 1)) * w, h - 3 - ((n - min) / span) * (h - 8)]);
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+  const last = pts[pts.length - 1];
+  return `<svg class="ds-metric-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+    <path class="ds-spark-area" d="${d} L ${w} ${h} L 0 ${h} Z"/>
+    <path class="ds-spark-line" d="${d}" vector-effect="non-scaling-stroke"/>
+    <circle class="ds-spark-dot" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.4"/></svg>`;
+}
+
+// Voortgangsring (bv. feedback-afhandeling). Alleen bij een echt percentage.
+function dsRing(pct, tone) {
+  if (pct == null || !isFinite(Number(pct))) return "";
+  const p = Math.max(0, Math.min(100, Math.round(Number(pct)))), r = 30, c = 2 * Math.PI * r;
+  return `<figure class="ds-ringwrap ${tone || "is-calm"}"><svg viewBox="0 0 76 76" aria-hidden="true">
+    <circle class="ds-ring-track" cx="38" cy="38" r="${r}"/>
+    <circle class="ds-ring-val" cx="38" cy="38" r="${r}" stroke-dasharray="${(c * p / 100).toFixed(1)} ${c.toFixed(1)}"/>
+    </svg><figcaption>${p}%</figcaption></figure>`;
+}
+
+// Metric-tegel: label, groot getal, eenheid, subregel en optionele sparkline.
+function dsMetric(m) {
+  const tone = m.tone ? ` ds-tone ${m.tone}` : "";
+  return `<div class="ds-metric${tone}">
+    <span class="ds-metric-l">${esc(m.label)}${m.badge ? `<span class="ds-chip ${m.tone || "is-calm"}">${esc(m.badge)}</span>` : ""}</span>
+    <span class="ds-metric-v">${esc(m.value)}${m.unit ? `<span class="ds-metric-u">${esc(m.unit)}</span>` : ""}</span>
+    ${m.sub ? `<span class="ds-metric-s">${esc(m.sub)}</span>` : ""}
+    ${m.spark || ""}</div>`;
+}
+
+// Aandachtkaart — DE manier waarop de app "dit vraagt nu aandacht" toont.
+function dsAttnCard(a) {
+  const tone = a.tone || "is-attention";
+  return `<div class="ds-attn-card ${tone}">
+    <span class="ds-attn-ic">${ic(a.icon || "alert")}</span>
+    <span class="ds-attn-body">
+      <p class="ds-attn-t">${esc(a.title)}</p>
+      ${a.why ? `<p class="ds-attn-w">${esc(a.why)}</p>` : ""}
+      ${a.meta ? `<p class="ds-attn-meta">${esc(a.meta)}</p>` : ""}
+    </span>
+    ${a.value ? `<span class="ds-attn-val">${esc(a.value)}</span>` : ""}</div>`;
+}
+
+// Paneel met sectiekop — vervangt de losse `*-sec h3`-varianten per module.
+function dsPanel(label, body, o) {
+  o = o || {};
+  const tone = o.tone ? ` ds-tone ${o.tone}` : "";
+  return `<section class="ds-panel${tone} ${o.cls || ""}">
+    <div class="ds-sechead"><h3 class="ds-label">${esc(label)}</h3>
+      ${o.note ? `<span class="ds-sechead-note">${esc(o.note)}</span>` : ""}</div>
+    ${body}</section>`;
+}
+
+// Leesbare feitenlijst (vervangt de kale label/value-<ul>'s).
+function dsKv(rows) {
+  const r = (rows || []).filter(x => x && x.label != null);
+  if (!r.length) return "";
+  return `<dl class="ds-kv">` + r.map(x =>
+    `<div><dt>${esc(x.label)}</dt><dd>${esc(x.value == null ? "—" : x.value)}</dd></div>`).join("") + `</dl>`;
+}
+
+// Compacte stream/tijdlijn (recent veranderd, historie).
+function dsStream(items) {
+  const it = (items || []).filter(Boolean);
+  if (!it.length) return "";
+  return `<ul class="ds-stream">` + it.map(x =>
+    `<li class="${x.tone || "is-calm"}">${x.date ? `<span class="ds-stream-d">${esc(x.date)}</span>` : ""}
+      <span class="ds-stream-t">${esc(x.text)}</span></li>`).join("") + `</ul>`;
+}
+
+// Snelle actie — bestaande routes/authority, alleen een gedeelde presentatie.
+function dsAction(a) {
+  const tone = a.tone ? ` ds-tone ${a.tone}` : "";
+  return `<button type="button" class="ds-action${tone}" onclick="${a.onclick}">
+    <span class="ds-action-ic">${ic(a.icon || "chevron")}</span>
+    <span class="ds-action-b"><span class="ds-action-t">${esc(a.title)}</span>
+      ${a.sub ? `<span class="ds-action-s">${esc(a.sub)}</span>` : ""}</span></button>`;
+}
+
+function dsEmpty(text, o) {
+  o = o || {};
+  return `<p class="ds-empty ${o.tone || ""}">${ic(o.icon || "check")}<span>${esc(text)}</span></p>`;
+}
+function dsSkeletonBlock(n) {
+  return `<div class="ds-panel">${Array.from({ length: n || 3 },
+    (_, i) => `<div class="ds-skel ${i % 2 ? "w60" : "w80"}"></div>`).join("")}</div>`;
+}
+
+// NB: contextnavigatie tussen athlete-views blijft de BESTAANDE gedeelde
+// `athleteNav()` (één definitie, vaste call-contracten). Het design system
+// vervangt die niet — het geeft 'm alleen de gedeelde shell-stijl (.anav /
+// .anav-chip worden in design-system.css opgewaardeerd). Eén nav-component.
+
 // ── Coach Read Model v2 — generation/freshness-coherentie ────────────────────
 // Eén gedeelde read-generation (server-side, inhoud-afgeleid) reist mee in elke
 // Home/Teampuls/Workspace-response. De client onthoudt de LAATST ontvangen generatie
@@ -865,13 +1002,53 @@ function prioToggle(wrap, force) {
 // Detail = alle signalen van deze atleet (totaalbeeld). ELK signaal heeft zijn EIGEN
 // Gezien/Later (per-signaal status) + eigen context-actie. Dossier is atleet-breed
 // (één keer, onderaan). Bulk gaat via de swipe, niet via het detail.
+// Home-detail = een ATHLETE BRIEFING, geen uitgeklapt legacy-paneel. Het toont
+// alleen wat je nu over deze atleet moet weten: identiteit, reden voor aandacht,
+// het dominante signaal, 2-3 ondersteunende feiten en de volgende coachactie.
+// Zelfde data, zelfde optimistic-write-flow, zelfde routes.
 function prioDetailHtml(it) {
-  const blokken = (it.signalen || []).map(s => {
+  const sigs = it.signalen || [];
+  const tone = dsWorstTone(sigs.map(s => dsTone(s.tier)));
+  // Dominant signaal = het zwaarste; de rest is ondersteunende context.
+  const hoofd = sigs.slice().sort((a, b) =>
+    (dsTone(a.tier) === "is-critical" ? 0 : 1) - (dsTone(b.tier) === "is-critical" ? 0 : 1))[0];
+  const bel = sigs.find(s => s.soort === "belasting");
+  const pct = bel && bel.detail && bel.detail.pct != null ? bel.detail.pct : null;
+  // Waarde-consistentie: de belasting-zin in de briefing komt uit DEZELFDE
+  // canonieke detailvelden als het dominante cijfer rechtsboven — nooit een
+  // voor-afgeronde bron-zin (+91%) naast het canonieke percentage (+92%).
+  const bd = (bel && bel.detail) || {};
+  const belZin = (bd.pct != null && bd.km_recent != null && bd.km_basis != null)
+    ? `Volume ${bd.pct > 0 ? "+" : ""}${bd.pct}% deze week (${bd.km_recent} km vs gem. ${bd.km_basis} km/wk)` : "";
+  const titelVan = s => (s.soort === "belasting" && belZin) ? belZin : s.reden;
+
+  let h = `<div class="pb ${tone}">`;
+  h += `<div class="pb-amb" aria-hidden="true"></div>`;
+  // Identiteit + de reden dat deze atleet je aandacht vraagt.
+  h += `<header class="pb-head">
+    <span class="pb-orb">${esc(initialen(it.naam || ""))}</span>
+    <div class="pb-id"><h3 class="pb-naam">${esc(it.naam || "")}</h3>
+      <p class="pb-reden">${esc(hoofd
+        ? (hoofd.soort === "belasting" && bd.pct != null
+            ? `Belasting ${hoofd.tier === "actie" ? "hoog" : "let op"} · ${bd.pct > 0 ? "+" : ""}${bd.pct}% t.o.v. referentie`
+            : titelVan(hoofd))
+        : "geen open signaal")}</p></div>
+    ${pct != null ? `<span class="pb-dom"><b>${pct > 0 ? "+" : ""}${esc(pct)}</b><i>%</i></span>` : ""}
+  </header>`;
+
+  // Ondersteunende feiten: elk signaal met zijn eigen afhandeling.
+  h += `<div class="pd-signalen">` + sigs.map((s, i) => {
     const ctxBtn = (s.context && s.context[0]) ? swBtn(s.context[0]) : "";
-    return `<div class="pd-s-blok" data-soort="${s.soort}">
-      <div class="pd-s-head"><span class="pd-s-ic ${s.tier}">${ic(SOORT_IC[s.soort] || "activity")}</span>
-        <b>${esc(s.reden)}</b></div>
-      <div class="pd-s-body">${prioSignaalBody(s)}</div>
+    // Briefing = compact: het onderbouwende detail staat achter progressive
+    // disclosure (open voor het dominante signaal), de acties blijven altijd zichtbaar.
+    const open = s === hoofd;
+    return `<div class="pd-s-blok ${dsTone(s.tier)}" data-soort="${s.soort}">
+      ${dsAttnCard({ tone: dsTone(s.tier), icon: SOORT_IC[s.soort] || "activity",
+                     title: titelVan(s),
+                     meta: (s.soort === "belasting" && belZin) ? ""
+                           : (s.kort && s.kort !== s.reden ? s.kort : "") })}
+      <button type="button" class="ds-more pb-more" onclick="dsFoldToggle(this)">${open ? "Verberg" : "Toon"} onderbouwing</button>
+      <div class="ds-fold${open ? " open" : ""}"><div class="pd-s-body">${prioSignaalBody(s)}</div></div>
       <div class="pd-s-work">
         <button class="pd-wbtn gezien" data-act="gezien" data-soort="${s.soort}" type="button">${ic("check")}<span>Gezien</span></button>
         <div class="pd-later"><span>Later</span>
@@ -882,11 +1059,14 @@ function prioDetailHtml(it) {
       </div>
       ${ctxBtn ? `<div class="pd-s-acts">${ctxBtn}</div>` : ""}
     </div>`;
-  }).join("");
-  // Athlete-brede acties: Workspace (v2 — 'wat speelt er nu' voor deze atleet) naast Dossier.
-  const acts = `<div class="pd-acts">${swBtn({ act: "workspace", label: "Workspace", icon: "brain" })}${swBtn({ act: "dossier", label: "Dossier", icon: "user-plus" })}</div>`;
-  return `<div class="pd-signalen">${blokken}</div>${acts}`;
+  }).join("") + `</div>`;
+
+  // Volgende stap: door naar de athlete-context (zelfde gedeelde routes).
+  h += `<div class="pd-acts pb-acts">${swBtn({ act: "workspace", label: "Open workspace", icon: "brain" })}${swBtn({ act: "dossier", label: "Dossier", icon: "user-plus" })}</div>`;
+  h += `</div>`;
+  return h;
 }
+
 
 // Type-specifiek detail per signaal (uit de snapshot; compliance-sessies lazy).
 function prioSignaalBody(s) {
@@ -4420,7 +4600,7 @@ function tekenAdmin(d) {
 // provenance + "Waarom?". Strikt read-only; geen writes, geen edits. Zie
 // dossier-fase-b-cockpit-design.md.
 // ════════════════════════════════════════════════════════════════════════════
-let dcPicker = null, dcCache = [], dcSel = "", dcOpenPending = "";
+let dcPicker = null, dcCache = [], dcSel = "", dcOpenPending = "", dcGroepVolgorde = [];
 const dcLog = (ev, data) => { try { console.debug("[dossier]", ev, data || ""); } catch {} };
 
 const _DC_OVERALL = { GOOD: "Goed", STABLE: "Stabiel", ATTENTION: "Aandacht", INSUFFICIENT_DATA: "Te weinig data" };
@@ -4430,12 +4610,28 @@ const _DC_KIND_IC = { complaint: "alert", load_signal: "pulse", possible_relatio
   zone_review: "brain", recovery_neg: "clock", conflict: "alert", source_gap: "alert" };
 
 function dcToonLijst() {
+  const v = $('.view[data-view="dossier"]');
+  if (v) v.classList.toggle("has-athlete", !!dcSel);
   $("#dc-lijst").hidden = false;
-  if (isDesktop()) { if (!dcSel) $("#dc-detail").hidden = true; }
-  // Telefoon: open cockpit (dcSel) blijft leidend — late roster-render niet clobberen.
-  else if (dcSel) { $(".view[data-view='dossier'] .md-list").hidden = true; $("#dc-detail").hidden = false; }
-  else { $(".view[data-view='dossier'] .md-list").hidden = false; $("#dc-detail").hidden = true; }
+  const lijst = $(".view[data-view='dossier'] .md-list");
+  // Met een open atleet is de athlete-lijst geen visueel fundament meer: het dossier
+  // vult het canvas en wisselen gaat via de compacte switcher. Zonder open atleet is
+  // de lijst juist de hoofdingang.
+  if (!dcPicker) { /* roster nog niet geladen — laat staan wat er staat */ }
+  else if (dcSel) { lijst.hidden = true; $("#dc-detail").hidden = false; }
+  else { lijst.hidden = false; $("#dc-detail").hidden = true; }
 }
+
+$("#dc-switch")?.addEventListener("click", () => dcOpenSwitcher());
+function dcOpenSwitcher() {
+  if (!dcCache.length) { laadDossierCockpit(); return; }
+  openAthletePickerOverlay({
+    title: "Wissel van atleet", confirmLabel: "Openen", placeholder: "Zoek atleet",
+    items: dcCache.map(a => ({ ...a, key: a.id })), groupOrder: dcGroepVolgorde,
+    onConfirm: a => openAthleteModule("dossier", a.key),
+  });
+}
+
 
 async function laadDossierCockpit() {
   const box = $("#dc-lijst");
@@ -4444,6 +4640,7 @@ async function laadDossierCockpit() {
   try { data = await api("/api/atleten"); }
   catch { if (!dcPicker) box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
   dcCache = data.atleten || [];
+  dcGroepVolgorde = data.groep_volgorde || [];
   const items = dcCache.map(a => ({ ...a, key: a.id }));
   if (!items.length && !dcPicker) {
     box.innerHTML = `<div class="leeg">${ic("users")}<p>Geen atleten.</p></div>`; dcToonLijst(); return;
@@ -4467,7 +4664,13 @@ async function openDossierCockpit(ident) {
   // roster nog niet geladen? → onthoud en open zodra laadDossierCockpit klaar is
   if (!dcPicker) { dcOpenPending = ident; if (!geladen.dossier) { geladen.dossier = true; laadDossierCockpit(); } return; }
   dcSel = ident;
+  document.querySelector('.view[data-view="dossier"]').classList.add("has-athlete");
+  const _r = dcCache.find(a => a.id === ident);
+  if ($("#dc-switch-av")) $("#dc-switch-av").textContent = _r ? initialen(_r.naam) : "—";
+  if ($("#dc-switch-nm")) $("#dc-switch-nm").textContent = _r ? _r.naam : "Kies atleet";
+  if ($("#dc-switch-sub")) $("#dc-switch-sub").textContent = _r && _r.groep ? _r.groep : "Geheugen";
   dcPicker.setSelected(ident);
+  dcToonLijst();                       // met open atleet valt de lijst weg (canvas wint)
   pushRoute("dossier", ident);
   const wrap = $("#dc-detail");
   if (!isDesktop()) { $(".view[data-view='dossier'] .md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }
@@ -4499,21 +4702,71 @@ function dcProv(p) {
   return esc(parts.join(" · "));
 }
 
+// Presentatie-opschoning van registry-labels: technische sleutel-suffixen
+// (uuid's) horen niet in de coach-UI. Alleen weergave — de onderliggende
+// registry-key en het Waarom?-spoor blijven onaangetast.
+function dcPrettyLabel(l) {
+  return String(l || "")
+    .replace(/[.\s]*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*$/i, "");
+}
+
+// Zelfde provenance-keten als platte tekst (de DS-primitives escapen zelf).
+function dcProvText(p) {
+  if (!p) return "";
+  const parts = [];
+  if (p.truth_type) parts.push(_DC_TRUTH[p.truth_type] || p.truth_type);
+  if (p.source) parts.push(p.source);
+  if (p.observed_at) parts.push(p.observed_at);
+  if (p.status) parts.push(String(p.status).toLowerCase());
+  if (p.strength) parts.push(String(p.strength).toLowerCase());
+  return parts.join(" · ");
+}
+
+// ── DOSSIER: living memory ───────────────────────────────────────────────────
+// Tijd is hier het ruimtelijke principe. Eén verticale geheugen-spine: VANDAAG is
+// het sterkste punt, ouder werk verzwakt naar achteren, en de planning ligt subtiel
+// vooruit (gestippeld). Geen document met history-rows, maar een kaart van hoe deze
+// atleet hier is gekomen.
+
+// Eén knooppunt op de spine. `weight` (1=nu … 4=ver terug) stuurt contrast/schaal;
+// `future` maakt het knooppunt vooruitkijkend (open ring i.p.v. gevulde stip).
+function dcNode(n) {
+  return `<li class="dc-node w${n.weight || 2}${n.future ? " is-future" : ""} ${n.tone || "is-calm"}">
+    <span class="dc-node-dot"></span>
+    <div class="dc-node-b">
+      ${n.when ? `<span class="dc-node-when">${esc(n.when)}</span>` : ""}
+      <span class="dc-node-t">${esc(n.title)}</span>
+      ${n.sub ? `<span class="dc-node-s">${esc(n.sub)}</span>` : ""}
+      ${n.meta ? `<span class="dc-node-m">${esc(n.meta)}</span>` : ""}
+    </div></li>`;
+}
+function dcEra(label, nodes, cls) {
+  return `<section class="dc-era ${cls || ""}">
+    <h3 class="ds-label dc-era-l">${esc(label)}</h3>
+    <ul class="dc-spine-list">${nodes}</ul></section>`;
+}
+
 function dcRender(wrap, vm) {
   const st = vm.status || {}, rel = st.reliability || {};
   const relTxt = rel.level === "green" ? "bronnen vers"
     : rel.core_gap ? "kernbron uitgevallen — oordeel onzeker"
     : "let op: bron(nen) verouderd of onvolledig";
-  // Z0 — statuskop
-  let h = `<div class="dc-head">
-    <div class="dc-id"><span class="dc-ava">${esc(initialen(vm.naam))}</span>
-      <div><h2>${esc(vm.naam || vm.key)}</h2>${vm.groep ? `<p class="dc-grp">${esc(vm.groep)}</p>` : ""}</div></div>
-    <div class="dc-statuswrap">
-      <span class="dc-badge dc-${(st.overall || "").toLowerCase()}">${esc(_DC_OVERALL[st.overall] || st.overall || "—")}</span>
-      <span class="dc-rel dc-rel-${esc(rel.level || "")}" title="${esc(relTxt)}"><i></i>${esc(relTxt)}</span>
-    </div>
-    <div class="dc-actions">${athleteNav("dossier", vm.key)}</div>
-  </div>`;
+  const relTone = dsTone(rel.level || "unknown");
+  const attn = vm.attention || [], chg = vm.changes || [];
+  const tl = vm.timeline || {}, tlv = tl.events || [];
+  const plan = vm.planning || { rows: [] };
+  const lo = vm.load_observation;
+  const attnTone = attn.length ? dsTone("aandacht") : "is-calm";
+
+  let h = `<div class="dc-memory ${attn.length ? attnTone : relTone}">`;
+  // Zelfde achtergrondwereld als Workspace: ambient haze + orbits + vignette.
+  h += `<div class="dc-bg" aria-hidden="true"><div class="dc-amb"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
+  h += `<header class="dc-head2">
+    <div class="dc-id2"><span class="dc-orbwrap"><i class="dc-orb-halo"></i><span class="dc-orb">${esc(initialen(vm.naam || vm.key))}</span></span>
+      <div><h2 class="dc-name">${esc(vm.naam || vm.key)}</h2>
+        <p class="dc-sub">${vm.groep ? esc(vm.groep) + '<span class="sep">·</span>' : ""}${dsChip(_DC_OVERALL[st.overall] || st.overall || "—", relTone)}${dsFresh(rel.level || "unknown", relTxt)}</p></div></div>
+    <div class="dc-nav2">${athleteNav("dossier", vm.key)}</div>
+  </header>`;
 
   // Partial-truth diagnostic: één build-stage faalde → alleen dát stuk mist, de rest klopt.
   const diag = vm.build_diagnostic || [];
@@ -4521,96 +4774,90 @@ function dcRender(wrap, vm) {
     h += `<div class="dc-diag">${ic("alert")}<span>Enkele onderdelen konden niet worden berekend (${esc(diag.map(d => d.stage).join(", "))}). De overige bekende kennis hieronder klopt — dit is een interne fout, <b>geen</b> bronfout.</span></div>`;
   }
 
-  // Z1 — Aandacht nu
-  const attn = vm.attention || [];
-  h += `<section class="dc-sec dc-attn"><h3>Aandacht nu</h3>`;
-  if (attn.length) {
-    h += `<div class="dc-cards">` + attn.map(c => `
-      <div class="dc-card dc-k-${esc(c.kind)}">
-        <p class="dc-card-t">${ic(_DC_KIND_IC[c.kind] || "alert")}${esc(c.title)}</p>
-        <p class="dc-card-w">${esc(c.why || "")}</p>
-        ${c.prov ? `<p class="dc-prov">${dcProv(c.prov)}</p>` : ""}
-      </div>`).join("") + `</div>`;
-  } else if (st.insufficient) {
-    h += `<p class="dc-calm dc-calm-warn">Te weinig data voor een oordeel — geen betrouwbare actiepunten.</p>`;
-  } else {
-    h += `<p class="dc-calm">Geen actiepunten — geen actieve klacht of signaal bekend${rel.level === "green" ? " (bronnen vers)" : ""}.</p>`;
-  }
-  // Belasting-observatie (Teampuls-coherentie): de canonieke, ALTIJD-aanwezige
-  // verklaringsregel voor de belastingobservatie — óók bij actief-hoog met open
-  // Home-actie (de reden achter een rode Home/Teampuls-trigger, bv. +200%). Voorheen
-  // toonde de UI die case niet, waardoor de reden in Dossier kon verdwijnen. Dossier
-  // schreeuwt niet rood, maar de reden mag niet ontbreken.
-  const lo = vm.load_observation;
+  h += `<div class="dc-mem-grid"><div class="dc-spine">`;
+
+  // ── VANDAAG: het sterkste punt op de lijn ──
+  // Waarde-consistentie: het percentage in de load-signaalkaart volgt de
+  // canonieke `delta_pct` (load_metric) — nooit een voor-afgerond bron-%
+  // (+91%) boven het canonieke oordeel (+92%) op hetzelfde scherm.
+  const canonPct = t => (lo && lo.delta_pct != null && t)
+    ? String(t).replace(/[+-]?\d+(?:[.,]\d+)?%/, `${lo.delta_pct > 0 ? "+" : ""}${lo.delta_pct}%`)
+    : t;
+  let nu = attn.map(c => dcNode({
+    weight: 1, tone: dsTone("aandacht"), title: c.title,
+    sub: (c.kind === "load_signal" ? canonPct(c.why) : c.why) || "",
+    meta: c.prov ? dcProvText(c.prov) : "",
+  })).join("");
   if (lo) {
     const sev = lo.ernst === "hoog" ? "hoog" : "let op";
     const delta = (lo.delta_pct != null) ? ` · +${lo.delta_pct}% t.o.v. referentie` : "";
-    // Home-actie-semantiek is canonical (home_action = zichtbaar in de Home-actielijst).
     let reden;
     if (lo.afgehandeld) reden = "eerder afgehandeld — geen open Home-actie";
     else if (lo.home_action && lo.ernst === "hoog") reden = "open Home-actie";
     else reden = "monitoring — nog geen coachactie";
-    // Proza niet dubbel tonen: staat de load al als attention-kaart, dan hier alleen
-    // de compacte delta + Home-actie-duiding die de kaart mist (geen 2e alarmdashboard).
     const loadCarded = attn.some(c => c.kind === "load_signal");
-    const sig = (lo.signalen && !loadCarded) ? ": " + esc(lo.signalen) : "";
-    h += `<p class="dc-loadobs">${ic("pulse")} Belasting ${esc(sev)}${delta}${sig} <span class="muted klein">· ${esc(reden)} (Teampuls)</span></p>`;
+    nu += dcNode({ weight: 1, tone: dsTone(lo.ernst), title: `Belasting ${sev}${delta}`,
+      sub: (lo.signalen && !loadCarded) ? lo.signalen : "", meta: `${reden} (Teampuls)` });
   }
-  h += `</section>`;
+  if (!nu) nu = dcNode({ weight: 1, tone: "is-success", title: "Geen actiepunten",
+    sub: st.insufficient ? "Te weinig data voor een oordeel — geen betrouwbare actiepunten."
+                         : `geen actieve klacht of signaal bekend${rel.level === "green" ? " (bronnen vers)" : ""}` });
+  h += `<section class="dc-era dc-now dc-attn">
+    <h3 class="ds-label dc-era-l">Aandacht nu · vandaag</h3>
+    <ul class="dc-spine-list">${nu}</ul></section>`;
 
-  // Z2 — Recent veranderd (alleen bij échte recency; anders afwezig)
-  const changes = vm.changes || [];
-  if (changes.length) {
-    h += `<section class="dc-sec dc-changes"><h3>Recent veranderd</h3><ul class="dc-chlist">` +
-      changes.map(c => `<li><span class="dc-ch-t">${esc(c.title)}</span>${c.effective_at ? `<span class="dc-ch-d">${esc(c.effective_at)}</span>` : ""}</li>`).join("") +
-      `</ul></section>`;
-  }
+  // ── RECENT VERANDERD ──
+  h += dcEra("Recent veranderd", chg.length
+    ? chg.map(c => dcNode({ weight: 2, when: c.effective_at || "", title: c.title })).join("")
+    : dcNode({ weight: 3, title: "Geen recente wijziging in het beeld van deze atleet." }),
+    "dc-changes");
 
-  // Z2b — Doelen & planning (compact, canonical: goal-evidence + laatst geconfigureerd blok)
-  const plan = vm.planning || { rows: [] };
-  if (plan.rows && plan.rows.length) {
-    h += `<section class="dc-sec dc-planning"><h3>Doelen &amp; planning</h3><ul class="dc-plan">` +
-      plan.rows.map(r => `<li><span class="dc-lbl">${esc(r.label)}</span><span class="dc-val">${esc(r.value)}</span></li>`).join("") +
-      `</ul></section>`;
-  }
-
-  // Z3 — Domeinkaarten (dynamisch open o.b.v. aandacht)
-  h += `<section class="dc-sec dc-domains">` + (vm.domains || []).map(d => `
-    <details class="dc-dom${d.onbekend ? " leeg" : ""}"${d.open ? " open" : ""}>
-      <summary>${esc(d.titel)}${d.onbekend ? ` <span class="muted klein">— onbekend</span>` : ""}</summary>
-      ${d.onbekend ? "" : `<ul class="dc-reg">` + d.regels.map(r => `
-        <li>
-          <div class="dc-reg-main"><span class="dc-lbl">${esc(r.label)}</span><span class="dc-val">${esc(r.value)}</span></div>
-          <div class="dc-reg-meta">${r.prov ? `<span class="dc-prov">${dcProv(r.prov)}</span>` : ""}
-            ${r.evidence_id ? `<button class="dc-why" data-id="${esc(r.evidence_id)}" data-key="${esc(vm.key)}">Waarom?</button>` : ""}</div>
-        </li>`).join("") + `</ul>`}
-    </details>`).join("") + `</section>`;
-
-  // Z4 — Tijdlijn (capture OFF → eerlijke empty-state)
-  const tl = vm.timeline || {};
-  h += `<section class="dc-sec dc-timeline"><h3>Longitudinale tijdlijn</h3>`;
+  // ── HISTORIE: verder terug = zwakker ──
+  h += `<section class="dc-era dc-timeline"><h3 class="ds-label dc-era-l">Longitudinale historie</h3>`;
   if (tl.empty_reason) {
     h += `<p class="dc-empty-tl">Er is nog geen longitudinale tijdlijn vastgelegd. BeBetter bouwt de historie op vanaf het moment dat history-capture wordt geactiveerd (vanaf-nu; geen terugwerkende reconstructie). <b>‘Geen events’ betekent hier niet ‘geen historie’</b> — alleen dat er nog niets is vastgelegd.</p>`;
   } else {
-    h += `<ul class="dc-tl">` + (tl.events || []).map(e => `
-      <li><span class="dc-tl-d">${esc(e.effective_at || e.recorded_at || "")}</span>
-        <span class="dc-tl-t">${esc(e.title || e.event_type)}</span></li>`).join("") + `</ul>`;
+    h += `<ul class="dc-spine-list">` + tlv.map((e, i) => dcNode({
+      weight: Math.min(4, 2 + Math.floor(i / 4)),
+      when: e.effective_at || e.recorded_at || "", title: e.title || e.event_type })).join("") + `</ul>`;
   }
   h += `</section>`;
 
-  // Z5 — Bronnen & betrouwbaarheid (drill-down)
+  // ── VOORUIT: doelen & planning liggen vóór ons op de lijn ──
+  h += `<section class="dc-era dc-planning dc-ahead">
+    <h3 class="ds-label dc-era-l">Doelen &amp; planning</h3><ul class="dc-spine-list">`;
+  h += (plan.rows && plan.rows.length)
+    ? plan.rows.map(r => dcNode({ weight: 2, future: true, title: r.value, sub: r.label })).join("")
+    : dcNode({ weight: 3, future: true, title: "Geen doel of planning vastgelegd." });
+  h += `</ul></section></div>`;                        // /spine
+
+  // ── BEWIJS naast het verhaal ──
+  h += `<aside class="dc-evidence">`;
+  h += `<section class="dc-sec dc-domains">` + (vm.domains || []).map(d => `
+    <details class="ds-disc dc-dom${d.onbekend ? " leeg" : ""}"${d.open ? " open" : ""}>
+      <summary>${esc(d.titel)}${d.onbekend ? ` <span class="muted klein">— onbekend</span>` : ""}</summary>
+      ${d.onbekend ? "" : `<div class="ds-disc-body"><ul class="dc-reg">` + d.regels.map(r => `
+        <li>
+          <div class="dc-reg-main"><span class="dc-lbl">${esc(dcPrettyLabel(r.label))}</span><span class="dc-val">${esc(r.value)}</span></div>
+          <div class="dc-reg-meta">${r.prov ? `<span class="dc-prov">${dcProv(r.prov)}</span>` : ""}
+            ${r.evidence_id ? `<button class="dc-why" data-id="${esc(r.evidence_id)}" data-key="${esc(vm.key)}">Waarom?</button>` : ""}</div>
+        </li>`).join("") + `</ul></div>`}
+    </details>`).join("") + `</section>`;
   const src = vm.source_health || [];
   if (src.length) {
-    h += `<details class="dc-sec dc-src"><summary>Bronnen &amp; betrouwbaarheid</summary><ul class="dc-srclist">` +
-      src.map(s => `<li><span class="dc-src-n">${esc(s.source)}</span>
-        <span class="dc-src-s ${s.available ? (s.stale ? "warn" : "ok") : "bad"}">${s.available ? (s.stale ? "verouderd" : "vers") : "uitgevallen"}</span>
-        ${s.error ? `<span class="muted klein">${esc(s.error)}</span>` : ""}</li>`).join("") +
-      `</ul></details>`;
+    h += `<details class="ds-disc dc-sec dc-src"><summary>Bronnen &amp; betrouwbaarheid</summary>
+      <div class="ds-disc-body"><ul class="dc-srclist">` +
+      src.map(x => `<li><span class="dc-src-n">${esc(x.source)}</span>
+        <span class="dc-src-s ${x.available ? (x.stale ? "warn" : "ok") : "bad"}">${x.available ? (x.stale ? "verouderd" : "vers") : "uitgevallen"}</span>
+        ${x.error ? `<span class="muted klein">${esc(x.error)}</span>` : ""}</li>`).join("") +
+      `</ul></div></details>`;
   }
+  h += `</aside></div></div>`;
 
   wrap.innerHTML = h;
   wrap.querySelectorAll(".dc-why").forEach(b => b.addEventListener("click", () => dcWaarom(b)));
 }
+
 
 function dcGoSchema(key) {
   // Genormaliseerd naar het canonieke contract (was hand-rolled pushState + applyRoute).
@@ -4643,39 +4890,51 @@ async function dcWaarom(btn) {
 // feedback-status · snelle acties (bestaande routes/authority). De rijke context
 // (doel/planning/klachten) komt LAZY en parallel uit het bestaande /api/cockpit, zodat
 // een trage load-/feedback-refresh de shell of de andere secties nooit blokkeert.
-let wsSel = "", wsPicker = null, wsOpenPending = "", wsCache = [];
+let wsSel = "", wsOpenPending = "", wsCache = [], wsGroepVolgorde = [], wsRosterKlaar = false;
 
-function wsToonLijst() {
-  $("#ws-lijst").hidden = false;
-  if (isDesktop()) { if (!wsSel) $("#ws-detail").hidden = true; }
-  else if (wsSel) { $(".view[data-view='workspace'] .md-list").hidden = true; $("#ws-detail").hidden = false; }
-  else { $(".view[data-view='workspace'] .md-list").hidden = false; $("#ws-detail").hidden = true; }
+// De athlete-lijst is GEEN visueel fundament meer. In een actieve athlete-context
+// hoort ~90% van de aandacht bij die atleet; wisselen gebeurt via een compacte
+// switcher die de BESTAANDE overlay-picker opent (zelfde component, zelfde routes).
+function wsSwitchVul(naam, sub) {
+  const av = $("#ws-switch-av"), nm = $("#ws-switch-nm"), sb = $("#ws-switch-sub");
+  if (av) av.textContent = naam ? initialen(naam) : "—";
+  if (nm) nm.textContent = naam || "Kies atleet";
+  if (sb) sb.textContent = sub || "Workspace";
 }
+function wsOpenSwitcher() {
+  if (!wsCache.length) { laadWorkspace(); return; }
+  openAthletePickerOverlay({
+    title: "Wissel van atleet", confirmLabel: "Openen", placeholder: "Zoek atleet",
+    items: wsCache.map(a => ({ ...a, key: a.id })), groupOrder: wsGroepVolgorde,
+    onConfirm: a => openWorkspace(a.key),
+  });
+}
+$("#ws-switch")?.addEventListener("click", wsOpenSwitcher);
 
+// `laadWorkspace` laadt alleen nog de roster die de switcher voedt — geen lijst-UI.
 async function laadWorkspace() {
-  const box = $("#ws-lijst");
-  if (!wsPicker) skeleton(box, 6);
   let data;
   try { data = await api("/api/atleten"); }
-  catch { if (!wsPicker) box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  catch { return; }
   wsCache = data.atleten || [];
-  const items = wsCache.map(a => ({ ...a, key: a.id }));
-  if (!items.length && !wsPicker) {
-    box.innerHTML = `<div class="leeg">${ic("users")}<p>Geen atleten.</p></div>`; wsToonLijst(); return;
-  }
-  if (wsPicker) { wsPicker.setItems(items); }
-  else {
-    wsPicker = renderPicker({
-      mount: box, searchEl: $("#ws-zoek"), items, groupOrder: data.groep_volgorde || [],
-      selectedKey: wsSel || "", mode: "navigate", emptyText: "Geen atleet gevonden.",
-      secondary: a => (a.heeft_intake && a.doel) ? esc(a.doel) : "",
-      onActivate: a => openWorkspace(a.key),
-    });
-  }
-  wsToonLijst();
-  if (wsOpenPending) { const p = wsOpenPending; wsOpenPending = ""; openWorkspace(p); }
+  wsGroepVolgorde = data.groep_volgorde || [];
+  wsRosterKlaar = true;
+  if (wsOpenPending) { const p = wsOpenPending; wsOpenPending = ""; wsShow(p); }
+  else if (!wsSel) wsLeegScherm();
 }
 bindRefresh("ws-refresh", () => { if (wsSel) return wsShow(wsSel); geladen.workspace = true; return laadWorkspace(); });
+
+// Geen atleet gekozen → een rustige, uitnodigende scène (geen lege lijst).
+function wsLeegScherm() {
+  const wrap = $("#ws-detail"); if (!wrap) return;
+  wrap.innerHTML = `<div class="ws-empty">
+    <div class="ws-empty-orb"></div>
+    <h2>Kies een atleet</h2>
+    <p>De workspace toont wat er nu speelt bij één atleet: aandacht, belasting, doel en feedback.</p>
+    <button type="button" class="btn primary" onclick="wsOpenSwitcher()">Atleet kiezen</button>
+  </div>`;
+  wsSwitchVul("", "Workspace");
+}
 
 // Entry point — athlete-aware maar bewust BUITEN _ATHLETE_VIEWS (Cohesion-contract
 // byte-identiek). Schrijft de route en laadt de shell via wsShow.
@@ -4688,14 +4947,14 @@ function openWorkspace(user_key) {
 }
 
 async function wsShow(ident) {
-  if (!wsPicker) { wsOpenPending = ident; if (!geladen.workspace) { geladen.workspace = true; laadWorkspace(); } return; }
+  if (!wsRosterKlaar) { wsOpenPending = ident; if (!geladen.workspace) { geladen.workspace = true; laadWorkspace(); } return; }
   wsSel = ident;
-  wsPicker.setSelected(ident);
   pushRoute("workspace", ident);
+  const roster = wsCache.find(a => a.id === ident);
+  wsSwitchVul(roster ? roster.naam : "", roster && roster.groep ? roster.groep : "Workspace");
   const wrap = $("#ws-detail");
-  if (!isDesktop()) { $(".view[data-view='workspace'] .md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }
-  wrap.hidden = false;
-  wrap.innerHTML = '<div class="dc-load"><p class="muted center">Workspace laden…</p></div>';
+  $("#scroller").scrollTo({ top: 0 });
+  wrap.innerHTML = `<div class="ws-loading">${wsSkel(4)}</div>`;
   let r;
   try { r = await api("/api/workspace/" + encodeURIComponent(ident)); }
   catch { r = null; }
@@ -4710,71 +4969,547 @@ async function wsShow(ident) {
   wsLoadDeep(wrap, ident);                                  // rijke context lazy + parallel
 }
 
-function wsChip(tier) { return tier === "actie" ? "ws-actie" : "ws-aandacht"; }
+// ── DE ATHLETE CANVAS (north-star pass) ─────────────────────────────────────
+// Workspace is een performance command scene: een gelaagd focal-systeem in het
+// midden (ringen + medaillon + signaal-schijf die de ringen overlapt), context
+// als translucent glas-panes links en rechts, een meedoende achtergrond
+// (ambient haze + orbitale lijnen + vignette) en onderaan een geïntegreerde
+// actiebalk. Zelfde data, zelfde acties, zelfde routes — alleen de presentatie.
+
+// Randloze skeleton voor de lazy deep-slots.
+function wsSkel(n) {
+  return Array.from({ length: n || 2 },
+    (_, i) => `<div class="ds-skel ${i % 2 ? "w60" : "w80"}"></div>`).join("");
+}
+
+// Grote datalijn met glow-punten — ALLEEN echte reeksen (de runs uit de captured
+// stand). Vloeiende curve (Catmull-Rom→bezier), area-verloop, punt per meting.
+// Geen library, geen canvas: één inline SVG-string. Leeg bij < 2 punten.
+let _wsChartN = 0;
+// Locale-presentatie (lokaal, geen app-brede formatter): NL-decimaalkomma.
+// Gehele getallen blijven schoon (36 → "36"), decimalen krijgen een komma
+// (36.4 → "36,4"). Puur presentationeel; verandert geen enkele waarde.
+function nlNum(x) {
+  if (x == null || x === "") return "";
+  const n = Number(x);
+  if (!isFinite(n)) return String(x);
+  return (Math.round(n * 100) / 100).toString().replace(".", ",");
+}
+
+function wsChart(vals, o) {
+  o = o || {};
+  const v = (vals || []).map(Number).filter(n => isFinite(n));
+  if (v.length < 2) return "";
+  const w = o.w || 260, h = o.h || 72, pad = 8;
+  // `min0` + `ref`: cumulatieve reeksen tekenen vanaf 0 en mogen een echte
+  // referentiewaarde (bv. km_basis_week) als gestippelde lijn dragen — zo leest
+  // de grafiek in dezelfde richting als het signaal (semantiek, geen decoratie).
+  const ref = (o.ref != null && isFinite(Number(o.ref))) ? Number(o.ref) : null;
+  const min = o.min0 ? 0 : Math.min(...v);
+  const max = Math.max(...v, ref != null ? ref : -Infinity);
+  const span = (max - min) || 1;
+  const yOf = n => h - pad - ((n - min) / span) * (h - pad * 3);
+  const refLine = ref != null
+    ? `<line class="ws-chart-ref" x1="${pad}" y1="${yOf(ref).toFixed(1)}" x2="${w - pad}" y2="${yOf(ref).toFixed(1)}"/>
+       <text class="ws-chart-reflbl" x="${pad + 2}" y="${(yOf(ref) - 5).toFixed(1)}">REF ${esc(nlNum(ref))}</text>`
+    : "";
+  const pts = v.map((n, i) => [pad + (i / (v.length - 1)) * (w - pad * 2), yOf(n)]);
+  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)} ${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)},` +
+         `${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)} ${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)},` +
+         `${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  const uid = "wsg" + (++_wsChartN);
+  const last = pts[pts.length - 1];
+  const area = o.area === false ? "" :
+    `<defs><linearGradient id="${uid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="currentColor" stop-opacity=".26"/>
+      <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+    <path fill="url(#${uid})" stroke="none" d="${d} L${(w - pad).toFixed(1)} ${h - 2} L${pad} ${h - 2} Z"/>`;
+  return `<svg class="ws-chart ${o.cls || ""}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    ${area}${refLine}
+    <path class="ws-chart-line" d="${d}"/>
+    ${pts.map(p => `<circle class="ws-chart-dot" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.6"/>`).join("")}
+    <circle class="ws-chart-tip" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4"/></svg>`;
+}
+
+// Achtergrondlaag: canvas-brede orbitale lijnen + een vaste constellation.
+// Puur decoratief (geen data, geen suggestie van een persoon), statisch.
+// Z0 — omgeving: verre traces, constellation en het perspectiefveld dat naar
+// de atleet convergeert. Statisch en decoratief (geen data).
+function wsOrbits() {
+  const stars = [[150, 130, 1.4, .4], [420, 70, 1, .25], [880, 52, 1.4, .4],
+    [1210, 120, 1.1, .3], [1340, 420, 1.3, .35], [90, 470, 1.2, .3],
+    [240, 820, 1.3, .3], [1150, 800, 1.2, .25], [640, 120, 1, .2],
+    [1050, 250, 1, .25], [340, 300, .9, .2], [1290, 640, 1, .22]];
+  return `<svg class="ws-orbits" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <path class="ws-tr" d="M-40 620 C300 520 700 500 1480 590"/>
+    <path class="ws-tr" d="M-40 700 C360 620 760 610 1480 680"/>
+    <path class="ws-tr" d="M120 -40 C240 220 320 420 340 780"/>
+    <path class="ws-tr" d="M1330 -40 C1240 240 1180 460 1170 820"/>
+    <g class="ws-fl">
+      <path d="M180 900 L648 560"/><path d="M420 900 L678 578"/>
+      <path d="M1260 900 L792 560"/><path d="M1030 900 L762 578"/>
+      <ellipse cx="720" cy="748" rx="560" ry="104"/>
+      <ellipse cx="720" cy="756" rx="380" ry="72"/>
+    </g>
+    ${stars.map((d, i) => `<circle class="ws-star${i % 5 === 2 ? " tw" : ""}" cx="${d[0]}" cy="${d[1]}" r="${d[2]}" opacity="${d[3]}"/>`).join("")}</svg>`;
+}
+
+// Weekstrip: de laatste 7 dagen t/m de stand-datum, met de echte dag-totalen
+// (runs uit de captured stand, gesommeerd per dag). Rustdagen tonen eerlijk leeg.
+function wsWeekStrip(runs, standDatum) {
+  const parse = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ""));
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+  const end = parse(standDatum) || parse((runs[runs.length - 1] || {}).datum);
+  if (!end || !(runs || []).length) return "";
+  const per = {};
+  for (const r of runs) { const k = String(r.datum || "").slice(0, 10);
+    per[k] = (per[k] || 0) + (Number(r.km) || 0); }
+  const DAG = ["ZO", "MA", "DI", "WO", "DO", "VR", "ZA"];
+  const cols = [];
+  let max = 1;
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(end.getFullYear(), end.getMonth(), end.getDate() - i);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const km = per[k] || 0; max = Math.max(max, km);
+    cols.push({ dag: DAG[d.getDay()], km });
+  }
+  return `<div class="ws-wk">` + cols.map(c => {
+    const hp = Math.round(c.km / max * 100);
+    const kmTxt = c.km ? nlNum(Math.round(c.km * 10) / 10) : "";
+    return `<div class="${c.km ? "on" : "off"}"><em>${esc(kmTxt)}</em>
+      <i style="height:${c.km ? Math.max(hp, 8) : 0}%"></i><span>${c.dag}</span></div>`;
+  }).join("") + `</div>`;
+}
+
+// Belastingsinstrument: ÉÉN geïntegreerd cockpit-instrument i.p.v. losse weekstrip +
+// chart. Dag-energie (pulsen op de baseline) + cumulatieve trend die daarbovenuit
+// stijgt (VLAK op rustdagen — cumulatief stijgt of blijft gelijk) + referentiedrempel
+// + eind-node (= origin van de kern-connector). Zelfde bronvelden (runs/km_recent/
+// km_basis_week), geen nieuwe/afgeleide fake data; geen data → "" (caller toont leeg).
+function wsLoadInstrument(bel) {
+  const runs = (bel.runs || []);
+  const parse = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ""));
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+  const end = parse(bel.datum) || parse((runs[runs.length - 1] || {}).datum);
+  if (!end || !runs.length) return "";
+  const per = {};
+  for (const r of runs) { const k = String(r.datum || "").slice(0, 10);
+    per[k] = (per[k] || 0) + (Number(r.km) || 0); }
+  const DAG = ["ZO", "MA", "DI", "WO", "DO", "VR", "ZA"];
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(end.getFullYear(), end.getMonth(), end.getDate() - i);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    days.push({ dag: DAG[d.getDay()], km: per[k] || 0 });
+  }
+  let acc = 0; days.forEach(d => { acc += d.km; d.cum = acc; });
+  const ref = (bel.km_basis_week != null && isFinite(Number(bel.km_basis_week))) ? Number(bel.km_basis_week) : null;
+  const maxDaily = Math.max(1, ...days.map(d => d.km));
+  const cumMax = Math.max(1, acc, ref != null ? ref : 0);
+  const N = days.length, padL = 30, padR = 32, span = 320 - padL - padR;
+  const xi = i => padL + (N > 1 ? (i / (N - 1)) * span : 0);
+  const yCum = v => 100 - (v / cumMax) * 86;
+  const bars = days.map((d, i) => { const x = xi(i);
+    if (!d.km) return `<rect class="li-bar rest" x="${(x - 4.5).toFixed(1)}" y="97" width="9" height="3" rx="1.5"/>`;
+    const h = (d.km / maxDaily) * 30;
+    return `<rect class="li-bar" x="${(x - 4.5).toFixed(1)}" y="${(100 - h).toFixed(1)}" width="9" height="${h.toFixed(1)}" rx="2.5"/>`;
+  }).join("");
+  const vals = days.map((d, i) => d.km
+    ? `<text class="li-val" x="${xi(i).toFixed(1)}" y="${(100 - (d.km / maxDaily) * 30 - 4).toFixed(1)}">${esc(nlNum(Math.round(d.km * 10) / 10))}</text>`
+    : "").join("");
+  const dayl = days.map((d, i) => `<text class="li-day${d.km ? " on" : ""}" x="${xi(i).toFixed(1)}" y="116">${esc(d.dag)}</text>`).join("");
+  const pts = days.map((d, i) => [xi(i), yCum(d.cum)]);
+  const line = "M" + pts.map(p => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L");
+  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)} 100 L${pts[0][0].toFixed(1)} 100 Z`;
+  const tip = pts[pts.length - 1];
+  const yRef = ref != null ? yCum(ref) : null;
+  return `<svg class="ws-loadinst" viewBox="0 0 320 128" style="color:var(--tone)" aria-hidden="true">
+    <defs><linearGradient id="ws-liarea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="currentColor" stop-opacity=".24"/>
+      <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient>
+      <linearGradient id="ws-liref" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="var(--ds-accent)" stop-opacity="0"/>
+        <stop offset="0.22" stop-color="var(--ds-accent)" stop-opacity=".7"/>
+        <stop offset="0.8" stop-color="var(--ds-accent)" stop-opacity=".5"/>
+        <stop offset="1" stop-color="var(--ds-accent)" stop-opacity="0"/></linearGradient></defs>
+    <line class="li-base" x1="14" y1="100" x2="306" y2="100"/>
+    ${yRef != null ? `<line class="li-ref" x1="14" y1="${yRef.toFixed(1)}" x2="306" y2="${yRef.toFixed(1)}"/>
+      <text class="li-reflbl" x="46" y="${(yRef - 4).toFixed(1)}">REF ${esc(nlNum(ref))}</text>` : ""}
+    ${bars}${vals}
+    <path class="li-area" d="${area}"/>
+    <path class="li-cum" d="${line}"/>
+    <circle class="li-tip-o" cx="${tip[0].toFixed(1)}" cy="${tip[1].toFixed(1)}" r="6"/>
+    <circle class="li-tip" cx="${tip[0].toFixed(1)}" cy="${tip[1].toFixed(1)}" r="3.4"/>
+    ${dayl}
+  </svg>`;
+}
+
+// De ATHLETE CORE: een abstracte, ruimtelijke intelligentie-kern — GEEN mens.
+// Geen avatar/bust/portret/silhouet; de menslijn is bewust verlaten. De kern is
+// een glazen sphere (wireframe-meridianen + inner-particles + hotspot-bloom),
+// omgeven door gekantelde orbit-ringen waarvan er ÉÉN de eerlijke load-ratio als
+// instrument draagt, staand op een radar-basis. Het dominante signaal (focal)
+// leeft geïntegreerd IN de kern. Reageert volledig op toon + echte data.
+function wsCore(focal) {
+  const f = focal || {};
+  const R = 252, C = 2 * Math.PI * R;
+  // Instrument-ring: eerlijke mapping — ratio>=1: dim ring = 100% referentie
+  // bereikt, felle sweep = overshoot (max één extra ronde); ratio<1: voortgang.
+  // Geen data → geen boog (de decoratieve ringen blijven, het instrument niet).
+  let inst = "";
+  if (f.gaugeFrac != null) {
+    const dash = Math.max(f.gaugeFrac * C, 0);
+    inst = `<g transform="translate(340 332) rotate(22) scale(1 .60)">
+      ${f.gaugeDim ? `<circle class="ws-inst-dim" r="${R}"/>` : ""}
+      <circle class="ws-inst-v" r="${R}" transform="rotate(-90)"
+        style="stroke-dasharray:${dash.toFixed(1)} ${(C - dash).toFixed(1)};--wsd:${dash.toFixed(1)}"/>
+      <circle class="ws-inst-cap" cx="0" cy="-${R}" r="4.5"/></g>`;
+  }
+  const val = String(f.value == null ? "" : f.value);
+  const big = val.length > 4 ? " txt" : "";
+  return `<div class="ws-core ${f.tone || ""}">
+    <div class="ws-aura" aria-hidden="true"></div>
+    <svg class="ws-rings" viewBox="0 0 680 680" aria-hidden="true">
+      <g class="ws-ringspin"><ellipse class="ws-ring r1" cx="340" cy="332" rx="300" ry="96" transform="rotate(-15 340 332)"/></g>
+      <g class="ws-ringspin rev"><ellipse class="ws-ring r3" cx="340" cy="332" rx="180" ry="286" transform="rotate(12 340 332)"/></g>
+      ${inst}
+      <circle class="ws-onode" cx="118" cy="214" r="5"/>
+      <circle class="ws-onode n2" cx="150" cy="470" r="4"/>
+    </svg>
+    <svg class="ws-sphere" viewBox="0 0 680 680" aria-hidden="true">
+      <defs>
+        <radialGradient id="ws-glass" cx="42%" cy="36%" r="72%">
+          <stop offset="0" stop-color="rgba(120,180,255,.18)"/>
+          <stop offset="42%" stop-color="rgba(30,64,120,.30)"/>
+          <stop offset="82%" stop-color="rgba(10,26,52,.62)"/>
+          <stop offset="100%" stop-color="rgba(6,16,34,.82)"/>
+        </radialGradient>
+        <radialGradient id="ws-wash" cx="50%" cy="70%" r="60%">
+          <stop offset="0" stop-color="var(--tone)" stop-opacity=".32"/>
+          <stop offset="60%" stop-color="var(--tone)" stop-opacity=".05"/>
+          <stop offset="100%" stop-color="var(--tone)" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="ws-field" cx="50%" cy="52%" r="52%">
+          <stop offset="0" stop-color="var(--tone)" stop-opacity=".34"/>
+          <stop offset="46%" stop-color="var(--tone)" stop-opacity=".09"/>
+          <stop offset="100%" stop-color="var(--tone)" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="ws-merid" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+          <stop offset="0" stop-color="rgba(174,214,255,.55)"/>
+          <stop offset="0.5" stop-color="rgba(150,198,255,.07)"/>
+          <stop offset="1" stop-color="rgba(174,214,255,.55)"/>
+        </linearGradient>
+        <radialGradient id="ws-ifield" cx="44%" cy="40%" r="60%">
+          <stop offset="0" stop-color="rgba(120,172,255,.16)"/>
+          <stop offset="58%" stop-color="rgba(58,108,190,.05)"/>
+          <stop offset="100%" stop-color="rgba(30,60,120,0)"/>
+        </radialGradient>
+        <radialGradient id="ws-occ" cx="50%" cy="86%" r="44%">
+          <stop offset="0" stop-color="rgba(2,7,18,.46)"/>
+          <stop offset="100%" stop-color="rgba(2,7,18,0)"/>
+        </radialGradient>
+        <clipPath id="ws-sph"><circle cx="340" cy="332" r="150"/></clipPath>
+        <clipPath id="ws-sphi"><circle cx="340" cy="332" r="112"/></clipPath>
+      </defs>
+      <circle cx="340" cy="332" r="150" fill="url(#ws-glass)"/>
+      <circle cx="340" cy="332" r="150" fill="url(#ws-wash)"/>
+      <g clip-path="url(#ws-sph)">
+        <circle cx="340" cy="332" r="150" fill="url(#ws-field)"/>
+        <circle cx="340" cy="332" r="112" fill="url(#ws-ifield)"/>
+        <path class="ws-shell-rim" d="M262 296 A112 112 0 0 1 356 224"/>
+        <path class="ws-shell-rim dim" d="M412 366 A112 112 0 0 1 372 428"/>
+        <ellipse class="ws-readplane" cx="340" cy="300" rx="118" ry="44"/>
+        <path class="ws-sph-grad" d="M338 188 A82 150 0 0 0 316 452"/>
+        <path class="ws-sph-grad" d="M352 214 A106 150 0 0 1 372 456"/>
+        <path class="ws-sph-line" d="M196 342 A150 46 0 0 0 408 360"/>
+        <path class="ws-sph-line t" d="M214 316 A150 100 0 0 0 300 430" opacity=".5"/>
+        <path class="ws-sph-line" d="M248 276 A146 30 0 0 1 372 269" opacity=".4"/>
+        <path class="ws-sph-line" d="M236 392 A150 40 0 0 0 344 404" opacity=".3"/>
+        <g class="ws-dataflow">
+          <path class="ws-flow f1" d="M330 196 Q300 258 340 330"/>
+          <path class="ws-flow f2" d="M452 342 Q392 320 344 332"/>
+          <path class="ws-flow f3" d="M252 402 Q306 362 340 336"/>
+          <path class="ws-flow f4" d="M398 224 Q366 276 342 328"/>
+        </g>
+        <path class="ws-sph-seg" d="M300 230 A140 118 0 0 1 416 286" opacity=".42"/>
+        <path class="ws-sph-seg" d="M232 316 A150 46 0 0 1 268 300" opacity=".5"/>
+        <path class="ws-sph-seg" d="M404 402 A150 46 0 0 1 440 384" opacity=".3"/>
+        <circle class="ws-sph-dot t" cx="300" cy="300" r="1.5"/><circle class="ws-sph-dot" cx="386" cy="322" r="1.6"/>
+        <circle class="ws-sph-dot" cx="352" cy="368" r="1.2"/><circle class="ws-sph-dot t" cx="312" cy="356" r="1.4"/>
+        <circle class="ws-sph-dot" cx="372" cy="286" r="1.1"/><circle class="ws-sph-dot" cx="330" cy="398" r="1.3"/>
+        <circle class="ws-sph-dot" cx="356" cy="312" r="1"/><circle class="ws-sph-dot" cx="318" cy="330" r="1.1"/>
+        <circle class="ws-sph-dot t" cx="344" cy="292" r="1.2"/><circle class="ws-sph-dot" cx="364" cy="344" r="1.3"/>
+        <circle class="ws-sph-dot" cx="322" cy="378" r="1"/><circle class="ws-sph-dot t" cx="376" cy="356" r="1.1"/>
+        <circle class="ws-sph-dot" cx="296" cy="338" r="1"/><circle class="ws-sph-dot" cx="408" cy="330" r="1.2"/>
+        <circle class="ws-sph-dot" cx="284" cy="316" r=".9"/><circle class="ws-sph-dot t" cx="338" cy="322" r="1.3"/>
+        <circle class="ws-sph-dot" cx="360" cy="298" r=".9"/><circle class="ws-sph-dot" cx="308" cy="288" r="1"/>
+        <circle class="ws-sph-dot" cx="392" cy="300" r="1"/><circle class="ws-sph-dot" cx="326" cy="356" r=".9"/>
+        <circle cx="340" cy="332" r="150" fill="url(#ws-occ)"/>
+        <g class="ws-corelight">
+          <ellipse class="cl-bloom" cx="340" cy="356" rx="30" ry="64" opacity=".38"/>
+          <path class="cl-col" d="M334 300 L346 300 L343 392 L337 392 Z" opacity=".5"/>
+          <ellipse class="cl-mid" cx="340" cy="374" rx="11" ry="28" opacity=".6"/>
+          <ellipse class="cl-core" cx="340" cy="378" rx="5" ry="16" opacity=".95"/>
+        </g>
+        <line class="ws-scan" x1="236" y1="300" x2="444" y2="300"/>
+      </g>
+      <circle class="ws-sph-rim" cx="340" cy="332" r="150"/>
+      <path class="ws-sph-refr" d="M232 250 A150 150 0 0 1 430 232" style="opacity:.75;stroke-width:1.6"/>
+      <path class="ws-sph-refr" d="M250 430 A150 150 0 0 0 300 470" style="opacity:.28;stroke-width:1.1"/>
+    </svg>
+    <svg class="ws-front" viewBox="0 0 680 680" aria-hidden="true">
+      <g transform="translate(340 332) rotate(22) scale(1 .60)">
+        <path class="ws-front-arc" d="M -238 84 A 252 252 0 0 0 96 233"/></g>
+      <circle class="ws-fnode" cx="470" cy="452" r="4.5"/>
+    </svg>
+    <div class="ws-read">
+      <span class="ws-read-l">${esc(f.label || "")}${f.word ? ` · ${esc(f.word)}` : ""}</span>
+      <span class="ws-read-v${big}">${esc(val)}${f.unit ? `<i>${esc(f.unit)}</i>` : ""}</span>
+      ${f.sub ? `<span class="ws-read-s">${esc(f.sub)}</span>` : ""}
+    </div>
+  </div>`;
+}
+
+// Eén regel context: tone-streep + tekst + optionele waarde. Vervangt de kaart.
+function wsLine(l) {
+  return `<div class="ws-line ${l.tone || "is-calm"}">
+    ${l.icon ? `<span class="ws-line-ic">${ic(l.icon)}</span>` : ""}
+    <span class="ws-line-b"><span class="ws-line-t">${esc(l.title)}</span>
+      ${l.sub ? `<span class="ws-line-s">${esc(l.sub)}</span>` : ""}</span>
+    ${l.value ? `<span class="ws-line-v">${esc(l.value)}</span>` : ""}</div>`;
+}
+
+// Compact identity-medaillon in de identity-zone: initialen + statusring. De
+// identiteit staat hier één keer klein en helder; de centrale kern (wsCore) is
+// bewust abstract (geen mens), dus de naam wordt niet dominant herhaald.
+function wsAnchor(naam, tone) {
+  return `<span class="ws-anchor ${tone}"><span class="ws-orb"><i></i>${esc(initialen(naam))}</span></span>`;
+}
 
 function wsRender(wrap, vm) {
   noteGeneration(vm.generation);                           // adopteer generatie vóór eigen banner
   const key = vm.key, naam = vm.naam || key;
   const bel = vm.belasting || {}, fb = vm.feedback || {}, sc = vm.schema;
   const attn = vm.attention || [];
+  const gen = vm.generation || {}, gfr = gen.freshness || {};
+  const tone = dsWorstTone(attn.map(a => dsTone(a.tier)));
+  const belTone = dsTone(bel.ernst || "calm");
+
+  // Focal-ladder MET eigenaar (ongewijzigd contract): één dominante waarde.
+  let focal;
+  if (bel.actief && bel.pct != null) {
+    focal = { owner: "bel-pct", tone: belTone, label: "Belastingssignaal",
+      word: bel.ernst === "hoog" ? "Verhoogd" : "Let op",
+      value: (bel.pct > 0 ? "+" : "") + bel.pct, unit: "%",
+      sub: bel.km_recent != null
+        ? `${nlNum(bel.km_recent)} km · referentie ${nlNum(bel.km_basis_week)} km/wk`
+        : (bel.reden || "") };
+  } else if (bel.km_recent != null) {
+    focal = { owner: "bel-km", tone: "is-calm", label: "Weekvolume", value: nlNum(bel.km_recent), unit: "km",
+      sub: bel.km_basis_week != null ? `referentie ${nlNum(bel.km_basis_week)} km/wk · binnen de marge` : "binnen de marge" };
+  } else if (attn.length) {
+    focal = { owner: "attn", tone, label: "Aandacht", value: attn.length,
+      unit: attn.length === 1 ? "punt" : "punten", sub: attn[0].kort || "" };
+  } else {
+    focal = { owner: "rust", tone: "is-success", label: "Status", value: "Rustig",
+      sub: "geen open actiepunt" };
+  }
+  const owns = s => focal.owner === s;
+  let ratioLbl = "";
+  if ((owns("bel-pct") || owns("bel-km")) && bel.km_recent != null && bel.km_basis_week) {
+    const ratio = bel.km_recent / bel.km_basis_week;
+    focal.gaugeFrac = ratio >= 1 ? Math.min(ratio - 1, 1) : ratio;
+    focal.gaugeDim = ratio >= 1;
+    ratioLbl = (Math.round(ratio * 10) / 10).toFixed(1).replace(".", ",") + "×";
+  }
+
+  const chip = attn.length
+    ? dsChip(tone === "is-critical" ? "actie" : "aandacht", tone)
+    : dsChip("rustig", "is-calm");
+  const fresh = bel.datum ? dsFresh(gfr.belasting || "unknown",
+    gfr.belasting === "fresh" ? "belasting vers" : `stand ${bel.datum}`) : "";
+
   let h = genBanner(vm.generation);
-  h += `<div class="dc-head">
-    <div class="dc-id"><span class="dc-ava">${esc(initialen(naam))}</span>
-      <div><h2>${esc(naam)}</h2><p class="dc-grp">Workspace · wat speelt er nu</p></div></div>
-    <div class="dc-actions">${athleteNav("workspace", key)}</div>
+  h += `<div class="ws-scene ${tone}">`;
+  // Z0 — omgeving
+  h += `<div class="ws-bg" aria-hidden="true"><div class="ws-amb"></div><div class="ws-haze"></div><div class="ws-horizon"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
+  // Z1 — cockpitgeometrie: gebroken bogen, gidslijnen, data-nodes
+  h += `<svg class="ws-geo" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <circle class="ws-arc a2" cx="700" cy="430" r="418" stroke-dasharray="600 2026" transform="rotate(-206 700 430)"/>
+    <circle class="ws-arc a3" cx="748" cy="470" r="332" stroke-dasharray="360 1726" transform="rotate(24 748 470)"/>
+    <circle class="ws-arc a4" cx="700" cy="450" r="368"/>
+    <circle class="ws-arc a1" cx="688" cy="452" r="272" stroke-dasharray="410 1299" transform="rotate(118 688 452)"/>
+    <path class="ws-gd" d="M700 40 L700 132"/>
+    <path class="ws-gd" d="M330 452 L262 452"/><path class="ws-gd" d="M1140 452 L1078 452"/>
+    <path class="ws-trace" d="M96 250 C240 232 360 250 470 300"/>
+    <path class="ws-trace t" d="M1330 250 C1200 236 1090 256 986 306"/>
+    <path class="ws-trace" d="M232 690 C360 654 470 640 560 636"/>
+    <path class="ws-trace t" d="M1208 700 C1080 662 980 648 900 640"/>
+    <g class="ws-cross"><path d="M300 150 h12 M306 144 v12"/></g>
+    <g class="ws-cross"><path d="M1128 158 h12 M1134 152 v12"/></g>
+    <g class="ws-cross"><path d="M214 552 h12 M220 546 v12"/></g>
+    <g class="ws-cross"><path d="M1214 552 h12 M1220 546 v12"/></g>
+    <circle class="ws-anode" cx="360" cy="196" r="1.6"/><circle class="ws-anode" cx="1086" cy="210" r="1.6"/>
+    <circle class="ws-anode" cx="470" cy="726" r="1.6"/><circle class="ws-anode" cx="972" cy="726" r="1.6"/>
+    ${attn.length ? `<circle class="ws-nd" cx="497" cy="372" r="5"/>` : ""}
+    <circle class="ws-nd2" cx="452" cy="641" r="3.5"/>
+    <g class="ws-floor">
+      <path d="M60 940 L672 700"/><path d="M1380 940 L768 700"/>
+      <path d="M380 950 L700 700"/><path d="M1060 950 L740 700"/>
+      <ellipse cx="720" cy="726" rx="540" ry="98"/>
+      <ellipse cx="720" cy="732" rx="360" ry="66"/>
+      <ellipse cx="720" cy="738" rx="190" ry="36"/>
+    </g>
+  </svg>`;
+
+  // Z2 — athlete-vlak: identity (één keer, klein) + de abstracte Athlete Core
+  // (geen mens) + radar-basis. Het dominante signaal leeft geïntegreerd in de kern.
+  h += `<div class="ws-stagez ${focal.tone || tone}">
+    <div class="ws-id2">${wsAnchor(naam, tone)}<b class="ws-name">${esc(naam)}</b>${chip}${fresh}</div>
+    ${wsCore(focal)}
+    <div class="ws-plat" aria-hidden="true"><svg viewBox="0 0 600 172">
+      <path class="ws-beam" d="M286 -4 L314 -4 L338 66 L262 66 Z"/>
+      <ellipse class="ws-pg" cx="300" cy="78" rx="250" ry="48"/>
+      <ellipse class="ws-pe" cx="300" cy="78" rx="256" ry="52"/>
+      <ellipse class="ws-pe tk" cx="300" cy="78" rx="248" ry="50"/>
+      <ellipse class="ws-pe d" cx="300" cy="80" rx="190" ry="38"/>
+      <ellipse class="ws-pe" cx="300" cy="82" rx="120" ry="24" style="opacity:.6"/>
+      <ellipse class="ws-pe d" cx="300" cy="84" rx="64" ry="13"/>
+      <line class="ws-ptick" x1="60" y1="78" x2="80" y2="78"/><line class="ws-ptick" x1="520" y1="78" x2="540" y2="78"/>
+      <line class="ws-ptick" x1="120" y1="112" x2="134" y2="104"/><line class="ws-ptick" x1="480" y1="104" x2="466" y2="112"/>
+      <line class="ws-ptick" x1="230" y1="128" x2="238" y2="120"/><line class="ws-ptick" x1="370" y1="120" x2="362" y2="128"/>
+      <ellipse class="ws-pcore" cx="300" cy="58" rx="18" ry="7"/>
+      <path class="ws-plead" d="M120 62 A200 44 0 0 1 300 40"/>
+      ${bel.actief ? `<path class="ws-ptrack" d="M300 96 L300 168"/>
+      <circle class="ws-pout" cx="300" cy="96" r="3.4"/>` : ""}</svg></div>
   </div>`;
 
-  // 1 — Aandacht nu
-  h += `<section class="dc-sec ws-sec"><h3>Aandacht nu</h3>`;
-  if (attn.length) {
-    h += `<div class="ws-attn">` + attn.map(a => `
-      <span class="ws-tag ${wsChip(a.tier)}">${esc(a.kort || a.soort || "")}${a.pct != null ? ` · +${a.pct}%` : ""}</span>`).join("") + `</div>`;
+  // Verbindingsweb: de kern voedt elke aanwezige context (orbit-node → gekleurde
+  // lijn → context-anchor). Per-context accent; attention-pad helderder. Tekent de
+  // scène tot één cockpit (North-Star-convergentie). Data-gestuurd: alleen echte
+  // context krijgt een verbinding. Coords getuned voor 1440; verborgen < 1180px.
+  const planWebTone = sc ? dsTone(sc.tier) : "is-calm";
+  const fbTone = fb.status === "unknown" ? "is-unknown" : (fb.open ? "is-attention" : "is-success");
+  // Lijn afgeleid van origin(orbit-node)→endpoint(lens-instappunt): de lijn eindigt
+  // dan ALTIJD exact op de endpoint-node, die exact op het lens-instappunt ligt.
+  const webSeg = (t, hot, nx, ny, ex, ey) => {
+    const c1x = nx + (ex - nx) * 0.34, c1y = ny + (ey - ny) * 0.12;
+    const c2x = nx + (ex - nx) * 0.72, c2y = ey - (ey - ny) * 0.14;
+    const d = `M${nx} ${ny} C${c1x.toFixed(0)} ${c1y.toFixed(0)} ${c2x.toFixed(0)} ${c2y.toFixed(0)} ${ex} ${ey}`;
+    return `<g class="${t}"><path class="ws-webline${hot ? " hot" : ""}" pathLength="1" d="${d}"/>
+      <circle class="ws-webnode" cx="${nx}" cy="${ny}" r="5"/><circle class="ws-webend" cx="${ex}" cy="${ey}" r="3.5"/></g>`;
+  };
+  // endpoints = het exacte lens-instappunt (viewBox-coords, getuned voor 1440);
+  // de accent-glow op elke lens staat op dezelfde hoogte (zie .ws-frag-* .ws-lens::after).
+  let web = "";
+  if (attn.length) web += webSeg(tone, true, 566, 350, 514, 308);
+  if (bel.km_recent != null) web += webSeg(belTone, bel.actief, 560, 468, 515, 534);
+  web += webSeg(planWebTone, false, 838, 346, 977, 279);
+  web += webSeg(fbTone, false, 844, 466, 1022, 533);
+  h += `<svg class="ws-web" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${web}</svg>`;
+
+  // Z3 — fragmenten (borderless, ruimtelijk, asymmetrisch)
+  // Waarde-consistentie: belasting-zin uit dezelfde canonieke velden als het signaal.
+  const belZin = (bel.pct != null && bel.km_recent != null && bel.km_basis_week != null)
+    ? `Volume <b>${bel.pct > 0 ? "+" : ""}${bel.pct}%</b> deze week — ${nlNum(bel.km_recent)} km tegenover een referentie van ${nlNum(bel.km_basis_week)} km/wk.`
+    : "";
+  const attnMeta = [attn.length ? (attn[0].tier || "") : "", bel.datum ? `stand ${bel.datum}` : ""]
+    .concat(attn.slice(1).map(a => a.kort || "")).filter(Boolean).join(" · ");
+  const attnTxt = attn.length
+    ? ((attn[0].soort === "belasting" && belZin) ? belZin : esc(attn[0].kort || ""))
+    : "";
+  h += `<div class="ws-frag ws-frag-attn ${tone}">
+      <span class="ws-lens ${attn.length ? 'conn' : ''}" aria-hidden="true"></span>
+      <span class="ws-tick"></span>
+      <h3 class="ds-label">Aandacht nu</h3>
+      ${attn.length ? `<p class="ws-attn-t">${attnTxt}</p>
+        ${attnMeta ? `<p class="ws-attn-m">${esc(attnMeta)}</p>` : ""}`
+      : `<p class="ws-attn-t calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`}
+    </div>`;
+
+  const nRuns = (bel.runs || []).length;
+  let loadFrag = "";
+  if (bel.km_recent != null) {
+    loadFrag = `<div class="ws-frag ws-frag-load ${bel.actief ? belTone : ""}">
+      <span class="ws-lens conn" aria-hidden="true"></span>
+      <h3 class="ds-label">Belastingsinstrument · 7 dagen<em>${nRuns ? `${nRuns} runs` : ""}</em></h3>
+      <div class="ws-kmrow"><span class="ws-km">${esc(nlNum(bel.km_recent))}<i> km deze week</i></span>
+        ${ratioLbl ? `<span class="ws-rt">${esc(ratioLbl)}</span>` : ""}</div>
+      ${wsLoadInstrument(bel)}
+      <div class="ws-load-m"><span>cumulatief weekvolume</span>
+        ${nRuns ? `<span>laatste ${esc(String((bel.runs[nRuns - 1] || {}).datum || ""))}</span>` : ""}</div>
+    </div>`;
   } else {
-    h += `<p class="dc-calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`;
+    loadFrag = `<div class="ws-frag ws-frag-load">
+      <span class="ws-lens" aria-hidden="true"></span>
+      <h3 class="ds-label">Belasting</h3>
+      <p class="ws-attn-t calm">Geen belastingstand bekend.</p></div>`;
   }
-  h += `</section>`;
+  h += loadFrag;
+  // (De belasting↔kern-relatie loopt nu via het verbindingsweb hierboven.)
 
-  // 2 — Belasting (live, gedeelde stand)
-  h += `<section class="dc-sec ws-sec"><h3>Belasting</h3>`;
-  if (bel.actief) {
-    const sev = bel.ernst === "hoog" ? "hoog" : "let op";
-    const delta = (bel.pct != null && bel.pct > 0) ? ` · +${bel.pct}% t.o.v. referentie` : "";
-    h += `<p class="ws-line ws-${bel.ernst === "hoog" ? "actie" : "aandacht"}"><b>${esc(sev)}</b>${delta}</p>`;
-    if (bel.reden) h += `<p class="muted klein">${esc(bel.reden)}</p>`;
-  } else {
-    h += `<p class="dc-calm">Binnen de marge${bel.datum ? ` · stand ${esc(bel.datum)}` : ""}.</p>`;
-  }
-  h += `</section>`;
+  let planHead = sc ? wsLine({ tone: dsTone(sc.tier), icon: "clock",
+    title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
+  h += `<div class="ws-frag ws-frag-plan ${sc ? dsTone(sc.tier) : ""}">
+    <span class="ws-lens conn" aria-hidden="true"></span>
+    <h3 class="ds-label">Doel &amp; planning</h3>
+    ${planHead}<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>
+    <button type="button" class="ws-cta quiet" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button>
+  </div>`;
 
-  // 3 — Schema / doel  (doel + huidig blok vullen we lazy uit de deep-sectie)
-  h += `<section class="dc-sec ws-sec"><h3>Schema &amp; doel</h3>`;
-  if (sc) {
-    h += `<p class="ws-line ws-${sc.tier === "actie" ? "actie" : "aandacht"}">${esc(sc.kort || "schema-signaal")}${sc.einddatum ? ` · t/m ${esc(sc.einddatum)}` : ""}</p>`;
-  }
-  h += `<div id="ws-plan" class="ws-deep-slot"><p class="muted klein">Doel &amp; planning laden…</p></div></section>`;
+  const fbBody = fb.status === "unknown"
+    ? `<p class="ws-attn-t calm">Feedback-status wordt bijgewerkt…</p>`
+    : `<div class="ws-fb ${fbTone}"><span class="ws-fb-badge">${fb.open || 0}</span>
+        <span class="ws-fb-t">${fb.open ? `${fb.open} open reactie${fb.open !== 1 ? "s" : ""}<small>vraagt aandacht</small>` : `alles beantwoord<small>geen open reacties</small>`}</span></div>`;
+  h += `<div class="ws-frag ws-frag-fb ${fbTone}">
+    <span class="ws-lens conn" aria-hidden="true"></span>
+    <h3 class="ds-label">Feedback</h3>${fbBody}
+    <div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>
+    <button type="button" class="ws-cta quiet" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit openen</button>
+  </div>`;
 
-  // 4 — Feedback-status
-  h += `<section class="dc-sec ws-sec"><h3>Feedback</h3>`;
-  if (fb.status === "unknown") h += `<p class="muted klein">Feedback-status wordt bijgewerkt…</p>`;
-  else if (fb.open) h += `<p class="ws-line ws-aandacht"><b>${fb.open}</b> open reactie${fb.open !== 1 ? "s" : ""}</p>`;
-  else h += `<p class="dc-calm">Geen open reacties.</p>`;
-  h += `</section>`;
+  const srcRow = (lbl, state, ver) => {
+    const t = dsTone(state);
+    const word = state === "fresh" ? "vers" : (state === "stale" ? "eerder" : state || "onbekend");
+    return `<li class="${t}"><i class="ds-dot"></i><span>${esc(lbl)}</span>
+      <em>${esc([String(ver || "").slice(0, 10), word].filter(Boolean).join(" · "))}</em></li>`;
+  };
+  const sv = gen.source_versions || {};
+  h += `<div class="ws-frag ws-frag-src">
+    <span class="ws-src-rail" aria-hidden="true"></span>
+    <h3 class="ds-label">Bronnen</h3><ul class="ws-src">
+    ${srcRow("Belasting", gfr.belasting, sv.belasting)}
+    ${srcRow("Overzicht", gfr.home, sv.home)}
+    ${srcRow("Feedback", gfr.feedback, sv.feedback)}</ul></div>`;
 
-  // 5 — Klachten/context (lazy uit /api/cockpit)
-  h += `<section class="dc-sec ws-sec"><h3>Klachten &amp; context</h3>
-    <div id="ws-context" class="ws-deep-slot"><p class="muted klein">Context laden…</p></div></section>`;
+  // Z4 — command: de natuurlijke uitgang van de cockpitbeslissing. Instrument-strip
+  // met lead-in (waaróm), één dominante trigger en stille secundaire controls.
+  h += `<nav class="ws-dock ${attn.length ? tone : "is-calm"}">
+    ${bel.actief ? `<div class="ws-cmd-lead">
+        <span class="ttl">Volgende actie</span>
+        <span class="st">belastingssignaal ${esc(bel.ernst === "hoog" ? "verhoogd" : "let op")}</span>
+      </div>
+      <button type="button" class="ws-cmd" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')"><span class="ws-plug" aria-hidden="true"></span><span class="ws-cmd-chip">${ic("check")}</span>Belasting gezien</button>` : ""}
+    <div class="ws-util">
+      <button type="button" onclick="deepAtleet('teampuls','${esc(key)}')">Teampuls</button>
+      <button type="button" onclick="openAthleteModule('atleten','${esc(key)}')">Profiel</button>
+      ${athleteNav("workspace", key)}
+    </div>
+  </nav>`;
 
-  // 6 — Snelle acties (bestaande routes/authority; geen duplicate write-logica)
-  h += `<section class="dc-sec ws-acties">
-    <button class="btn ghost" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button>
-    <button class="btn ghost" onclick="openAthleteModule('atleten','${esc(key)}')">Dossier</button>
-    <button class="btn ghost" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit</button>
-    <button class="btn ghost" onclick="deepAtleet('teampuls','${esc(key)}')">Teampuls</button>`;
-  if (bel.actief) {
-    h += `<button class="btn ghost" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">Belasting gezien</button>`;
-  }
-  h += `</section>`;
+  h += `</div>`;
   wrap.innerHTML = h;
+  wrap.dataset.belOwned = owns("bel-pct") ? "1" : "";
+}
+
+// Progressive disclosure: klap het blok NA de knop open/dicht (CSS grid-rows).
+function dsFoldToggle(btn) {
+  const f = btn.nextElementSibling;
+  if (f && f.classList.contains("ds-fold")) f.classList.toggle("open");
 }
 
 // Rijke context lazy + parallel uit het bestaande cockpit-endpoint. Faalt/traag → de
@@ -4786,23 +5521,30 @@ async function wsLoadDeep(wrap, ident) {
   if (!wrap || wsSel !== ident) return;                    // leak guard
   const plan = $("#ws-plan"), ctx = $("#ws-context");
   if (!r || !r.ok) {
-    if (plan) plan.innerHTML = `<p class="muted klein">Doel &amp; planning nu niet beschikbaar.</p>`;
-    if (ctx) ctx.innerHTML = `<p class="muted klein">Context nu niet beschikbaar.</p>`;
+    if (plan) plan.innerHTML = `<p class="ws-calm">Doel &amp; planning nu niet beschikbaar.</p>`;
+    if (ctx) ctx.innerHTML = `<p class="ws-calm">Context nu niet beschikbaar.</p>`;
     return;
   }
   if (plan) {
     const rows = (r.planning && r.planning.rows) || [];
-    plan.innerHTML = rows.length
-      ? `<dl class="ws-dl">` + rows.map(x => `<div><dt>${esc(x.label)}</dt><dd>${esc(x.value)}</dd></div>`).join("") + `</dl>`
-      : `<p class="muted klein">Geen doel/planning bekend.</p>`;
+    // Geen doel → ontworpen rustige lege staat (geen kale zin in een kaart).
+    plan.innerHTML = rows.length ? dsKv(rows)
+      : `<div class="ws-goal"><div class="ws-goal-ring"><i></i></div>
+          <p>Nog geen doel vastgelegd.<small>Leg een race- of trainingsdoel vast — het masterbrein plant erop.</small></p></div>`;
   }
   if (ctx) {
     const attn = (r.attention || []).filter(c => c.kind === "complaint" || c.kind === "contradiction");
     const lo = r.load_observation;
     let c = "";
-    if (attn.length) c += attn.map(a => `<p class="ws-line ws-aandacht">${esc(a.title || "")}${a.why ? ` — ${esc(a.why)}` : ""}</p>`).join("");
-    if (lo && lo.signalen) c += `<p class="muted klein">Belasting-observatie: ${esc(lo.signalen)}</p>`;
-    ctx.innerHTML = c || `<p class="dc-calm">Geen actieve klacht of tegenstrijdigheid bekend.</p>`;
+    if (attn.length) c += attn.map(a => wsLine({
+      tone: dsTone("aandacht"), icon: _DC_KIND_IC[a.kind] || "alert",
+      title: a.title || "", sub: a.why || "",
+    })).join("");
+    // Bezit de stage de belasting al (focal + waarom-kaart), dan is de observatie
+    // hier ruis: we herhalen hem niet.
+    if (lo && lo.signalen && wrap.dataset.belOwned !== "1")
+      c += dsStream([{ text: `Belasting-observatie: ${lo.signalen}`, tone: dsTone(lo.ernst) }]);
+    ctx.innerHTML = c || `<p class="ws-calm">Geen actieve klacht of tegenstrijdigheid bekend.</p>`;
   }
 }
 

@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>BeBetter — Spatial Cockpit Lab</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPATIAL COCKPIT PROTOTYPE (reset v3) — vijf z-vlakken, geen kolommen.
+   Echte data-snapshot: Masja · +92% · 36.4 km · ref 19 · 4 runs · 1 open
+   reactie · geen doel · geen klacht · bronnen vers 29 aug.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@font-face{font-family:"Space Grotesk";src:url(fonts/sg-400.woff2) format("woff2");font-weight:400}
+@font-face{font-family:"Space Grotesk";src:url(fonts/sg-500.woff2) format("woff2");font-weight:500}
+@font-face{font-family:"Space Grotesk";src:url(fonts/sg-700.woff2) format("woff2");font-weight:700}
+:root{
+  --ink:#EAF4FF;--ink2:#AFC6E8;--ink3:#7690BA;
+  --cyan:#59E8FF;--tone:#FF7A45;--tone-bg:rgba(255,122,69,.14);--tone-bd:rgba(255,122,69,.5);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden;background:#040B18;
+  font-family:"Space Grotesk",-apple-system,sans-serif;color:var(--ink);
+  -webkit-font-smoothing:antialiased}
+
+/* ── rail (72px) ── */
+.rail{position:fixed;left:0;top:0;bottom:0;width:72px;z-index:40;
+  background:linear-gradient(196deg,#0C2347,#091830 55%,#071120);
+  border-right:1px solid rgba(122,168,255,.1);display:flex;flex-direction:column;
+  align-items:center;padding:16px 0;gap:6px}
+.rail i{width:40px;height:40px;border-radius:12px;background:rgba(94,230,235,.05);
+  display:block}
+.rail i.on{background:linear-gradient(115deg,rgba(94,230,235,.16),rgba(94,230,235,.04));
+  box-shadow:0 0 24px -8px rgba(94,230,235,.6);border:1px solid rgba(94,230,235,.25)}
+.rail .sp{flex:1}
+
+/* ── Z0: omgeving ── */
+.z0{position:fixed;inset:0;z-index:0}
+.z0 .haze{position:absolute;inset:0;
+  background:
+    radial-gradient(42% 38% at 52% 40%,var(--tone-bg),transparent 66%),
+    radial-gradient(30% 26% at 85% 10%,rgba(89,232,255,.07),transparent 72%),
+    radial-gradient(36% 32% at 12% 84%,rgba(89,232,255,.05),transparent 72%)}
+.z0 .vig{position:absolute;inset:0;
+  background:radial-gradient(115% 90% at 52% 42%,transparent 52%,rgba(2,6,14,.78) 100%)}
+.z0 svg{position:absolute;inset:0;width:100%;height:100%}
+.z0 .tr{fill:none;stroke:rgba(122,168,255,.05);stroke-width:1}
+.z0 .st{fill:rgba(150,198,255,.45)}
+/* perspectiefveld: convergerende vloerlijnen naar de atleet */
+.z0 .fl{fill:none;stroke:rgba(122,168,255,.07);stroke-width:1}
+
+/* ── Z1: cockpitgeometrie — gebroken bogen, verschillende schalen/offsets ── */
+.z1{position:fixed;inset:0;z-index:1;pointer-events:none}
+.z1 svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.arc{fill:none;stroke-linecap:round;transform-origin:var(--ox) var(--oy)}
+.arc.a1{stroke:var(--tone);stroke-width:2.6;opacity:.75;
+  filter:drop-shadow(0 0 12px rgba(255,122,69,.45))}
+.arc.a2{stroke:var(--cyan);stroke-width:1.8;opacity:.5;
+  filter:drop-shadow(0 0 9px rgba(89,232,255,.4))}
+.arc.a3{stroke:var(--tone);stroke-width:1.4;opacity:.35}
+.arc.a4{stroke:rgba(150,198,255,.5);stroke-width:1;opacity:.4;stroke-dasharray:2 10}
+.gd{fill:none;stroke:rgba(122,168,255,.08);stroke-width:1}
+.nd{fill:#FFE3D4;filter:drop-shadow(0 0 9px var(--tone))}
+.nd2{fill:var(--cyan);filter:drop-shadow(0 0 7px var(--cyan))}
+
+/* ── Z2: athlete ── */
+.z2{position:fixed;left:50%;top:74px;width:640px;height:760px;z-index:2;
+  transform:translateX(-52%)}
+.aura{position:absolute;left:50%;top:290px;width:600px;height:600px;border-radius:50%;
+  transform:translate(-50%,-50%);filter:blur(10px);
+  background:
+    radial-gradient(circle at 50% 44%,var(--tone-bg) 0%,var(--tone-bg) 12%,transparent 30%),
+    radial-gradient(circle at 50% 42%,var(--tone-bg) 0%,transparent 58%)}
+.human{position:absolute;left:50%;top:6px;width:520px;transform:translateX(-50%)}
+.human img{display:block;width:100%;height:auto}
+.human .scan{position:absolute;inset:4% 10% 12% 10%;pointer-events:none;mix-blend-mode:screen;
+  background:repeating-linear-gradient(to bottom,rgba(170,230,255,.05) 0 1px,transparent 1px 5px);
+  opacity:.5;-webkit-mask-image:radial-gradient(58% 52% at 50% 38%,#000 34%,transparent 76%);
+  mask-image:radial-gradient(58% 52% at 50% 38%,#000 34%,transparent 76%)}
+.human .status{position:absolute;inset:38% 6% 0;pointer-events:none;mix-blend-mode:screen;
+  background:linear-gradient(to top,var(--tone-bg) 0%,transparent 70%);opacity:.9;
+  -webkit-mask-image:radial-gradient(60% 70% at 50% 62%,#000 40%,transparent 80%);
+  mask-image:radial-gradient(60% 70% at 50% 62%,#000 40%,transparent 80%)}
+.human .core{position:absolute;left:50%;top:56%;width:70px;height:130px;border-radius:50%;
+  transform:translateX(-50%);filter:blur(16px);background:#59E8FF;opacity:.24}
+.human .corehot{position:absolute;left:50%;top:55%;width:22px;height:48px;border-radius:50%;
+  transform:translateX(-50%);filter:blur(7px);background:#EAFDFF;opacity:.5}
+.plat{position:absolute;left:50%;top:610px;width:560px;height:150px;transform:translateX(-50%)}
+.plat svg{width:100%;height:100%;overflow:visible}
+.plat ellipse{fill:none;stroke:rgba(94,230,235,.32)}
+.plat .pg{fill:var(--tone);opacity:.14;filter:blur(14px)}
+/* identity anchor — één keer, klein, boven de scène */
+.id{position:absolute;left:50%;top:-52px;transform:translateX(-50%);display:flex;
+  align-items:center;gap:10px;white-space:nowrap}
+.id .av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  font-size:11px;font-weight:700;color:var(--tone);border:1.5px solid var(--tone-bd);
+  background:radial-gradient(circle at 50% 30%,rgba(255,255,255,.12),transparent 55%),
+             radial-gradient(circle at 50% 46%,var(--tone-bg),rgba(13,30,58,.95) 80%)}
+.id b{font-size:21px;font-weight:700;letter-spacing:-.01em}
+.id .chip{font-size:9.5px;font-weight:700;letter-spacing:.08em;color:var(--tone);
+  border:1px solid var(--tone-bd);border-radius:99px;padding:3px 9px;background:var(--tone-bg)}
+.id .fr{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--cyan)}
+.id .fr i{width:6px;height:6px;border-radius:50%;background:var(--cyan);
+  box-shadow:0 0 8px var(--cyan)}
+
+/* ── signaal-instrument: compacte partial-ring op de platformrand ── */
+.inst{position:absolute;left:50%;top:596px;transform:translateX(66px);width:150px;
+  text-align:center}
+.inst svg{position:absolute;left:50%;top:-12px;width:150px;height:150px;
+  transform:translateX(-50%);overflow:visible}
+.inst .ib{fill:none;stroke:rgba(255,122,69,.3);stroke-width:2}
+.inst .iv{fill:none;stroke:var(--tone);stroke-width:4;stroke-linecap:round;
+  filter:drop-shadow(0 0 8px rgba(255,122,69,.6))}
+.inst .lbl{position:relative;top:26px;font-size:9px;font-weight:700;letter-spacing:.18em;
+  color:var(--ink3)}
+.inst .val{position:relative;top:28px;font-size:40px;font-weight:700;letter-spacing:-.02em;
+  color:var(--tone);text-shadow:0 0 26px var(--tone-bg)}
+.inst .val i{font-style:normal;font-size:16px;opacity:.75}
+.inst .sub{position:relative;top:28px;font-size:10.5px;color:var(--ink2)}
+
+/* ── Z3: fragmenten — borderless, fade-randen, ruimtelijk verspreid ── */
+.z3{position:fixed;inset:0;z-index:3;pointer-events:none}
+.frag{position:absolute;pointer-events:auto}
+.frag .lb{font-size:9.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ink3);margin-bottom:8px}
+/* fragment-veld: translucent, randloos, smelt de scène in */
+.field{padding:16px 18px;border-radius:18px;
+  background:radial-gradient(120% 120% at 30% 0%,rgba(22,52,100,.42),rgba(9,24,48,.18) 70%);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  -webkit-mask-image:radial-gradient(140% 140% at 40% 30%,#000 55%,transparent 98%);
+  mask-image:radial-gradient(140% 140% at 40% 30%,#000 55%,transparent 98%)}
+/* attention: zwevend anker met connector */
+.attn{left:176px;top:196px;width:266px}
+.attn .txt{font-size:14.5px;font-weight:600;line-height:1.45}
+.attn .txt b{color:var(--tone)}
+.attn .meta{margin-top:5px;font-size:10.5px;color:var(--ink3)}
+.attn .tick{position:absolute;left:-14px;top:4px;bottom:10px;width:2px;border-radius:2px;
+  background:linear-gradient(180deg,var(--tone),transparent 90%);
+  box-shadow:0 0 10px var(--tone-bg)}
+.conn{position:absolute;pointer-events:none;overflow:visible}
+.conn path{fill:none;stroke:var(--tone);stroke-width:1.2;stroke-dasharray:5 8;opacity:.5}
+/* load: linksonder, instrument-stijl */
+.load{left:96px;top:472px;width:330px}
+.load .kmrow{display:flex;align-items:baseline;gap:9px}
+.load .km{font-size:30px;font-weight:700;letter-spacing:-.02em}
+.load .km i{font-style:normal;font-size:12px;color:var(--ink3);font-weight:500}
+.load .rt{margin-left:auto;font-size:12px;color:var(--tone);font-weight:700}
+.wk{display:flex;gap:7px;align-items:flex-end;height:56px;margin:12px 0 4px}
+.wk>div{flex:1;height:100%;display:flex;flex-direction:column;align-items:center;
+  justify-content:flex-end;gap:4px}
+.wk i{width:100%;border-radius:4px 4px 2px 2px;
+  background:linear-gradient(180deg,#FFB07E,var(--tone));box-shadow:0 0 12px -4px var(--tone)}
+.wk .off i{height:2px!important;background:rgba(132,178,255,.16);box-shadow:none}
+.wk span{font-size:8.5px;font-weight:700;letter-spacing:.08em;color:var(--ink3)}
+.wk em{font-style:normal;font-size:9px;color:var(--tone);font-weight:700;min-height:11px}
+.load svg.curve{display:block;width:100%;height:56px;overflow:visible;margin-top:6px}
+.load .meta{margin-top:6px;font-size:10.5px;color:var(--ink3);display:flex;gap:14px}
+/* plan: rechtsboven */
+.plan{right:104px;top:170px;width:270px}
+.goalrow{display:flex;gap:13px;align-items:center}
+.goalring{width:44px;height:44px;border-radius:50%;flex:0 0 auto;
+  border:1.5px dashed rgba(89,232,255,.5);display:grid;place-items:center}
+.goalring i{width:7px;height:7px;border-radius:50%;background:var(--cyan);
+  box-shadow:0 0 9px var(--cyan)}
+.plan p{font-size:12.5px;color:var(--ink2);line-height:1.45}
+.plan p small{display:block;font-size:10.5px;color:var(--ink3);margin-top:2px}
+.plan .cta{margin-top:9px;display:inline-block;font-size:11.5px;font-weight:700;
+  color:var(--cyan)}
+/* feedback + context: rechts-midden, kleiner en dieper */
+.fb{right:88px;top:436px;width:250px;opacity:.96}
+.fbrow{display:flex;align-items:center;gap:12px}
+.fbbadge{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  font-size:16px;font-weight:700;color:#F0A62B;border:2px solid rgba(240,166,43,.45);
+  background:radial-gradient(circle at 50% 32%,rgba(240,166,43,.16),transparent 70%);
+  box-shadow:0 0 20px -8px #F0A62B}
+.fb p{font-size:12.5px;color:var(--ink2)}
+.fb p small{display:block;font-size:10.5px;color:var(--ink3)}
+.fb .kl{margin-top:12px;font-size:12px;color:var(--ink2);line-height:1.45}
+.fb .cta{margin-top:6px;display:inline-block;font-size:11px;font-weight:700;color:var(--cyan)}
+/* sources: telemetrie rechtsonder, laag contrast */
+.src{right:96px;bottom:64px;width:216px;opacity:.6}
+.src ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+.src li{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--ink2)}
+.src li i{width:5px;height:5px;border-radius:50%;background:var(--cyan);flex:0 0 auto}
+.src li.old i{background:var(--ink3)}
+.src li em{font-style:normal;margin-left:auto;color:var(--ink3);font-size:10px}
+
+/* ── Z4: command ── */
+.z4{position:fixed;left:50%;bottom:38px;transform:translateX(-52%);z-index:4;
+  display:flex;align-items:center;gap:22px}
+.cmd{display:inline-flex;align-items:center;gap:9px;padding:13px 26px;border-radius:99px;
+  background:linear-gradient(120deg,#FFB07E,#FF7A45);color:#1C0A02;font-weight:700;
+  font-size:14px;border:0;box-shadow:0 0 36px -8px var(--tone),0 12px 26px -12px var(--tone)}
+.qc{display:flex;gap:16px;font-size:12.5px;color:var(--ink3);font-weight:600}
+.qc span{border-bottom:1px solid transparent}
+.qc span+span{position:relative;padding-left:17px}
+.qc span+span::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:1px;
+  background:rgba(122,168,255,.2)}
+</style>
+</head>
+<body>
+<aside class="rail">
+  <i></i><i></i><i></i><i class="on"></i><i></i><i></i><span class="sp"></span><i></i>
+</aside>
+
+<div class="z0">
+  <div class="haze"></div>
+  <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+    <path class="tr" d="M-40 620 C300 520 700 500 1480 590"/>
+    <path class="tr" d="M-40 700 C360 620 760 610 1480 680"/>
+    <path class="tr" d="M120 -40 C240 220 320 420 340 780"/>
+    <path class="tr" d="M1330 -40 C1240 240 1180 460 1170 820"/>
+    <g class="fl">
+      <path d="M180 900 L648 560"/><path d="M420 900 L678 578"/>
+      <path d="M1260 900 L792 560"/><path d="M1030 900 L762 578"/>
+      <ellipse cx="720" cy="748" rx="560" ry="104"/>
+      <ellipse cx="720" cy="756" rx="380" ry="72"/>
+    </g>
+    <g>
+      <circle class="st" cx="150" cy="130" r="1.4" opacity=".4"/><circle class="st" cx="420" cy="70" r="1" opacity=".25"/>
+      <circle class="st" cx="880" cy="52" r="1.4" opacity=".4"/><circle class="st" cx="1210" cy="120" r="1.1" opacity=".3"/>
+      <circle class="st" cx="1340" cy="420" r="1.3" opacity=".35"/><circle class="st" cx="90" cy="470" r="1.2" opacity=".3"/>
+      <circle class="st" cx="240" cy="820" r="1.3" opacity=".3"/><circle class="st" cx="1150" cy="800" r="1.2" opacity=".25"/>
+      <circle class="st" cx="640" cy="120" r="1" opacity=".2"/><circle class="st" cx="1050" cy="250" r="1" opacity=".25"/>
+    </g>
+  </svg>
+  <div class="vig"></div>
+</div>
+
+<div class="z1">
+  <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+    <!-- gebroken bogen: verschillende radii, offsets, diktes -->
+    <circle class="arc a2" style="--ox:700px;--oy:430px" cx="700" cy="430" r="418"
+      stroke-dasharray="600 2026" transform="rotate(-206 700 430)"/>
+    <circle class="arc a3" style="--ox:748px;--oy:470px" cx="748" cy="470" r="332"
+      stroke-dasharray="360 1726" transform="rotate(24 748 470)"/>
+    <circle class="arc a4" style="--ox:700px;--oy:450px" cx="700" cy="450" r="368"
+      stroke-dasharray="2 10"/>
+    <circle class="arc a1" style="--ox:688px;--oy:452px" cx="688" cy="452" r="272"
+      stroke-dasharray="410 1299" transform="rotate(118 688 452)"/>
+    <path class="gd" d="M700 40 L700 132"/>
+    <path class="gd" d="M330 452 L262 452"/><path class="gd" d="M1140 452 L1078 452"/>
+    <!-- data-nodes: ratio-node (rechts-onder) + attention-node (links-boven) -->
+    <circle class="nd" cx="497" cy="372" r="5"/>
+    <circle class="nd2" cx="452" cy="641" r="3.5"/>
+  </svg>
+</div>
+
+<div class="z2">
+  <div class="aura"></div>
+  <div class="id">
+    <span class="av">MB</span><b>Masja Bolk</b>
+    <span class="chip">ACTIE</span>
+    <span class="fr"><i></i>belasting vers</span>
+  </div>
+  <div class="human">
+    <img src="../pwa/static/presence/presence-female.webp" alt="" aria-hidden="true">
+    <div class="scan"></div>
+    <div class="status"></div>
+    <div class="core"></div>
+    <div class="corehot"></div>
+  </div>
+  <div class="plat">
+    <svg viewBox="0 0 560 150">
+      <ellipse class="pg" cx="280" cy="75" rx="240" ry="46"/>
+      <ellipse cx="280" cy="75" rx="252" ry="52" opacity=".5"/>
+      <ellipse cx="280" cy="78" rx="176" ry="36" opacity=".35"/>
+      <ellipse cx="280" cy="81" rx="104" ry="21" opacity=".22"/>
+    </svg>
+  </div>
+  <div class="inst">
+    <svg viewBox="0 0 150 150">
+      <circle class="ib" cx="75" cy="75" r="62" transform="rotate(90 75 75)"/>
+      <circle class="iv" cx="75" cy="75" r="62" stroke-dasharray="358.3 389.5"
+        transform="rotate(90 75 75)"/>
+    </svg>
+    <div class="lbl">BELASTINGSSIGNAAL · VERHOOGD</div>
+    <div class="val">+92<i>%</i></div>
+    <div class="sub">36.4 km · referentie 19 km/wk</div>
+  </div>
+</div>
+
+<div class="z3">
+  <!-- attention: zwevend anker op schouderhoogte, connector naar ratio-verhaal -->
+  <div class="frag attn">
+    <span class="tick"></span>
+    <div class="lb">Aandacht nu</div>
+    <div class="txt">Volume <b>+92%</b> deze week — 36.4 km tegenover een referentie van 19 km/wk.</div>
+    <div class="meta">actie · stand 2026-08-29 · 1 open reactie</div>
+  </div>
+  <svg class="conn" style="left:446px;top:284px;width:56px;height:92px" viewBox="0 0 56 92">
+    <path d="M0 8 C20 26 34 54 48 84" opacity=".7"/>
+  </svg>
+
+  <!-- load: instrument linksonder -->
+  <div class="frag load field">
+    <div class="lb">Belasting · 7 dagen <span style="float:right;letter-spacing:.04em">4 runs</span></div>
+    <div class="kmrow"><span class="km">36.4<i> km deze week</i></span>
+      <span class="rt">1,9×</span></div>
+    <div class="wk">
+      <div class="on"><em>14.6</em><i style="height:44px"></i><span>ZO</span></div>
+      <div class="on"><em>5</em><i style="height:16px"></i><span>MA</span></div>
+      <div class="off"><em></em><i></i><span>DI</span></div>
+      <div class="off"><em></em><i></i><span>WO</span></div>
+      <div class="on"><em>16.8</em><i style="height:50px"></i><span>DO</span></div>
+      <div class="off"><em></em><i></i><span>VR</span></div>
+      <div class="off"><em></em><i></i><span>ZA</span></div>
+    </div>
+    <svg class="curve" viewBox="0 0 300 56">
+      <line x1="6" y1="34" x2="294" y2="34" stroke="#59E8FF" stroke-width="1"
+        stroke-dasharray="3 6" opacity=".5"/>
+      <text x="8" y="30" fill="#59E8FF" font-size="8" font-weight="700" opacity=".7"
+        font-family="Space Grotesk">REF 19</text>
+      <path d="M6 42 C40 40 80 38 110 34 C150 27 200 17 294 11" fill="none"
+        stroke="#FF7A45" stroke-width="2" stroke-linecap="round"
+        style="filter:drop-shadow(0 0 6px rgba(255,122,69,.5))"/>
+      <circle cx="110" cy="34" r="2.4" fill="#FF7A45"/>
+      <circle cx="294" cy="11" r="3.6" fill="#FFE3D4"
+        style="filter:drop-shadow(0 0 6px #FF7A45)"/>
+    </svg>
+    <div class="meta"><span>cumulatief weekvolume</span><span>laatste 2026-08-27</span></div>
+  </div>
+
+  <!-- plan: rechtsboven -->
+  <div class="frag plan field">
+    <div class="lb">Doel &amp; planning</div>
+    <div class="goalrow"><div class="goalring"><i></i></div>
+      <p>Nog geen doel vastgelegd.<small>Leg een race- of trainingsdoel vast — het masterbrein plant erop.</small></p></div>
+    <span class="cta">Schema openen</span>
+  </div>
+
+  <!-- feedback + context: rechts-midden -->
+  <div class="frag fb field">
+    <div class="lb">Feedback</div>
+    <div class="fbrow"><span class="fbbadge">1</span>
+      <p>1 open reactie<small>vraagt aandacht</small></p></div>
+    <div class="kl">Geen actieve klacht of tegenstrijdigheid bekend.</div>
+    <span class="cta">Cockpit openen</span>
+  </div>
+
+  <!-- sources: telemetrie -->
+  <div class="frag src">
+    <div class="lb">Bronnen</div>
+    <ul>
+      <li><i></i>Belasting<em>29 aug · vers</em></li>
+      <li><i></i>Overzicht<em>29 aug · vers</em></li>
+      <li><i></i>Feedback<em>29 aug · vers</em></li>
+    </ul>
+  </div>
+</div>
+
+<nav class="z4">
+  <div class="qc"><span>Teampuls</span><span>Profiel</span><span>Dossier</span></div>
+  <button class="cmd">✓ Belasting gezien</button>
+  <div class="qc"><span>Schema</span><span>Cockpit</span></div>
+</nav>
+</body>
+</html>
