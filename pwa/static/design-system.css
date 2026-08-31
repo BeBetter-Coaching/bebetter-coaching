@@ -1066,8 +1066,14 @@
 .dc-cpill .cpt small{display:block;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3)}
 .dc-cpill .cpt b{display:block;font-size:12.5px;font-weight:600;color:var(--ds-text)}
 
-.dc-grid{position:relative;display:grid;gap:20px;align-items:start;
-  grid-template-columns:minmax(258px,318px) minmax(0,1.45fr) minmax(280px,352px)}
+.dc-grid{position:relative;display:grid;gap:17px;align-items:start;
+  grid-template-columns:minmax(244px,300px) minmax(0,1.66fr) minmax(268px,338px)}
+/* Één ruimtelijke cockpit i.p.v. drie losse kolommen: gedeeld licht-substraat dat
+   naar de geselecteerde herinnering (midden) convergeert en de zones aan elkaar bindt. */
+.dc-grid::before{content:"";position:absolute;inset:-30px -10px;z-index:0;pointer-events:none;border-radius:26px;
+  background:radial-gradient(58% 82% at 50% 34%,var(--tone-bg),transparent 72%),
+             radial-gradient(120% 120% at 50% 50%,rgba(94,230,235,.03),transparent 70%)}
+.dc-grid>*{position:relative;z-index:1}
 .dc-conn{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4;overflow:visible}
 .dc-conn path{fill:none;stroke-width:1.8;opacity:.68;filter:drop-shadow(0 0 4px currentColor)}
 .dc-conn .cnode{r:3.4}.dc-conn .cend{r:3}
@@ -1078,6 +1084,16 @@
   border:1px solid rgba(122,168,255,.13);
   -webkit-backdrop-filter:blur(12px) saturate(1.05);backdrop-filter:blur(12px) saturate(1.05);
   box-shadow:inset 0 1px 0 rgba(192,217,255,.07),0 26px 56px -36px rgba(2,8,20,.9)}
+/* Zijzones lezen als verzonken velden (geen harde kaarten): dunnere rand, ijler glas. */
+.dc-tl-pane,.dc-rt-pane{background:linear-gradient(162deg,rgba(20,42,80,.3),rgba(10,22,44,.2) 62%,rgba(8,18,38,.1));
+  border-color:rgba(122,168,255,.09);box-shadow:inset 0 1px 0 rgba(192,217,255,.05),0 20px 46px -38px rgba(2,8,20,.85)}
+/* MIDDEN = de hero: verhoogd glas, toon-getinte rand + halo → ~12% meer overwicht. */
+.dc-center{background:linear-gradient(162deg,rgba(30,56,102,.56),rgba(12,27,52,.4) 58%,rgba(8,18,38,.26));
+  border:1px solid var(--tone-bd);border-radius:24px;
+  box-shadow:inset 0 1px 0 rgba(200,224,255,.12),0 34px 72px -34px rgba(2,8,20,.95),0 0 60px -26px var(--tone-bg)}
+.dc-center::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(120% 42% at 50% 0%,var(--tone-bg),transparent 60%);opacity:.6}
+.dc-center>*{position:relative}
 .dc-pane-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px 11px}
 .dc-pane-h b{font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ds-text-2)}
 .dc-pane-h .dc-pi{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;color:var(--ds-text-3);
@@ -1112,30 +1128,30 @@
 /* MIDDEN — geselecteerde herinnering (de hero: beslissings-geheugenpaneel). */
 .dc-center{overflow:hidden}
 .dc-mem{position:relative}
-.dc-mem .mem-h{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:17px 20px 0}
+.dc-mem .mem-h{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px 24px 0}
 .dc-mem .mem-when{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3);
   display:inline-flex;align-items:center;gap:9px}
 .dc-mem .sel-tag{color:var(--tone);border:1px solid var(--tone-bd);background:var(--tone-bg);padding:2px 8px;border-radius:var(--ds-r-pill);font-size:9px}
 .dc-mem .mem-rel{text-align:right;flex:0 0 auto}
 .dc-mem .mem-rel small{display:block;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ds-text-3)}
 .dc-mem .mem-rel b{font-size:13px;font-weight:700;color:var(--tone)}
-.dc-mem .mem-title{display:flex;align-items:center;gap:13px;padding:11px 20px 2px}
-.dc-mem .mi{width:40px;height:40px;border-radius:12px;flex:0 0 auto;display:grid;place-items:center;color:var(--tone);
-  background:var(--tone-bg);border:1px solid var(--tone-bd)}
-.dc-mem .mi .ic{width:20px;height:20px}
-.dc-mem .mem-title h2{margin:0;font-size:21px;font-weight:750;letter-spacing:-.02em;line-height:1.12}
+.dc-mem .mem-title{display:flex;align-items:center;gap:14px;padding:12px 24px 2px}
+.dc-mem .mi{width:44px;height:44px;border-radius:13px;flex:0 0 auto;display:grid;place-items:center;color:var(--tone);
+  background:var(--tone-bg);border:1px solid var(--tone-bd);box-shadow:0 0 22px -8px var(--tone)}
+.dc-mem .mi .ic{width:22px;height:22px}
+.dc-mem .mem-title h2{margin:0;font-size:24px;font-weight:750;letter-spacing:-.022em;line-height:1.1}
 .dc-mem .msub{font-size:11.5px;color:var(--ds-text-3);margin-top:2px}
-.dc-mem .mem-quote{margin:11px 20px 0;padding:12px 15px;border-radius:13px;font-size:13.5px;line-height:1.5;color:#F3E7D6;
+.dc-mem .mem-quote{margin:12px 24px 0;padding:13px 16px;border-radius:13px;font-size:14px;line-height:1.5;color:#F3E7D6;
   background:var(--tone-bg);border:1px solid var(--tone-bd);border-left:3px solid var(--tone)}
 .dc-mem .mem-quote.plain{color:var(--ds-text);background:rgba(6,16,34,.4);border-color:rgba(122,168,255,.14);border-left-color:var(--tone-bd)}
-.dc-mem .mem-body{padding:6px 20px 2px}
-.dc-mem .mem-sec{display:grid;grid-template-columns:34px 1fr;gap:12px;padding:12px 0;border-top:1px solid rgba(255,255,255,.06)}
+.dc-mem .mem-body{padding:6px 24px 2px}
+.dc-mem .mem-sec{display:grid;grid-template-columns:34px 1fr;gap:13px;padding:13px 0;border-top:1px solid rgba(255,255,255,.06)}
 .dc-mem .mem-sec:first-child{border-top:0}
 .dc-mem .si{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:var(--tone);
   background:var(--tone-bg);border:1px solid var(--tone-bd)}
 .dc-mem .si .ic{width:15px;height:15px}
 .dc-mem .sh{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ds-text-3);margin-bottom:4px}
-.dc-mem .mem-sec p{margin:0;font-size:13px;color:var(--ds-text-2);line-height:1.5}
+.dc-mem .mem-sec p{margin:0;font-size:13.5px;color:var(--ds-text-2);line-height:1.5}
 .dc-mem .mem-sec ul:not(.dc-reg){margin:5px 0 0;padding:0;list-style:none;display:grid;gap:4px}
 .dc-mem .mem-sec ul:not(.dc-reg) li{font-size:12.5px;color:var(--ds-text-2);line-height:1.45;padding-left:15px;position:relative}
 .dc-mem .mem-sec ul:not(.dc-reg) li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--tone);opacity:.75}
@@ -1147,15 +1163,27 @@
 .dc-mem .mem-note{font-size:12.5px;color:var(--ds-text-3);margin:4px 0}
 
 /* RECHTS — gerelateerde draden (context; verbonden via connectoren). */
-.dc-rt{display:flex;flex-direction:column;gap:10px;padding:0 8px 10px}
+.dc-rt{display:flex;flex-direction:column;gap:11px;padding:0 10px 12px;perspective:1000px}
 .dc-rt-card{position:relative;display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;
-  padding:12px 14px;border-radius:15px;background:linear-gradient(160deg,rgba(20,42,80,.42),rgba(10,23,45,.28));
-  border:1px solid rgba(122,168,255,.13);transition:border-color var(--ds-fast) var(--ds-ease),transform var(--ds-fast) var(--ds-ease)}
-.dc-rt-card:hover{border-color:var(--tone-bd);transform:translateX(-2px)}
+  padding:13px 15px 12px;border-radius:15px;background:linear-gradient(160deg,rgba(22,45,84,.5),rgba(10,23,45,.32));
+  border:1px solid rgba(122,168,255,.15);
+  box-shadow:0 14px 30px -22px rgba(2,8,20,.9),inset 0 1px 0 rgba(192,217,255,.05);
+  transition:border-color var(--ds-fast) var(--ds-ease),transform var(--ds-fast) var(--ds-ease),box-shadow var(--ds-fast) var(--ds-ease)}
+.dc-rt-card:hover{border-color:var(--tone-bd);transform:translateX(-3px);box-shadow:0 20px 40px -22px var(--tone-bg),inset 0 1px 0 rgba(192,217,255,.08)}
 .dc-rt-card:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
-.dc-rt-card::before{content:"";position:absolute;left:-1px;top:14px;bottom:14px;width:2px;border-radius:2px;background:var(--tone);opacity:.55}
+/* Toon-accent als een verlichte ribbe langs de kaartrand → diepte + type-herkenning. */
+.dc-rt-card::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;
+  background:linear-gradient(180deg,transparent,var(--tone),transparent);box-shadow:0 0 10px -1px var(--tone)}
+/* Lichte receding-stack: elke volgende draad zakt ietsje terug (visuele diepte, geen
+   nieuwe betekenis — het volgt de bestaande volgorde). */
+.dc-rt-card{opacity:.98}
+.dc-rt-card:nth-child(3){opacity:.95}
+.dc-rt-card:nth-child(4){opacity:.9}
+.dc-rt-card:nth-child(5){opacity:.85}
+.dc-rt-card:nth-child(n+6){opacity:.8}
+.dc-rt-card:hover{opacity:1}
 .dc-rt-card .rt-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
-.dc-rt-card .rt-type{display:inline-flex;align-items:center;gap:7px;font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tone)}
+.dc-rt-card .rt-type{display:inline-flex;align-items:center;gap:7px;font-size:8.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--tone)}
 .dc-rt-card .ri{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;background:var(--tone-bg);border:1px solid var(--tone-bd)}
 .dc-rt-card .ri .ic{width:12px;height:12px}
 .dc-rt-card .rt-date{font-size:10px;color:var(--ds-text-3)}
@@ -1172,17 +1200,24 @@
 .dc-rt-card .rt-arrow .ic{width:12px;height:12px}
 .dc-rt-empty{padding:14px;font-size:12px;color:var(--ds-text-3);line-height:1.5;text-align:center}
 
-/* Bewijs-domeinen als subordinate navigatie (drill → midden-hero). */
-.dc-domstrip{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:var(--ds-4)}
-.dc-domchip{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:var(--ds-r-pill);cursor:pointer;
-  font:inherit;font-size:11px;color:var(--ds-text-2);background:rgba(11,26,50,.4);border:1px solid rgba(122,168,255,.11);
-  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease)}
-.dc-domchip:hover,.dc-domchip.on{border-color:var(--ds-accent);color:var(--ds-text)}
+/* Bewijs-domeinen als subordinate navigatie (drill → midden-hero), maar in dezelfde
+   premium glas-klasse als de rest: een verzonken rail met glas-chips. */
+.dc-domstrip{display:flex;flex-wrap:wrap;justify-content:center;gap:9px;margin-top:var(--ds-5);padding:12px 14px;border-radius:16px;
+  background:linear-gradient(180deg,rgba(12,27,52,.34),rgba(8,18,38,.2));border:1px solid rgba(122,168,255,.1);
+  -webkit-backdrop-filter:blur(9px);backdrop-filter:blur(9px)}
+.dc-domchip{display:inline-flex;align-items:center;gap:9px;padding:8px 14px;border-radius:var(--ds-r-pill);cursor:pointer;
+  font:inherit;font-size:11.5px;color:var(--ds-text-2);
+  background:linear-gradient(180deg,rgba(20,42,80,.5),rgba(10,23,45,.34));border:1px solid rgba(122,168,255,.14);
+  box-shadow:0 10px 22px -18px rgba(2,8,20,.9),inset 0 1px 0 rgba(192,217,255,.06);
+  transition:border-color var(--ds-fast) var(--ds-ease),color var(--ds-fast) var(--ds-ease),transform var(--ds-fast) var(--ds-ease)}
+.dc-domchip:hover,.dc-domchip.on{border-color:var(--ds-accent);color:var(--ds-text);transform:translateY(-1px)}
 .dc-domchip:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
-.dc-domchip .dcx{width:16px;height:16px;border-radius:5px;display:grid;place-items:center;color:var(--ds-text-3);background:rgba(94,230,235,.08)}
-.dc-domchip .dcx .ic{width:10px;height:10px}
-.dc-domchip .dcn{font-weight:700;color:var(--ds-accent)}
-.dc-domchip.leeg{opacity:.5}.dc-domchip.leeg .dcn{color:var(--ds-text-3)}
+.dc-domchip .dcx{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;color:var(--ds-accent);
+  background:rgba(94,230,235,.1);border:1px solid rgba(94,230,235,.22)}
+.dc-domchip .dcx .ic{width:12px;height:12px}
+.dc-domchip .dcn{font-weight:700;color:var(--ds-accent);font-variant-numeric:tabular-nums}
+.dc-domchip.leeg{opacity:.5}.dc-domchip.leeg .dcx{color:var(--ds-text-3);background:rgba(122,168,255,.06);border-color:rgba(122,168,255,.12)}
+.dc-domchip.leeg .dcn{color:var(--ds-text-3)}
 
 /* Onder-actiebalk (echte routes). */
 .dc-actionbar{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:14px}
