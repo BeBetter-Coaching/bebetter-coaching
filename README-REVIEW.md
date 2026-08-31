@@ -1,7 +1,62 @@
-# BeBetter — Workspace Closure Review
+# BeBetter — Design Review
 
-**Branch:** `feature/app-design-system-athlete-shell-v1` · **commit:** zie COMMIT.txt
-**Base:** `main = 39d2453` (SW v97 live) — deze branch is NIET gemerged.
+**Branch:** `feature/dossier-living-memory-v1` · **Base:** `main = 0c09b11`
+(Workspace CLOSED/FROZEN, SW v111 live) — deze branch is **NIET gemerged**.
+
+---
+
+## DOSSIER — LIVING MEMORY COCKPIT v1 (nieuwe milestone)
+
+> Volgende milestone na Workspace. **Andere cognitieve taak:** niet "wat is er
+> nu?" (Workspace) maar **"wat is er over tijd veranderd, welke beslissingen zijn
+> genomen, welke context verklaart het nu?"**. Zelfde premium productfamilie,
+> ander werk. Skills in volgorde: artifact-design → ui-ux-pro-max → frontend-design
+> (guard: geen CRM-feed/timeline-component/kaartraster/tweede-Workspace) →
+> implementatie → ui-animation → web-design-guidelines. Design-lab eerst
+> (`design-lab/dossier-living-memory-final.html`), daarna production.
+
+**HERO = TIJD zelf.** Eén **Memory Spine** met een lichtgevend **VANDAAG-ankerpunt**
+waar de lijn samenkomt. Links = **verleden** (warm brons, herinnerd — uit `changes[]`),
+kern = **nu** (draagt de dominante toon uit attention/load), rechts = **toekomst**
+(koel cyaan, gestippeld — uit `planning`). Memory-warmth ← → plan-cool encodeert
+past/now/future; geen decoratie. **Geen Athlete Core / load-gauge / Workspace-hero.**
+
+**Context zweeft als glas-lenzen** (`.ws-lens`-familie) om de tijd, geen kolommen/
+kaartraster: Laatste veranderingen (`changes`), Klachten & signalen (`attention` +
+`load_observation` mét Home-actie-duiding), Doelen & beslissingen (`planning`),
+Coachkennis (coach-domein). **Bewijsdomeinen = subordinate shelf + drill-in**, niet
+zes gelijke accordions. **Actuele lijn** = current-state anchor uit echte velden.
+
+**Geselecteerd event = ruimtelijke voorgrond** (geen modal/route): knoop komt naar
+voren, scène dimt, provenance + onderbouwing lezen door; `Waarom?`/volledige
+provenance-keten hergebruikt de bestaande explain-laag. **Bewijsdomein-drill** toont
+de echte registry-regels + provenance.
+
+**Eerlijke lege-staat (history-capture OFF).** Geen echte veranderingen → het verleden
+is bewust leeg (geen verzonnen knopen); een "geheugenlijn bouwt **vanaf nu** op"-lens
+verklaart het, terwijl huidige staat + doelen + bewijs gewoon getoond worden. Toon
+volgt data: kalme atleet = serene groene kern.
+
+**Mobiel** (<1280px venster) = kalme **verticale** tijd-vertelling: nu-ankerpunt
+bovenaan, verticale spine (recent → ouder → toekomst), context als secties,
+bewijs als accordions. Geen horizontale 3D-compositie op smal.
+
+**Contract bewaakt:** geen backend/truth/store/route/generation-wijziging — de
+leeslaag `dossier_cockpit.py` blijft de enige bron (byte-identiek). Presentatie-
+only in `app.js`/`design-system.css`/`index.html` (+ 1 nieuwe sprite `ic-calendar`).
+`_load_observation`-LIVE-CLOSE (open-Home-actie zichtbaar) woordelijk behouden.
+**SW v112, assets `?v=116a`.** Tests: **1042 groen (vast + random)**, incl. nieuw
+`tests/test_dossier_living_memory_v1.py` (12 contract-tests) + bijgewerkte Dossier-
+tests. 0 overflow (1440/390), reduced-motion centreert (transforms in basisregel),
+`:focus-visible` op interactieve controls, alle motion transform/opacity + bevroren
+onder reduced-motion. Renders: `review-screenshots/0{1..5}-dossier-*.png`.
+
+**Zelf-verdict:** merge-waardig — geen zelf-GO; wacht op Jips visuele acceptance;
+NIET gemerged (`main = 0c09b11`).
+
+---
+
+## WORKSPACE (GEMERGED — `main = 0c09b11`, referentie-familie)
 
 ## WORKSPACE FINAL NORTH-STAR MATCH — GLASS LENSES (merge-kandidaat `83794f1` → finale)
 > Laatste visual-convergence-pass. **Extern-review-besluit:** de eerdere

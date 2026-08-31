@@ -97,7 +97,7 @@ class TestStatusSemantics:
 
 # ── 3. Gedeelde primitives bestaan en worden hergebruikt ────────────────────
 class TestPrimitives:
-    PRIMS = ["wsAnchor", "wsCore", "wsLine", "dcNode", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
+    PRIMS = ["wsAnchor", "wsCore", "wsLine", "dcNodeEl", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
              "dsKv", "dsStream", "dsAction", "dsEmpty", "dsSpark", "dsRing"]
 
     def test_8_alle_primitives_bestaan_eenmalig(self):
@@ -136,8 +136,8 @@ class TestAthleteShell:
         for part in ("ws-orb", "initialen("):
             assert part in ws, f"anchor mist {part}"
         assert "ws-name" in _fn("wsRender")                  # naam in de scène-kop
-        dc = _fn("dcRender")
-        for part in ("dc-orb", "dc-name", "initialen("):
+        dc = _fn("dcHeader")                                 # Dossier-identiteit in de kop
+        for part in ("dc-mono", "dc-name", "initialen("):
             assert part in dc, f"dossier-kop mist {part}"
         # opgeruimd: geen achtergelaten shell/stage-primitives naast de nieuwe compositie
         for dead in ("function dsShell(", "function dsStage(", "function dsFocal(", "function dsStat("):
@@ -147,7 +147,10 @@ class TestAthleteShell:
         # Workspace is een canvas-scène (wsAnchor), Dossier een memory-compositie —
         # verschillende layouts, maar DEZELFDE athlete-taal: zelfde identiteitsbron,
         # zelfde statussemantiek, zelfde gedeelde nav. Geen tweede vocabulaire.
-        wsb, dcb = _fn("wsRender"), _fn("dcRender")
+        # Dossier is opgesplitst in render/header/scene/stack — dezelfde athlete-taal
+        # leeft over die familie (identiteit, toon, gedeelde nav).
+        wsb = _fn("wsRender")
+        dcb = _fn("dcRender") + _fn("dcHeader") + _fn("dcScene") + _fn("dcStack")
         for body, view in ((wsb, "workspace"), (dcb, "dossier")):
             assert "dsTone(" in body, f"{view} gebruikt de gedeelde statussemantiek niet"
             assert f'athleteNav("{view}"' in body, f"{view} mist de gedeelde athlete-nav"
@@ -162,7 +165,7 @@ class TestAthleteShell:
         # Elke view kiest de presentatievorm die bij haar doel past, maar put uit
         # dezelfde primitives-familie en dezelfde toon-mapper.
         assert "dsAttnCard(" in _fn("prioDetailHtml")         # Home-detail: briefing-kaart
-        assert "dcNode(" in _fn("dcRender")                   # Dossier: knooppunt op de tijd-spine
+        assert "dcNodeEl(" in _fn("dcScene")                  # Dossier: knooppunt op de tijd-spine
         assert "wsLine(" in _fn("wsRender")                   # Workspace: embedded regel op het canvas
 
     def test_15_geen_tweede_athlete_nav(self):
@@ -204,12 +207,17 @@ class TestLockedFunctionalityPreserved:
         assert "/api/teampuls/gezien" in _fn("wsMarkeerGezien")
 
     def test_19_dossier_ordening_en_copy_contract_intact(self):
+        # De load-observatie-duiding (LIVE-CLOSE) blijft woordelijk behouden in de
+        # nieuwe cockpit; de context-lenzen dragen de vaste copy-koppen.
         body = _fn("dcRender")
-        i = body.index("build_diagnostic")
-        assert body.index("dc-attn", i) > i and body.index("dc-planning", i) > i
-        for copy in ("Aandacht nu", "Geen actiepunten", "Doelen &amp; planning",
-                     "eerder afgehandeld", "geen open Home-actie", "t.o.v. referentie"):
+        assert "build_diagnostic" in body
+        for copy in ("open Home-actie", "eerder afgehandeld", "geen open Home-actie",
+                     "t.o.v. referentie", "monitoring — nog geen coachactie"):
             assert copy in body, f"copy-contract mist: {copy}"
+        scene = _fn("dcScene")
+        for copy in ("Laatste veranderingen", "Klachten &amp; signalen",
+                     "Doelen &amp; beslissingen", "Coachkennis", "Actuele lijn"):
+            assert copy in scene, f"lens-copy mist: {copy}"
 
     def test_20_cohesion_route_contract_byte_identiek(self):
         assert '_ATHLETE_VIEWS = new Set(["atleten", "schema", "dossier"])' in _APP
@@ -312,14 +320,20 @@ class TestAthleteCanvas:
         assert 'owns("bel-pct") ? "1" : ""' in body
 
     def test_33_dossier_spine_maakt_tijd_ruimtelijk(self):
-        body = _fn("dcRender")
-        assert "dc-spine" in body and "dc-era" in body
-        assert "weight: 1" in body                              # vandaag = sterkste punt
-        assert "future: true" in body                           # planning ligt vóór ons
-        assert "Math.min(4, 2 + Math.floor(i / 4))" in body     # ouder = zwakker
-        # gewicht is ook echt visueel: contrast/schaal per niveau
-        for w in (".dc-node.w1", ".dc-node.w3", ".dc-node.w4"):
-            assert w in _DS, f"tijd-gewicht {w} niet gestyled"
+        # Living Memory Cockpit: ÉÉN memory-spine met een lichtgevend VANDAAG-ankerpunt.
+        # Verleden (warm) uit changes[], toekomst (koel, gestippeld) uit planning — de
+        # kern draagt de dominante toon. Tijd wordt ruimte, geen verticale lijsttijdlijn.
+        rn = _fn("dcRender")
+        assert "dcPastNodes(chg)" in rn                          # verleden = echte changes
+        assert "dcFutureNodes(plan)" in rn                       # toekomst = planning
+        assert "coreTone" in rn                                  # kern draagt dominante toon
+        assert "future: true" in _fn("dcFutureNodes")            # planning ligt vóór ons
+        scene = _fn("dcScene")
+        assert "dc-rail" in scene and "dcHex(coreTone)" in scene  # warm→toon→koel spine
+        assert "Vandaag" in scene                                 # lichtgevend ankerpunt
+        # tijd is ook echt visueel gestyled: rail, dots, gestippelde toekomst, kern-sun
+        for sel in (".dc-rail-future", ".dc-dot", ".dc-coredot", ".dc-node.future"):
+            assert sel in _DS, f"tijd-primitive {sel} niet gestyled"
 
     def test_34_home_briefing_is_geen_uitgeklapt_paneel(self):
         body = _fn("prioDetailHtml")
@@ -336,7 +350,7 @@ class TestAthleteCanvas:
         assert "noteGeneration(vm.generation)" in ws
         assert "genBanner(vm.generation)" in ws
         assert "dsFresh(" in ws                                  # stale/fresh in de scène
-        assert "dsFresh(" in _fn("dcRender")
+        assert "dsFresh(" in _fn("dcHeader")                     # freshness in de Dossier-kop
 
     def test_36_geen_legacy_layout_resten(self):
         # De vervangen presentatie is echt opgeruimd, niet overlaagd.

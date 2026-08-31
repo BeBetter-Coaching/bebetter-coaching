@@ -4722,29 +4722,76 @@ function dcProvText(p) {
   return parts.join(" · ");
 }
 
-// ── DOSSIER: living memory ───────────────────────────────────────────────────
-// Tijd is hier het ruimtelijke principe. Eén verticale geheugen-spine: VANDAAG is
-// het sterkste punt, ouder werk verzwakt naar achteren, en de planning ligt subtiel
-// vooruit (gestippeld). Geen document met history-rows, maar een kaart van hoe deze
-// atleet hier is gekomen.
+// ── DOSSIER: LIVING MEMORY COCKPIT ───────────────────────────────────────────
+// Andere cognitieve taak dan Workspace: niet "wat is er NU?" maar "wat is er over
+// tijd veranderd, welke beslissingen zijn genomen, welke context verklaart het nu?".
+// HERO = TIJD zelf: één levende MEMORY SPINE met een lichtgevend VANDAAG-ankerpunt
+// waar de lijn samenkomt. Links = verleden (warm brons, herinnerd — uit changes[]),
+// kern = nu (draagt de dominante toon uit attention/load), rechts = toekomst (koel
+// cyaan, gestippeld — uit planning). Context zweeft als glas-lenzen om de tijd — geen
+// kolommen, geen kaartraster. GEEN Athlete Core / load-gauge / Workspace-hero.
+// Alléén echte view-model-velden; history-capture staat in productie UIT → de eerlijke
+// lege-staat (geheugenlijn bouwt vanaf-nu op) is meegepresenteerd, nooit verzonnen knopen.
 
-// Eén knooppunt op de spine. `weight` (1=nu … 4=ver terug) stuurt contrast/schaal;
-// `future` maakt het knooppunt vooruitkijkend (open ring i.p.v. gevulde stip).
-function dcNode(n) {
-  return `<li class="dc-node w${n.weight || 2}${n.future ? " is-future" : ""} ${n.tone || "is-calm"}">
-    <span class="dc-node-dot"></span>
-    <div class="dc-node-b">
-      ${n.when ? `<span class="dc-node-when">${esc(n.when)}</span>` : ""}
-      <span class="dc-node-t">${esc(n.title)}</span>
-      ${n.sub ? `<span class="dc-node-s">${esc(n.sub)}</span>` : ""}
-      ${n.meta ? `<span class="dc-node-m">${esc(n.meta)}</span>` : ""}
-    </div></li>`;
+// Toon → hex, uitsluitend voor SVG-fills/gradients (spine, dots). Zelfde semantiek als
+// var(--tone); HTML-elementen dragen gewoon de is-*-klasse.
+const _DC_TONE_HEX = { "is-calm": "#5EE6EB", "is-attention": "#F0A62B", "is-critical": "#F4744C",
+  "is-success": "#37D9A2", "is-stale": "#8098BC", "is-unknown": "#61789E" };
+const dcHex = t => _DC_TONE_HEX[t] || "#5EE6EB";
+const DC_MEM = "#EBA96A", DC_MEM2 = "#C98C55";   // memory-warmth (verleden), koel = var(--tone)/cyaan
+
+// Korte NL-datum uit een ISO/vrije datumstring (presentationeel; verzint niets).
+const _DC_MND = ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
+function dcShort(s) {
+  const m = String(s || "").match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${+m[3]} ${_DC_MND[+m[2] - 1] || ""}`.trim();
+  return String(s || "");
 }
-function dcEra(label, nodes, cls) {
-  return `<section class="dc-era ${cls || ""}">
-    <h3 class="ds-label dc-era-l">${esc(label)}</h3>
-    <ul class="dc-spine-list">${nodes}</ul></section>`;
+
+// Toon + icoon + korte duiding voor een change-knoop uit de transition (échte
+// recency uit _changes(); de duiding is een eerlijke parafrase, verzint geen data).
+function dcChangeMeta(c) {
+  const to = (c.transition && c.transition.to) || "";
+  if (to === "INTERRUPTED") return { tone: "is-stale", ic: "clock", note: "Onderbreking in de trainingsopbouw." };
+  if (to === "STALE") return { tone: "is-stale", ic: "clock", note: "Een bron raakte verouderd — beeld deels onzeker." };
+  if (to === "CONFLICT") return { tone: "is-attention", ic: "alert", note: "Tegenstrijdige bron gevonden — coach-check nodig." };
+  return { tone: "is-attention", ic: "alert", note: "Klacht opnieuw in beeld." };   // recent/terugkerend
 }
+
+// Icoon per attention-kind → bestaande sprite-symbolen.
+const _DC_ATTN_IC = { complaint: "alert", load_signal: "pulse", possible_relation: "pulse",
+  zone_review: "brain", recovery_neg: "clock", conflict: "alert", source_gap: "alert" };
+const _DC_DOM_IC = { belastbaarheid: "pulse", gezondheid: "alert", herstel: "clock",
+  doelen: "flag", profiel: "users", coach: "note" };
+
+// Past-knopen op de spine = changes[] (echt gedateerd). Meest recent = dichtst bij de kern.
+function dcPastNodes(chg, canonPct) {
+  return (chg || []).slice(0, 4).map(c => {
+    const m = dcChangeMeta(c);
+    return { when: dcShort(c.effective_at), title: c.title, tone: m.tone, ic: m.ic,
+      ev: (c.provenance_refs || [])[0] || null, kind: "change",
+      why: "", changed: m.note, facts: [] };
+  });
+}
+
+// Future-knopen op de spine = planning.rows (race + schema-blok). Koel/gestippeld.
+function dcFutureNodes(plan) {
+  const rows = (plan && plan.rows) || [];
+  const byLabel = l => { const r = rows.find(x => x.label === l); return r ? r.value : ""; };
+  const out = [];
+  const race = byLabel("Wedstrijddatum"), doel = byLabel("Hoofddoel");
+  if (race) out.push({ when: dcShort(race), title: doel || "Wedstrijd", sig: "hoofddoel",
+    tone: "is-calm", ic: "flag", future: true, kind: "race",
+    changed: "Wedstrijddatum vastgelegd.", why: "Bepaalt de opbouw en piek.", facts: [`Datum: ${race}`] });
+  const blok = byLabel("Schema-blok (laatst geconfigureerd)"), status = byLabel("Schema-status");
+  if (blok) out.push({ when: "schema", title: "Schema-blok", sig: status || blok,
+    tone: "is-calm", ic: "calendar", future: true, kind: "schema",
+    changed: "Actief opbouwblok.", why: "Bepaalt de komende belasting.", facts: [blok, byLabel("Uitvoerwijze")].filter(Boolean) });
+  return out.slice(0, 3);
+}
+
+// Module-state voor de geselecteerde-event laag (spatial forward, geen modal-route).
+let dcNodes = [], dcVMkey = "";
 
 function dcRender(wrap, vm) {
   const st = vm.status || {}, rel = st.reliability || {};
@@ -4756,106 +4803,300 @@ function dcRender(wrap, vm) {
   const tl = vm.timeline || {}, tlv = tl.events || [];
   const plan = vm.planning || { rows: [] };
   const lo = vm.load_observation;
-  const attnTone = attn.length ? dsTone("aandacht") : "is-calm";
+  dcVMkey = vm.key;
 
-  let h = `<div class="dc-memory ${attn.length ? attnTone : relTone}">`;
-  // Zelfde achtergrondwereld als Workspace: ambient haze + orbits + vignette.
-  h += `<div class="dc-bg" aria-hidden="true"><div class="dc-amb"></div>${wsOrbits()}<div class="ws-vig"></div></div>`;
-  h += `<header class="dc-head2">
-    <div class="dc-id2"><span class="dc-orbwrap"><i class="dc-orb-halo"></i><span class="dc-orb">${esc(initialen(vm.naam || vm.key))}</span></span>
-      <div><h2 class="dc-name">${esc(vm.naam || vm.key)}</h2>
-        <p class="dc-sub">${vm.groep ? esc(vm.groep) + '<span class="sep">·</span>' : ""}${dsChip(_DC_OVERALL[st.overall] || st.overall || "—", relTone)}${dsFresh(rel.level || "unknown", relTxt)}</p></div></div>
-    <div class="dc-nav2">${athleteNav("dossier", vm.key)}</div>
-  </header>`;
-
-  // Partial-truth diagnostic: één build-stage faalde → alleen dát stuk mist, de rest klopt.
-  const diag = vm.build_diagnostic || [];
-  if (diag.length) {
-    h += `<div class="dc-diag">${ic("alert")}<span>Enkele onderdelen konden niet worden berekend (${esc(diag.map(d => d.stage).join(", "))}). De overige bekende kennis hieronder klopt — dit is een interne fout, <b>geen</b> bronfout.</span></div>`;
-  }
-
-  h += `<div class="dc-mem-grid"><div class="dc-spine">`;
-
-  // ── VANDAAG: het sterkste punt op de lijn ──
-  // Waarde-consistentie: het percentage in de load-signaalkaart volgt de
-  // canonieke `delta_pct` (load_metric) — nooit een voor-afgerond bron-%
-  // (+91%) boven het canonieke oordeel (+92%) op hetzelfde scherm.
+  // Canonieke +% (load_metric) — nooit een voor-afgerond bron-% naast het oordeel.
   const canonPct = t => (lo && lo.delta_pct != null && t)
     ? String(t).replace(/[+-]?\d+(?:[.,]\d+)?%/, `${lo.delta_pct > 0 ? "+" : ""}${lo.delta_pct}%`)
     : t;
-  let nu = attn.map(c => dcNode({
-    weight: 1, tone: dsTone("aandacht"), title: c.title,
-    sub: (c.kind === "load_signal" ? canonPct(c.why) : c.why) || "",
-    meta: c.prov ? dcProvText(c.prov) : "",
-  })).join("");
+
+  // Kern-toon = zwaarste open signaal (attention/load); niets open → overall-staat.
+  const tones = [];
+  if (lo) tones.push(dsTone(lo.ernst));
+  attn.forEach(c => tones.push(c.kind === "load_signal" ? "is-critical"
+    : c.kind === "source_gap" ? "is-stale" : "is-attention"));
+  if (!tones.length) tones.push(st.overall === "GOOD" ? "is-success"
+    : st.overall === "INSUFFICIENT_DATA" ? "is-unknown" : "is-calm");
+  const coreTone = dsWorstTone(tones);
+
+  // Spine-knopen (verleden ← changes, toekomst → planning). Historie-capture OFF →
+  // eerlijke lege-staat wanneer er nog geen echte veranderingen zijn.
+  const olderTl = (!tl.empty_reason && tlv.length)
+    ? tlv.map(e => ({ when: dcShort(e.effective_at || e.recorded_at), title: e.title || e.event_type,
+        tone: "is-stale", ic: "clock", kind: "history", changed: "", why: "", facts: [] })) : [];
+  const past = dcPastNodes(chg).concat(olderTl).slice(0, 5);
+  const future = dcFutureNodes(plan);
+  const emptyHistory = !past.length;
+
+  // Lens-inhoud (echte velden). Signalen = attention + load_observation.
+  // Belasting-observatie (Teampuls) — ALTIJD tonen als er een ernst is (niet gegate,
+  // ook de actief-hoge/open-Home-actie case): severity + canonieke delta + de reden
+  // waaróm er wel/geen open Home-actie is. De aparte load_signal-attentiekaart valt dan
+  // weg zodat de +% niet dubbel verschijnt (delta zit in deze rij).
+  let loRow = "";
   if (lo) {
     const sev = lo.ernst === "hoog" ? "hoog" : "let op";
-    const delta = (lo.delta_pct != null) ? ` · +${lo.delta_pct}% t.o.v. referentie` : "";
     let reden;
     if (lo.afgehandeld) reden = "eerder afgehandeld — geen open Home-actie";
     else if (lo.home_action && lo.ernst === "hoog") reden = "open Home-actie";
     else reden = "monitoring — nog geen coachactie";
-    const loadCarded = attn.some(c => c.kind === "load_signal");
-    nu += dcNode({ weight: 1, tone: dsTone(lo.ernst), title: `Belasting ${sev}${delta}`,
-      sub: (lo.signalen && !loadCarded) ? lo.signalen : "", meta: `${reden} (Teampuls)` });
+    const delta = lo.delta_pct != null ? `+${lo.delta_pct}% t.o.v. referentie · ${reden}` : reden;
+    loRow = dcRow({ ic: "pulse", tone: dsTone(lo.ernst), t: `Belasting ${sev}`, s: delta });
   }
-  if (!nu) nu = dcNode({ weight: 1, tone: "is-success", title: "Geen actiepunten",
-    sub: st.insufficient ? "Te weinig data voor een oordeel — geen betrouwbare actiepunten."
-                         : `geen actieve klacht of signaal bekend${rel.level === "green" ? " (bronnen vers)" : ""}` });
-  h += `<section class="dc-era dc-now dc-attn">
-    <h3 class="ds-label dc-era-l">Aandacht nu · vandaag</h3>
-    <ul class="dc-spine-list">${nu}</ul></section>`;
+  const sigAttn = lo ? attn.filter(c => c.kind !== "load_signal") : attn;
+  const sigRows = sigAttn.map(c => dcRow({ ic: _DC_ATTN_IC[c.kind] || "alert",
+    tone: c.kind === "load_signal" ? "is-critical" : c.kind === "source_gap" ? "is-stale" : "is-attention",
+    t: c.title, s: c.kind === "load_signal" ? canonPct(c.why) : c.why })).join("");
+  const chgRows = chg.length ? chg.slice(0, 4).map(c => {
+    const m = dcChangeMeta(c);
+    return dcRow({ ic: m.ic, tone: m.tone, t: c.title, v: dcShort(c.effective_at) });
+  }).join("") : "";
+  // Doelen-lens = compacte koers (hoofddoel + wedstrijd); status/uitvoerwijze zit op de
+  // toekomst-knoop van de spine + het domein 'Doelen & agenda'. Compact = onder-labels
+  // vallen eronderuit (geen botsing met het glas).
+  const planRows = (plan.rows || []).filter(r => /hoofddoel|wedstrijddatum/i.test(r.label))
+    .map(r => dcRow({ ic: /wedstrijd/i.test(r.label) ? "calendar" : "flag",
+      tone: "is-success", t: r.value, s: r.label })).join("");
+  const coachDom = (vm.domains || []).find(d => d.key === "coach");
+  const coachBody = (coachDom && !coachDom.onbekend)
+    ? coachDom.regels.slice(0, 3).map(r => `<p class="dc-quote">${esc(r.value)}</p>`).join("")
+    : `<p class="dc-quote muted">Nog geen coachnotitie vastgelegd.</p>`;
 
-  // ── RECENT VERANDERD ──
-  h += dcEra("Recent veranderd", chg.length
-    ? chg.map(c => dcNode({ weight: 2, when: c.effective_at || "", title: c.title })).join("")
-    : dcNode({ weight: 3, title: "Geen recente wijziging in het beeld van deze atleet." }),
-    "dc-changes");
+  // Actuele lijn (current-state anchor) — alléén herformulering van echte velden.
+  const domIssue = attn[0] ? attn[0].title : (lo ? `Belasting ${lo.ernst === "hoog" ? "hoog" : "let op"}`
+    : (st.overall === "INSUFFICIENT_DATA" ? "Te weinig data voor een oordeel" : "Geen open klacht of signaal"));
+  const raceRow = (plan.rows || []).find(r => r.label === "Wedstrijddatum");
+  const nowSub = raceRow ? `Richting ${esc(raceRow.value)}` : (rel.level === "green" ? "Bronnen vers" : relTxt);
 
-  // ── HISTORIE: verder terug = zwakker ──
-  h += `<section class="dc-era dc-timeline"><h3 class="ds-label dc-era-l">Longitudinale historie</h3>`;
-  if (tl.empty_reason) {
-    h += `<p class="dc-empty-tl">Er is nog geen longitudinale tijdlijn vastgelegd. BeBetter bouwt de historie op vanaf het moment dat history-capture wordt geactiveerd (vanaf-nu; geen terugwerkende reconstructie). <b>‘Geen events’ betekent hier niet ‘geen historie’</b> — alleen dat er nog niets is vastgelegd.</p>`;
+  // Bewaar knoop-detail voor de geselecteerde-event laag.
+  dcNodes = [...past, ...future];
+
+  const diag = vm.build_diagnostic || [];
+  // Het ruimtelijke tableau heeft breedte nodig; met de 280px-sidebar erbij vraagt
+  // dat een venster ≥1280 (content ≥~920). Smaller → de kalme verticale tijd-stack.
+  const isNarrow = window.innerWidth < 1280;
+
+  const d = { vm, st, rel, relTxt, relTone, attn, chg, plan, lo, coreTone, past, future, emptyHistory,
+    sigRows: loRow + sigRows, chgRows, planRows, coachBody, domIssue, nowSub, diag, canonPct };
+
+  wrap.innerHTML = isNarrow ? dcStack(d) : dcScene(d);
+
+  // Events: knoop → geselecteerd, sluiten, domein-drill, Waarom, provenance.
+  wrap.querySelectorAll("[data-node]").forEach(el =>
+    el.addEventListener("click", () => dcSelectNode(wrap, +el.dataset.node)));
+  wrap.querySelectorAll("[data-dom]").forEach(el =>
+    el.addEventListener("click", () => dcOpenDomain(wrap, vm, el.dataset.dom)));
+  const closeBtn = wrap.querySelector(".dc-detail-close");
+  if (closeBtn) closeBtn.addEventListener("click", () => dcCloseDetail(wrap));
+  wrap.querySelectorAll(".dc-why").forEach(b => b.addEventListener("click", () => dcWaarom(b)));
+}
+
+// ── Desktop: het ruimtelijke geheugen-tableau (fluïde, %-gepositioneerd) ─────
+function dcScene(d) {
+  const { vm, st, rel, relTxt, relTone, coreTone, past, future, emptyHistory } = d;
+  const nP = past.length, nF = future.length;
+  const px = i => nP <= 1 ? 37 : 37 - (37 - 12) * (i / (nP - 1));      // newest (i=0) nearest core
+  const fx = j => nF <= 1 ? 66 : 63 + (90 - 63) * (j / (nF - 1));
+
+  // Spine-SVG: alléén rail/future/connectors (stretch-tolerant); ronde vormen = HTML.
+  const railStop = `${(50 - (nP ? 40 : 6))}%`;
+  let svg = `<svg class="dc-rail" viewBox="0 0 1000 460" preserveAspectRatio="none" aria-hidden="true">
+    <defs><linearGradient id="dcrail" x1="0" x2="1">
+      <stop offset="0" stop-color="${DC_MEM2}" stop-opacity="${emptyHistory ? ".28" : ".8"}"/>
+      <stop offset=".5" stop-color="${dcHex(coreTone)}" stop-opacity=".95"/>
+      <stop offset="1" stop-color="${dcHex("is-calm")}" stop-opacity="0"/></linearGradient></defs>
+    <path class="dc-rail-glow" style="stroke:${dcHex(coreTone)}" d="M20 250 L500 250" opacity="${emptyHistory ? ".16" : ".45"}"/>
+    <path class="dc-rail-l" stroke="url(#dcrail)" d="M20 250 L502 250"/>
+    <path class="dc-rail-future" d="M500 250 L980 250"/>
+    <path class="dc-origin" d="M-40 250 L20 250"/></svg>`;
+
+  // Ronde laag (core-bloom + node dots + connectors) als HTML/CSS — geen ellipsen.
+  const core = `<div class="dc-core ${coreTone}">
+    <div class="core-lbl">Vandaag</div><div class="core-date num">${esc(dcToday())}</div>
+    <div class="core-orb"></div>
+    <div class="core-chip"><i></i>${esc(_DC_OVERALL[st.overall] || st.overall || "—")}</div></div>`;
+
+  // Alternerend boven/onder = horizontale scheiding tussen naburige knopen. De
+  // hoek-lenzen blijven compact (max ~2 rijen) zodat de onder-labels eronderuit vallen.
+  const nodeEls = past.map((n, i) => dcNodeEl(n, px(i), i % 2 ? "below" : "above", i))
+    .concat(future.map((n, j) => dcNodeEl(n, fx(j), j % 2 ? "above" : "below", nP + j))).join("");
+
+  // Lenzen op de vier hoeken (of eerlijke lege-staat linksboven).
+  let lenses = "";
+  if (emptyHistory) {
+    lenses += `<div class="dc-lens dc-l-empty" style="left:0;top:0">
+      <div class="lh"><b>Geheugenlijn</b><span>bouwt op</span></div>
+      <div class="en-row">${ic("clock")}<p>De longitudinale historie wordt <b>vanaf nu</b> opgebouwd. ‘Geen events’ betekent hier niet ‘geen historie’ — alleen dat er nog niets is vastgelegd.</p></div></div>`;
   } else {
-    h += `<ul class="dc-spine-list">` + tlv.map((e, i) => dcNode({
-      weight: Math.min(4, 2 + Math.floor(i / 4)),
-      when: e.effective_at || e.recorded_at || "", title: e.title || e.event_type })).join("") + `</ul>`;
+    lenses += dcLens("dc-l-changes", "left:0;top:0", "Laatste veranderingen", "recent",
+      d.chgRows || `<p class="dc-quote muted">Geen recente wijziging in het beeld.</p>`);
   }
-  h += `</section>`;
+  lenses += dcLens("dc-l-signals", "right:0;top:0", "Klachten &amp; signalen", "actueel beeld",
+    d.sigRows || `<div class="dc-row" style="--rt:var(--ds-success)"><div class="dc-ic">${ic("check")}</div><div class="rb"><span class="rt">Geen actief signaal</span><span class="rs">geen open klacht — ${esc(relTxt)}</span></div></div>`);
+  lenses += dcLens("dc-l-goals", "left:0;bottom:0", "Doelen &amp; beslissingen", "koers",
+    d.planRows || `<p class="dc-quote muted">Geen doel of planning vastgelegd.</p>`);
+  lenses += dcLens("dc-l-coach", "right:0;bottom:0", "Coachkennis", "context", d.coachBody);
 
-  // ── VOORUIT: doelen & planning liggen vóór ons op de lijn ──
-  h += `<section class="dc-era dc-planning dc-ahead">
-    <h3 class="ds-label dc-era-l">Doelen &amp; planning</h3><ul class="dc-spine-list">`;
-  h += (plan.rows && plan.rows.length)
-    ? plan.rows.map(r => dcNode({ weight: 2, future: true, title: r.value, sub: r.label })).join("")
-    : dcNode({ weight: 3, future: true, title: "Geen doel of planning vastgelegd." });
-  h += `</ul></section></div>`;                        // /spine
+  const nowline = `<div class="dc-nowline ${coreTone}">
+    <div class="nl-pulse">${ic("activity")}</div>
+    <div class="nl-b"><div class="nl-k">Actuele lijn</div>
+      <div class="nl-t">${esc(d.domIssue)}</div><div class="nl-s">${d.nowSub}</div></div></div>`;
 
-  // ── BEWIJS naast het verhaal ──
-  h += `<aside class="dc-evidence">`;
-  h += `<section class="dc-sec dc-domains">` + (vm.domains || []).map(d => `
-    <details class="ds-disc dc-dom${d.onbekend ? " leeg" : ""}"${d.open ? " open" : ""}>
-      <summary>${esc(d.titel)}${d.onbekend ? ` <span class="muted klein">— onbekend</span>` : ""}</summary>
-      ${d.onbekend ? "" : `<div class="ds-disc-body"><ul class="dc-reg">` + d.regels.map(r => `
-        <li>
-          <div class="dc-reg-main"><span class="dc-lbl">${esc(dcPrettyLabel(r.label))}</span><span class="dc-val">${esc(r.value)}</span></div>
-          <div class="dc-reg-meta">${r.prov ? `<span class="dc-prov">${dcProv(r.prov)}</span>` : ""}
-            ${r.evidence_id ? `<button class="dc-why" data-id="${esc(r.evidence_id)}" data-key="${esc(vm.key)}">Waarom?</button>` : ""}</div>
-        </li>`).join("") + `</ul></div>`}
+  const shelf = `<div class="dc-shelf">` + (vm.domains || []).map(dm =>
+    `<button type="button" class="dc-chip2${dm.onbekend ? " leeg" : ""}" data-dom="${esc(dm.key)}">
+      <span class="cn">${ic(_DC_DOM_IC[dm.key] || "file")}</span><b>${esc(dm.titel)}</b>
+      <span class="cnum">${dm.onbekend ? "—" : dm.regels.length}</span></button>`).join("") + `</div>`;
+
+  const src = vm.source_health || [];
+  const infra = src.length ? `<div class="dc-infra">` + src.map(x =>
+    `<span class="s ${x.available ? (x.stale ? "warn" : "ok") : "bad"}"><i></i>${esc(x.source)}: ${x.available ? (x.stale ? "verouderd" : "vers") : "uitgevallen"}</span>`).join("") + `</div>` : "";
+
+  return `<div class="dc-memory ${coreTone}">
+    <div class="dc-env" aria-hidden="true"><div class="dc-haze"></div>${wsOrbits()}<div class="dc-vig"></div></div>
+    ${dcHeader(vm, st, rel, relTone, relTxt)}
+    ${d.diag.length ? dcDiag(d.diag) : ""}
+    <div class="dc-scene">${svg}
+      <div class="dc-round" aria-hidden="true">${dcDots(past, future, px, fx, coreTone)}</div>
+      ${core}<div class="dc-nodes">${nodeEls}</div>${lenses}${nowline}
+      ${dcDetail(coreTone)}</div>
+    ${shelf}${infra}</div>`;
+}
+
+// Ronde node-punten + core-bloom (HTML, geen SVG-ellipsen bij horizontale stretch).
+function dcDots(past, future, px, fx, coreTone) {
+  let s = `<span class="dc-coredot ${coreTone}"></span>`;
+  past.forEach((n, i) => { s += `<span class="dc-dot ${n.tone}" style="left:${px(i).toFixed(2)}%"></span>`; });
+  future.forEach((n, j) => { s += `<span class="dc-dot fut" style="left:${fx(j).toFixed(2)}%"></span>`; });
+  return s;
+}
+
+function dcNodeEl(n, xpct, pos, i) {
+  return `<button type="button" class="dc-node ${n.future ? "future" : "past"} ${pos} ${n.tone || "is-calm"}" data-node="${i}"
+    style="left:${xpct.toFixed(2)}%">
+    <span class="lbl num">${esc(n.when || "")}</span>
+    <span class="ttl">${esc(n.title || "")}</span>
+    ${n.sig ? `<span class="sig">${esc(n.sig)}</span>` : ""}</button>`;
+}
+
+function dcLens(cls, pos, title, sub, body) {
+  return `<div class="dc-lens ${cls}" style="${pos}">
+    <div class="lh"><b>${title}</b><span>${sub}</span></div>${body}</div>`;
+}
+
+function dcRow(r) {
+  return `<div class="dc-row" style="--rt:${dcHex(r.tone || "is-calm")}">
+    <div class="dc-ic">${ic(r.ic || "activity")}</div>
+    <div class="rb"><span class="rt">${esc(r.t)}</span>${r.s ? `<span class="rs">${esc(r.s)}</span>` : ""}</div>
+    ${r.v ? `<span class="rv num">${esc(r.v)}</span>` : ""}</div>`;
+}
+
+function dcHeader(vm, st, rel, relTone, relTxt) {
+  return `<header class="dc-head2">
+    <div class="dc-id2"><span class="dc-mono">${esc(initialen(vm.naam || vm.key))}</span>
+      <div><h2 class="dc-name">${esc(vm.naam || vm.key)}</h2>
+        <p class="dc-sub">${vm.groep ? esc(vm.groep) + '<span class="sep">·</span>' : ""}${dsChip(_DC_OVERALL[st.overall] || st.overall || "—", relTone)}${dsFresh(rel.level || "unknown", relTxt)}</p></div></div>
+    <div class="dc-title"><h1>Dossier <span class="dc-badge">Levend geheugen</span></h1>
+      <p>Wat veranderde, wanneer &amp; waarom het ertoe doet</p></div>
+    <div class="dc-nav2">${athleteNav("dossier", vm.key)}</div>
+  </header>`;
+}
+
+function dcDiag(diag) {
+  return `<div class="dc-diag">${ic("alert")}<span>Enkele onderdelen konden niet worden berekend (${esc(diag.map(d => d.stage).join(", "))}). De overige bekende kennis klopt — dit is een interne fout, <b>geen</b> bronfout.</span></div>`;
+}
+
+// Geselecteerde-event laag (leeg tot een knoop/domein wordt gekozen).
+function dcDetail(tone) {
+  return `<div class="dc-detail ${tone}"><button type="button" class="dc-detail-close" aria-label="Sluiten">${ic("x")}</button>
+    <div class="dc-detail-body"></div></div>`;
+}
+
+function dcToday() {
+  const d = new Date();
+  return `${d.getDate()} ${_DC_MND[d.getMonth()]}`;
+}
+
+// ── Geselecteerde-event: knoop komt naar voren, scène dimt (geen route/modal) ──
+function dcSelectNode(wrap, i) {
+  const n = dcNodes[i];
+  if (!n) return;
+  const scene = wrap.querySelector(".dc-scene");
+  const body = wrap.querySelector(".dc-detail-body");
+  const facts = (n.facts || []).filter(Boolean);
+  body.innerHTML = `<div class="dt-top"><div class="dt-ic ${n.tone}">${ic(n.ic || "activity")}</div>
+      <div class="dt-hd"><div class="dt-when num">${esc(n.when || "")}${n.future ? " · vooruitblik" : " · analyse"}</div>
+        <h3 class="dt-ttl">${esc(n.title)}</h3></div></div>
+    ${n.changed ? `<div class="dt-sec"><div class="dt-k">${ic("pulse")}Wat ${n.future ? "staat te gebeuren" : "veranderde"}</div><p>${esc(n.changed)}</p></div>` : ""}
+    ${n.why ? `<div class="dt-sec"><div class="dt-k">${ic("flag")}Waarom relevant</div><p>${esc(n.why)}</p></div>` : ""}
+    ${facts.length ? `<div class="dt-sec"><div class="dt-k">${ic("note")}Onderbouwing</div><ul>${facts.map(f => `<li>${esc(f)}</li>`).join("")}</ul></div>` : ""}
+    ${n.ev ? `<button class="dc-why" data-id="${esc(n.ev)}" data-key="${esc(dcVMkey)}">Volledige provenance-keten</button>` : ""}`;
+  wrap.querySelectorAll(".dc-node").forEach(el => el.classList.toggle("is-sel", +el.dataset.node === i));
+  body.querySelectorAll(".dc-why").forEach(b => b.addEventListener("click", () => dcWaarom(b)));
+  scene.classList.add("sel");
+}
+
+function dcOpenDomain(wrap, vm, key) {
+  const dm = (vm.domains || []).find(d => d.key === key);
+  if (!dm) return;
+  const scene = wrap.querySelector(".dc-scene");
+  const body = wrap.querySelector(".dc-detail-body");
+  const rows = dm.onbekend ? `<p class="muted klein">Nog niets bekend in dit domein.</p>`
+    : `<ul class="dc-reg">` + dm.regels.map(r => `<li>
+        <div class="dc-reg-main"><span class="dc-lbl">${esc(dcPrettyLabel(r.label))}</span><span class="dc-val">${esc(r.value)}</span></div>
+        <div class="dc-reg-meta">${r.prov ? `<span class="dc-prov">${dcProv(r.prov)}</span>` : ""}
+          ${r.evidence_id ? `<button class="dc-why" data-id="${esc(r.evidence_id)}" data-key="${esc(vm.key)}">Waarom?</button>` : ""}</div></li>`).join("") + `</ul>`;
+  body.innerHTML = `<div class="dt-top"><div class="dt-ic is-calm">${ic(_DC_DOM_IC[key] || "file")}</div>
+      <div class="dt-hd"><div class="dt-when">Bewijsdomein</div><h3 class="dt-ttl">${esc(dm.titel)}</h3></div></div>
+    <div class="dt-sec">${rows}</div>`;
+  wrap.querySelectorAll(".dc-node").forEach(el => el.classList.remove("is-sel"));
+  body.querySelectorAll(".dc-why").forEach(b => b.addEventListener("click", () => dcWaarom(b)));
+  scene.classList.add("sel");
+}
+
+function dcCloseDetail(wrap) {
+  const scene = wrap.querySelector(".dc-scene");
+  if (scene) scene.classList.remove("sel");
+  wrap.querySelectorAll(".dc-node").forEach(el => el.classList.remove("is-sel"));
+}
+
+// ── Mobiel: kalme verticale tijd-vertelling (recent eerst, ouder gegroepeerd) ─
+function dcStack(d) {
+  const { vm, st, rel, relTone, relTxt, coreTone, past, future, emptyHistory } = d;
+  let h = `<div class="dc-memory dc-stack ${coreTone}">${dcHeader(vm, st, rel, relTone, relTxt)}`;
+  h += d.diag.length ? dcDiag(d.diag) : "";
+  // Nu-ankerpunt bovenaan.
+  h += `<div class="dcm-now ${coreTone}"><span class="dcm-sun"></span>
+    <div><div class="dcm-k">Vandaag · ${esc(dcToday())}</div><div class="dcm-t">${esc(d.domIssue)}</div>
+    <div class="dcm-s">${d.nowSub}</div></div>${dsChip(_DC_OVERALL[st.overall] || st.overall || "—", coreTone)}</div>`;
+  // Verticale spine: recente veranderingen → ouder.
+  h += `<div class="dcm-spine">`;
+  if (emptyHistory) {
+    h += `<div class="dcm-empty">${ic("clock")}<p>De geheugenlijn wordt <b>vanaf nu</b> opgebouwd. ‘Geen events’ betekent niet ‘geen historie’ — alleen dat er nog niets is vastgelegd.</p></div>`;
+  } else {
+    h += past.map((n, i) => `<div class="dcm-node ${n.tone}"><span class="dcm-dot"></span>
+      <div class="dcm-b"><span class="dcm-when num">${esc(n.when || "")}</span><span class="dcm-tt">${esc(n.title)}</span></div></div>`).join("");
+  }
+  h += future.map(n => `<div class="dcm-node future is-calm"><span class="dcm-dot"></span>
+    <div class="dcm-b"><span class="dcm-when num">${esc(n.when || "")}</span><span class="dcm-tt">${esc(n.title)}</span>
+    ${n.sig ? `<span class="dcm-sig">${esc(n.sig)}</span>` : ""}</div></div>`).join("");
+  h += `</div>`;
+  // Context als secties.
+  if (d.sigRows) h += `<section class="dcm-sec"><h3 class="ds-label">Klachten &amp; signalen</h3>${d.sigRows}</section>`;
+  if (d.planRows) h += `<section class="dcm-sec"><h3 class="ds-label">Doelen &amp; beslissingen</h3>${d.planRows}</section>`;
+  h += `<section class="dcm-sec"><h3 class="ds-label">Coachkennis</h3>${d.coachBody}</section>`;
+  // Bewijsdomeinen als accordions (bestaand patroon).
+  h += `<section class="dc-domains">` + (vm.domains || []).map(dm => `
+    <details class="ds-disc dc-dom${dm.onbekend ? " leeg" : ""}">
+      <summary>${esc(dm.titel)}${dm.onbekend ? ` <span class="muted klein">— onbekend</span>` : ""}</summary>
+      ${dm.onbekend ? "" : `<div class="ds-disc-body"><ul class="dc-reg">` + dm.regels.map(r => `<li>
+        <div class="dc-reg-main"><span class="dc-lbl">${esc(dcPrettyLabel(r.label))}</span><span class="dc-val">${esc(r.value)}</span></div>
+        <div class="dc-reg-meta">${r.prov ? `<span class="dc-prov">${dcProv(r.prov)}</span>` : ""}
+          ${r.evidence_id ? `<button class="dc-why" data-id="${esc(r.evidence_id)}" data-key="${esc(vm.key)}">Waarom?</button>` : ""}</div></li>`).join("") + `</ul></div>`}
     </details>`).join("") + `</section>`;
   const src = vm.source_health || [];
-  if (src.length) {
-    h += `<details class="ds-disc dc-sec dc-src"><summary>Bronnen &amp; betrouwbaarheid</summary>
-      <div class="ds-disc-body"><ul class="dc-srclist">` +
-      src.map(x => `<li><span class="dc-src-n">${esc(x.source)}</span>
-        <span class="dc-src-s ${x.available ? (x.stale ? "warn" : "ok") : "bad"}">${x.available ? (x.stale ? "verouderd" : "vers") : "uitgevallen"}</span>
-        ${x.error ? `<span class="muted klein">${esc(x.error)}</span>` : ""}</li>`).join("") +
-      `</ul></div></details>`;
-  }
-  h += `</aside></div></div>`;
-
-  wrap.innerHTML = h;
-  wrap.querySelectorAll(".dc-why").forEach(b => b.addEventListener("click", () => dcWaarom(b)));
+  if (src.length) h += `<div class="dc-infra stack">` + src.map(x =>
+    `<span class="s ${x.available ? (x.stale ? "warn" : "ok") : "bad"}"><i></i>${esc(x.source)}: ${x.available ? (x.stale ? "verouderd" : "vers") : "uitgevallen"}</span>`).join("") + `</div>`;
+  return h + `</div>`;
 }
 
 
