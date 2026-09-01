@@ -2622,10 +2622,10 @@ async function fbEnter() {                            // eerste keer openen van 
     FB.gepost = r.gepost || 0; FB.groups = r.groepen || [];
     fbApplyQueue(r.items || []); FB.loaded = true;
     fbLog("queue_cache_loaded", { cached: !!r.cached, queue_length: FB.items.length });
-    // Directe LKG bruikbaar → op desktop meteen de eerste case openen volgens de
-    // SERVER-sortering (FB.items is al server-gesorteerd; geen client-resort). Detail +
-    // context laden daarna lazy; de sweep hieronder blijft volledig achtergrond.
-    if (isDesktop() && !FB.selId && FB.items.length) fbOpen(FB.items[0].id, "auto_first_warm");
+    // Known-good-contract: route-entry opent GEEN case. De wachtrij is de primaire
+    // triage-surface; het midden toont een rustige neutrale staat tot de coach expliciet
+    // een training kiest (geen detail/week/cockpit-call vóór klik). `fbApplyQueue` heeft
+    // op desktop al `renderFocusEmpty()` gezet als er niets geselecteerd is.
   }
   fbRefresh();                                        // achtergrond: verse sweep
 }
@@ -2651,10 +2651,8 @@ async function fbRefresh() {                          // achtergrond-SWR: NOOIT 
     FB.pendingInitial = false; FB.loaded = true;
     fbApplyQueue(fresh); fbLog("queue_apply", { reason: "initial", queue_length: fresh.length });
     if (!fresh.length) { fbLog("queue_empty_confirmed"); return; }
-    // Koude sweep terug: eerste item volgens de SERVER-sortering auto-openen (geen client-resort;
-    // `fresh` draagt exact de servervolgorde) zodat de coach direct een bruikbare case ziet i.p.v.
-    // een lege focus. Alleen desktop + niets gekozen (op mobiel blijft de queue de instap).
-    if (isDesktop() && !FB.selId) fbOpen(fresh[0].id, "auto_first_cold");
+    // Known-good-contract: koude sweep vult de wachtrij, maar opent GEEN case automatisch.
+    // De coach kiest expliciet; `fbApplyQueue` toont op desktop de rustige neutrale focus.
     return;
   }
   const same = FB.items.map(i => i.id).join("|") === fresh.map(i => i.id).join("|");
@@ -2873,6 +2871,9 @@ function focusNextAfterAction(next) {
 }
 function renderFocusEmpty() {
   $("#fb-focus").innerHTML = `<div class="fb-focus-empty">${ic("message")}<p>Kies links een training om te beoordelen.</p></div>`;
+  // Rustige/neutrale rechter-context tot er een case gekozen is (geen module-skeleton,
+  // geen context-deepread vóór expliciete selectie).
+  const cc = $("#fb-ctx-col"); if (cc) cc.innerHTML = `<div class="fb-ctx-h">Context &amp; Masterbrein</div><div class="fb-card muted" style="text-align:center;padding:20px 14px">Kies een training voor context &amp; Masterbrein.</div>`;
 }
 function fbHeadHtml(naam, voornaam, datum, workout, cat, akey, groepLabel) {
   // Hero: volledige naam = dominant, fase + categorie eronder, training + datum rechts.

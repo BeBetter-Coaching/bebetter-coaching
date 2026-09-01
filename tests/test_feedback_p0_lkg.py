@@ -174,11 +174,13 @@ def _fn_body(src, header):
     raise AssertionError("geen body voor " + header)
 
 
-class TestFrontendAutoOpen:
-    def test_8_warm_lkg_auto_opent_eerste_item_serverorde(self):
+class TestFrontendNoAutoOpen:
+    def test_8_warm_lkg_opent_GEEN_case_automatisch(self):
+        # Known-good-core restore: warme LKG toont de wachtrij, maar opent GEEN case
+        # automatisch (route-entry = queue-only; de coach kiest expliciet).
         with open(_APP_JS, encoding="utf-8") as f:
             src = f.read()
         enter = _fn_body(src, "async function fbEnter(")
-        assert "auto_first_warm" in enter
-        assert "fbOpen(FB.items[0].id" in enter          # eerste item = server-volgorde
-        assert ".sort(" not in enter                     # geen client-resort in het openpad
+        assert "auto_first_warm" not in enter
+        assert "fbOpen(" not in enter                    # geen auto-open op route-entry
+        assert ".sort(" not in enter                     # nog steeds geen client-resort

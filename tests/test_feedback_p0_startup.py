@@ -171,9 +171,13 @@ class TestFrontendNonBlocking:
         assert re.search(r"(?<!await )\bfbRefresh\(\)", enter), "fbEnter start fbRefresh()"
         assert "await fbRefresh" not in enter, "fbEnter mag NIET op de sweep blokkeren"
 
-    def test_8_koude_sweep_auto_opent_eerste_item(self):
+    def test_8_koude_sweep_opent_GEEN_case_automatisch(self):
+        # Known-good-core restore: route-entry (incl. koude sweep) opent NOOIT automatisch
+        # een case. De coach kiest expliciet; geen auto-open op de refresh-terugkomst.
         refresh = _fn_body(_app_js(), "async function fbRefresh(")
-        assert "auto_first_cold" in refresh
-        assert "fbOpen(fresh[0].id" in refresh
-        # server-sortering: geen client-resort van `fresh` vóór de selectie
+        enter = _fn_body(_app_js(), "async function fbEnter(")
+        assert "auto_first_cold" not in refresh
+        assert "auto_first_warm" not in enter
+        assert "fbOpen(" not in refresh and "fbOpen(" not in enter   # geen auto-open op entry/sweep
+        # server-sortering: nog steeds geen client-resort van `fresh`
         assert ".sort(" not in refresh
