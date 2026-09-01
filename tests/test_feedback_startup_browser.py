@@ -21,13 +21,25 @@ import subprocess
 import pytest
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_SCRIPT = os.path.join(_ROOT, "tests", "js", "feedback_startup.test.mjs")
+_STARTUP = os.path.join(_ROOT, "tests", "js", "feedback_startup.test.mjs")
+_ENRICH = os.path.join(_ROOT, "tests", "js", "feedback_enrichment.test.mjs")
+
+
+def _run_node(script):
+    node = shutil.which("node")
+    proc = subprocess.run([node, script], capture_output=True, text=True, timeout=120)
+    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node niet beschikbaar")
 def test_feedback_startup_state_machine_executable():
-    node = shutil.which("node")
-    proc = subprocess.run([node, _SCRIPT], capture_output=True, text=True, timeout=120)
-    out = (proc.stdout or "") + (proc.stderr or "")
-    assert proc.returncode == 0, "startup state-machine scenarios faalden:\n" + out
+    rc, out = _run_node(_STARTUP)
+    assert rc == 0, "startup state-machine scenarios faalden:\n" + out
+    assert "PASS:" in out, out
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node niet beschikbaar")
+def test_feedback_post_queue_enrichment_executable():
+    rc, out = _run_node(_ENRICH)
+    assert rc == 0, "post-queue enrichment scenarios faalden:\n" + out
     assert "PASS:" in out, out

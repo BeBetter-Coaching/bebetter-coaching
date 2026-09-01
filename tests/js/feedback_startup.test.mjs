@@ -92,9 +92,10 @@ function mockFetch(url, opt) {
 }
 
 // Instantiate the REAL functions sharing one scope, closing over the shims.
+const fbAbortEnrichment = () => {};                     // post-queue enrichment niet onderdeel van deze startup-test
 const shimNames = ["window", "document", "$", "$$", "ic", "esc", "isDesktop", "skeleton",
   "fbLog", "authHeaders", "toonLogin", "fbDraftCleanup", "fbUpdateInfo", "renderFocusEmpty",
-  "fbFilterWeg", "fbNieuwBalk", "renderQueue", "fbApplyQueue", "fbOpen", "fetch",
+  "fbFilterWeg", "fbNieuwBalk", "renderQueue", "fbApplyQueue", "fbOpen", "fbAbortEnrichment", "fetch",
   "AbortController", "performance", "setTimeout", "clearTimeout", "FB"];
 function build(hotMs, refreshMs) {
   winShim.__FB_HOT_MS = hotMs; winShim.__FB_REFRESH_MS = refreshMs;
@@ -105,7 +106,7 @@ function build(hotMs, refreshMs) {
   const fn = new Function(...shimNames, body);
   return fn(winShim, {}, $, $$, ic, esc, isDesktop, skeleton, fbLog, authHeaders, toonLogin,
     fbDraftCleanup, fbUpdateInfo, renderFocusEmpty, fbFilterWeg, fbNieuwBalk, renderQueue,
-    fbApplyQueue, fbOpen, mockFetch, AbortController, perfShim, setTimeout, clearTimeout, FB);
+    fbApplyQueue, fbOpen, fbAbortEnrichment, mockFetch, AbortController, perfShim, setTimeout, clearTimeout, FB);
 }
 
 function reset(plan) {
