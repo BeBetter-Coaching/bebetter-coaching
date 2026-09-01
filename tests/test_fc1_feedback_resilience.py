@@ -47,7 +47,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(intake_store, "_SKIPPED_LOCAL", str(tmp_path / "skipped.json"),
                         raising=False)
     FC._cache.clear()
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
     fs_client._COACH_ATHLETE_MAP = {}
     # genereer/plaats-randzaken neutraliseren (geen netwerk); kern = restore + identity
     monkeypatch.setattr(FC, "_ensure_details", lambda wid: None)
@@ -56,7 +56,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(FC, "_home_invalidate_feedback", lambda: None)
     yield
     FC._cache.clear()
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
     fs_client._COACH_ATHLETE_MAP = {}
 
 
@@ -128,7 +128,7 @@ class TestCacheLifecycle:
         _stub_ai(monkeypatch); _stub_post(monkeypatch)
         monkeypatch.setattr(fs_client, "get_athlete_zones", lambda ak: {}, raising=False)
         # simuleer recycle: zowel _cache als _QUEUE_MEM leeg, alleen durable over
-        FC._cache.clear(); FC._QUEUE_MEM = {}
+        FC._cache.clear(); FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
         monkeypatch.setattr(intake_store, "load_feedback_queue", lambda: _durable())
         # de nog-openstaande workout is ná recycle gewoon bruikbaar: detail + genereer + post
         assert FC.detail("W1").get("err") != "Training niet in beeld — ververs de queue."
@@ -281,7 +281,7 @@ class TestRePostGuard:
         store = _durable_store(monkeypatch)
         FC._QUEUE_MEM = dict(store["snap"]); FC._cache["W1"] = _workout()
         assert FC.plaats("W1", "eerste") is True                      # 1e post slaagt
-        FC._cache.clear(); FC._QUEUE_MEM = {}                         # process recycle
+        FC._cache.clear(); FC._QUEUE_MEM = {}; FC._SKIP_MEM = None                         # process recycle
         with pytest.raises(ValueError):                              # 2e post onmogelijk
             FC.plaats("W1", "tweede")
         with pytest.raises(ValueError):                             # generate ook geblokkeerd
@@ -302,7 +302,7 @@ class TestRePostGuard:
         FC._QUEUE_MEM = dict(store["snap"]); FC._cache["W1"] = _workout()
         FC.plaats("W1", "eerste")
         assert "W1" not in (store["snap"].get("_volle") or {})
-        FC._cache.clear(); FC._QUEUE_MEM = {}
+        FC._cache.clear(); FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
         with pytest.raises(ValueError):
             FC.plaats("W1", "opnieuw")
 
@@ -310,7 +310,7 @@ class TestRePostGuard:
         # regressie: een NIET-geposte, nog openstaande workout blijft ná recycle bruikbaar
         _stub_post(monkeypatch); _stub_ai(monkeypatch)
         _durable_store(monkeypatch, "W2")
-        FC._cache.clear(); FC._QUEUE_MEM = {}
+        FC._cache.clear(); FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
         assert FC.genereer("W2") == "CONCEPT"
         assert FC.plaats("W2", "netjes") is True
 
@@ -318,7 +318,7 @@ class TestRePostGuard:
         # skip blijft de andere canonieke not-found-reden, los van de post-guard
         _stub_post(monkeypatch)
         _durable_store(monkeypatch)
-        FC._cache.clear(); FC._QUEUE_MEM = {}
+        FC._cache.clear(); FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
         monkeypatch.setattr(intake_store, "load_skipped",
                             lambda: {"W1": {"athlete_ts": "", "notes": False,
                                             "felt": False, "effort": False}})

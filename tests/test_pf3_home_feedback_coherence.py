@@ -69,11 +69,11 @@ def env(monkeypatch):
     monkeypatch.setattr(home_core.intake_store, "load_home_snapshot", lambda: durable["snap"])
     monkeypatch.setattr(home_core.intake_store, "save_home_snapshot",
                         lambda d: (durable.__setitem__("snap", d) or (True, "")))
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
     FC._cache.clear()
     home_core._MEM = {}
     yield {"skips": skips, "durable": durable}
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
     FC._cache.clear()
     home_core._MEM = {}
 
@@ -235,7 +235,7 @@ def test_geen_geldige_queue_toont_geen_bevroren_integer(env):
     # leidend". Dat contract is fout gebleken (Home toonde 6 terwijl Feedback leeg was).
     # Class 1: een koude/ongeldige queue mag NOOIT de bevroren snapshot-integer als actueel
     # tonen — de tegel degradeert eerlijk naar 'stale', zonder valse precisie.
-    FC._QUEUE_MEM = {}                                 # geen geldige queue-snapshot
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None                                 # geen geldige queue-snapshot
     home_core._MEM = _home_snap(7)
     assert FC.canonical_open_actions()["status"] == "UNKNOWN"
     assert FC.feedback_open_truth() is None

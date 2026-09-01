@@ -474,6 +474,46 @@ def _snapshot(w: dict) -> dict:
     }
 
 
+# ── Feedback-scoped in-memory skip-state (P0 hot-read: 0 externe I/O) ─────────
+# De canonieke skip-store blijft `skipped.json` (gedeeld met Streamlit). Deze in-proces
+# mirror zorgt dat de WARME queue-read (`_apply_skips`) de skip-reconciliatie doet ZONDER
+# per-read GitHub-lezing/-schrijving. Hydratatie gebeurt op de niet-hot paden (prewarm,
+# durable-restore, sweep) en na `overslaan`. `None` = nog niet gehydrateerd.
+_SKIP_MEM: dict | None = None
+
+
+def _skips_hydrate() -> None:
+    """(Her)laad de skip-store één keer in het geheugen. Alleen op niet-hot paden
+    (prewarm/restore/sweep). Non-fataal: bij leesfout blijft de vorige mem-staat staan."""
+    global _SKIP_MEM
+    try:
+        _SKIP_MEM = dict(intake_store.load_skipped() or {})
+    except Exception:
+        if _SKIP_MEM is None:
+            _SKIP_MEM = {}
+
+
+def _skips_current() -> dict:
+    """Skip-state uit het geheugen. Lazy one-shot hydratatie als nog niet geladen
+    (`None`); daarna 0 externe I/O. De hot queue-read leunt hierop."""
+    global _SKIP_MEM
+    if _SKIP_MEM is None:
+        _skips_hydrate()
+    return _SKIP_MEM if _SKIP_MEM is not None else {}
+
+
+def _skip_reactivated(w: dict, snap) -> bool:
+    """ZELFDE her-activatie-semantiek als `_filter_skipped`: nieuwe atleet-input ná de skip."""
+    cur_ts = _athlete_latest_ts(w)
+    if isinstance(snap, dict):
+        return bool(
+            (cur_ts and cur_ts > (snap.get("athlete_ts") or ""))
+            or (bool(w.get("post_notes")) and not snap.get("notes"))
+            or (bool(w.get("felt")) and not snap.get("felt"))
+            or (bool(w.get("effort")) and not snap.get("effort")))
+    return cur_ts[:10] > str(snap)[:10]
+
+
 def overslaan(wid: str) -> bool:
     """Sla een training over (uit de lijst tot de atleet weer nieuwe input geeft).
 
@@ -490,26 +530,27 @@ def overslaan(wid: str) -> bool:
     wk = w.get("workout_key", "")
     if not wk:
         raise ValueError("Geen workout-sleutel.")
+    global _SKIP_MEM
     sk = intake_store.load_skipped()
     sk[wk] = _snapshot(w)
     ok, err = intake_store.save_skipped(sk)
     if not ok:
         # Persistence niet bewezen → geen success-response (geen verloren skip).
         raise RuntimeError("Overslaan niet opgeslagen: " + (err or "onbekende opslagfout"))
+    _SKIP_MEM = dict(sk)                                  # in-memory reconcile → volgende hot read filtert zonder store-read
     # Home's feedbacktegel server-side laten revalideren (geen handmatige teller).
     _home_invalidate_feedback()
     return True
 
 
 def _filter_skipped(workouts: list) -> list:
-    """Overgeslagen trainingen eruit — tenzij de atleet ná het overslaan NIEUWE
-    input gaf (nieuwe reactie/notitie/gevoel/RPE). EXACT als Streamlit
-    _filter_skipped en werkt op dezelfde gedeelde skipped.json (skip in Streamlit
-    = weg in de app, en andersom)."""
-    try:
-        sk = intake_store.load_skipped()
-    except Exception:
-        return workouts
+    """WRITE-pad (sweep + canonieke skip-guard): overgeslagen trainingen eruit — tenzij de
+    atleet ná het overslaan NIEUWE input gaf (her-activatie). Leest de skip-state uit het
+    geheugen (`_skips_current`, lazy one-shot hydratatie) en PERSISTEERT een her-activatie
+    canoniek (skipped.json) + werkt de in-memory mirror bij. ZELFDE semantiek/store als
+    Streamlit. NIET het hot leespad — dat is `_apply_skips` (0 externe I/O)."""
+    global _SKIP_MEM
+    sk = dict(_skips_current())
     if not sk:
         return workouts
     uit, veranderd = [], False
@@ -519,25 +560,35 @@ def _filter_skipped(workouts: list) -> list:
         if snap is None:
             uit.append(w)
             continue
-        cur_ts = _athlete_latest_ts(w)
-        if isinstance(snap, dict):
-            nieuw = (
-                (cur_ts and cur_ts > (snap.get("athlete_ts") or ""))
-                or (bool(w.get("post_notes")) and not snap.get("notes"))
-                or (bool(w.get("felt")) and not snap.get("felt"))
-                or (bool(w.get("effort")) and not snap.get("effort"))
-            )
-        else:
-            nieuw = cur_ts[:10] > str(snap)[:10]
-        if nieuw:
+        if _skip_reactivated(w, snap):
             del sk[wk]
             veranderd = True
             uit.append(w)
     if veranderd:
+        _SKIP_MEM = dict(sk)                              # mirror bijwerken
         try:
-            intake_store.save_skipped(sk)
+            intake_store.save_skipped(sk)                 # canonieke her-activatie-persist (write-pad)
         except Exception:
             pass
+    return uit
+
+
+def _filter_skipped_mem(workouts: list) -> list:
+    """HOT-pad: zelfde filter/her-activatie-BESLISSING als `_filter_skipped`, maar PUUR
+    lezend uit het geheugen — GEEN store-lezing en GEEN store-schrijving, en GEEN mutatie
+    van de skip-mirror. Een her-geactiveerde workout (nieuwe atleet-input ná skip) wordt
+    getoond; de canonieke opruiming van die skip (store + mirror) gebeurt op het
+    achtergrond/write-pad (`_filter_skipped` in de sweep). Zo blijft de hot read 0 I/O en
+    kan de write-pad de her-activatie later alsnog canoniek persisteren."""
+    sk = _skips_current()
+    if not sk:
+        return workouts
+    uit = []
+    for w in workouts:
+        wk = w.get("workout_key", "")
+        snap = sk.get(wk)
+        if snap is None or _skip_reactivated(w, snap):    # niet-geskipt óf her-geactiveerd → tonen
+            uit.append(w)
     return uit
 
 
@@ -560,15 +611,12 @@ def _apply_skips(snap: dict) -> dict:
     items = snap.get("items") or []
     if not items:
         return snap
-    try:
-        sk = intake_store.load_skipped()
-    except Exception:
-        return snap
+    sk = _skips_current()                                # HOT: in-memory skip-state, 0 externe I/O
     if not sk:
         return snap
     volle = snap.get("_volle") or {}
     if volle:
-        houd = {_wid(w) for w in _filter_skipped(list(volle.values()))}
+        houd = {_wid(w) for w in _filter_skipped_mem(list(volle.values()))}
         gefilterd = [it for it in items if it.get("id") in houd]
     else:
         gefilterd = [it for it in items if it.get("id") not in sk]
@@ -712,6 +760,7 @@ def _queue_current_diag() -> tuple[dict, dict]:
     if _queue_valid(durable):
         _QUEUE_MEM = durable
         _herstel_cache(durable)
+        _skips_hydrate()                                 # skip-state warm bij durable-restore → hot read = 0 I/O
         src = getattr(intake_store, "last_feedback_queue_source", lambda: "durable")()
         bron = "local_mirror" if src == "local_mirror" else "durable"
         return durable, {"bron": bron, "durable_load_ms": ms,
@@ -728,6 +777,7 @@ def prewarm_queue() -> dict:
     t0 = time.perf_counter()
     try:
         snap, bron = _queue_current_diag()               # zet _QUEUE_MEM + _cache bij succes
+        _skips_hydrate()                                 # Feedback-scoped skip-state warm → hot read = 0 I/O
     except Exception as e:
         return {"ok": False, "error": type(e).__name__ + ": " + str(e)[:120],
                 "prewarm_ms": int((time.perf_counter() - t0) * 1000)}
@@ -923,6 +973,7 @@ def _bouw_queue() -> dict:
             return {**oud, "verouderd": True}
         return {"fs": True, "items": [], "gepost": 0, "err": "FinalSurge onbereikbaar."}
     _t_build = time.perf_counter()
+    _skips_hydrate()                                     # verse skip-state vóór de write-pad-reconciliatie
     workouts = _filter_skipped(workouts)
     items, volle = [], {}
     for w in workouts:
@@ -1026,8 +1077,12 @@ def queue(refresh: bool = False) -> dict:
             ok, err = _queue_persist(snap)
             persist_ms = int((time.perf_counter() - _t_persist) * 1000)
             total_refresh_ms = int((time.perf_counter() - _t_refresh) * 1000)
-            return _queue_public(snap, cached=False, diag=_diag(snap, {
-                "bron": "sweep", "persist_ok": ok,
+            # FinalSurge-fout tijdens de sweep → `_bouw_queue` gaf de LKG terug met
+            # `verouderd`. Behoud die items (nooit blanken) én markeer het refresh-falen.
+            verouderd = bool(snap.get("verouderd"))
+            extra = {"verouderd": True} if verouderd else {}
+            return _queue_public(snap, cached=verouderd, **extra, diag=_diag(snap, {
+                "bron": ("sweep_verouderd" if verouderd else "sweep"), "persist_ok": ok,
                 "persist_error": (err[:120] if (err and not ok) else None),
                 **_LAST_SWEEP_DIAG,
                 "persist_ms": persist_ms,
