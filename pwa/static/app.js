@@ -2735,7 +2735,7 @@ function fbIsoWeek(ds) {
 function fbIsAandacht(it) { return it.categorie === "reactie"; }
 const _FB_TABS = [["wachten", "Wachten"], ["vandaag", "Vandaag"], ["aandacht", "Aandacht", "att"], ["afgerond", "Afgerond"]];
 function fbFilterItems() {
-  const vandaag = fbLocalISO ? fbLocalISO() : new Date().toISOString().slice(0, 10);
+  const vandaag = fbLocalISO(new Date());
   if (FB.filter === "vandaag") return FB.items.filter(i => (i.datum || "") === vandaag);
   if (FB.filter === "aandacht") return FB.items.filter(fbIsAandacht);
   if (FB.filter === "afgerond") return [];                 // afgerond = deze-sessie geposte items (apart gerenderd)
@@ -2743,7 +2743,7 @@ function fbFilterItems() {
 }
 function renderTabs() {
   const bar = $("#fb-tabs"); if (!bar) return;
-  const vandaag = fbLocalISO ? fbLocalISO() : new Date().toISOString().slice(0, 10);
+  const vandaag = fbLocalISO(new Date());
   const counts = {
     wachten: FB.items.length,
     vandaag: FB.items.filter(i => (i.datum || "") === vandaag).length,
@@ -2767,7 +2767,11 @@ function renderQueue() {
       : `<div class="leeg">${ic("check")}<p>Nog niets afgehandeld deze sessie.</p></div>`;
     return;
   }
-  const shown = fbFilterItems();
+  // Triagefilter (tab) eerst; daarna de groep-pill als INTERSECTIE. Servervolgorde blijft
+  // exact behouden (filter() muteert de volgorde niet; nergens client-side sorteren).
+  let shown = fbFilterItems();
+  if (FB.group !== "alle" && !FB.items.some(i => i.groep === FB.group)) FB.group = "alle";
+  if (FB.group !== "alle") shown = shown.filter(i => i.groep === FB.group);
   if (!shown.length) {
     box.innerHTML = `<div class="leeg">${ic("check")}<p>${FB.items.length ? "Geen items in deze filter." : "Niks te beoordelen — netjes bijgewerkt."}</p></div>`;
     return;
@@ -2802,7 +2806,7 @@ function fbRowHtml(it) {
 function fbShortTime(it) {
   const ts = it.athlete_ts || "";
   const m = String(ts).match(/(\d{2}):(\d{2})/);
-  const vandaag = fbLocalISO ? fbLocalISO() : new Date().toISOString().slice(0, 10);
+  const vandaag = fbLocalISO(new Date());
   if ((it.datum || "") === vandaag && m) return `${m[1]}:${m[2]}`;
   return fbDateLabel(it.datum || "");
 }
