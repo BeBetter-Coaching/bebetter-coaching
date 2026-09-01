@@ -30,9 +30,9 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(intake_store, "_gh_token", lambda: "")
     monkeypatch.setattr(intake_store, "_SKIPPED_LOCAL", str(tmp_path / "skipped.json"),
                         raising=False)
-    FC._cache.clear()
+    FC._cache.clear(); FC._SKIP_MEM = None
     yield intake_store
-    FC._cache.clear()
+    FC._cache.clear(); FC._SKIP_MEM = None
 
 
 def _seed(wk, **over):

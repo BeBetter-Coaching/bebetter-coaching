@@ -33,10 +33,10 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(FC, "_home_invalidate_feedback", lambda: None)  # Home-seam isoleren
     FC._cache.clear()
     FC._QUEUE_MEM.clear() if hasattr(FC._QUEUE_MEM, "clear") else None
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
     yield intake_store
     FC._cache.clear()
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
 
 
 def _seed(wk, **over):
@@ -95,7 +95,7 @@ class TestQueueReadSkipConsistent:
         monkeypatch.setattr(FC, "heeft_token", lambda: True)
         w1, w2 = _seed("W1"), _seed("W2")
         # geen mem → val terug op durable store
-        FC._QUEUE_MEM = {}
+        FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
         monkeypatch.setattr(intake_store, "load_feedback_queue", lambda: _snapshot([w1, w2]))
         FC.overslaan("W2")
         out = FC.queue(refresh=False)
@@ -112,12 +112,18 @@ class TestQueueReadSkipConsistent:
         assert [i["id"] for i in out["items"]] == ["W2"]
 
     def test_her_activatie_bij_nieuwe_input(self, store, monkeypatch):
+        # P0 hot-read-contract: her-activatie op de WARME read reconcilieert in-memory
+        # (workout weer zichtbaar + skip weg uit de in-memory mirror) ZONDER store-write;
+        # de canonieke store-opruiming gebeurt op het achtergrond/write-pad (sweep).
         monkeypatch.setattr(FC, "heeft_token", lambda: True)
         w1 = _seed("W1")
         FC.overslaan("W1")
-        # atleet geeft ná het overslaan nieuwe input → moet terugkomen
-        w1["post_notes"] = "toch nog een vraag"
+        w1["post_notes"] = "toch nog een vraag"           # nieuwe atleet-input ná het overslaan
         FC._QUEUE_MEM = _snapshot([w1])
         out = FC.queue(refresh=False)
-        assert [i["id"] for i in out["items"]] == ["W1"]
-        assert "W1" not in store.load_skipped()       # skip opgeruimd (canoniek)
+        assert [i["id"] for i in out["items"]] == ["W1"]  # weer zichtbaar (her-activatie op hot read)
+        assert store.load_skipped().get("W1") is not None  # hot read schreef NIET (skip nog canoniek aanwezig)
+        # canonieke opruiming op het write-pad (sweep): reactiveert → store + mirror schoon
+        assert FC._filter_skipped([FC._cache["W1"]]) == [FC._cache["W1"]]
+        assert "W1" not in store.load_skipped()           # nu canoniek opgeruimd via write-pad
+        assert "W1" not in FC._skips_current()            # in-memory mirror ook bijgewerkt

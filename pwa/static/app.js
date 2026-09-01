@@ -155,10 +155,12 @@ function toonView(view) {
   if (huidigeView === "home" && view !== "home") {
     const sc = $("#scroller"); if (sc) homeScroll = sc.scrollTop;
   }
-  // Verlaat Feedback → sluit de mobiele focus-overlay (mag niet over andere views blijven).
+  // Verlaat Feedback → sluit de mobiele focus-overlay (mag niet over andere views blijven)
+  // én invalideer in-flight queue-requests (geen stale callback die een latere view muteert).
   if (huidigeView === "feedback" && view !== "feedback") {
     const c = $("#fb-focus-col"); if (c) { c.classList.remove("on"); c.setAttribute("aria-hidden", "true"); c.style.height = ""; c.style.top = ""; }
     document.body.classList.remove("kb-open");
+    fbLeave();
   }
   huidigeView = view;
   $$(".view").forEach(v => {
@@ -2507,25 +2509,76 @@ function fbRenderColdWaiting() {
 }
 // Diagnostische queue-fetch (fase 2.2 punt 1): meet requestduur + Server-Timing en
 // geeft het backend-diag-blok terug voor de koude-start-analyse.
-async function fbQueueGet(refresh) {
+// P0 — harde deadlines zodat de startup NOOIT oneindig kan hangen. De hot (non-refresh)
+// read is een geheugen/LKG-lezing → korte deadline; de achtergrond-refresh (FinalSurge-
+// sweep) mag langer maar is EINDIG. Overschrijfbaar voor tests via window.__FB_*_MS.
+const FB_HOT_DEADLINE = (typeof window !== "undefined" && window.__FB_HOT_MS) || 8000;
+const FB_REFRESH_DEADLINE = (typeof window !== "undefined" && window.__FB_REFRESH_MS) || 90000;
+
+// Verlaat/heropen Feedback → bump de generatie zodat een nog lopende request z'n
+// resultaat NIET op een latere view kan toepassen; abort de in-flight fetch.
+function fbLeave() {
+  FB.reqGen = (FB.reqGen || 0) + 1;
+  if (FB._ac) { try { FB._ac.abort(); } catch {} FB._ac = null; }
+}
+async function fbQueueGet(refresh, gen) {
   const t0 = performance.now();
-  let status = 0, st = null, data = null;
+  const ac = new AbortController(); FB._ac = ac;
+  let deadlineHit = false;
+  const timer = setTimeout(() => { deadlineHit = true; try { ac.abort(); } catch {} },
+    refresh ? FB_REFRESH_DEADLINE : FB_HOT_DEADLINE);
+  let status = 0, st = null, data = null, timedOut = false, aborted = false;
   try {
-    const res = await fetch("/api/feedback/queue" + (refresh ? "?refresh=1" : ""), { headers: authHeaders() });
+    const res = await fetch("/api/feedback/queue" + (refresh ? "?refresh=1" : ""),
+      { headers: authHeaders(), signal: ac.signal });
     status = res.status; st = res.headers.get("Server-Timing");
     if (status === 401) { toonLogin(); throw new Error("auth"); }
     data = await res.json();
-  } catch { data = null; }
-  return { data, ms: Math.round(performance.now() - t0), server_timing: st, status };
+  } catch (e) {
+    if (e && e.name === "AbortError") { timedOut = deadlineHit; aborted = !deadlineHit; }  // deadline vs navigatie-abort
+    data = null;
+  } finally {
+    clearTimeout(timer);
+    if (FB._ac === ac) FB._ac = null;
+  }
+  return { data, ms: Math.round(performance.now() - t0), server_timing: st, status, timedOut, aborted };
+}
+// Terminale, HERSTELBARE staat (nooit een oneindig skeleton): duidelijke melding + retry.
+function fbRenderError(kind) {
+  FB.pendingInitial = false;
+  const msg = kind === "timeout" ? "Feedback laadt te lang." : "Kon Feedback niet laden.";
+  const q = $("#fb-queue");
+  if (q) q.innerHTML = `<div class="leeg fb-err"><p>${esc(msg)}</p>`
+    + `<button class="btn small" id="fb-retry" type="button">${ic("refresh")} Opnieuw proberen</button></div>`;
+  const g = $("#fb-groups"); if (g) g.hidden = true;
+  const info = $("#fb-info"); if (info) info.textContent = "";
+  const f = $("#fb-focus"); if (f && !FB.selId) f.innerHTML =
+    `<div class="fb-focus-empty">${ic("message")}<p>${esc(msg)} Kies links “Opnieuw proberen”.</p></div>`;
+  const b = $("#fb-retry"); if (b) b.onclick = () => { fbRenderLoading(); fbEnter(); };
+  fbLog("queue_error_state", { kind });
+}
+// Achtergrond-refresh faalde MAAR er staat een bruikbare queue → subtiel signaal, geen blank.
+function fbMarkStale(kind) {
+  const info = $("#fb-info");
+  if (info) info.innerHTML = `<span class="versen">Bijwerken ${kind === "timeout" ? "duurde te lang" : "mislukt"} — `
+    + `<button class="linklike" id="fb-retry2" type="button">opnieuw</button></span>`;
+  const b = $("#fb-retry2"); if (b) b.onclick = () => fbRefresh();
 }
 async function fbEnter() {                            // eerste keer openen van de pagina
   fbDraftCleanup(); fbLog("queue_enter");
+  const gen = FB.reqGen = (FB.reqGen || 0) + 1;       // nieuwe entry-generatie (navigatie-guard)
   if (!FB.loaded) fbRenderLoading();
-  const q = await fbQueueGet(false);
+  const q = await fbQueueGet(false, gen);
+  if (gen !== FB.reqGen) return;                      // ondertussen genavigeerd/heropend → negeer stale
   const r = q.data;
   fbLog("queue_cache_result", { non_refresh_ms: q.ms, server_timing: q.server_timing, status: q.status,
-    pending: !!(r && r.pending), items: (r && r.items ? r.items.length : 0), diag: (r && r.diag) || null });
-  if (!r) { $("#fb-info").textContent = ""; if (!FB.items.length) $("#fb-queue").innerHTML = '<p class="muted center">Geen verbinding.</p>'; }
+    timed_out: q.timedOut, pending: !!(r && r.pending), items: (r && r.items ? r.items.length : 0), diag: (r && r.diag) || null });
+  if (!r) {
+    // Geen bruikbare respons (deadline of netwerk). Nooit oneindig laden: met een
+    // bestaande queue laten we die staan; zonder items → terminale, herstelbare staat.
+    if (!FB.items.length) { fbRenderError(q.timedOut ? "timeout" : "network"); return; }
+    fbMarkStale(q.timedOut ? "timeout" : "network");
+  }
   else if (!r.fs) { $("#fb-info").textContent = "FinalSurge nog niet gekoppeld."; $("#fb-queue").innerHTML = ""; FB.loaded = true; }
   else if (r.pending && !(r.items && r.items.length)) {
     // Koude/onbevestigde cache: NIET als definitief "niets te beoordelen" tonen én
@@ -2543,12 +2596,17 @@ async function fbEnter() {                            // eerste keer openen van 
   fbRefresh();                                        // achtergrond: verse sweep
 }
 async function fbRefresh() {                          // achtergrond-SWR: NOOIT stil hersorteren/muteren
+  const gen = FB.reqGen;                              // huidige generatie (navigatie-guard)
   fbLog("queue_refresh_start");
-  const q = await fbQueueGet(true);
+  const q = await fbQueueGet(true, gen);
+  if (gen !== FB.reqGen) return;                      // genavigeerd/heropend → negeer stale
   const r = q.data, dur = q.ms;
   if (!r || !r.fs || !Array.isArray(r.items)) {
-    fbLog("queue_refresh_error", { queue_refresh_duration_ms: dur, server_timing: q.server_timing, status: q.status, diag: (r && r.diag) || null });
-    if (FB.pendingInitial && !FB.items.length) { $("#fb-info").textContent = "Kon Feedback niet laden — trek omlaag of ververs."; }
+    fbLog("queue_refresh_error", { queue_refresh_duration_ms: dur, timed_out: q.timedOut, server_timing: q.server_timing, status: q.status, diag: (r && r.diag) || null });
+    // Koude start zonder items → terminale herstelbare staat; anders bestaande queue
+    // BEHOUDEN (nooit blanken) + subtiel stale/retry-signaal.
+    if (FB.pendingInitial && !FB.items.length) fbRenderError(q.timedOut ? "timeout" : "network");
+    else if (FB.items.length) fbMarkStale(q.timedOut ? "timeout" : "network");
     return;
   }
   FB.gepost = r.gepost != null ? r.gepost : FB.gepost;

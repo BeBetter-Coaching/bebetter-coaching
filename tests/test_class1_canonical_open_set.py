@@ -80,11 +80,11 @@ def env(monkeypatch):
     monkeypatch.setattr(home_core.intake_store, "load_home_snapshot", lambda: durable["snap"])
     monkeypatch.setattr(home_core.intake_store, "save_home_snapshot",
                         lambda d: (durable.__setitem__("snap", d) or (True, "")))
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
     FC._cache.clear()
     home_core._MEM = {}
     yield {"skips": skips, "durable": durable}
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
     FC._cache.clear()
     home_core._MEM = {}
 
@@ -99,7 +99,7 @@ def test_1_snapshot6_openset0_home_toont_0(env):
 
 # 2 — queue cold/invalid → oude integer niet stil als actueel
 def test_2_cold_queue_geen_stille_oude_integer(env):
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
     home_core._MEM = _home_snap(6)
     fb = home_core.cockpit(refresh=False)["feedback"]
     assert fb.get("wachten") != 6 and fb.get("wachten") is None and fb.get("stale") is True
@@ -148,7 +148,7 @@ def test_5_feedback_en_home_zelfde_open_set(env):
 def test_6_cold_process_durable_parity(env, monkeypatch):
     durable_q = _qsnap("W1", "W2")
     monkeypatch.setattr(FC.intake_store, "load_feedback_queue", lambda: durable_q)
-    FC._QUEUE_MEM = {}                                # koud proces: geen mem
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None                                # koud proces: geen mem
     env["skips"]["map"] = {"W1": _skip()}
     home_core._MEM = {}
     env["durable"]["snap"] = _home_snap(2)           # stale home-integer zegt 2
@@ -160,7 +160,7 @@ def test_6_cold_process_durable_parity(env, monkeypatch):
 # 7 — failed queue rebuild → honest stale/unknown
 def test_7_failed_rebuild_honest_stale(env, monkeypatch):
     monkeypatch.setattr(FC.intake_store, "load_feedback_queue", lambda: {})   # durable ontbreekt
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
     home_core._MEM = _home_snap(5)
     assert FC.canonical_open_actions()["status"] == FC.OPEN_UNKNOWN
     fb = home_core.cockpit(refresh=False)["feedback"]
@@ -305,7 +305,7 @@ def test_regressie_A_skip_op_stale_queue_home_direct(env, monkeypatch):
 def test_unknown_queue_recente_home_sweep_behoudt_count(env):
     # GEEN geldige queue-snapshot (UNKNOWN) MAAR een recente home-sweep → val terug op die verse
     # home-telling (geen valse 'bijwerken…'). Dit is de `_snap_recent`-fallback, alleen voor UNKNOWN.
-    FC._QUEUE_MEM = {}                                 # ongeldige queue → UNKNOWN
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None                                 # ongeldige queue → UNKNOWN
     home_core._MEM = _home_snap(3, berekend=_now(2))
     fb = home_core.cockpit(refresh=False)["feedback"]
     assert fb.get("stale") is False and fb.get("wachten") == 3
@@ -328,7 +328,7 @@ def test_cold_durable_queue_recent_blijft_fast(env, monkeypatch):
     # koud proces + RECENTE durable queue → FRESH zonder warm/sweep
     durable_q = _qsnap("W1", "W2", berekend=_now(2))
     monkeypatch.setattr(FC.intake_store, "load_feedback_queue", lambda: durable_q)
-    FC._QUEUE_MEM = {}
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None
     home_core._MEM = {}
     env["durable"]["snap"] = _home_snap(2, berekend=_now(2))
     assert FC.canonical_open_actions()["status"] == FC.OPEN_FRESH
@@ -389,7 +389,7 @@ def test_gepost_durable_parity_na_reload(env, monkeypatch):
     FC._QUEUE_MEM = _qsnap("W0", "W1", gepost=0)
     FC._cache["W0"] = _wk("W0")
     FC._verwijder_uit_queue("W0")                    # persist (met gepost+1) naar durable
-    FC._QUEUE_MEM = {}                               # koude reload
+    FC._QUEUE_MEM = {}; FC._SKIP_MEM = None                               # koude reload
     t = FC.canonical_open_actions()                 # leest durable
     assert t["status"] == FC.OPEN_FRESH
     assert t["wachten"] == 1 and t["gepost"] == 1    # gepost overleeft reload/cold read
