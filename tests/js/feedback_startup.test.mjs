@@ -135,7 +135,7 @@ async function s2_warm_then_refresh_hangs() {
   const api = build(120, 150);
   await api.fbEnter();
   ok(FB.items.length === 2, "S2: warm queue visible immediately");
-  ok(FB.selId === "a", "S2: first server-ordered item opened");
+  ok(FB.selId == null, "S2: no case auto-opened on entry (known-good contract)");
   await sleep(260);                                      // refresh deadline elapses
   ok(FB.items.length === 2, "S2: warm queue stays usable while refresh hangs");
   ok(/opnieuw/i.test(els["#fb-info"].innerHTML || ""), "S2: subtle stale/retry signal");
@@ -148,7 +148,7 @@ async function s3_cold_pending_then_refresh() {
   ok(/SKELETON/.test(els["#fb-queue"].innerHTML), "S3: cold pending shows non-blocking waiting shell");
   await sleep(220);                                      // let the background refresh resolve
   ok(FB.items.length === 2, "S3: fresh queue atomically filled");
-  ok(FB.selId === "x", "S3: first server-ordered item opened after cold sweep");
+  ok(FB.selId == null, "S3: no case auto-opened after cold sweep (known-good contract)");
 }
 async function s4_refresh_timeout_no_blank() {
   reset({ nonrefresh: { mode: "resolve", body: { fs: true, items: [{ id: "a" }, { id: "b" }, { id: "c" }] } },

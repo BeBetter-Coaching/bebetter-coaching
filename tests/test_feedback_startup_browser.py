@@ -23,6 +23,7 @@ import pytest
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _STARTUP = os.path.join(_ROOT, "tests", "js", "feedback_startup.test.mjs")
 _ENRICH = os.path.join(_ROOT, "tests", "js", "feedback_enrichment.test.mjs")
+_ROUTE = os.path.join(_ROOT, "tests", "js", "feedback_route_entry.test.mjs")
 
 
 def _run_node(script):
@@ -42,4 +43,12 @@ def test_feedback_startup_state_machine_executable():
 def test_feedback_post_queue_enrichment_executable():
     rc, out = _run_node(_ENRICH)
     assert rc == 0, "post-queue enrichment scenarios faalden:\n" + out
+    assert "PASS:" in out, out
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node niet beschikbaar")
+def test_feedback_route_entry_contract_executable():
+    # Home==nav entry = queue-only, geen auto-open, detail-first-on-click, lazy enrichment.
+    rc, out = _run_node(_ROUTE)
+    assert rc == 0, "route-entry contract scenarios faalden:\n" + out
     assert "PASS:" in out, out
