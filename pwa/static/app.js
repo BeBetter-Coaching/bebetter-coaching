@@ -2520,6 +2520,40 @@ const FB_REFRESH_DEADLINE = (typeof window !== "undefined" && window.__FB_REFRES
 function fbLeave() {
   FB.reqGen = (FB.reqGen || 0) + 1;
   if (FB._ac) { try { FB._ac.abort(); } catch {} FB._ac = null; }
+  FB.selGen = (FB.selGen || 0) + 1;                   // selectie-generatie bumpen → late enrichment-respons wordt genegeerd
+  fbAbortEnrichment();                                // én de in-flight post-queue enrichment aborten
+}
+
+// ── Post-queue enrichment: detail/week/cockpit zijn ENRICHMENT, nooit route-autoriteit ──
+// Elk deep request is onafhankelijk begrensd (eigen AbortController + deadline),
+// selectie-generatie-gegate en afbreekbaar bij een andere case/navigatie. Een timeout/fout
+// blijft LOKAAL (retry in die zone) en blankt nooit de case-shell of queue. Overschrijfbaar
+// voor tests via window.__FB_*_MS.
+const FB_DETAIL_DEADLINE = (typeof window !== "undefined" && window.__FB_DETAIL_MS) || 15000;
+const FB_CTX_DEADLINE = (typeof window !== "undefined" && window.__FB_CTX_MS) || 15000;
+function fbAbortEnrichment() {
+  ["_detailRef", "_weekRef", "_cockpitRef"].forEach(k => {
+    const ref = FB[k]; if (ref && ref.ac) { try { ref.ac.abort(); } catch {} }
+    FB[k] = null;
+  });
+}
+// Feedback-scoped begrensde GET: eigen AbortController + deadline. `ref` = {ac}-slot zodat
+// een nieuwere selectie/navigatie deze exacte request kan aborten. Geeft {data,timedOut,aborted}.
+async function fbBoundedGet(url, deadline, ref) {
+  const ac = new AbortController(); if (ref) ref.ac = ac;
+  let deadlineHit = false;
+  const timer = setTimeout(() => { deadlineHit = true; try { ac.abort(); } catch {} }, deadline);
+  let data = null, timedOut = false, aborted = false;
+  try {
+    data = await api(url, { signal: ac.signal });
+  } catch (e) {
+    if (e && e.name === "AbortError") { timedOut = deadlineHit; aborted = !deadlineHit; }
+    data = null;
+  } finally {
+    clearTimeout(timer);
+    if (ref && ref.ac === ac) ref.ac = null;
+  }
+  return { data, timedOut, aborted };
 }
 async function fbQueueGet(refresh, gen) {
   const t0 = performance.now();
@@ -2776,37 +2810,48 @@ function fbShortTime(it) {
 }
 
 // ── Focus (detail) ───────────────────────────────────────────────────────────
-async function fbFetchDetail(id, preload) {
+async function fbFetchDetail(id, preload, ref) {
   if (FB.detailCache[id]) return FB.detailCache[id];
   fbLog(preload ? "preload_start" : "detail_fetch_start", { target: id });
   const t0 = performance.now();
-  const d = await api("/api/feedback/" + encodeURIComponent(id)).catch(() => null);
+  const r = await fbBoundedGet("/api/feedback/" + encodeURIComponent(id), FB_DETAIL_DEADLINE, ref);
   const dur = Math.round(performance.now() - t0);
+  const d = r.data;
   if (d && d.ok) {
     FB.detailCache[id] = d;
-    // Structurele productdiagnose: alleen het geclassificeerde type (run/strength/…),
-    // geen ruwe FinalSurge-veldscan meer (die tijdelijke onderzoeksdebug is verwijderd).
     fbLog(preload ? "preload_success" : "detail_fetch_success",
       { target: id, detail_fetch_duration_ms: dur, workout_type: d.workout_type || "unknown" });
-  } else {
-    fbLog(preload ? "preload_error" : "detail_fetch_error", { target: id, detail_fetch_duration_ms: dur });
+    return d;
   }
-  return d || { ok: false, err: "Kon detail niet laden." };
+  fbLog(preload ? "preload_error" : "detail_fetch_error",
+    { target: id, detail_fetch_duration_ms: dur, timed_out: r.timedOut, aborted: r.aborted });
+  return { ok: false, err: r.timedOut ? "timeout" : "network", _aborted: r.aborted };
 }
 function fbPreloadNext(id) {                          // volgende 1–2 vast ophalen (geen spinner later)
   const idx = FB.items.findIndex(i => i.id === id); if (idx < 0) return;
   FB.items.slice(idx + 1, idx + 3).forEach(it => { if (!FB.detailCache[it.id]) fbFetchDetail(it.id, true); });
 }
-async function fbOpen(id, reason) {
-  FB.selId = id; renderQueue();
+function fbOpen(id, reason) {
+  FB.selId = id;
+  const gen = FB.selGen = (FB.selGen || 0) + 1;       // nieuwe selectie-generatie (enrichment-guard)
+  fbAbortEnrichment();                                // breek detail/week/cockpit van de vorige case af
+  const it = FB.items.find(i => i.id === id) || {};
+  FB.sel = { id, gen, it, d: FB.detailCache[id] || null, week: null, cockpit: null,
+             detailErr: false, weekErr: false, cockpitErr: false };
+  renderQueue();
   const col = $("#fb-focus-col"); col.classList.add("on"); col.setAttribute("aria-hidden", "false");
   // 3-zone desktop: alle kolommen blijven zichtbaar én de wachtrij interactief
   // (snel wisselen tussen cases). Alleen op mobiel is de case een overlay → lock.
   if (!isDesktop()) fbLockQueue(true); else fbLockQueue(false);
   document.body.classList.toggle("fb-focus-open", !isDesktop());
   fbLog("focus_open", { reason: reason || "open" });
-  if (FB.detailCache[id]) renderFocus(FB.detailCache[id]);
-  else { renderFocusSkeleton(id); const d = await fbFetchDetail(id); if (FB.selId === id) renderFocus(d); }
+  // A — case-shell DIRECT uit de queue-item (of volledig als detail al warm is). De module
+  // is meteen bruikbaar; er is NOOIT een globale skeleton die op FinalSurge wacht.
+  fbRenderCase();
+  // B — detail als onafhankelijk begrensde enrichment (alleen als nog niet warm)
+  if (!FB.sel.d) fbEnrichDetail(id, gen);
+  // C — week + cockpit als TWEE onafhankelijke, begrensde enrichments (vanuit de queue-item)
+  fbEnrichContext(it.athlete_key || "", it.datum || "", id, gen);
   fbPreloadNext(id);
 }
 function fbClose() {
@@ -2815,7 +2860,9 @@ function fbClose() {
   fbLockQueue(false);                                 // queue weer interactief
   fbKbClose();                                        // composer mode uit + VV-geometrie resetten
   fbLog("focus_close");
-  FB.selId = null; renderQueue();
+  FB.selGen = (FB.selGen || 0) + 1;                   // selectie-generatie bumpen → oude enrichment negeren
+  fbAbortEnrichment();
+  FB.selId = null; FB.sel = null; renderQueue();
   if (isDesktop()) renderFocusEmpty();
 }
 function focusNextAfterAction(next) {
@@ -2978,35 +3025,144 @@ function fbReanchorBottomAfterClose() {
   settle();                                   // start ook als er (bijna) geen resize meer volgt
   setTimeout(finish, 500);                    // absoluut vangnet
 }
-function renderFocusSkeleton(id) {
-  const it = FB.items.find(i => i.id === id) || {};
-  $("#fb-focus").innerHTML = fbHeadHtml(it.naam, it.voornaam, it.datum, it.workout, it.categorie, "", it.groep_label)
-    + `<div class="fbf-scroll"><div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div></div>`
-    + fbDockHtml(id);
-  fbBindDock(id);
+// ── Case-shell: renderd DIRECT uit de queue-item (FB.sel.it) + detail als aanwezig. ────
+// Stabiele slots (#fb-weeksel/#fb-metrics/#fb-bericht/#fb-mb/#fb-weekchart/#fb-detailbody +
+// #fb-ctx-col) die elke enrichment ONAFHANKELIJK invult. Nooit één globale skeleton.
+function fbRenderCase() {
+  if (!FB.sel) return;
+  const { it, d } = FB.sel;
+  const akey = it.athlete_key || (d && d.athlete_key) || "";
+  const naam = (d && d.naam) || it.naam, voor = (d && d.voornaam) || it.voornaam;
+  $("#fb-focus").innerHTML = fbHeadHtml(naam, voor, (d && d.datum) || it.datum,
+      (d && d.workout) || it.workout, (d && d.categorie) || it.categorie, akey, it.groep_label)
+    + `<div class="fbf-scroll">
+        <div class="fbf-weeksel" id="fb-weeksel"></div>
+        <div class="fb-metrics" id="fb-metrics"></div>
+        <div class="fb-2col"><div class="fb-sub" id="fb-bericht"></div><div class="fb-sub" id="fb-mb"></div></div>
+        <div id="fb-weekchart" class="fb-weekchart-slot"></div>
+        <div id="fb-detailbody"></div>
+       </div>`
+    + fbDockHtml(FB.sel.id);
+  fbBindDock(FB.sel.id);
+  fbRenderMetricsSlot(); fbRenderBerichtSlot(); fbRenderMbSlot(); fbRenderWeekSlots(); fbRenderDetailBody();
+  fbRenderCtxCol();
+  fbBindZoneRetries();
+  if (d) fbScrollThreadBottom();
 }
+// Compat + cached-detail-pad (ook gebruikt door de render-harness): render de case met een
+// reeds-geladen detail en start de onafhankelijke context-enrichment.
 function renderFocus(d) {
   if (!d || !d.ok) {
     $("#fb-focus").innerHTML = fbHeadHtml("", "", "", "", "")
       + `<div class="fbf-scroll"><p class="muted center">${esc(d && d.err || "Kon detail niet laden.")}</p></div>`;
     const b = $("#fb-back"); if (b) b.onclick = fbClose; return;
   }
-  const it = FB.items.find(i => i.id === FB.selId) || {};
-  const akey = it.athlete_key || "";
-  $("#fb-focus").innerHTML = fbHeadHtml(d.naam, d.voornaam, d.datum, d.workout, d.categorie, akey, it.groep_label)
-    + `<div class="fbf-scroll">
-        <div class="fbf-weeksel" id="fb-weeksel"></div>
-        <div class="fb-metrics" id="fb-metrics">${fbMetricsHtml(d, null, null)}</div>
-        ${fbBerichtMbHtml(d, null)}
-        <div id="fb-weekchart" class="fb-weekchart-slot"></div>
-        ${fbCtxHtml(d)}${fbPaHtml(d)}${fbThreadHtml(d)}
-       </div>`
-    + fbDockHtml(d.id);
-  fbBindDock(d.id);
-  fbScrollThreadBottom();
-  // Rechter contextkolom leeg-skeleton tot de cockpit binnen is
-  const cc = $("#fb-ctx-col"); if (cc) cc.innerHTML = fbCtxColSkeleton();
-  if (akey) fbLoadContext(akey, d.datum, d);           // lazy: cockpit-context + ISO-weekoverzicht
+  const it = FB.items.find(i => i.id === (FB.selId || d.id)) || (FB.sel && FB.sel.it) || {};
+  if (!FB.sel || FB.sel.id !== (it.id || d.id)) {
+    FB.sel = { id: it.id || d.id, gen: (FB.selGen = (FB.selGen || 0) + 1), it, d,
+               week: null, cockpit: null, detailErr: false, weekErr: false, cockpitErr: false };
+  } else { FB.sel.d = d; }
+  fbRenderCase();
+  const akey = it.athlete_key || d.athlete_key || "";
+  if (akey) fbEnrichContext(akey, d.datum, FB.sel.id, FB.selGen);
+}
+// ── Slot-renderers (lezen FB.sel; elke enrichment vult onafhankelijk in) ──────────────
+function fbRenderMetricsSlot() {
+  const el = $("#fb-metrics"); if (el) el.innerHTML = fbMetricsHtml(FB.sel.d || {}, FB.sel.week, FB.sel.cockpit);
+}
+function fbRenderMbSlot() {
+  const el = $("#fb-mb"); if (el) el.innerHTML =
+    `<div class="sh">${ic("brain")} Masterbrein-samenvatting</div>${fbMasterbreinBullets(FB.sel.d || {}, FB.sel.cockpit)}`;
+}
+function fbRenderBerichtSlot() {
+  const el = $("#fb-bericht"); if (!el) return;
+  const d = FB.sel.d, it = FB.sel.it;
+  if (d) {
+    const atl = (d.gesprek || []).filter(m => !m.coach);
+    const bericht = atl.length ? esc(atl.map(m => m.tekst).join(" ")) : "";
+    el.innerHTML = bericht
+      ? `<div class="sh">Atleet bericht ${ic("message")}</div><div class="fb-bericht">${bericht}</div>`
+      : `<div class="sh">Atleet bericht</div><div class="fb-bericht muted">Geen bericht van de atleet — reageer op de uitvoering.</div>`;
+  } else if (it && it.preview) {
+    el.innerHTML = `<div class="sh">Atleet bericht ${ic("message")}</div><div class="fb-bericht">${esc(it.preview)}</div>`;
+  } else {
+    el.innerHTML = `<div class="sh">Atleet bericht</div><div class="fb-bericht muted">Bericht laadt…</div>`;
+  }
+}
+function fbRenderWeekSlots() {
+  const ws = $("#fb-weeksel"), wc = $("#fb-weekchart");
+  if (ws) ws.innerHTML = FB.sel.week ? fbWeekSelHtml(FB.sel.week) : "";
+  if (wc) wc.innerHTML = FB.sel.week ? fbWeekChartHtml(FB.sel.week)
+    : (FB.sel.weekErr ? fbZoneRetryHtml("week", "Weekoverzicht") : "");
+}
+function fbRenderDetailBody() {
+  const el = $("#fb-detailbody"); if (!el) return;
+  const d = FB.sel.d;
+  if (d) el.innerHTML = fbCtxHtml(d) + fbPaHtml(d) + fbThreadHtml(d);
+  else if (FB.sel.detailErr) el.innerHTML = fbZoneRetryHtml("detail", "Trainingsdetails");
+  else el.innerHTML = `<div class="fb-sub fb-loading">${ic("clock")} Trainingsdetails laden…</div>`;
+}
+function fbRenderCtxCol() {
+  const cc = $("#fb-ctx-col"); if (!cc) return;
+  cc.innerHTML = FB.sel.cockpit ? fbCtxColHtml(FB.sel.cockpit)
+    : (FB.sel.cockpitErr ? `<div class="fb-ctx-h">Context &amp; Masterbrein</div>${fbZoneRetryHtml("cockpit", "Context")}`
+       : fbCtxColSkeleton());
+}
+function fbZoneRetryHtml(kind, label) {
+  return `<div class="fb-sub fb-zone-err"><div class="fb-bericht muted">${esc(label)} kon niet laden.</div>`
+    + `<button class="btn ghost small" data-fb-retry="${kind}" type="button">${ic("refresh")} Opnieuw</button></div>`;
+}
+function fbBindZoneRetries() {
+  const btns = $$("[data-fb-retry]", $("#fb-focus")).concat($$("[data-fb-retry]", $("#fb-ctx-col")));
+  btns.forEach(b => {
+    b.onclick = () => {
+      if (!FB.sel) return;
+      const kind = b.getAttribute("data-fb-retry"), gen = FB.selGen, it = FB.sel.it;
+      if (kind === "detail") fbEnrichDetail(FB.sel.id, gen);
+      else if (kind === "week") fbEnrichWeek(it.athlete_key || "", it.datum || "", FB.sel.id, gen);
+      else if (kind === "cockpit") fbEnrichCockpit(it.athlete_key || "", FB.sel.id, gen);
+    };
+  });
+}
+// ── Enrichers: elk onafhankelijk begrensd + selectie-generatie-gegate ─────────────────
+async function fbEnrichDetail(id, gen) {
+  if (FB.sel) FB.sel.detailErr = false;
+  fbRenderDetailBody();
+  const d = await fbFetchDetail(id, false, (FB._detailRef = {}));
+  if (gen !== FB.selGen) return;                       // superseded (andere case/navigatie)
+  if (d && d.ok) { FB.sel.d = d; fbFillDetail(); }
+  else if (!(d && d._aborted)) {                       // echte timeout/fout → lokale retry, shell blijft
+    FB.sel.detailErr = true; fbRenderDetailBody(); fbBindZoneRetries();
+  }
+}
+function fbFillDetail() {
+  fbRenderMetricsSlot(); fbRenderBerichtSlot(); fbRenderMbSlot(); fbRenderDetailBody();
+  fbBindZoneRetries(); fbScrollThreadBottom();
+}
+function fbEnrichContext(akey, datum, id, gen) {
+  if (!akey) return;
+  const c = FB.ctxCache[akey] || {};
+  if (c.week) { FB.sel.week = c.week; fbRenderWeekSlots(); fbRenderMetricsSlot(); }
+  else fbEnrichWeek(akey, datum, id, gen);
+  if (c.cockpit) { FB.sel.cockpit = c.cockpit; fbRenderCtxCol(); fbRenderMetricsSlot(); fbRenderMbSlot(); }
+  else fbEnrichCockpit(akey, id, gen);
+}
+async function fbEnrichWeek(akey, datum, id, gen) {
+  if (FB.sel) FB.sel.weekErr = false;
+  const r = await fbBoundedGet("/api/feedback/week?key=" + encodeURIComponent(akey) + "&date=" + encodeURIComponent(datum || ""),
+    FB_CTX_DEADLINE, (FB._weekRef = {}));
+  if (gen !== FB.selGen) return;
+  const week = (r.data && r.data.ok) ? r.data : null;
+  if (week) { (FB.ctxCache[akey] = FB.ctxCache[akey] || {}).week = week; FB.sel.week = week; fbRenderWeekSlots(); fbRenderMetricsSlot(); }
+  else if (!r.aborted) { FB.sel.weekErr = true; fbRenderWeekSlots(); fbBindZoneRetries(); }
+}
+async function fbEnrichCockpit(akey, id, gen) {
+  if (FB.sel) FB.sel.cockpitErr = false;
+  const r = await fbBoundedGet("/api/cockpit?key=" + encodeURIComponent(akey), FB_CTX_DEADLINE, (FB._cockpitRef = {}));
+  if (gen !== FB.selGen) return;
+  const cockpit = (r.data && r.data.ok) ? r.data : null;
+  if (cockpit) { (FB.ctxCache[akey] = FB.ctxCache[akey] || {}).cockpit = cockpit; FB.sel.cockpit = cockpit; fbRenderCtxCol(); fbRenderMetricsSlot(); fbRenderMbSlot(); }
+  else if (!r.aborted) { FB.sel.cockpitErr = true; fbRenderCtxCol(); fbBindZoneRetries(); }
 }
 
 // ── Case-hero: metrics · atleetbericht + Masterbrein · weekoverzicht ─────────
@@ -3061,24 +3217,18 @@ function fbMasterbreinBullets(d, cockpit) {
 }
 
 // ── Lazy context: cockpit (canonieke waarheid) + ISO-weekoverzicht ───────────
-async function fbLoadContext(akey, datum, d) {
-  const cached = FB.ctxCache[akey];
-  if (cached) { if (FB.selId === d.id) fbApplyContext(cached.cockpit, cached.week, d); return; }
-  const [ck, wk] = await Promise.all([
-    api("/api/cockpit?key=" + encodeURIComponent(akey)).catch(() => null),
-    api("/api/feedback/week?key=" + encodeURIComponent(akey) + "&date=" + encodeURIComponent(datum || "")).catch(() => null),
-  ]);
-  const cockpit = (ck && ck.ok) ? ck : null, week = (wk && wk.ok) ? wk : null;
-  FB.ctxCache[akey] = { cockpit, week };
-  if (FB.selId !== d.id) return;                       // leak guard: andere case gekozen
-  fbApplyContext(cockpit, week, d);
-}
+// Compat-shim (o.a. de render-harness): injecteer reeds-geladen context in de slots.
+// De echte runtime gebruikt de onafhankelijk-begrensde `fbEnrich*`-enrichers hierboven.
 function fbApplyContext(cockpit, week, d) {
-  const mEl = $("#fb-metrics"); if (mEl) mEl.innerHTML = fbMetricsHtml(d, week, cockpit);
-  const mb = $("#fb-mb"); if (mb) mb.innerHTML = `<div class="sh">${ic("brain")} Masterbrein-samenvatting</div>${fbMasterbreinBullets(d, cockpit)}`;
-  const wc = $("#fb-weekchart"); if (wc) wc.innerHTML = week ? fbWeekChartHtml(week) : "";
-  const ws = $("#fb-weeksel"); if (ws && week) ws.innerHTML = fbWeekSelHtml(week);
-  const cc = $("#fb-ctx-col"); if (cc) cc.innerHTML = cockpit ? fbCtxColHtml(cockpit) : fbCtxColEmpty();
+  if (!FB.sel || (d && FB.sel.id !== d.id)) {
+    const it = FB.items.find(i => i.id === (d && d.id)) || {};
+    FB.sel = { id: d && d.id, gen: FB.selGen || 0, it, d: d || null,
+               week: null, cockpit: null, detailErr: false, weekErr: false, cockpitErr: false };
+  }
+  if (d) FB.sel.d = d;
+  FB.sel.week = week || null; FB.sel.cockpit = cockpit || null;
+  fbRenderMetricsSlot(); fbRenderMbSlot(); fbRenderBerichtSlot(); fbRenderWeekSlots();
+  fbRenderDetailBody(); fbRenderCtxCol();
 }
 function fbWeekSelHtml(week) {
   return `<span class="fbw-sel">${ic("file")}<b>Week ${week.week}</b><span class="fbw-r">· ${esc(week.range_label || "")}</span></span>`;

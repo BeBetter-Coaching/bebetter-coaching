@@ -31,7 +31,7 @@ function dsFresh(s,t){return `<span class="ds-fresh ${dsTone(s)}"><i class="ds-d
 function nlNum(x){if(x==null||x==="")return "";const n=Number(x);return isFinite(n)?(Math.round(n*100)/100).toString().replace(".",","):String(x);}
 // shims for flow/deps we don't render
 const renderGroupsBar=()=>{}, fbLog=()=>{}, fbBindDock=()=>{}, fbScrollThreadBottom=()=>{}, fbLockQueue=()=>{},
-  isDesktop=()=>innerWidth>=1100, melding=()=>{}, haptic=()=>{}, openAthleteModule=()=>{}, api=()=>Promise.resolve(null),
+  isDesktop=()=>innerWidth>=1100, melding=()=>{}, haptic=()=>{}, openAthleteModule=()=>{}, api=()=>new Promise(()=>{}),
   renderFocusSkeleton=()=>{}, fbPreloadNext=()=>{}, fbKbOpen=()=>{}, fbKbClose=()=>{}, fbGrow=()=>{}, fbBindPrimary=()=>{}, fbLoadContext=()=>{},
   fbDraftGet=id=>SAMPLE.draft||"", fbDraftSave=()=>{}, homeFbBijwerken=()=>{}, fbUpdateInfo=()=>{}, fbToast=()=>{}, fbSummaryUpdate=()=>{};
 function fbDateLabel(d){const t=new Date().toISOString().slice(0,10);if(d===t)return "Vandaag";const m=String(d).match(/(\d{4})-(\d{2})-(\d{2})/);const mn=["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];return m?`${+m[3]} ${mn[+m[2]-1]}`:d;}
@@ -44,9 +44,11 @@ function sliceConst(src,name){const i=src.indexOf(name);const j=src.indexOf(";",
 async function loadFns(){
   const t=await (await fetch("/pwa/static/app.js")).text();
   let code="";
-  ["const FB_CAT","const _FB_TABS"].forEach(c=>code+=sliceConst(t,c)+"\n");
+  ["const FB_CAT","const _FB_TABS","const FB_DETAIL_DEADLINE","const FB_CTX_DEADLINE"].forEach(c=>code+=sliceConst(t,c)+"\n");
   ["function fbIsoWeek(","function fbIsAandacht(","function fbFilterItems(","function renderTabs(","function renderQueue(","function fbRowHtml(","function fbShortTime(",
-   "function renderFocus(","function fbMetricsHtml(","function fbMin2hms(","function fbBerichtMbHtml(","function fbMasterbreinBullets(",
+   "function renderFocus(","function fbRenderCase(","function fbRenderMetricsSlot(","function fbRenderBerichtSlot(","function fbRenderMbSlot(","function fbRenderWeekSlots(","function fbRenderDetailBody(","function fbRenderCtxCol(","function fbZoneRetryHtml(","function fbBindZoneRetries(",
+   "async function fbEnrichDetail(","function fbFillDetail(","function fbEnrichContext(","async function fbEnrichWeek(","async function fbEnrichCockpit(","async function fbFetchDetail(","async function fbBoundedGet(","function fbAbortEnrichment(",
+   "function fbMetricsHtml(","function fbMin2hms(","function fbBerichtMbHtml(","function fbMasterbreinBullets(",
    "function fbApplyContext(","function fbWeekSelHtml(","function fbWeekChartHtml(","function fbCtxColSkeleton(","function fbCtxColEmpty(","function fbCtxColHtml(","function fbRing(",
    "function fbHeadHtml(","function fbDockHtml(","function fbPaHtml(","function fbThreadHtml(","function fbCtxHtml("].forEach(f=>code+=sliceFn(t,f)+"\n");
   code+="\nwindow.__fb={renderQueue,renderFocus,fbApplyContext};";
@@ -54,7 +56,8 @@ async function loadFns(){
 }
 
 // ── FB state + realistische data (vorm = queue/detail/cockpit/week payloads) ──
-const FB={items:[],filter:"wachten",selId:null,detailCache:{},ctxCache:{},summaryLog:[],groups:[],group:"alle"};
+window.__FB_DETAIL_MS=999999;window.__FB_CTX_MS=999999;   // enrichers hangen buiten het capture-venster
+const FB={items:[],filter:"wachten",selId:null,selGen:0,sel:null,detailCache:{},ctxCache:{},summaryLog:[],groups:[],group:"alle",_detailRef:null,_weekRef:null,_cockpitRef:null};
 const SAMPLE={today:"2026-08-30",draft:"Goed gedaan deze week Masja! Mooie duurprikkel. Let op je linker kuit — houd het de komende dagen in de gaten en meld het als het verergert. We bouwen rustig verder."};
 const QUEUE=[
  {id:"w-masja",athlete_key:"masja",naam:"Masja Bolk",voornaam:"Masja",datum:"2026-08-30",athlete_ts:"2026-08-30T08:23:00",workout:"Lange duurloop 16 km",categorie:"reactie",preview:"laatste 3 km zwaar in kuit",groep:"comfort",groep_label:"Comfort"},
