@@ -16,16 +16,24 @@ sys.path.insert(0, _ROOT)
 sys.path.insert(0, os.path.join(_ROOT, "pwa"))
 
 
+def _reset_process_caches():
+    """Reset procesglobale hot-read caches zodat ze niet tussen tests lekken."""
+    try:
+        import feedback_core as FC
+        FC._SKIP_MEM = None
+    except Exception:
+        pass
+    # Canonical Athlete Read Layer v1 (pwa/athlete_read.py): in-proces AthleteState hot-cache.
+    # Zelfde reden als _SKIP_MEM hierboven — zonder reset lekt een gecachete state tussen tests.
+    try:
+        import athlete_read as AR
+        AR.reset()
+    except Exception:
+        pass
+
+
 @pytest.fixture(autouse=True)
 def _reset_feedback_skip_mem():
-    try:
-        import feedback_core as FC
-        FC._SKIP_MEM = None
-    except Exception:
-        pass
+    _reset_process_caches()
     yield
-    try:
-        import feedback_core as FC
-        FC._SKIP_MEM = None
-    except Exception:
-        pass
+    _reset_process_caches()

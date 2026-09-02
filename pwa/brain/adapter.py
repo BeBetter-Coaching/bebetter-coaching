@@ -455,11 +455,20 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
 
 def feedback_context_block(user_key: str, workout_key: str = "", today: date | None = None,
                            gather_fn=None, athlete_raised_race: bool = False) -> dict:
-    """Impure ingang: build_state (1 gather, snapshot, last-known-good) → Feedback-
-    sessiecontext. Nooit fataal: bij een fout geeft het een lege, veilige context.
-    `athlete_raised_race` = de atleet noemt de wedstrijd in DEZE feedback/thread zelf (A)."""
+    """Impure ingang: gedeelde AthleteState-read → Feedback-sessiecontext. Nooit fataal:
+    bij een fout geeft het een lege, veilige context.
+    `athlete_raised_race` = de atleet noemt de wedstrijd in DEZE feedback/thread zelf (A).
+
+    Canonical Athlete Read Layer v1 (Gate 4): de state komt uit de gedeelde
+    `athlete_read.get_state()` i.p.v. een tweede onafhankelijke `build_state()` — is de cockpit
+    van dezelfde atleet net gelezen, dan is dit een gratis hot-read (geen tweede deep build).
+    Queue/SWR/LKG-contract van Feedback blijft ongemoeid (ander codepad). Lazy import: vermijdt
+    de import-cycle brain.adapter ↔ athlete_read."""
     try:
-        state, _raw = build_state(user_key, today, gather_fn=gather_fn)
+        import athlete_read as _read                      # lazy: cycle-veilig
+        state = _read.get_state(user_key, today, gather_fn=gather_fn).state
+        if state is None:
+            raise RuntimeError("AthleteState onbeschikbaar")
     except Exception as e:
         return {"prompt_block": "", "source_gaps": [], "has_load": False,
                 "complaint_areas": [], "error": str(e)[:120]}

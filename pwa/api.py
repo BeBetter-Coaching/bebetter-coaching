@@ -41,6 +41,7 @@ import teampuls_core as teampuls
 import admin_core
 import home_core
 import coach_read
+import athlete_read                       # Canonical Athlete Read Layer v1 — invalidatie na writes
 import webauthn_core
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -577,6 +578,8 @@ def teampuls_gezien(body: PulsGezien):
         teampuls.markeer_gezien(body.user_key, body.ernst, undo=body.undo)
     except Exception as e:
         return JSONResponse({"ok": False, "err": str(e)}, status_code=500)
+    if body.user_key:
+        athlete_read.invalidate(body.user_key)   # belasting-stand (gezien) gewijzigd → gather.belasting
     return {"ok": True}
 
 
@@ -718,11 +721,13 @@ def schema_publish_preview(body: SchemaGen):
 @app.post("/api/schema/publish")          # Slice 3: WRITE naar FinalSurge (na expliciete bevestiging)
 def schema_publish(body: SchemaGen):
     try:
-        return {"ok": True, **schema_core.publish(body.key, body.config, body.rows, body.write_id)}
+        res = schema_core.publish(body.key, body.config, body.rows, body.write_id)
     except ValueError as e:
         return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"Publiceren mislukt: {e}"}, status_code=500)
+    athlete_read.invalidate(body.key)      # FS-kalender (fs.labels) gewijzigd → verse state
+    return {"ok": True, **res}
 
 
 @app.post("/api/schema/push")            # WRITE (legacy): zet de trainingen op de FS-kalender
@@ -733,6 +738,7 @@ def schema_push(body: SchemaGen):
         return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"Pushen mislukt: {e}"}, status_code=500)
+    athlete_read.invalidate(body.key)      # FS-kalender (fs.labels) gewijzigd → verse state
     return {"ok": True, **res}
 
 
@@ -795,19 +801,32 @@ def workspace(key: str = ""):
 
 @app.get("/api/cockpit")
 def cockpit(key: str = ""):
+    # Meetbaarheid (Canonical Athlete Read Layer v1, Gate 6): Server-Timing + log tonen of een
+    # herhaalde deep-read echt uit process-memory komt (from=mem) i.p.v. een verse build
+    # (from=fresh) — zelfde meetpatroon als /api/feedback/queue.
+    t0 = time.perf_counter()
     try:
         import dossier_cockpit
-        return dossier_cockpit.cockpit(key)
+        data = dossier_cockpit.cockpit(key)
     except Exception as e:
         # Bronfout ≠ 'niets bekend' (§9): laat de UI de source-health-staat tonen.
         return JSONResponse({"ok": False, "err": f"Cockpit mislukt: {e}"}, status_code=500)
+    dur = int((time.perf_counter() - t0) * 1000)
+    fr = (data or {}).get("read_freshness") or {}
+    _log.info("cockpit key=%s ms=%s from=%s stale=%s degraded=%s gen=%s",
+              key, dur, fr.get("from"), fr.get("stale"), fr.get("degraded"),
+              (data or {}).get("state_generation_id"))
+    return JSONResponse(data, headers={"Server-Timing": f"cockpit;dur={dur};desc={fr.get('from', '?')}"})
 
 
 @app.get("/api/cockpit/explain")          # 'Waarom?'-laag (§12-E), on-demand
-def cockpit_explain(key: str = "", id: str = ""):
+def cockpit_explain(key: str = "", id: str = "", gen: str = ""):
+    # `gen` = de state_generation_id die de client bij de getoonde claim ontving (Gate 3).
+    # Verschilt die van de actuele generatie → generation_changed (geen gefabriceerde uitleg).
     try:
         import dossier_cockpit
-        return {"ok": True, "explain": dossier_cockpit.explain_claim(key, id)}
+        res = dossier_cockpit.explain_claim(key, id, gen=gen)
+        return {"ok": True, **res}
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"Waarom mislukt: {e}"}, status_code=500)
 
@@ -829,18 +848,24 @@ def dossier_detail(key: str):
 @app.post("/api/dossier/{key}/note")
 def dossier_add_note(key: str, body: Notitie):
     ok, err = dossier.add_note(key, body.coach, body.tekst)
+    if ok:
+        athlete_read.invalidate(key)        # coach_notes = gather-input → verse state bij volgende read
     return {"ok": ok, "err": err}
 
 
 @app.delete("/api/dossier/{key}/note/{index}")
 def dossier_del_note(key: str, index: int):
     ok, err = dossier.delete_note(key, index)
+    if ok:
+        athlete_read.invalidate(key)        # coach_notes gewijzigd
     return {"ok": ok, "err": err}
 
 
 @app.post("/api/dossier/{key}/profiel")
 def dossier_save_profiel(key: str, body: Profiel):
     ok, err = dossier.save_profiel(key, body.tekst)
+    if ok:
+        athlete_read.invalidate(key)        # profiel = gather-input
     return {"ok": ok, "err": err}
 
 
@@ -890,6 +915,8 @@ def intake_koppel(body: IntakeKoppel):
     """Koppel een losse intake ('nieuw:naam') aan een FinalSurge-account, zodat
     Schema/Masterbrein hem gaan gebruiken. Non-destructief (zie intake_core)."""
     ok, err, naam = intake.link_intake(body.nieuw_key, body.user_key)
+    if ok and body.user_key:
+        athlete_read.invalidate(body.user_key)   # intake nu gekoppeld → gather.intake wijzigt
     return {"ok": ok, "err": err, "naam": naam}
 
 
