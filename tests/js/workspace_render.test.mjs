@@ -1,20 +1,19 @@
 // Executable REAL Workspace renderer/runtime test (Node, real functions — NO renderer stub).
 //
-// Gate 0 safety net for Canonical Athlete Read Layer v1. Mirrors the proven pattern of
-// feedback_queue_renderer.test.mjs: it slices the REAL production wsRender/wsLoadDeep/wsShow
-// (+ their pure helpers, the Design-System primitives and the generation guard) VERBATIM from
-// pwa/static/app.js and drives them against a minimal DOM/api shim. Only DOM/api/icon
-// primitives are mocked — the render logic itself is the real thing.
+// Slices the REAL production wsRender/wsLoadDeep/wsShow (+ pure helpers, Design-System
+// primitives, generation guard) VERBATIM from pwa/static/app.js and drives them against a
+// minimal DOM/api shim. Only DOM/api/icon primitives are mocked — the render logic is real.
 //
 //   node tests/js/workspace_render.test.mjs
 //
-// Proves, on the CURRENT production code (e8f1bde):
-//   A. the real Workspace renderer executes without throwing and writes the scene + rows;
-//   B. the shell renders WITHOUT any /api/cockpit (deep AthleteState) fetch — shell is
-//      independent of the deep read;
+// Proves, on the current code:
+//   A. the real Workspace renderer executes without throwing and writes the Now/Next grid;
+//   B. the shell renders WITHOUT any /api/cockpit (deep) fetch — shell independent of deep;
 //   C. the generation guard adopts vm.generation and stamps the banner;
-//   D. route/open lifecycle (wsShow) renders the shell first, THEN kicks off the lazy deep load;
-//   E. a failing/slow deep load never breaks the already-rendered shell.
+//   D. route/open lifecycle (wsShow) renders the shell first, THEN lazy-loads the deep context;
+//   E. a failing deep load never breaks the already-rendered shell;
+//   F. layout/dedup contract (UX/IA v1): one load truth, one open-feedback summary, no flame,
+//      no internal bottom module nav, all primary panels present exactly once, "laatste 7 dagen".
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -39,43 +38,20 @@ function sliceFrom(header) {
 const sliceLine = (p) => { const i = SRC.indexOf(p); if (i < 0) throw new Error("not found: " + p); return SRC.slice(i, SRC.indexOf("\n", i)); };
 
 const REAL = [
-  // Design System v1 primitives (shared)
-  sliceFrom("const _DS_TONE = {"),
-  sliceLine("const _DS_RANK = "),
-  sliceFrom("function dsTone("),
-  sliceFrom("function dsWorstTone("),
-  sliceFrom("function dsChip("),
-  sliceFrom("function dsFresh("),
-  sliceFrom("function dsKv("),
-  sliceFrom("function dsStream("),
-  // Generation/freshness guard (real)
-  sliceLine("const _bbGen = "),
-  sliceFrom("function _genDominates("),
-  sliceFrom("function noteGeneration("),
-  sliceFrom("function bbGenSync("),
-  sliceFrom("function genBanner("),
-  // Dossier kind-icon map (referenced by wsLoadDeep)
+  sliceFrom("const _DS_TONE = {"), sliceLine("const _DS_RANK = "),
+  sliceFrom("function dsTone("), sliceFrom("function dsWorstTone("), sliceFrom("function dsChip("),
+  sliceFrom("function dsFresh("), sliceFrom("function dsKv("), sliceFrom("function dsStream("),
+  sliceLine("const _bbGen = "), sliceFrom("function _genDominates("), sliceFrom("function noteGeneration("),
+  sliceFrom("function bbGenSync("), sliceFrom("function genBanner("),
   sliceFrom("const _DC_KIND_IC = {"),
-  // Workspace helpers + renderer (real)
   sliceLine("let wsSel = "),
-  sliceLine("let _wsChartN = "),
-  sliceFrom("function nlNum("),
-  sliceFrom("function wsChart("),
-  sliceFrom("function wsOrbits("),
-  sliceFrom("function wsWeekStrip("),
-  sliceFrom("function wsLoadInstrument("),
-  sliceFrom("function wsCore("),
-  sliceFrom("function wsLine("),
-  sliceFrom("function wsAnchor("),
-  sliceFrom("function wsSkel("),
-  sliceFrom("function wsRender("),
-  sliceFrom("async function wsLoadDeep("),
-  sliceFrom("function wsSwitchVul("),
-  sliceFrom("async function laadWorkspace("),
-  sliceFrom("async function wsShow("),
+  sliceFrom("function nlNum("), sliceFrom("function wsWeekStrip("), sliceFrom("function wsLoadInstrument("),
+  sliceFrom("function wsLine("), sliceFrom("function wsSkel("),
+  sliceFrom("function wsRender("), sliceFrom("async function wsLoadDeep("),
+  sliceFrom("function wsSwitchVul("), sliceFrom("async function laadWorkspace("), sliceFrom("async function wsShow("),
 ].join("\n\n");
 
-// ── DOM/api shim (only mocked primitives) ────────────────────────────────────
+// ── DOM/api shim ─────────────────────────────────────────────────────────────
 let els, apiCalls, apiRouter, scrollCalls;
 function mkEl() {
   return {
@@ -91,9 +67,7 @@ const $ = (sel) => (els[sel] ||= mkEl());
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const ic = (n) => `<i:${n}>`;
 const initialen = (naam) => String(naam || "").slice(0, 2).toUpperCase();
-const athleteNav = () => `<nav class="anav"></nav>`;
 const openAthleteModule = () => {};
-const deepAtleet = () => {};
 const wsMarkeerGezien = () => {};
 const melding = () => {};
 const toonView = () => {};
@@ -107,18 +81,17 @@ const locationShim = { hash: "" };
 const historyShim = { pushState() {} };
 async function api(url) { apiCalls.push(url); return apiRouter ? apiRouter(url) : null; }
 
-const shimNames = ["$", "esc", "ic", "initialen", "athleteNav", "openAthleteModule", "deepAtleet",
-  "wsMarkeerGezien", "melding", "toonView", "pushRoute", "bindRefresh", "geladen", "huidigeView",
+const shimNames = ["$", "esc", "ic", "initialen", "openAthleteModule", "wsMarkeerGezien", "melding",
+  "toonView", "pushRoute", "bindRefresh", "geladen", "huidigeView",
   "document", "window", "location", "history", "api", "jpost"];
 const build = () => new Function(...shimNames,
   REAL + "\nreturn { wsRender, wsLoadDeep, wsShow, laadWorkspace, noteGeneration, genBanner, _peekGen: () => _bbGen };"
-)($, esc, ic, initialen, athleteNav, openAthleteModule, deepAtleet, wsMarkeerGezien, melding,
+)($, esc, ic, initialen, openAthleteModule, wsMarkeerGezien, melding,
   toonView, pushRoute, bindRefresh, geladen, huidigeView, documentShim, windowShim, locationShim,
   historyShim, api, async () => ({ ok: true }));
 
 const reset = () => { els = {}; apiCalls = []; apiRouter = null; scrollCalls = 0; };
 
-// A full fast-read Workspace shell payload (shape from coach_read.athlete()).
 const wsPayload = (over = {}) => ({
   ok: true, key: "u1", naam: "Lisa Jansen", voornaam: "Lisa",
   generation: { generation_id: "gen-A", generation_at: "2026-09-01T10:00:00", generated_at: "2026-09-01T10:00:05",
@@ -139,21 +112,20 @@ const failures = [];
 const ok = (c, n, extra) => { if (!c) failures.push(n + (extra ? "  [" + extra + "]" : "")); };
 const run = (fn) => { try { fn(); } catch (e) { failures.push(fn.name + " threw: " + e.constructor.name + ": " + e.message); } };
 const runAsync = async (fn) => { try { await fn(); } catch (e) { failures.push(fn.name + " threw: " + e.constructor.name + ": " + e.message); } };
+const count = (h, re) => (h.match(re) || []).length;
 
-// ── A. Real renderer executes without throw, writes the scene ────────────────
 function A_render_no_throw() {
   reset();
   const app = build();
   const wrap = mkEl();
   app.wsRender(wrap, wsPayload());
-  ok(/ws-scene/.test(wrap.innerHTML), "A: ws-scene written");
-  ok(/Lisa Jansen/.test(wrap.innerHTML), "A: athlete identity rendered");
-  ok(/ws-core/.test(wrap.innerHTML), "A: Athlete Core (focal) rendered");
-  ok(/\+42/.test(wrap.innerHTML), "A: focal belasting pct rendered");
-  ok(/ws-dock/.test(wrap.innerHTML), "A: command dock rendered");
+  const h = wrap.innerHTML;
+  ok(/ws-grid/.test(h), "A: ws-grid written");
+  ok(/ws-attn-panel/.test(h) && /ws-load-panel/.test(h), "A: attention + load panels rendered");
+  ok(/\+42%/.test(h), "A: load pct rendered");
+  ok(/ws-next-btn/.test(h), "A: next-action button rendered");
 }
 
-// ── B. Shell renders WITHOUT any /api/cockpit deep fetch ─────────────────────
 function B_shell_independent_of_deep() {
   reset();
   const app = build();
@@ -163,18 +135,15 @@ function B_shell_independent_of_deep() {
   ok(/ws-deep-slot/.test(wrap.innerHTML), "B: deep slots present as lazy placeholders");
 }
 
-// ── C. Generation guard adopts vm.generation + stamps banner ─────────────────
 function C_generation_guard() {
   reset();
   const app = build();
   const wrap = mkEl();
   app.wsRender(wrap, wsPayload());
   ok(app._peekGen().id === "gen-A", "C: noteGeneration adopted generation_id", app._peekGen().id);
-  ok(/gen-banner/.test(wrap.innerHTML), "C: generation banner stamped");
-  ok(/data-gen="gen-A"/.test(wrap.innerHTML), "C: banner carries the generation id");
+  ok(/gen-banner/.test(wrap.innerHTML) && /data-gen="gen-A"/.test(wrap.innerHTML), "C: generation banner stamped");
 }
 
-// ── D. route/open lifecycle: shell first, then lazy deep load ────────────────
 async function D_lifecycle_shell_then_deep() {
   reset();
   const app = build();
@@ -186,42 +155,61 @@ async function D_lifecycle_shell_then_deep() {
     if (url.startsWith("/api/cockpit")) return { ok: true, planning: { rows: [{ label: "Hoofddoel", value: "10 km" }] }, attention: [], load_observation: null };
     return null;
   };
-  // First call: roster not ready → schedules laadWorkspace, which resolves and re-enters wsShow.
   await app.wsShow("u1");
   await new Promise(r => setTimeout(r, 0));
   await new Promise(r => setTimeout(r, 0));
   const wrap = $("#ws-detail");
-  ok(/ws-scene/.test(wrap.innerHTML), "D: shell rendered after lifecycle", wrap.innerHTML.slice(0, 40));
+  ok(/ws-grid/.test(wrap.innerHTML), "D: shell grid rendered after lifecycle", wrap.innerHTML.slice(0, 40));
   const wIdx = order.findIndex(u => u.startsWith("/api/workspace/"));
   const cIdx = order.findIndex(u => u.startsWith("/api/cockpit"));
   ok(wIdx >= 0 && cIdx >= 0 && wIdx < cIdx, "D: workspace shell fetched before cockpit deep", order.join(" | "));
 }
 
-// ── E. Failing deep load never breaks the rendered shell ─────────────────────
 async function E_deep_failure_safe() {
   reset();
   const app = build();
   const wrap = mkEl();
   app.wsRender(wrap, wsPayload());
-  const shellHtml = wrap.innerHTML;
-  // set the module wsSel to our ident so the leak-guard passes: drive via wsShow path instead.
   apiRouter = () => { throw new Error("cockpit down"); };
   let threw = null;
   try { await app.wsLoadDeep(wrap, "u1"); } catch (e) { threw = e; }
   ok(threw === null, "E: wsLoadDeep swallows a failing deep read (no throw)", threw && threw.message);
-  ok(/ws-scene/.test(wrap.innerHTML) || wrap.innerHTML === shellHtml || wrap.innerHTML.length > 0,
-     "E: shell markup still present after deep failure");
+  ok(wrap.innerHTML.length > 0, "E: shell markup still present after deep failure");
 }
 
-console.log("== REAL Workspace renderer/runtime contract (executable, no renderer stub) ==");
+// ── F. Layout / dedup contract (UX/IA v1) ────────────────────────────────────
+function F_layout_dedup_contract() {
+  reset();
+  const app = build();
+  const wrap = mkEl();
+  app.wsRender(wrap, wsPayload());
+  const h = wrap.innerHTML;
+  // one authoritative load section
+  ok(count(h, /ws-load-panel/g) === 1, "F: exactly one load panel", String(count(h, /ws-load-panel/g)));
+  ok(count(h, /laatste 7 dagen/g) === 1, "F: load labelled 'laatste 7 dagen' once", String(count(h, /laatste 7 dagen/g)));
+  ok(!/deze week/i.test(h), "F: no misleading 'deze week' label");
+  // one open-feedback summary (single 'open reactie' representation)
+  ok(count(h, /open reactie/g) === 1, "F: exactly one open-feedback summary", String(count(h, /open reactie/g)));
+  // no dominant flame / decorative scene / internal bottom module nav
+  ok(!/ws-core|ws-scene|ws-web\b|ws-orbits|ws-geo|ws-dock/.test(h), "F: no flame/orbit/scene/dock decoration");
+  ok(!/>Teampuls<|>Profiel</.test(h), "F: no redundant internal module nav (Teampuls/Profiel)");
+  // all primary panels present exactly once
+  ["ws-attn-panel", "ws-load-panel", "ws-plan-panel", "ws-next-panel", "ws-fb-panel", "ws-src-panel"]
+    .forEach(p => ok(count(h, new RegExp(p, "g")) === 1, `F: ${p} present once`, String(count(h, new RegExp(p, "g")))));
+  // grid areas used (robust layout, not absolute)
+  ok(/grid-area:attn/.test(h) && /grid-area:load/.test(h), "F: cards placed via grid areas");
+}
+
+console.log("== REAL Workspace renderer/runtime + layout contract (executable, no renderer stub) ==");
 [A_render_no_throw, B_shell_independent_of_deep, C_generation_guard].forEach(run);
 await runAsync(D_lifecycle_shell_then_deep);
 await runAsync(E_deep_failure_safe);
+run(F_layout_dedup_contract);
 
 console.log("");
 if (failures.length) {
   console.error("FAIL (" + failures.length + "):\n - " + failures.join("\n - "));
   process.exit(1);
 } else {
-  console.log("PASS: real wsRender/wsLoadDeep/wsShow execute; shell independent of deep; generation guard + lifecycle correct (5 scenarios).");
+  console.log("PASS: real wsRender/wsLoadDeep/wsShow execute; shell independent of deep; generation guard + lifecycle + layout/dedup contract correct (6 scenarios).");
 }

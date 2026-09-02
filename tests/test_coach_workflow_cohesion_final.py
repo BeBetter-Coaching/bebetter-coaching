@@ -56,7 +56,9 @@ class TestOneContract:
     def test_4_active_athlete_key_leest_route(self):
         body = _fn("activeAthleteKey")
         assert "location.hash" in body
-        assert "_ATHLETE_VIEWS.has(view)" in body
+        # UX/IA v1 (Target B): workspace-route telt óók als actieve athlete-context, zodat
+        # Workspace ↔ Dossier dezelfde atleet meenemen via de globale sidebar.
+        assert "_ATHLETE_CTX_VIEWS.has(view)" in body
 
     def test_5_openAthleteModule_view_gekeyd_route_leidend(self):
         body = _fn("openAthleteModule")

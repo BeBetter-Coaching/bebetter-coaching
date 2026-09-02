@@ -1007,6 +1007,12 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
   .fb-dock textarea{max-height:200px}
   body.kb-open .fb-dock textarea{max-height:15vh}   /* desktop-focus ongewijzigd t.o.v. PASS-staat */
   body.kb-open .fb-dock-sec{display:flex}   /* geen keyboard-collapse op desktop */
+  /* UX/IA v1 (Target E): het rechter contextpaneel deelt het pin-gedrag van het midden
+     (sticky binnen het gedeelde scroll-context) i.p.v. als apart, lang scroll-vlak te leven.
+     Het paneel is bewust beknopt (alleen beslissings-relevante context), dus het scrollt
+     nauwelijks — center + right lezen als één cockpit, niet als twee losse apps. */
+  .fb-cockpit .fb-ctx-col{position:sticky;top:22px;align-self:start;
+    max-height:calc(100vh - 44px);overflow:auto}
 }
 
 /* ══════════ Schema-workbench (Slice 1) ══════════

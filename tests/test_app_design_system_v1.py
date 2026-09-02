@@ -97,7 +97,9 @@ class TestStatusSemantics:
 
 # ── 3. Gedeelde primitives bestaan en worden hergebruikt ────────────────────
 class TestPrimitives:
-    PRIMS = ["wsAnchor", "wsCore", "wsLine", "dcTlItem", "dcMemPanel", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
+    # UX/IA v1: wsCore (flame) + wsAnchor (medaillon) verwijderd — Workspace is nu een
+    # ds-panel-grid; identiteit leeft in de gedeelde appbar-switcher.
+    PRIMS = ["wsLine", "dcTlItem", "dcMemPanel", "dsAttnCard", "dsMetric", "dsPanel", "dsChip", "dsFresh",
              "dsKv", "dsStream", "dsAction", "dsEmpty", "dsSpark", "dsRing"]
 
     def test_8_alle_primitives_bestaan_eenmalig(self):
@@ -132,15 +134,15 @@ class TestAthleteShell:
         # de identiteit in het centrum; de NAAM staat in de kop van de scène — zoals
         # de referentie-compositie (identiteit linksboven, centrum puur grafisch).
         # Dossier: dezelfde taal, eigen compositie. Zelfde identiteitsbron.
-        ws = _fn("wsAnchor")
-        for part in ("ws-orb", "initialen("):
-            assert part in ws, f"anchor mist {part}"
-        assert "ws-name" in _fn("wsRender")                  # naam in de scène-kop
+        # UX/IA v1: Workspace-identiteit leeft in de gedeelde appbar-switcher (ws-switch),
+        # niet meer in een scène-medaillon. Dossier houdt zijn eigen kop-identiteit.
+        assert "ws-switch-nm" in _HTML and "id=\"ws-switch\"" in _HTML
         dc = _fn("dcHeader")                                 # Dossier-identiteit in de kop
         for part in ("dc-mono", "dc-name", "initialen("):
             assert part in dc, f"dossier-kop mist {part}"
-        # opgeruimd: geen achtergelaten shell/stage-primitives naast de nieuwe compositie
-        for dead in ("function dsShell(", "function dsStage(", "function dsFocal(", "function dsStat("):
+        # opgeruimd: de flame-kern + medaillon zijn echt weg, geen dode primitives
+        for dead in ("function dsShell(", "function dsStage(", "function dsFocal(", "function dsStat(",
+                     "function wsCore(", "function wsAnchor("):
             assert dead not in _APP, f"dode primitive {dead} nog aanwezig"
 
     def test_13_workspace_en_dossier_delen_de_athlete_taal(self):
@@ -153,9 +155,11 @@ class TestAthleteShell:
         dcb = _fn("dcRender") + _fn("dcHeader") + _fn("dcScene") + _fn("dcStack")
         for body, view in ((wsb, "workspace"), (dcb, "dossier")):
             assert "dsTone(" in body, f"{view} gebruikt de gedeelde statussemantiek niet"
-            assert f'athleteNav("{view}"' in body, f"{view} mist de gedeelde athlete-nav"
-        assert "wsAnchor(" in wsb and "wsCore(" in wsb        # canvas-anchor + Athlete Core
-        assert _APP.count("function wsAnchor(") == 1
+        # UX/IA v1: Workspace deelt nu de ds-panel-kaarttaal met Dossier (één visuele familie);
+        # athlete-continuïteit loopt via de gedeelde sidebar (activeAthleteKey), niet via een
+        # scène-nav in wsRender.
+        assert "ds-panel" in wsb, "workspace mist de gedeelde ds-panel kaarttaal"
+        assert "function wsCore(" not in _APP and "function wsAnchor(" not in _APP
 
     def test_14_alle_athlete_views_spreken_hetzelfde_signaaldialect(self):
         # Journey A/D: hetzelfde signaal krijgt op Home, Workspace en Dossier dezelfde
@@ -200,8 +204,7 @@ class TestLockedFunctionalityPreserved:
 
     def test_18_workspace_quick_actions_hergebruiken_bestaande_routes(self):
         body = _fn("wsRender")
-        for call in ("openAthleteModule('schema'", "openAthleteModule('atleten'",
-                     "openAthleteModule('dossier'"):
+        for call in ("openAthleteModule('schema'", "openAthleteModule('dossier'"):
             assert call in body, f"route {call} verdwenen"
         # geen duplicate write-logica: dempen loopt via de bestaande authority
         assert "/api/teampuls/gezien" in _fn("wsMarkeerGezien")
@@ -215,7 +218,7 @@ class TestLockedFunctionalityPreserved:
                      "t.o.v. referentie", "monitoring — nog geen coachactie"):
             assert copy in body, f"copy-contract mist: {copy}"
         scene = _fn("dcScene")
-        for copy in ("Tijdlijn", "Gerelateerde draden", "Periode", "Naar schema"):
+        for copy in ("Tijdlijn", "Periode", "Naar schema"):   # 2-zone: 'Gerelateerde draden' verwijderd
             assert copy in scene, f"cockpit-copy mist: {copy}"
 
     def test_20_cohesion_route_contract_byte_identiek(self):
@@ -302,33 +305,36 @@ class TestAthleteCanvas:
         assert ".ds-view.has-athlete .md-split" in _DS         # grid geeft de volle breedte
 
     def test_31_alle_acties_blijven_bereikbaar(self):
+        # UX/IA v1 (Target A/C): de redundante Workspace-bottom-nav (Teampuls/Profiel) is weg —
+        # die destinations leven in de globale sidebar. De essentiële athlete-acties blijven:
+        # schema openen, cockpit/dossier openen, belasting-signaal afhandelen.
         ws = _fn("wsRender")
-        for call in ("openAthleteModule('schema'", "openAthleteModule('atleten'",
-                     "openAthleteModule('dossier'", "deepAtleet('teampuls'", "wsMarkeerGezien("):
-            assert call in ws, f"actie {call} verdwenen uit de canvas-compositie"
+        for call in ("openAthleteModule('schema'", "openAthleteModule('dossier'", "wsMarkeerGezien("):
+            assert call in ws, f"actie {call} verdwenen uit de Workspace-grid"
         assert "/api/teampuls/gezien" in _fn("wsMarkeerGezien")   # bestaande authority
 
-    def test_32_focal_ladder_heeft_precies_een_eigenaar(self):
+    def test_32_workspace_one_load_truth(self):
+        # UX/IA v1 (Target C/G): geen focal-flame-ladder meer. De belasting staat precies
+        # één keer, in de load-kaart (km/%/referentie + instrument). Geen tweede bron-%.
         body = _fn("wsRender")
-        for owner in ('owner: "bel-pct"', 'owner: "bel-km"', 'owner: "attn"', 'owner: "rust"'):
-            assert owner in body, f"focal-ladder mist {owner}"
-        assert "const owns = s => focal.owner === s;" in body
-        # het dominante cijfer bestaat één keer als instrument; de aandacht-zin
-        # wordt uit DEZELFDE canonieke velden opgebouwd (geen tweede bron-%)
-        assert "belZin" in body and "bel.pct" in body
-        assert 'owns("bel-pct") ? "1" : ""' in body
+        assert body.count("ws-load-panel") == 1, "load moet precies één kaart zijn"
+        assert "focal.owner" not in body and "belZin" not in body, "oude focal-ladder nog aanwezig"
+        assert "wsLoadInstrument(bel)" in body
+        assert "grid-area:load" in body
+        # de belasting-observatie hoort bij de load-kaart → wsLoadDeep herhaalt 'm niet
+        assert 'wrap.dataset.belOwned = (bel.km_recent != null)' in body
 
-    def test_33_dossier_3zone_geheugencockpit(self):
-        # Living Memory Cockpit (North-Star 3-zone): tijdlijn (echte events) → geselecteerde
-        # herinnering (hero) → gerelateerde draden (connectoren). Geen verticale lijst-tijdlijn.
+    def test_33_dossier_2zone_geheugencockpit(self):
+        # UX/IA v1 (Target D): 2-zone geheugencockpit — tijdlijn (echte events) → geselecteerde
+        # herinnering (hero). Het gededupliceerde 'Gerelateerde draden'-paneel (zelfde events als
+        # de tijdlijn) is weg; navigeren gebeurt via de klikbare tijdlijn.
         rn = _fn("dcRender")
         assert "dcBuildEvents(" in rn                            # events uit echte velden
-        assert "dcDrawConnectors(wrap)" in rn                    # relationele connectoren
         scene = _fn("dcScene")
-        assert "dc-grid" in scene and "dcTlItem(" in scene and "dcMemPanel(sel)" in scene and "dcRelCard" in scene
-        # de drie zones + connectoren zijn ook echt visueel gestyled
-        for sel in (".dc-grid", ".dc-tl-item", ".dc-mem", ".dc-rt-card", ".dc-conn path"):
-            assert sel in _DS, f"3-zone-primitive {sel} niet gestyled"
+        assert "dc-grid-2" in scene and "dcTlItem(" in scene and "dcMemPanel(sel)" in scene
+        assert "dcRelCard" not in scene and "dc-rt-pane" not in scene, "duplicate draden-paneel nog aanwezig"
+        for sel in (".dc-grid.dc-grid-2", ".dc-tl-item", ".dc-mem"):
+            assert sel in _DS, f"2-zone-primitive {sel} niet gestyled"
 
     def test_34_home_briefing_is_geen_uitgeklapt_paneel(self):
         body = _fn("prioDetailHtml")
@@ -355,164 +361,47 @@ class TestAthleteCanvas:
             assert dead not in _CSS, f"legacy CSS {dead} nog aanwezig"
         assert "function wsToonLijst(" not in _APP               # rail-toggle is weg
 
-    def test_37_athlete_core_scene(self):
-        # Workspace-afronding zonder avatar: de menslijn (avatar/bust/portret/
-        # pre-rendered human asset) is VOLLEDIG verlaten. De centrale hero is een
-        # abstracte, ruimtelijke ATHLETE CORE (glazen sphere + gekantelde orbits +
-        # radar-basis) met het dominante signaal geïntegreerd IN de kern. Verder
-        # blijft het spatiale contract: gebroken verre geometrie, borderless
-        # fragmenten op z-vlakken, geïntegreerd commando.
-        core = _fn("wsCore")
+    # ── UX/IA v1 (Cross-Module UX/IA Fix): Workspace = Now/Next grid, geen flame ──
+    def test_37_workspace_grid_no_flame(self):
+        # De dominante flame/orbit/sphere is verwijderd; Workspace is een robuust grid.
         ws = _fn("wsRender")
-        # de kern bestaat en wordt gebruikt; de menslijn is echt weg
-        assert "function wsCore(" in _APP and "wsCore(focal)" in ws
-        assert "function wsHuman(" not in _APP and "function wsBust(" not in _APP
-        assert "ws-human" not in _APP and "wsSignal(" not in _APP
-        assert "/static/presence/" not in _APP           # geen human-asset meer
+        assert "function wsCore(" not in _APP and "function wsAnchor(" not in _APP
+        for gone in ("ws-scene", "ws-core", "ws-web", "ws-geo", "ws-lens", "ws-dock", "ws-frag"):
+            assert gone not in ws, f"verwijderde decoratie nog aanwezig: {gone}"
+        assert "ws-grid" in ws
+        # menslijn blijft weg (regressiegarantie)
+        assert "function wsHuman(" not in _APP and "ws-human" not in _APP
         assert not os.path.exists(os.path.join(_ROOT, "pwa", "static", "presence"))
-        assert "geslacht" not in ws and "presVar" not in ws        # geen gender-inferentie
-        # de kern zelf: sphere + gekantelde ring(en) + geïntegreerd signaal
-        assert 'class="ws-sphere"' in core and 'class="ws-rings"' in core
-        assert 'class="ws-read"' in core and "ws-read-v" in core   # signaal ín de kern
-        # eerlijk instrument: gauge alleen bij data (gaugeFrac), niet verzonnen
-        assert "f.gaugeFrac != null" in core
-        # verre gebroken geometrie blijft (geen perfecte KPI-ring als centrum)
-        assert 'class="ws-geo"' in ws and ws.count("ws-arc") >= 4
-        # radar-basis: de kern staat érgens
-        assert 'class="ws-plat"' in ws and ".ws-plat{" in _DS
-        # fragmenten + twee zichtbare relaties (attn↔node, load↔kern)
-        assert "ws-frag-attn" in ws and "ws-frag-load" in ws and "ws-frag-plan" in ws
-        assert "ws-frag-fb" in ws and "ws-frag-src" in ws
-        # zichtbare relaties: de kern voedt elke aanwezige context via het verbindingsweb
-        assert 'class="ws-web"' in ws and "ws-webline" in ws and "ws-webnode" in ws
-        # command als instrument-strip: één dominante trigger + lead-in (waaróm) +
-        # stille secundaire controls — geen losse pill onderaan.
-        assert 'class="ws-cmd"' in ws and "ws-cmd-lead" in ws and "ws-util" in ws
-        # De context leeft in premium spatial GLASS LENSES (extern-review-besluit:
-        # borderless losgelaten). Geen klassiek card-veld; het is glas (translucent +
-        # backdrop-blur + fade naar de scène), geen dashboard-kaart.
-        assert ".ws-field{" not in _DS
-        assert 'class="ws-lens' in ws and ws.count('class="ws-lens') >= 4
-        lens = _DS.split(".ws-lens{")[1][:600]
-        assert "backdrop-filter:blur" in lens.replace(" ", "")   # echt glas
-        assert "mask-image" in lens                              # fade naar de scène (geen harde kaart)
-        # rijkere kern (intelligentie-object, geen platte bol): intermediate
-        # shell-rim, dovende meridiaan-fragmenten, core-light — abstract (geen mens).
-        for rich in ("ws-shell-rim", "ws-sph-grad", "ws-corelight"):
-            assert rich in core, f"kern mist verrijking {rich}"
-        # honest locale: NL-decimaalkomma, presentationeel (verzint geen waarde)
-        assert "function nlNum(" in _APP and "nlNum(bel.km_recent)" in ws
-        assert ".ws-amb{" in _DS and ".ws-vig{" in _DS             # omgeving doet mee
-        # de centrerings-transform van signaal én command mag niet door 'none'
-        # sneuvelen: hij staat in de BASIS-regel, niet alleen in de entree-keyframe.
-        assert "ws-readin" in _DS
-        assert "prefers-reduced-motion" in _DS
-        read_rule = _DS.split(".ws-read{")[1][:200]
-        assert "translate(-50%,-50%)" in read_rule
 
-    def test_38_final_10pct_refinement(self):
-        # Laatste 10%: levende intelligence-core, één load-instrument, command uit
-        # het platform, ruimtelijke periferie — alles presentation-only en op echte data.
-        core = _fn("wsCore")
+    def test_38_load_is_one_instrument(self):
+        # Eén load-instrument op dezelfde bronvelden, met "laatste 7 dagen"-label (rolling-7).
         ws = _fn("wsRender")
-        # A. levende core: interne datastromen (geen labels/waarden) + reading-plane
-        assert "ws-dataflow" in core and "ws-flow" in core
-        assert "ws-readplane" in core                          # waarde komt uit de kern
-        assert ".ws-flow{" in _DS and "@keyframes ws-flow" in _DS
-        # B. het load-cluster is ÉÉN instrument (weekstrip + curve gefuseerd), op
-        #    dezelfde bronvelden; cumulatief stijgt of blijft vlak (rustdag).
         assert "function wsLoadInstrument(" in _APP and _APP.count("function wsLoadInstrument(") == 1
         li = _fn("wsLoadInstrument")
         assert "bel.runs" in li and "bel.km_basis_week" in li  # zelfde bron, geen nieuwe data
         assert "d.cum = acc" in li and "acc += d.km" in li     # eerlijke cumulatie
-        assert "wsLoadInstrument(bel)" in ws
-        assert "esc(" in li                                    # geen XSS-regressie
-        assert ".ws-loadinst{" in _DS and ".li-cum{" in _DS
-        # C. command komt uit het platform: output-node + track (alleen bij een actie)
-        #    en een plug op de command. Bestaande actie-semantiek blijft.
-        assert "ws-ptrack" in ws and "ws-pout" in ws
-        assert 'class="ws-plug"' in ws
-        assert "wsMarkeerGezien(" in ws                        # actie intact
-        # D. ruimtelijke periferie: vloer-perspectief (geen fake data/labels)
-        assert 'class="ws-floor"' in ws and ".ws-floor " in _DS
-        # discipline: nieuwe motion staat óók uit onder reduced-motion
-        assert ".ws-flow,.ws-scan,.li-bar" in _DS.replace(" ", "")
+        assert "wsLoadInstrument(bel)" in ws and "esc(" in li
+        assert "laatste 7 dagen" in ws and "deze week" not in ws
 
-    def test_39_final_polish_pass(self):
-        # Polish-pass: geen "globe" meer maar een gelaagd intelligence-object;
-        # load minder chart-achtig; één extra dieptelaag; command-emanation.
-        core = _fn("wsCore")
+    def test_39_workspace_no_duplicate_kpis(self):
+        # Dedup: load precies één kaart, feedback/open-reactie precies één kaart.
+        # (De gerenderde-output-dedup wordt end-to-end bewezen in workspace_render.test.mjs.)
         ws = _fn("wsRender")
-        li = _fn("wsLoadInstrument")
-        # DE-GLOBE: geen VOLLEDIGE meridiaan/breedte-ellipsen meer als globe-grid;
-        # de structuur bestaat uit onvolledige/asymmetrische arc-fragmenten (paths).
-        assert 'class="ws-sph-grad" cx=' not in core           # geen complete ellipse-meridianen
-        assert '<path class="ws-sph-grad"' in core             # gebroken meridiaan-fragmenten
-        # DRIE dieptelagen: intermediate intelligence-field + eigen rand-highlight
-        assert "url(#ws-ifield)" in core and "ws-shell-rim" in core and "ws-shell-rim dim" in core
-        assert 'radialGradient id="ws-ifield"' in core          # intermediate-field gradient in de defs
-        # de bol-silhouet blijft (rim) zodat het volume leest, maar het interieur is gebroken
-        assert "ws-sph-rim" in core
-        # LOAD: referentie is een thin threshold-beam (fade-gradient), geen chart-gridline
-        assert 'linearGradient id="ws-liref"' in li             # beam-gradient in de instrument-defs
-        assert "url(#ws-liref)" in _DS                          # .li-ref gebruikt de fade-beam
-        assert 'stroke-dasharray:3 6' not in _DS.split(".li-ref{")[1][:80]  # geen dashed gridline meer
-        # DIEPTE: één extra ambient laag (horizontale haze), reduced-motion-safe
-        assert 'class="ws-haze"' in ws and ".ws-haze{" in _DS and "@keyframes ws-haze" in _DS
-        # COMMAND-EMANATION: output-node pulse + track-draw als eenmalige entree-sequence
-        assert "@keyframes ws-trackdraw" in _DS and "@keyframes ws-poutpulse" in _DS
-        # a11y: expliciete focus-indicator op de primaire actie
-        assert ".ws-cmd:focus-visible{outline" in _DS.replace(" ", "").replace("\n", "")
-        # motion-performance: geen transition:all in de workspace-laag
-        assert "transition:all" not in _DS.replace(" ", "")
+        assert ws.count("ws-load-panel") == 1
+        assert ws.count("ws-fb-panel") == 1
 
-    def test_40_north_star_convergence(self):
-        # Convergentie naar de referentie: de kern is een verbindings-hub die elke
-        # AANWEZIGE context voedt (data-gestuurd, per-context accent), een luminous
-        # particle-core, en een planet-horizon voor kosmische diepte.
-        core = _fn("wsCore")
+    def test_40_workspace_grid_hierarchy(self):
+        # Robuuste responsieve hiërarchie via grid-areas (geen absolute placement).
         ws = _fn("wsRender")
-        # verbindingsweb, data-gestuurd (alleen echte context krijgt een lijn)
-        assert 'class="ws-web"' in ws
-        assert "if (attn.length) web +=" in ws                 # geen aandacht-lijn zonder aandacht
-        assert "if (bel.km_recent != null) web +=" in ws       # geen belasting-lijn zonder data
-        # per-context accent via de tone-klasse op elk segment
-        assert "webSeg(tone" in ws and "webSeg(belTone" in ws
-        assert "webSeg(planWebTone" in ws and "webSeg(fbTone" in ws
-        assert ".ws-webline{" in _DS and ".ws-webnode{" in _DS
-        # de oude losse connectoren zijn vervangen door het web
-        assert "ws-conn2" not in ws and 'class="ws-conn"' not in ws
-        # luminous particle-core: dichter deeltjesveld dan de vorige pass
-        assert core.count("ws-sph-dot") >= 16
-        # planet-horizon: kosmische z-diepte (statisch, reduced-motion-neutraal)
-        assert 'class="ws-horizon"' in ws and ".ws-horizon{" in _DS
-        # discipline: web verborgen op mobiel + bevroren onder reduced-motion
-        assert ".ws-web{display:none}" in _DS.replace(" ", "")
-        assert ".ws-web,.ws-webnode" in _DS.replace(" ", "")
+        for area in ("grid-area:attn", "grid-area:load", "grid-area:plan",
+                     "grid-area:next", "grid-area:fb", "grid-area:src"):
+            assert area in ws, f"grid-area ontbreekt: {area}"
+        assert "grid-template-areas" in _DS
+        assert "webSeg" not in ws                              # web vervangen door grid
 
-    def test_41_glass_lenses(self):
-        # Extern-review-besluit: de 4 kern-contexten leven in premium spatial GLASS
-        # LENSES (borderless losgelaten). Het moet glas zijn (translucent + backdrop-
-        # blur + fade), geen dashboard-card; bronnen blijft subordinate; command apart.
+    def test_41_workspace_shares_panel_language(self):
+        # Workspace deelt de ds-panel-kaarttaal met Dossier; geen glass-lens meer.
         ws = _fn("wsRender")
-        # precies de 4 betekenisvolle lenzen: aandacht, load, plan, feedback
-        assert 'ws-frag-attn' in ws and 'class="ws-lens' in ws
-        assert ws.count('class="ws-lens') >= 4                  # attn + load(2×) + plan + fb
-        # glas-materiaal, geen kaart
-        lens = _DS.split(".ws-lens{")[1][:600].replace(" ", "")
-        assert "backdrop-filter:blur" in lens and "mask-image:linear-gradient" in lens
-        assert "box-shadow:inset" in lens                       # licht-van-boven, geen web-card-shadow
-        # accent-glow ALLEEN bij een lens mét connector (.conn), exact op het
-        # instappunt (per-lens left/top) — geen generieke middenpositie.
-        assert ".ws-lens.conn::after" in _DS
-        for f in ("ws-frag-attn", "ws-frag-load", "ws-frag-plan", "ws-frag-fb"):
-            assert f".ws-frag-{f.split('-')[-1]} .ws-lens::after" in _DS or f"{f} .ws-lens::after" in _DS
-        # data-gestuurd: attn-lens krijgt .conn alleen bij echte aandacht
-        assert "ws-lens ${attn.length ? 'conn' : ''}" in ws.replace('"', "'")
-        # bronnen blijft een subordinate strip (geen 5e lens); command blijft apart
-        assert "ws-frag-src" in ws and "ws-src-rail" in ws
-        assert 'ws-frag-src ws-lens' not in ws and 'ws-dock' in ws
-        # Core blijft dominant: lens staat achter de content (z-index:-1)
-        assert "z-index:-1" in _DS.split(".ws-lens{")[1][:120]
-        # het oude scrim-primitive is echt vervangen (niet overlaagd)
-        assert 'class="ws-scrim"' not in ws
+        assert "ws-lens" not in ws
+        assert "ds-panel" in ws and "ds-sechead" in ws and "ds-label" in ws
+
