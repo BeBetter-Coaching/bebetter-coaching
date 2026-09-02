@@ -251,10 +251,12 @@ class TestClientWiring:
         assert 'view === "workspace"' in _fn("applyRoute")
 
     def test_workspace_quick_actions_reuse_existing_routes(self):
+        # UX/IA v1 (Target A/C): de redundante interne bottom-nav (Teampuls/Profiel) is weg;
+        # de essentiële athlete-acties hergebruiken de bestaande routes.
         body = _fn("wsRender")
         assert "openAthleteModule('schema'" in body
-        assert "openAthleteModule('atleten'" in body
         assert "openAthleteModule('dossier'" in body
+        assert "wsMarkeerGezien(" in body
 
 
 # ═══════════ External-review correctness delta — generation-contract ═════════

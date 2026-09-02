@@ -140,6 +140,10 @@ function A_desktop_render() {
   ok(wrap.innerHTML.length > 0, "A: desktop cockpit wrote markup");
   ok(/dc-/.test(wrap.innerHTML), "A: dc- cockpit markup present");
   ok(/Lisa Jansen/.test(wrap.innerHTML), "A: athlete identity rendered");
+  // UX/IA v1 (Target D): 2-zone, no duplicated 'Gerelateerde draden' right pane.
+  ok(/dc-grid-2/.test(wrap.innerHTML), "A: 2-zone grid (timeline | detail)");
+  ok(!/Gerelateerde draden|dc-rt-pane|dc-rt-card/.test(wrap.innerHTML), "A: duplicate related-threads pane removed");
+  ok(/dc-tl-item/.test(wrap.innerHTML) && /dc-mem/.test(wrap.innerHTML), "A: timeline + selected detail both render");
 }
 
 // ── B. Real narrow renderer (dcStack via dcRender, innerWidth < 1280) ─────────

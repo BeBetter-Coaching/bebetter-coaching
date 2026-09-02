@@ -503,12 +503,43 @@
 .ws-switch-sub{font-size:10.5px;color:var(--ds-text-3);line-height:1.2}
 .ws-switch .ic{color:var(--ds-text-3);width:16px;height:16px;flex:0 0 auto}
 
-.ws-canvas{position:relative;min-height:60vh;overflow:hidden}
+.ws-canvas{position:relative;min-height:40vh;padding:var(--ds-3) 0 var(--ds-6)}
 .ws-loading{padding:var(--ds-8) 0}
 
-/* ── de scène (stage, geen paginacontainer) ── */
-.ws-scene{position:relative;min-height:836px}
-.ws-scene>*{position:relative;z-index:1}
+/* ── Workspace = Now/Next cockpit op een robuust responsief grid (UX/IA v1) ──
+   Geen absolute scène meer: kaarten kunnen niet overlappen, tekst wrapt in de kaart
+   (min-width:0), en de hiërarchie is Aandacht → Belasting/Doel → Volgende actie/Feedback
+   → Bronnen. Zelfde ds-panel-taal als Dossier (één visuele familie). */
+.ws-grid{display:grid;gap:var(--ds-4);grid-template-columns:1fr;align-items:start;
+  grid-template-areas:"attn" "load" "next" "plan" "fb" "src"}
+@media (min-width:900px){
+  .ws-grid{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);
+    grid-template-areas:"attn attn" "load plan" "next fb" "src src"}
+}
+@media (min-width:1300px){
+  .ws-grid{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr);
+    grid-template-areas:"attn attn attn" "load plan next" "load fb next" "src src src"}
+}
+.ws-panel{min-width:0}
+.ws-panel>.ds-sechead{margin-bottom:var(--ds-3)}
+.ws-head-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.ws-signals{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.ws-signals li{display:flex;align-items:center;gap:9px;min-width:0}
+.ws-signals .ws-sig-t{flex:1;min-width:0;font-size:14.5px;font-weight:600;color:var(--ds-text);
+  line-height:1.45;overflow-wrap:anywhere}
+.ws-signals em{font-style:normal;font-size:9.5px;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--tone);flex:0 0 auto}
+.ws-calm{margin:0;font-size:13px;color:var(--ds-text-2);line-height:1.5;overflow-wrap:anywhere}
+.ws-load-pct{font-size:16px;font-weight:800;color:var(--tone);font-variant-numeric:tabular-nums}
+.ws-load-sub{margin:5px 0 0;font-size:11.5px;color:var(--ds-text-3);overflow-wrap:anywhere}
+.ws-next-lead{margin:0 0 12px;font-size:13.5px;color:var(--ds-text-2);line-height:1.45;overflow-wrap:anywhere}
+.ws-next-btn{display:inline-flex;align-items:center;gap:8px;font:inherit;font-weight:700;font-size:13.5px;
+  cursor:pointer;padding:11px 18px;border-radius:12px;border:1px solid var(--tone-bd);
+  color:var(--tone);background:var(--tone-bg)}
+.ws-next-btn .ic{width:16px;height:16px}
+.ws-next-btn:hover{filter:brightness(1.08)}
+.ws-next-btn:focus-visible{outline:2px solid var(--tone);outline-offset:2px}
+.ws-deep-slot{font-size:12.5px;color:var(--ds-text-2);line-height:1.5;margin-top:2px;min-width:0}
 
 /* ── Z0 — omgeving ── */
 .ws-bg{position:absolute;inset:-64px -32px -16px;pointer-events:none;z-index:0;overflow:hidden}
@@ -1068,6 +1099,9 @@
 
 .dc-grid{position:relative;display:grid;gap:17px;align-items:start;
   grid-template-columns:minmax(244px,300px) minmax(0,1.66fr) minmax(268px,338px)}
+/* UX/IA v1 (Target D): 2-zone geheugencockpit — tijdlijn | detail. Het gededupliceerde
+   'Gerelateerde draden'-paneel is weg; het detail-midden krijgt de vrijgekomen breedte. */
+.dc-grid.dc-grid-2{grid-template-columns:minmax(248px,320px) minmax(0,1fr)}
 /* Één ruimtelijke cockpit i.p.v. drie losse kolommen: gedeeld licht-substraat dat
    naar de geselecteerde herinnering (midden) convergeert en de zones aan elkaar bindt. */
 .dc-grid::before{content:"";position:absolute;inset:-30px -10px;z-index:0;pointer-events:none;border-radius:26px;

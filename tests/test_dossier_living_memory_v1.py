@@ -37,16 +37,18 @@ def _fn(name, src=None):
 
 
 class TestThreeZone:
-    def test_1_drie_zones_tijdlijn_hero_draden(self):
-        # 3-zone dashboard: tijdlijn (links) · geselecteerde herinnering (midden-hero)
-        # · gerelateerde draden (rechts, connectoren). Eén grid, geen zwevende scène.
+    def test_1_twee_zones_tijdlijn_hero(self):
+        # UX/IA v1 (Target D): 2-zone — tijdlijn (links) · geselecteerde herinnering (midden).
+        # Het gededupliceerde 'Gerelateerde draden'-paneel (zelfde events als de tijdlijn) is weg;
+        # navigeren gebeurt via de klikbare tijdlijn.
         scene = _fn("dcScene")
-        assert "dc-grid" in scene
-        for zone in ("dc-tl", "dc-center", "dc-mem", "dc-rt", "dc-conn"):
+        assert "dc-grid-2" in scene
+        for zone in ("dc-tl", "dc-center", "dc-mem"):
             assert zone in scene, f"zone {zone} ontbreekt"
-        assert "Tijdlijn" in scene and "Gerelateerde draden" in scene
-        for sel in (".dc-grid", ".dc-tl-item", ".dc-mem", ".dc-rt-card", ".dc-conn"):
-            assert sel in _DS, f"3-zone-primitive {sel} niet gestyled"
+        assert "Tijdlijn" in scene
+        assert "Gerelateerde draden" not in scene and "dc-rt-pane" not in scene
+        for sel in (".dc-grid.dc-grid-2", ".dc-tl-item", ".dc-mem"):
+            assert sel in _DS, f"2-zone-primitive {sel} niet gestyled"
 
     def test_2_events_uit_echte_velden_klacht_gededupliceerd(self):
         # Tijdlijn-events uit echte velden: verleden = changes[] (klachten gedateerd via
@@ -88,8 +90,8 @@ class TestThreeZone:
 
     def test_6_herselecteren_is_in_scene_geen_route_of_modal(self):
         sel = _fn("dcSelectEvent")
-        assert "dcMemPanel(ev)" in sel and "dcRelCard" in sel   # midden + rechts verversen
-        assert "dcDrawConnectors(wrap)" in sel                  # connectoren hertekenen
+        assert "dcMemPanel(ev)" in sel                          # midden ververst (in-scene)
+        assert "dcRelCard" not in sel                           # 2-zone: geen rechter-draden meer
         assert "pushRoute" not in sel and "pushState" not in sel and "location.hash" not in sel
         assert ".dc-tl-item.sel" in _DS                         # tijdlijn-highlight
 
