@@ -5245,7 +5245,9 @@ function dcFutureNodes(plan) {
 }
 
 // Module-state voor de 3-zone geheugencockpit (geselecteerd event = center-hero).
-let dcEvents = [], dcVMkey = "", dcSelId = "", dcDomsCache = [];
+// dcVMgen = de state_generation_id van de getoonde cockpit (Canonical Athlete Read Layer v1,
+// Gate 3): reist mee naar 'Waarom?' zodat de uitleg exact deze generatie verklaart.
+let dcEvents = [], dcVMkey = "", dcSelId = "", dcDomsCache = [], dcVMgen = "";
 
 function dcRender(wrap, vm) {
   const st = vm.status || {}, rel = st.reliability || {};
@@ -5327,6 +5329,7 @@ function dcRender(wrap, vm) {
   const events = dcBuildEvents({ chg, attn, plan, lo, st, rel, relTxt, canonPct, olderTl, nowSub });
   dcEvents = events;
   dcVMkey = vm.key;
+  dcVMgen = vm.state_generation_id || "";              // Gate 3: generatie meesturen naar 'Waarom?'
   dcDomsCache = vm.domains || [];
   dcSelId = (events.find(e => e.sel) || events[0] || {}).id || "";
 
@@ -5689,11 +5692,19 @@ async function dcWaarom(btn) {
   const id = btn.dataset.id, key = btn.dataset.key;
   if (btn._open) { const n = btn.nextElementSibling; if (n && n.classList.contains("dc-why-box")) n.remove(); btn._open = false; btn.textContent = "Waarom?"; return; }
   btn.textContent = "Laden…";
-  const r = await api(`/api/cockpit/explain?key=${encodeURIComponent(key)}&id=${encodeURIComponent(id)}`).catch(() => null);
+  const r = await api(`/api/cockpit/explain?key=${encodeURIComponent(key)}&id=${encodeURIComponent(id)}&gen=${encodeURIComponent(dcVMgen || "")}`).catch(() => null);
   btn.textContent = "Verberg";
-  const ex = (r && r.ok && r.explain) || null;
   const box = document.createElement("div");
   box.className = "dc-why-box";
+  if (r && r.ok && r.generation_changed) {
+    // Gate 3: de context is intussen ververst — geen uitleg van een nieuwere staat tonen
+    // alsof die de oorspronkelijke claim verklaart. Open de cockpit opnieuw voor de actuele stand.
+    box.innerHTML = `<p class="muted klein">De context is intussen ververst. Open de cockpit opnieuw voor de actuele onderbouwing.</p>`;
+    btn.insertAdjacentElement("afterend", box);
+    btn._open = true;
+    return;
+  }
+  const ex = (r && r.ok && r.explain) || null;
   if (!ex || ex.error) { box.innerHTML = `<p class="muted klein">Onderbouwing niet beschikbaar.</p>`; }
   else {
     const chain = (ex.provenance || []).map(p => `<li>${esc(p.key || p.source || "")}${p.observed_at ? ` · ${esc(p.observed_at)}` : ""}${p.truth_type ? ` · ${esc(_DC_TRUTH[p.truth_type] || p.truth_type)}` : ""}</li>`).join("");

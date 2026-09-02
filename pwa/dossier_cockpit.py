@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import athlete_read as _read                       # Canonical Athlete Read Layer v1 (gedeelde state-read)
 from brain import adapter as _adapter
 from brain import projections as _proj
 from brain import state as _state
@@ -373,7 +374,15 @@ def cockpit(key: str, today: date | None = None) -> dict:
     write. Gooit door bij een bronfout (endpoint → ok:false → UI toont source-health
     'context tijdelijk niet beschikbaar', NOOIT 'niets bekend')."""
     today = today or date.today()
-    state_obj, raw = _adapter.build_state(key, today=today)     # gated capture = no-op (OFF)
+    # Canonical Athlete Read Layer v1: gedeelde state-read (hot-read → single-flight → LKG).
+    # Geen tweede build_state-pad meer; `raw` komt uitsluitend uit een live gather (NOOIT uit de
+    # snapshot). Is er geen live build én geen LKG (state None) → gooi door zodat de route ok:false
+    # levert en de UI de source-health-staat toont ("interne fout ≠ niets bekend", §9).
+    read = _read.get_state(key, today=today)                   # gated capture = no-op (OFF)
+    state_obj, raw = read.state, read.raw
+    if state_obj is None:
+        raise RuntimeError("AthleteState onbeschikbaar (geen live build en geen last-known-good)")
+    raw_ok = bool(read.freshness.get("raw_available", raw is not None))
     dossier = _proj.for_dossier(state_obj)
     dossier_evs = dossier["evidence"]
 
@@ -390,8 +399,10 @@ def cockpit(key: str, today: date | None = None) -> dict:
             break
 
     changes = _changes(state_obj, today)
-    planning = _planning(dossier_evs, raw, today)
-    load_observation = _load_observation(raw, today)
+    # raw-afhankelijke secties degraderen alleen als er geen live raw is (pure LKG-fallback):
+    # nooit fake belasting/planning uit de snapshot.
+    planning = _planning(dossier_evs, raw if raw_ok else {}, today)
+    load_observation = _load_observation(raw, today) if raw_ok else None
     domains = _domains(dossier_evs, open_cards)
 
     # Zone 4 — tijdlijn (capture OFF → eerlijke empty-state)
@@ -402,6 +413,10 @@ def cockpit(key: str, today: date | None = None) -> dict:
 
     return {
         "ok": True, "key": key, "naam": naam, "groep": groep,
+        # Canonical Athlete Read Layer v1: generation/freshness reizen mee zodat 'Waarom?' de
+        # exact getoonde generatie kan verklaren (Gate 3) en de client mem-vs-fresh kan zien.
+        "state_generation_id": read.state_generation_id,
+        "read_freshness": dict(read.freshness),
         "status": {"overall": state_obj.overall,
                    "insufficient": state_obj.overall == INSUFFICIENT_DATA,
                    "reliability": _reliability(state_obj)},
@@ -427,7 +442,22 @@ def _event_view(ev) -> dict:
                                   "strength", "importance", "transition", "source")}
 
 
-def explain_claim(key: str, evidence_id: str, today: date | None = None) -> dict:
-    """'Waarom?'-laag (§12-E): volledige provenance-keten voor één claim, on-demand."""
-    state_obj, _raw = _adapter.build_state(key, today=today or date.today())
-    return _state.explain(evidence_id, state_obj)
+def explain_claim(key: str, evidence_id: str, today: date | None = None,
+                  gen: str = "") -> dict:
+    """'Waarom?'-laag (§12-E): provenance-keten voor één claim, on-demand.
+
+    Canonical Athlete Read Layer v1 (Gate 3) — generatiecoherentie: de uitleg wordt uit
+    dezelfde gedeelde state-read gehaald als de getoonde cockpit. Vraagt de client een `gen`
+    die niet (meer) de actuele generatie is, dan verklaren we NIET stil een nieuwere staat —
+    we markeren `generation_changed` en verzinnen geen uitleg voor de oude claim."""
+    read = _read.get_state(key, today=today or date.today())
+    state_obj = read.state
+    current_gen = read.state_generation_id
+    if gen and gen != current_gen:
+        return {"explain": None, "generation_changed": True, "current_generation": current_gen,
+                "note": "De context is intussen ververst — deze onderbouwing hoort bij een oudere staat."}
+    if state_obj is None:
+        return {"explain": None, "generation_changed": bool(gen),
+                "current_generation": current_gen, "note": "Context nu niet beschikbaar."}
+    return {"explain": _state.explain(evidence_id, state_obj),
+            "generation_changed": False, "current_generation": current_gen}
