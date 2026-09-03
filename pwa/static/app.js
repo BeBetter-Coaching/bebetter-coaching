@@ -254,8 +254,26 @@ function openAthleteModule(view, user_key) {
 // athlete-aware ÉN is er een actieve atleet in de route → open die atleet; anders
 // gewone (globale) module-entry. Zo blijft de sidebar athlete-aware zonder verborgen
 // contextwissels: globale views (home/races/admin/…) laten de context bewust los.
+// De atleet die de HUIDIGE view feitelijk TOONT (in-memory selectie). Fallback wanneer de
+// route-hash (nog) geen atleet draagt — bv. na een sidebar-entry die de onthouden atleet
+// hertoonde zonder de hash te vullen (`toonView` schrijft een bare `#view`). Zonder deze
+// fallback leest de sidebar de bare hash en valt elke module terug op zijn eigen onthouden
+// atleet → Workspace=X ↔ Dossier=Y-divergentie (B1). Route blijft primair; dit is puur een
+// reconciliatie van de GETOONDE atleet, geen tweede athlete-store.
+function _shownAthleteKey(view) {
+  try {
+    if (view === "workspace") return wsSel || "";
+    if (view === "dossier") return dcSel || "";
+    if (view === "schema") return (typeof sbState !== "undefined" && sbState && sbState.key) ? sbState.key : "";
+    if (view === "atleten") return (typeof dossierSel !== "undefined" && dossierSel && dossierSel.key) ? dossierSel.key : "";
+  } catch {}
+  return "";
+}
 function openModuleFromNav(view) {
-  const key = activeAthleteKey();
+  // Athlete-context = de route-hash; valt die weg, dan de atleet die de HUIDIGE view toont
+  // (voorkomt de B1-divergentie tussen onthouden per-module atleten).
+  let key = activeAthleteKey() || _shownAthleteKey(huidigeView);
+  if (key && key.indexOf("nieuw:") === 0) key = "";          // identity-guard (pre-link intake)
   // Workspace-doel met actieve atleet → eigen entry (openWorkspace); overige athlete-views →
   // generieke openAthleteModule. Zo dragen Workspace en Dossier dezelfde geselecteerde atleet mee.
   if (key && view === "workspace") openWorkspace(key);
@@ -267,10 +285,12 @@ function openModuleFromNav(view) {
 // actieve tool niet dubbel verschijnt. `activeView` = huidige route-view.
 function athleteNav(activeView, user_key) {
   if (!user_key) return "";
+  // B8: 'Dossier' is de canonieke naam voor de #dossier-module (Masterbrein-geheugen).
+  // De #atleten-module is het atleet-profiel/detail → 'Profiel' (voorkomt twee keer 'Dossier').
   const opts = [
-    { view: "atleten", label: "Dossier" },
+    { view: "atleten", label: "Profiel" },
     { view: "schema", label: "Schema" },
-    { view: "dossier", label: "Cockpit" },
+    { view: "dossier", label: "Dossier" },
   ];
   const chips = opts.filter(o => o.view !== activeView).map(o =>
     `<button type="button" class="anav-chip" onclick="openAthleteModule('${o.view}','${esc(user_key)}')">${esc(o.label)}</button>`).join("");
@@ -1880,7 +1900,7 @@ function renderPicker(cfg) {
   const onKey = e => {
     if (e.key === "ArrowDown") { e.preventDefault(); beweeg(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); beweeg(-1); }
-    else if (e.key === "Enter") { if (focusKey) { e.preventDefault(); kies(focusKey, true); } }
+    else if (e.key === "Enter") { const k = focusKey || selKey; if (k) { e.preventDefault(); kies(k, true); } }  // B10: focus óf reeds-geselecteerd
     else if (e.key === "Escape") { if (inEl && inEl.value) { inEl.value = ""; teken(); } else if (cfg.onEscape) cfg.onEscape(); }
   };
   inEl?.addEventListener("input", teken);
@@ -1893,6 +1913,9 @@ function renderPicker(cfg) {
     getSelected() { return items().find(x => x.key === selKey) || null; },
     setSelected(k) { selKey = k; focusKey = k; teken(); },
     focusSearch() { inEl && inEl.focus(); },
+    // Reset een (mogelijk stale) zoekfilter zodat de lijst de geselecteerde atleet niet kan
+    // uitsluiten (B5: 'links zoek=Karin, rechts detail=Douwe' bij een programmatische open).
+    clearQuery() { if (inEl && inEl.value) { inEl.value = ""; } teken(); },
     herteken: teken,
   };
 }
@@ -1912,9 +1935,14 @@ function openAthletePickerOverlay(opts) {
     </div>`;
   document.body.appendChild(ov);
   const confirmBtn = ov.querySelector(".pk-confirm");
-  const sluit = () => { ov.remove(); document.removeEventListener("keydown", onEsc); };
-  const onEsc = e => { if (e.key === "Escape") sluit(); };
-  document.addEventListener("keydown", onEsc);
+  const sluit = () => { ov.remove(); document.removeEventListener("keydown", onKey); };
+  // B10: Enter bevestigt de geselecteerde atleet (zelfde als 'Openen'); Escape annuleert.
+  // Precies één keer openen: sluit() haalt de listener weg vóór onConfirm.
+  const onKey = e => {
+    if (e.key === "Escape") { sluit(); return; }
+    if (e.key === "Enter") { const a = picker.getSelected(); if (a) { e.preventDefault(); sluit(); opts.onConfirm(a); } }
+  };
+  document.addEventListener("keydown", onKey);
   ov.addEventListener("click", e => { if (e.target === ov) sluit(); });     // backdrop = annuleren (geen write)
   ov.querySelector(".pk-x").onclick = sluit;
   ov.querySelector(".pk-cancel").onclick = sluit;
@@ -1985,6 +2013,7 @@ async function openDossier(ident) {
   // opent dan ná de lijst-render → geen clobber, reload-safe). Mirror van de cockpit.
   if (!dossierPicker) { atletenOpenPending = ident; if (!geladen.atleten) { geladen.atleten = true; laadDossierLijst(); } return; }
   dossierSel = ident;
+  dossierPicker.clearQuery();                // B5: geen stale zoekfilter die de selectie verbergt
   dossierPicker.setSelected(ident);          // rij licht op (desktop + mobiel)
   pushRoute("atleten", ident);              // deep-link: refresh houdt deze atleet open (#C)
   const wrap = $("#d-detail");
@@ -2680,12 +2709,18 @@ function fbNieuwBalk(n) {
   b.hidden = false;
   b.innerHTML = `${ic("refresh")} ${n > 0 ? `${n} nieuwe — tik om te tonen` : "Lijst bijwerken"}`;
 }
-function fbUpdateInfo() {
+// B7: de resultaatregel communiceert de ZICHTBARE (gefilterde) telling naast de totale
+// wachtrij-waarheid. Reduceert een filter de set niet (zichtbaar === totaal), dan geen
+// dubbele ruis — alleen totaal + vandaag verstuurd. `zichtbaar` optioneel (renderQueue geeft
+// 'm mee ná triage/groep-filter; andere callers tonen de ongefilterde stand).
+function fbUpdateInfo(zichtbaar) {
   const info = $("#fb-info"); if (!info) return;
-  const n = FB.items.length;
-  info.textContent = n
-    ? `${n} in de wachtrij · ${FB.gepost || 0} vandaag verstuurd`
-    : `${FB.gepost || 0} vandaag verstuurd — inbox leeg`;
+  const totaal = FB.items.length, gepost = FB.gepost || 0;
+  if (!totaal) { info.textContent = `${gepost} vandaag verstuurd — inbox leeg`; return; }
+  const v = (typeof zichtbaar === "number") ? zichtbaar : totaal;
+  info.textContent = (v < totaal)
+    ? `${v} zichtbaar · ${totaal} in de wachtrij · ${gepost} vandaag verstuurd`
+    : `${totaal} in de wachtrij · ${gepost} vandaag verstuurd`;
 }
 
 // ── Groep-selector (compacte, horizontaal scrollbare pills; default Alle) ─────
@@ -2762,13 +2797,15 @@ function renderTabs() {
   bar.innerHTML = _FB_TABS.map(([k, lbl, cls]) =>
     `<button type="button" class="fbq-tab ${cls || ""} ${FB.filter === k ? "on" : ""}" data-tab="${k}" role="tab" aria-selected="${FB.filter === k}">${lbl} <span class="c">${counts[k]}</span></button>`).join("");
   $$(".fbq-tab", bar).forEach(t => t.addEventListener("click", () => { FB.filter = t.dataset.tab; renderQueue(); }));
-  const cnt = $("#fb-count"); if (cnt) cnt.innerHTML = `${FB.items.length}<i> / 30</i>`;
+  // B7: de kop toont de totale wachtrij-waarheid (geen hardgecodeerde '/ 30'-noemer meer).
+  const cnt = $("#fb-count"); if (cnt) cnt.textContent = String(FB.items.length);
 }
 function renderQueue() {
   const box = $("#fb-queue"); if (!box) return;
   renderGroupsBar();
   renderTabs();
   if (FB.filter === "afgerond") {                           // deze sessie afgehandeld (workflow-state)
+    fbUpdateInfo(FB.summaryLog.length);                      // B7: zichtbaar = afgehandelde items
     box.innerHTML = FB.summaryLog.length
       ? FB.summaryLog.map(s => `<div class="fbq-row done" aria-disabled="true"><span class="fbq-av"><span class="avatar">${initialen(s.athlete_name || "")}</span></span>
           <span class="fbq-body"><span class="fbq-naam">${esc(s.athlete_name || "")}</span><span class="fbq-sub">${esc(s.workout_name || "")}</span></span>
@@ -2781,6 +2818,7 @@ function renderQueue() {
   let shown = fbFilterItems();
   if (FB.group !== "alle" && !FB.items.some(i => i.groep === FB.group)) FB.group = "alle";
   if (FB.group !== "alle") shown = shown.filter(i => i.groep === FB.group);
+  fbUpdateInfo(shown.length);                                // B7: resultaatregel = zichtbaar vs totaal
   if (!shown.length) {
     box.innerHTML = `<div class="leeg">${ic("check")}<p>${FB.items.length ? "Geen items in deze filter." : "Niks te beoordelen — netjes bijgewerkt."}</p></div>`;
     return;
@@ -2859,6 +2897,9 @@ function fbOpen(id, reason) {
   // A — case-shell DIRECT uit de queue-item (of volledig als detail al warm is). De module
   // is meteen bruikbaar; er is NOOIT een globale skeleton die op FinalSurge wacht.
   fbRenderCase();
+  // B2: elke case opent BOVENAAN. Desktop = één page-scroll (center flowt in #scroller);
+  // async enrichment mag 'm niet terug naar beneden duwen (fbScrollThreadBottom is no-op).
+  if (isDesktop()) { const sc = $("#scroller"); if (sc && typeof sc.scrollTo === "function") sc.scrollTo({ top: 0 }); }
   // B — detail als onafhankelijk begrensde enrichment (alleen als nog niet warm)
   if (!FB.sel.d) fbEnrichDetail(id, gen);
   // C — week + cockpit als TWEE onafhankelijke, begrensde enrichments (vanuit de queue-item)
@@ -2969,12 +3010,11 @@ function fbGrow(ta) {
   ta.style.height = (ta.scrollHeight + 2) + "px";     // CSS max-height klemt af (zie styles.css)
   if (sc && atBottom) sc.scrollTop = sc.scrollHeight;
 }
-// Desktop: toon bij openen de onderkant van de thread (laatste bericht + composer);
-// context/plan blijft omhoog scrollbaar. Mobiel keyboard-dicht niet forceren.
-function fbScrollThreadBottom() {
-  if (!isDesktop()) return;
-  const sc = $(".fbf-scroll"); if (sc) sc.scrollTop = sc.scrollHeight;
-}
+// UX/IA v1 (B2): een case opent BOVENAAN en blijft daar — geen auto-scroll naar de
+// thread-onderkant/composer bij openen of na async enrichment. De hele center-kolom is één
+// natuurlijke verticale leesflow (geen geneste detail-scroller). Mobiel keyboard-open houdt de
+// composer-onderkant via fbGrow; dat pad is hier bewust ongemoeid.
+function fbScrollThreadBottom() { /* no-op: case start bovenaan (B2/B3) */ }
 
 // ── Mobiele keyboard-open layout via de ECHTE zichtbare viewport ─────────────
 // Root-fix iPhone-chat: bij open keyboard weet 100dvh de toetsenbordhoogte NIET, dus
@@ -4920,7 +4960,7 @@ function pulsItem(it) {
   });
   // Cohesion-fix: open het dossier van DEZE atleet i.p.v. de algemene atletenlijst
   // (de user_key was al bekend maar werd weggegooid). Via het canonieke contract.
-  el.querySelector("[data-dossier]").addEventListener("click", () => openAthleteModule("atleten", it.user_key));
+  el.querySelector("[data-dossier]").addEventListener("click", () => openAthleteModule("dossier", it.user_key));
   return el;
 }
 
@@ -5131,7 +5171,7 @@ async function openDossierCockpit(ident) {
   const wrap = $("#dc-detail");
   if (!isDesktop()) { $(".view[data-view='dossier'] .md-list").hidden = true; $("#scroller").scrollTo({ top: 0 }); }
   wrap.hidden = false;
-  wrap.innerHTML = '<div class="dc-load"><p class="muted center">Cockpit laden…</p></div>';
+  wrap.innerHTML = '<div class="dc-load"><p class="muted center">Dossier laden…</p></div>';
   let r;
   try { r = await api("/api/cockpit?key=" + encodeURIComponent(ident)); }
   catch { r = null; }
@@ -5201,7 +5241,10 @@ const _DC_MND = ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","no
 function dcShort(s) {
   const m = String(s || "").match(/(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${+m[3]} ${_DC_MND[+m[2] - 1] || ""}`.trim();
-  return String(s || "");
+  // B4: het datum/meta-veld mag NOOIT terugvallen op vrije/beschrijvende tekst (wedstrijd- of
+  // doeltekst belandt anders één-woord-per-regel in de smalle datumkolom). Geen betrouwbare
+  // datum → '—'. De volledige tekst leeft in de titel/inhoudskolom.
+  return "—";
 }
 
 // Toon + icoon + korte duiding voor een change-knoop uit de transition (échte
@@ -6073,8 +6116,7 @@ function wsRender(wrap, vm) {
     <section class="ds-panel ws-panel ws-fb-panel ${fbCls}" style="grid-area:fb">
       <div class="ds-sechead"><h3 class="ds-label">Feedback</h3></div>
       ${fbBody}
-      <div id="ws-context" class="ws-deep-slot">${wsSkel(2)}</div>
-      <button type="button" class="ws-cta quiet" onclick="openAthleteModule('dossier','${esc(key)}')">Cockpit openen</button>
+      <button type="button" class="ws-cta quiet" onclick="openModuleFromNav('feedback')">Naar feedback</button>
     </section>
     <section class="ds-panel ws-panel ws-src-panel" style="grid-area:src">
       <div class="ds-sechead"><h3 class="ds-label">Bronnen</h3></div>
@@ -6102,10 +6144,12 @@ async function wsLoadDeep(wrap, ident) {
   try { r = await api("/api/cockpit?key=" + encodeURIComponent(ident)); }
   catch { r = null; }
   if (!wrap || wsSel !== ident) return;                    // leak guard
-  const plan = $("#ws-plan"), ctx = $("#ws-context");
+  // UX/IA (B12): de Feedback-kaart bezit GEEN klachtenhistorie meer — die leeft in het Dossier.
+  // Workspace-deep vult hier alleen nog de Doel&planning-lens. Klacht/tegenstrijdigheid-rijen
+  // zijn bewust verwijderd uit de Feedback-kaart (geen '0 alles beantwoord' boven klachtrijen).
+  const plan = $("#ws-plan");
   if (!r || !r.ok) {
     if (plan) plan.innerHTML = `<p class="ws-calm">Doel &amp; planning nu niet beschikbaar.</p>`;
-    if (ctx) ctx.innerHTML = `<p class="ws-calm">Context nu niet beschikbaar.</p>`;
     return;
   }
   if (plan) {
@@ -6114,20 +6158,6 @@ async function wsLoadDeep(wrap, ident) {
     plan.innerHTML = rows.length ? dsKv(rows)
       : `<div class="ws-goal"><div class="ws-goal-ring"><i></i></div>
           <p>Nog geen doel vastgelegd.<small>Leg een race- of trainingsdoel vast — het masterbrein plant erop.</small></p></div>`;
-  }
-  if (ctx) {
-    const attn = (r.attention || []).filter(c => c.kind === "complaint" || c.kind === "contradiction");
-    const lo = r.load_observation;
-    let c = "";
-    if (attn.length) c += attn.map(a => wsLine({
-      tone: dsTone("aandacht"), icon: _DC_KIND_IC[a.kind] || "alert",
-      title: a.title || "", sub: a.why || "",
-    })).join("");
-    // Bezit de stage de belasting al (focal + waarom-kaart), dan is de observatie
-    // hier ruis: we herhalen hem niet.
-    if (lo && lo.signalen && wrap.dataset.belOwned !== "1")
-      c += dsStream([{ text: `Belasting-observatie: ${lo.signalen}`, tone: dsTone(lo.ernst) }]);
-    ctx.innerHTML = c || `<p class="ws-calm">Geen actieve klacht of tegenstrijdigheid bekend.</p>`;
   }
 }
 

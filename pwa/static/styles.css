@@ -457,6 +457,7 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
   #msg,#offline{left:auto;right:32px;transform:none;max-width:400px}
   #msg{bottom:28px}
   #offline{bottom:82px}
+  .gen-banner{bottom:26px}            /* B6: geen bottomnav op desktop */
 }
 @media (min-width:1200px){
   body{grid-template-columns:280px 1fr}
@@ -1322,9 +1323,15 @@ button.sb-ready:hover{filter:brightness(1.08)}
 
 /* ── Coach Read Model v2 — generation-banner + Athlete Workspace ─────────── */
 .genbar-slot{margin:0}
-.gen-banner{display:none;margin:8px 12px 0;padding:8px 12px;border-radius:var(--radius);
-  background:rgba(239,159,39,.12);border:1px solid var(--warn);color:var(--warn);
-  font-size:13px;font-weight:600}
+/* B6: layout-stabiele statusmelding. De banner verscheen eerst IN de flow (display:none→block
+   ná first paint) en duwde kaarten ~45px omlaag (misklik). Nu een non-flow status-chip onderaan
+   de app-shell: verschijnen/verdwijnen verandert GEEN kaartpositie en dekt geen primaire knop.
+   Refresh/versheid-betekenis ongewijzigd. */
+.gen-banner{display:none;position:fixed;z-index:26;left:50%;
+  bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  max-width:calc(100% - 28px);margin:0;padding:8px 14px;border-radius:var(--radius);
+  background:rgba(239,159,39,.14);border:1px solid var(--warn);color:var(--warn);
+  font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.42)}
 .gen-banner.on{display:block}
   border:1px solid var(--border);background:var(--card2);color:var(--text)}
 .ws-deep-slot{min-height:18px}

@@ -204,7 +204,7 @@ class TestLockedFunctionalityPreserved:
 
     def test_18_workspace_quick_actions_hergebruiken_bestaande_routes(self):
         body = _fn("wsRender")
-        for call in ("openAthleteModule('schema'", "openAthleteModule('dossier'"):
+        for call in ("openAthleteModule('schema'", "openModuleFromNav('feedback'"):
             assert call in body, f"route {call} verdwenen"
         # geen duplicate write-logica: dempen loopt via de bestaande authority
         assert "/api/teampuls/gezien" in _fn("wsMarkeerGezien")
@@ -233,7 +233,9 @@ class TestLockedFunctionalityPreserved:
         assert "/api/cockpit" in _fn("wsLoadDeep")
         body = _fn("wsRender")
         assert 'api("/api/cockpit' not in body                # shell doet zelf geen deep-call
-        assert "ws-plan" in body and "ws-context" in body      # slots worden lazy gevuld
+        assert "ws-plan" in body                               # doel/planning-slot wordt lazy gevuld
+        # B12: de #ws-context klachten-slot is uit de Feedback-kaart verwijderd.
+        assert "ws-context" not in body
 
     def test_22_geen_nieuwe_truth_of_store_in_de_ui(self):
         for bad in ("localStorage.setItem(\"bb_athlete", "localStorage.setItem('bb_athlete",
@@ -305,11 +307,11 @@ class TestAthleteCanvas:
         assert ".ds-view.has-athlete .md-split" in _DS         # grid geeft de volle breedte
 
     def test_31_alle_acties_blijven_bereikbaar(self):
-        # UX/IA v1 (Target A/C): de redundante Workspace-bottom-nav (Teampuls/Profiel) is weg —
-        # die destinations leven in de globale sidebar. De essentiële athlete-acties blijven:
-        # schema openen, cockpit/dossier openen, belasting-signaal afhandelen.
+        # UX/IA v1 + Cowork B8/B12: de Feedback-kaart-CTA is 'Naar feedback' (generieke queue),
+        # niet meer 'Cockpit openen'→Dossier. Essentiële acties: schema openen, naar feedback,
+        # belasting-signaal afhandelen. Dossier is athlete-aware via de sidebar bereikbaar.
         ws = _fn("wsRender")
-        for call in ("openAthleteModule('schema'", "openAthleteModule('dossier'", "wsMarkeerGezien("):
+        for call in ("openAthleteModule('schema'", "openModuleFromNav('feedback'", "wsMarkeerGezien("):
             assert call in ws, f"actie {call} verdwenen uit de Workspace-grid"
         assert "/api/teampuls/gezien" in _fn("wsMarkeerGezien")   # bestaande authority
 

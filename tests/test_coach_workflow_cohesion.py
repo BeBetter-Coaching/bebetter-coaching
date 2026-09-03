@@ -98,9 +98,10 @@ class TestAthleteNav:
 # ── 3. Teampuls → Dossier (bugfix) ───────────────────────────────────────────
 class TestTeampulsDossier:
     def test_dossier_knop_opent_de_atleet_niet_de_lijst(self):
-        # Was: toonView("atleten") (key weggegooid). Nu: canonieke deep-link.
+        # Cowork B5: de knop heet 'Dossier →' en opent nu ook echt het Dossier van die atleet
+        # (was atleten-detail). Canonieke deep-link, view-gekeyd.
         block = _APP[_APP.index("function pulsItem"):_APP.index("function pulsItem") + 2400]
-        assert 'openAthleteModule("atleten", it.user_key)' in block          # view-gekeyd contract
+        assert 'openAthleteModule("dossier", it.user_key)' in block          # B5: → #dossier/<key>
         assert '"[data-dossier]").addEventListener("click", () => toonView("atleten")' not in _APP
 
 
