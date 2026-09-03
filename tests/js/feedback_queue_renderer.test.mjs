@@ -83,10 +83,11 @@ const fbLog = () => {};
 const fbOpen = (id, reason) => { openCalls.push([id, reason]); };
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
-const shimNames = ["$", "$$", "ic", "initialen", "fbLog", "fbOpen", "esc"];
+const fbUpdateInfo = () => {};   // status-line leaf (#fb-info) — not under test here
+const shimNames = ["$", "$$", "ic", "initialen", "fbLog", "fbOpen", "esc", "fbUpdateInfo"];
 const build = () => new Function(...shimNames,
   REAL + "\nreturn { FB, renderQueue, renderTabs, fbFilterItems, renderGroupsBar, fbRowHtml, fbShortTime, fbLocalISO };"
-)($, $$, ic, initialen, fbLog, fbOpen, esc);
+)($, $$, ic, initialen, fbLog, fbOpen, esc, fbUpdateInfo);
 const reset = () => { els = {}; boundRows = []; openCalls = []; };
 
 // today's LOCAL iso (matches fbLocalISO semantics) so 'vandaag'-scenarios are date-robust.

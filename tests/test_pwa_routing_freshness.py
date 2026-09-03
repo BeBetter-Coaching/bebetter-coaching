@@ -61,8 +61,8 @@ class TestGedeeldePicker:
         # Native dropdown weg; write pas op de bevestigknop (geen accidental write).
         assert 'id="kp-sel"' not in _APP and 'id="kp-do"' not in _APP   # geen native select meer
         assert "openAthletePickerOverlay" in _APP
-        ov = _APP[_APP.index("function openAthletePickerOverlay"):_APP.index("function openAthletePickerOverlay") + 1600]
-        assert "onConfirm" in ov and "confirmBtn.onclick" in ov         # write alleen via confirm-knop
+        ov = _APP[_APP.index("function openAthletePickerOverlay"):_APP.index("function openAthletePickerOverlay") + 2100]
+        assert "onConfirm" in ov and "confirmBtn.onclick" in ov         # write alleen via confirm-knop (of Enter, B10)
 
 
 class TestAtletenGroepering:

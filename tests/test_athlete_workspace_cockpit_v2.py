@@ -255,7 +255,7 @@ class TestClientWiring:
         # de essentiële athlete-acties hergebruiken de bestaande routes.
         body = _fn("wsRender")
         assert "openAthleteModule('schema'" in body
-        assert "openAthleteModule('dossier'" in body
+        assert "openModuleFromNav('feedback'" in body      # Cowork B8: Feedback-kaart → generieke queue
         assert "wsMarkeerGezien(" in body
 
 
