@@ -32,7 +32,17 @@ from . import projections
 from . import snapshot as _snapshot
 from . import sources as _sources
 from . import state as _state
-from .models import (ACTIVE, ATTENTION, RECENT, RECURRING, STALE, SourceHealth)
+from .models import (ACTIVE, ATTENTION, INSUFFICIENT_DATA, RECENT, RECURRING, STALE, SourceHealth)
+
+# P0 — context-readiness: een ONBEKENDE/ONVOLLEDIGE achtergrond mag de AI NOOIT als 'geen
+# bijzonderheden' interpreteren. Dit blok gaat expliciet mee zodra de taak-relevante bronnen niet
+# volledig geladen konden worden (source-gap of INSUFFICIENT_DATA), i.p.v. een stille lege string.
+_CONTEXT_UNKNOWN_BLOCK = (
+    "━━━ ACHTERGRONDCONTEXT ONVOLLEDIG ━━━\n"
+    "- De achtergrond over deze atleet (recente belasting, herstel, klachten) kon nu NIET "
+    "volledig worden geladen. Ga hier NIET van uit dat er 'geen bijzonderheden' zijn; doe geen "
+    "aannames over belasting of herstel en geef geen ongegronde geruststelling. Beoordeel "
+    "voorzichtig op wat je in deze training zelf ziet.")
 
 # Taak-relevante bronnen voor Schema-planning. Een gap hierin moet zichtbaar
 # blijven in de contextrepresentatie (SourceHealth-invariant).
@@ -425,6 +435,12 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
                                           c.get("status"), det.get("count"),
                                           det.get("last_seen_days")))
 
+    # P0 readiness-classificatie: PARTIAL/UNKNOWN als een taak-relevante bron ontbrak of de
+    # state onvoldoende data heeft. READY (met of zonder signalen) anders.
+    _gaps_rel = gaps & FEEDBACK_RELEVANT_SOURCES
+    _insufficient = str(getattr(state, "overall", "")) == INSUFFICIENT_DATA
+    _partial = bool(_gaps_rel) or _insufficient
+
     tekst = ""
     if regels:
         # Basisguard (altijd): geen verzonnen plan/weekopbouw, geen 'nieuwe fase' zonder bron (A).
@@ -441,11 +457,17 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
                       "'geen hinder gaf' of 'over' is zonder dat de atleet dat nu zelf zegt.")
         tekst = ("━━━ WAT BEBETTER AL WEET OVER DEZE ATLEET (achtergrond — verzin niets bij) ━━━\n"
                  + "\n".join("- " + r for r in regels) + _slot)
+    elif _partial:
+        # Geen signaal-regels ÉN de context is onvolledig/onbekend → NOOIT stil leeg (dat leest als
+        # 'geen bijzonderheden'). Geef de onzekerheid expliciet mee.
+        tekst = _CONTEXT_UNKNOWN_BLOCK
+    # else: READY + oprecht leeg → prompt_block "" (de AI beoordeelt op de training zelf).
 
     return {
         "workout_key": workout_key,
         "overall": state.overall,
-        "source_gaps": sorted(gaps & FEEDBACK_RELEVANT_SOURCES),
+        "source_gaps": sorted(_gaps_rel),
+        "readiness": ("PARTIAL" if _partial else "READY"),
         "has_load": km is not None and not tl_gap,
         "complaint_areas": [(c.get("detail") or {}).get("area") or c.get("value") for c in complaints],
         "event": {"status": event["status"], "days": event["days"], "date": event["date"]},
@@ -470,8 +492,9 @@ def feedback_context_block(user_key: str, workout_key: str = "", today: date | N
         if state is None:
             raise RuntimeError("AthleteState onbeschikbaar")
     except Exception as e:
-        return {"prompt_block": "", "source_gaps": [], "has_load": False,
-                "complaint_areas": [], "error": str(e)[:120]}
+        # P0: een gefaalde read is UNKNOWN, geen 'geen bijzonderheden' — geef de onzekerheid mee.
+        return {"prompt_block": _CONTEXT_UNKNOWN_BLOCK, "source_gaps": [], "has_load": False,
+                "complaint_areas": [], "readiness": "UNKNOWN", "error": str(e)[:120]}
     return feedback_context(state, workout_key, today, athlete_raised_race=athlete_raised_race)
 
 

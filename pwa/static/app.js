@@ -3200,8 +3200,26 @@ function fbRenderMetricsSlot() {
   const el = $("#fb-metrics"); if (el) el.innerHTML = fbMetricsHtml(FB.sel.d || {}, FB.sel.week, FB.sel.cockpit);
 }
 function fbRenderMbSlot() {
-  const el = $("#fb-mb"); if (el) el.innerHTML =
-    `<div class="sh">${ic("brain")} Masterbrein-samenvatting</div>${fbMasterbreinBullets(FB.sel.d || {}, FB.sel.cockpit)}`;
+  const el = $("#fb-mb"); if (!el) return;
+  const head = `<div class="sh">${ic("brain")} Masterbrein-samenvatting</div>`;
+  // P0 context-readiness: LOADING (cockpit nog niet in terminale staat) mag NOOIT als
+  // 'Geen bijzondere signalen' lezen. Toon expliciet 'Context laden…' tot de deep-context
+  // geladen (of gefaald) is — een nog-onbekende signaalstand is niet hetzelfde als 'leeg'.
+  if (!FB.sel.cockpit && !FB.sel.cockpitErr) el.innerHTML = head + `<p class="fb-mb-empty">${ic("clock")} Context laden…</p>`;
+  else if (!FB.sel.cockpit && FB.sel.cockpitErr) el.innerHTML = head + `<p class="fb-mb-empty">Context tijdelijk niet beschikbaar — interne fout, geen bronfout.</p>`;
+  else el.innerHTML = head + fbMasterbreinBullets(FB.sel.d || {}, FB.sel.cockpit);
+  fbSyncGen();                                          // generatie-knop volgt de context-readiness
+}
+// P0: 'Genereer' is pas actionabel als de vereiste deep-context in een TERMINALE staat is
+// (geladen óf expliciete fout) — nooit genereren terwijl de coach nog 'Context laden…' ziet.
+// Serverzijde re-derivet dezelfde canonieke state; dit voorkomt dat de coach genereert op een
+// stand die hij nog niet kon zien. De in-flight staat (AI schrijft…) wordt niet overschreven.
+function fbSyncGen() {
+  const btn = $("#fb-gen"); if (!btn || btn.dataset.busy === "1") return;
+  const ready = !!(FB.sel && (FB.sel.cockpit || FB.sel.cockpitErr));
+  btn.disabled = !ready;
+  btn.setAttribute("aria-disabled", String(!ready));
+  btn.innerHTML = ready ? `${ic("brain")} Genereer` : `${ic("clock")} Context laden…`;
 }
 function fbRenderBerichtSlot() {
   const el = $("#fb-bericht"); if (!el) return;
@@ -3269,7 +3287,14 @@ function fbFillDetail() {
   fbBindZoneRetries(); fbScrollThreadBottom();
 }
 function fbEnrichContext(akey, datum, id, gen) {
-  if (!akey) return;
+  if (!akey) {
+    // Geen gekoppelde atleet → er valt geen deep-context te laden. Zet de context in een TERMINALE
+    // staat (geen eeuwige 'Context laden…' die generatie voor altijd blokkeert); de generatie
+    // beoordeelt dan op de training zelf. Geen valse 'geen signalen'.
+    if (FB.sel) FB.sel.cockpitErr = true;
+    fbRenderCtxCol(); fbRenderMbSlot();
+    return;
+  }
   const c = FB.ctxCache[akey] || {};
   if (c.week) { FB.sel.week = c.week; fbRenderWeekSlots(); fbRenderMetricsSlot(); }
   else fbEnrichWeek(akey, datum, id, gen);
@@ -3291,7 +3316,7 @@ async function fbEnrichCockpit(akey, id, gen) {
   if (gen !== FB.selGen) return;
   const cockpit = (r.data && r.data.ok) ? r.data : null;
   if (cockpit) { (FB.ctxCache[akey] = FB.ctxCache[akey] || {}).cockpit = cockpit; FB.sel.cockpit = cockpit; fbRenderCtxCol(); fbRenderMetricsSlot(); fbRenderMbSlot(); }
-  else if (!r.aborted) { FB.sel.cockpitErr = true; fbRenderCtxCol(); fbBindZoneRetries(); }
+  else if (!r.aborted) { FB.sel.cockpitErr = true; fbRenderCtxCol(); fbRenderMbSlot(); fbBindZoneRetries(); }   // terminale foutstaat → MB + generatie deblokkeren
 }
 
 // ── Case-hero: metrics · atleetbericht + Masterbrein · weekoverzicht ─────────
@@ -3337,10 +3362,21 @@ function fbMasterbreinBullets(d, cockpit) {
   if (cockpit) {
     const lo = cockpit.load_observation;
     if (lo && lo.delta_pct != null && lo.delta_pct > 0) b.push(`Belasting laatste 7 dagen verhoogd (+${lo.delta_pct}% t.o.v. referentie).`);
-    (cockpit.attention || []).slice(0, 3).forEach(c => { if (c.kind !== "load_signal") b.push(esc(c.title) + (c.why ? ` — ${esc(String(c.why))}` : "")); });
+    (cockpit.attention || []).slice(0, 3).forEach(c => {
+      if (c.kind === "load_signal") return;
+      // P0: nooit een ruwe machinewaarde tonen — 'why' alleen als het een echte, niet-lege string is
+      // (een boolean/enum/object wordt NOOIT gestringificeerd naar coach-tekst).
+      const why = (typeof c.why === "string" && c.why.trim()) ? c.why : "";
+      b.push(esc(c.title) + (why ? ` — ${esc(why)}` : ""));
+    });
   }
   const afw = d.afwijking || {};
-  if (afw.relevance && afw.relevance !== "ignore" && afw.relevance !== "n/a" && afw.report) b.push(esc(afw.report));
+  // P0: `afw.report` is een BOOLEAN-vlag ('moet dit gemeld worden?'), GEEN tekst. Vroeger werd die
+  // als bullet gepusht → letterlijke 'true' in de samenvatting. Bouw nu een leesbare zin uit pct.
+  if (afw.relevance && afw.relevance !== "ignore" && afw.relevance !== "n/a" && afw.pct != null) {
+    const p = Math.round(Number(afw.pct));
+    if (isFinite(p)) b.push(`Afstand ${p > 0 ? "+" : ""}${p}% t.o.v. gepland.`);
+  }
   if (!b.length) return `<p class="fb-mb-empty">Geen bijzondere signalen — beoordeel op de uitvoering.</p>`;
   return `<ul class="fb-mb-list">${b.slice(0, 4).map(x => `<li>${x}</li>`).join("")}</ul>`;
 }
@@ -3441,7 +3477,12 @@ function fbPaHtml(d) {                                // gepland (intentie) vs u
   // Uitgevoerd toont ALLEEN een zone als die betekenisvol is (backend geeft er
   // geen bij een gestructureerde/multi-zone training → geen misleidend gemiddelde).
   const gzone = g.structuur ? `<span class="fb-zone plan">${esc(g.structuur)}</span>` : zp(g.zone);
-  if (g.zone || g.structuur || u.zone) rows.push(["Zone", gzone, zp(u.zone)]);
+  // P1: de uitgevoerde zone is de zone van het GEMIDDELDE over de hele training — expliciet zo
+  // labelen zodat het niet leest als 'in de doelzone uitgevoerd' (misleidend bij intervallen).
+  const uzone = u.zone
+    ? `<span class="fb-zone">Z${u.zone.num}${u.zone.naam ? " " + esc(u.zone.naam) : ""}</span><small class="fb-zone-note">gem. hele training</small>`
+    : "—";
+  if (g.zone || g.structuur || u.zone) rows.push(["Zone", gzone, uzone]);
   const foot = (d.gevoel || d.rpe)
     ? `<p class="fb-pa-foot">${d.gevoel ? `Gevoel: ${esc(d.gevoel.label)}` : ""}${d.gevoel && d.rpe ? " · " : ""}${d.rpe ? `RPE ${esc(d.rpe)}` : ""}</p>` : "";
   // Kernintentie (ACTIVE-stappen) vs. volledige feitelijke structuur (fallback);
@@ -3485,11 +3526,13 @@ async function fbStaleRecover(id) {
 
 // ── Acties: Genereer / Versturen (idle→sending→sent|error) / Overslaan ───────
 async function fbGen(id) {
-  const btn = $("#fb-gen"); if (btn) { btn.disabled = true; btn.innerHTML = `${ic("brain")} AI schrijft…`; }
+  // P0: nooit genereren terwijl de vereiste deep-context nog laadt (ook niet via toetsenbord-shortcut).
+  if (FB.sel && !FB.sel.cockpit && !FB.sel.cockpitErr) { melding("Context laadt nog — één tel geduld."); return; }
+  const btn = $("#fb-gen"); if (btn) { btn.dataset.busy = "1"; btn.disabled = true; btn.innerHTML = `${ic("brain")} AI schrijft…`; }
   fbLog("generate_start"); const t0 = performance.now();
   const r = await jpost("/api/feedback/generate", { id }).catch(() => null);
   const dur = Math.round(performance.now() - t0);
-  if (btn) { btn.disabled = false; btn.innerHTML = `${ic("brain")} Genereer`; }
+  if (btn) { btn.dataset.busy = ""; btn.disabled = false; btn.innerHTML = `${ic("brain")} Genereer`; }
   if (!r || !r.ok) {
     fbLog("generate_error", { generate_duration_ms: dur });
     if (fbIsStaleErr(r)) { melding("Even herladen…"); fbStaleRecover(id); return; }   // gerichte recovery i.p.v. dode kaart
