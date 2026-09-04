@@ -400,6 +400,17 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
     if subj:
         regels.append("Subjectieve trend: " + ", ".join(subj) + ".")
 
+    # P1 — ACTUEEL belastingssignaal: load.signal (belasting-ernst 'hoog'/'let op') is de acute
+    # verhoging (bv. +33%) die in de UI zichtbaar is maar tot nu toe NIET in de generatie-prompt
+    # kwam. Expliciet meegeven zodat het signaal de tekst kan sturen (audit: 0/5 signalen deden dat).
+    sig = _ev(evs, "load.signal")
+    _load_active = bool(sig and str((sig or {}).get("value")).lower() in ("hoog", "let op", "let_op"))
+    if _load_active:
+        regels.append(f"Actueel belastingssignaal: recente hardloopbelasting VERHOOGD "
+                      f"(ernst: {sig.get('value')}).")
+    _recovery_neg = ((rpe is not None and rpe.get("value") == "zwaarder")
+                     or (feel is not None and feel.get("value") == "slechter"))
+
     # FC-3 — bekende race/afspraak: deterministische relatieve tijd uit de canonieke
     # goal.race-truth (geen vrije-tekst-gok, geen AI-herberekening). Alleen toekomstige,
     # betrouwbaar gedateerde events geven een vooruitblik-regel; PAST/UNKNOWN → géén regel.
@@ -455,6 +466,17 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
                       "training zelf over begint; de afwezigheid van een klachtmelding bewijst NIET "
                       "dat de klacht weg is of geen hinder gaf, dus schrijf nooit dat een klacht "
                       "'geen hinder gaf' of 'over' is zonder dat de atleet dat nu zelf zegt.")
+        # P1 — een ACTUEEL signaal (verhoogde belasting, actieve klacht, of zwaarder wordend
+        # gevoel/inspanning) MAG niet als losse achtergrond wegvallen: het moet de reactie mee
+        # sturen. Geen geforceerde vraag (respecteert de klacht-guard en de 'geen standaardvraag'-
+        # regel); erkennen + voorwaardelijk advies richting de eerstvolgende zware/lange sessie is
+        # de weg. Medisch terughoudend (geen diagnose/oorzaak/medicatiewerking).
+        if _load_active or complaints or _recovery_neg:
+            _slot += (" LET OP — er staat hierboven een ACTUEEL signaal. Laat dat je reactie MEE "
+                      "sturen (niet als losse achtergrond wegschrijven): erken het kort en/of geef "
+                      "een voorwaardelijk advies richting de eerstvolgende zware of lange sessie. "
+                      "Forceer geen vraag, maar negeer het signaal ook niet. Blijf medisch "
+                      "terughoudend: geen diagnose, geen oorzaak, geen uitspraak over medicatiewerking.")
         tekst = ("━━━ WAT BEBETTER AL WEET OVER DEZE ATLEET (achtergrond — verzin niets bij) ━━━\n"
                  + "\n".join("- " + r for r in regels) + _slot)
     elif _partial:

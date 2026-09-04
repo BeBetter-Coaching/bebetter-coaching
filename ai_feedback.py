@@ -77,6 +77,9 @@ GERUSTSTELLING PAST BIJ DE SIGNALEN (niet onderhandelbaar):
 - Is er een relevant ACTIEF signaal (verhoogde belasting in de achtergrondcontext, de atleet meldt vermoeidheid, hoge hartslag, pijn of dat het niet soepel ging, of een negatieve hersteltrend), gebruik dan GEEN wegwuivende geruststelling zoals "geen alarm", "niks aan de hand" of "geen reden om je zorgen te maken", tenzij een expliciete, sterke regel in de context dat echt onderbouwt.
 - Doe dan in plaats daarvan: erken wat de atleet meldt, koppel het aan het signaal, en geef een voorzichtige check of een voorwaardelijke stap. Diagnosticeer niet, maar stel ook niet vals gerust.
 
+ONTBREKENDE UITVOERING / SYNC (niet onderhandelbaar):
+- Is er geen uitvoeringsdata zichtbaar, geef dan GEEN specifieke, niet-geverifieerde platform- of sync-instructies (bijv. Garmin-koppeling herstellen, activiteit 'publiek' maken, handmatig uploaden) alsof je weet dat dat de oplossing is. Zeg eerlijk dat de uitvoering nog niet zichtbaar is, zodat je de training niet kunt beoordelen, en vraag de atleet kort om de sync te herstellen of de training alsnog te delen. Verzin geen uitvoeringsdata.
+
 ZONE-ACCURACY — KRITIEKE REGELS (niet onderhandelbaar):
 1. Zones bestaan in twee smaken: TEMPO-zones (min/km) en HARTSLAG-zones (bpm). Deze zijn NIET uitwisselbaar.
 2. Als alleen TEMPO-zones beschikbaar zijn: beoordeel intensiteit uitsluitend via tempo. Zeg NOOIT dat de hartslag "hoog", "te hoog", "in zone X" of "opvallend" was — ook niet als suggestie of tussenzin. Benoem hartslag alleen als neutraal getal als het relevant is (bijv. "HF van 148 bpm"), zonder oordeel.
@@ -360,15 +363,21 @@ def _format_block_assessment(assessment: dict, first_name: str) -> str:
         return ""
     eerste_active = next((b["index"] for b in blocks
                           if b["type"] not in ("WARMUP", "REST", "COOLDOWN")), None)
+    # P1 — exacte blokgrootte per blok (uit de builder-metadata `dur`, bv. "200 m"/"3:00").
+    # Zonder deze labels verzon het model relatieve maten ("langere blokken") — een 200m-blok
+    # werd 'lang' genoemd. De grootte staat al in de block-dict; hier expliciet meegeven.
+    def _sz(b):
+        d = str(b.get("dur") or "").strip()
+        return f" van {d}" if d else ""
     regels = []
     for b in blocks:
         t = b["type"]
         if t == "WARMUP":
-            regels.append(f"- Warming-up (blok {b['index']}): geen harde target-evaluatie.")
+            regels.append(f"- Warming-up (blok {b['index']}{_sz(b)}): geen harde target-evaluatie.")
             continue
         if t in ("REST", "COOLDOWN"):
             naam = "Herstel" if t == "REST" else "Cooldown"
-            regels.append(f"- {naam} (blok {b['index']}): herstelblok, niet beoordelen op target-tempo/HF.")
+            regels.append(f"- {naam} (blok {b['index']}{_sz(b)}): herstelblok, niet beoordelen op target-tempo/HF.")
             continue
         if b["metric"] == "hr":
             obs = f"HF {b['observed_hr']} bpm" if b.get("observed_hr") else "geen HF-meetwaarde"
@@ -382,7 +391,7 @@ def _format_block_assessment(assessment: dict, first_name: str) -> str:
             "UNKNOWN": "geen betrouwbare targetvergelijking",
             "NOT_EVALUATED": "niet beoordelen",
         }.get(b["status"], "onbekend")
-        regel = f"- Werkblok {b['index']} (ACTIVE, {doel}): {obs} — {status_tekst}."
+        regel = f"- Werkblok {b['index']}{_sz(b)} (ACTIVE, {doel}): {obs} — {status_tekst}."
         if b["status"] == "BELOW_TARGET" and b["index"] == eerste_active:
             regel += (" Let op: vroeg in een intervaltraining is de hartslag nog niet op peil "
                       "(hartslag-lag); onder target in dit eerste blok is op zichzelf GEEN bewijs "
@@ -391,7 +400,9 @@ def _format_block_assessment(assessment: dict, first_name: str) -> str:
     return ("\n\nBLOK-ANALYSE (door de app bepaald — deterministisch, per gematcht blok):\n"
             + "\n".join(regels)
             + "\nBeoordeel elk werkblok apart; één blok onder target is geen totaaloordeel. "
-            "Warming-up/herstel zijn geen targetblokken.")
+            "Warming-up/herstel zijn geen targetblokken. Gebruik de EXACTE blokgroottes hierboven "
+            "(bijv. 'het 600m-blok', 'de twee 200m-blokken'); noem NOOIT een blok 'langer' of "
+            "'korter' dan een ander tenzij dat uit deze groottes blijkt.")
 
 
 def _dominant_planned_metric(planned_blocks: list) -> str | None:
@@ -617,7 +628,11 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
         if felt:
             felt_key = str(felt).split(".")[0]  # "2.0" → "2"
             felt_label = _FELT_LABELS.get(felt_key, str(felt))
-            rating_parts.append(f"Gevoel: {felt_label} ({felt_key}/5 — schaal 1=Geweldig t/m 5=Vreselijk)")
+            # P2: categorisch gevoel als WOORD meegeven (niet als '4/5' — dat cijfer wordt anders
+            # als onduidelijke score overgenomen; de gevoelsschaal is bovendien omgekeerd t.o.v. RPE).
+            rating_parts.append(f"Gevoel dat de atleet zelf aangaf: {felt_label.lower()} "
+                                f"(categorisch oordeel — verwoord dit als woord, bijv. 'je gaf aan "
+                                f"dat het {felt_label.lower()} voelde', NIET als een cijfer zoals '{felt_key}/5')")
         if effort:
             rating_parts.append(f"Inspanning (RPE): {effort}/10 (1=zeer makkelijk, 10=maximaal)")
         athlete_input_parts.append(" | ".join(rating_parts))
@@ -835,13 +850,18 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     nf = (workout_data.get("near_future_block") or "").strip()
     near_future_section = f"\n\n{nf}" if nf else ""
 
+    # P0 — same-day sessie-coherentie (feedback_core._session_context): meerdere registraties van
+    # dezelfde sessie samen begrijpen, zodat een klein fragment geen 'vroeg gestopte training' wordt.
+    sess = (workout_data.get("session_block") or "").strip()
+    session_section = f"\n\n{sess}" if sess else ""
+
     context = f"""Training: {workout_name}
 
 WAT WAS DE BEDOELING (workout builder):
 {plan_text}{zones_section}{garmin_section}
 
 Samenvattende data:
-{activity_summary}{deviation_section}{unplanned_section}{lap_section}{zone_dist_section}{near_future_section}{datum_section}{profiel_section}{brein_section}
+{activity_summary}{deviation_section}{session_section}{unplanned_section}{lap_section}{zone_dist_section}{near_future_section}{datum_section}{profiel_section}{brein_section}
 
 Wat {first_name} zelf schrijft/zegt:
 {athlete_input}"""
@@ -1004,7 +1024,10 @@ def _build_nonrun_context(workout_data: dict) -> tuple[str, str]:
         rp = []
         if felt:
             fk = str(felt).split(".")[0]
-            rp.append(f"Gevoel: {_FELT_LABELS.get(fk, str(felt))} ({fk}/5 — 1=Geweldig t/m 5=Vreselijk)")
+            # P2: categorisch gevoel als WOORD (zie _build_workout_context) — geen '4/5'-cijfer.
+            _fl = _FELT_LABELS.get(fk, str(felt)).lower()
+            rp.append(f"Gevoel dat de atleet zelf aangaf: {_fl} (categorisch oordeel — verwoord als "
+                      f"woord, bijv. 'je gaf aan dat het {_fl} voelde', NIET als een cijfer)")
         if effort:
             rp.append(f"Inspanning (RPE): {effort}/10")
         parts.append(" | ".join(rp))

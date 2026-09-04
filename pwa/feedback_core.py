@@ -14,6 +14,7 @@ herhalen.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import threading
 import time
@@ -157,6 +158,34 @@ def _brein_context(w: dict) -> str:
 
 
 _NEAR_FUTURE_DAYS = 5
+_WD_FULL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
+
+
+def _generation_date():
+    """P1 — ÉÉN tijdzone-bewuste 'vandaag' (generatiedatum) als anker voor relatieve datumtaal.
+    Val terug op de naïeve lokale datum als de zone niet beschikbaar is."""
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        return datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+    except Exception:
+        from datetime import date as _date
+        return _date.today()
+
+
+def _relative_day_label(d, today) -> str:
+    """Deterministische relatieve dag t.o.v. de generatiedatum: vandaag/morgen/overmorgen, dan de
+    weekdag (binnen een week), anders 'over N dagen'. Nooit door de AI uit een datum afgeleid."""
+    n = (d - today).days
+    if n == 0:
+        return "vandaag"
+    if n == 1:
+        return "morgen"
+    if n == 2:
+        return "overmorgen"
+    if 3 <= n <= 6:
+        return _WD_FULL[d.weekday()]
+    return f"over {n} dagen"
 
 
 def _near_future_block(w: dict) -> str:
@@ -171,7 +200,7 @@ def _near_future_block(w: dict) -> str:
     try:
         import fs_client as FS
         from datetime import date, timedelta
-        today = date.today()
+        today = _generation_date()                           # P1: één tz-bewuste generatiedatum
         try:
             wd = date.fromisoformat((w.get("workout_date") or "")[:10])
         except ValueError:
@@ -214,7 +243,8 @@ def _near_future_block(w: dict) -> str:
             if mins:
                 meta.append(f"{mins} min")
             tag = " [WEDSTRIJD]" if x.get("is_race") else ""
-            rows.append(f"- {_WD[dd.weekday()]} {dd.day}/{dd.month}: {naam}"
+            rel = _relative_day_label(dd, today)                 # P1: deterministische relatieve dag
+            rows.append(f"- {rel} ({_WD[dd.weekday()]} {dd.day}/{dd.month}): {naam}"
                         + ((" · " + ", ".join(meta)) if meta else "") + tag)
             if len(rows) >= 3:
                 break
@@ -222,11 +252,119 @@ def _near_future_block(w: dict) -> str:
             return ""
         return ("━━━ KOMENDE GEPLANDE TRAININGEN (deterministisch uit FinalSurge — verzin er niets bij) ━━━\n"
                 + "\n".join(rows)
-                + "\nWeeg deze ALLEEN mee als het voor DEZE feedback uitmaakt (de atleet noemt een "
-                  "komende dag/sessie, er is een verhoogd belasting-/herstelsignaal, deze training "
-                  "was onverwacht/extra, de atleet meldt pijn/vermoeidheid, de atleet vraagt om een "
-                  "schema- of wedstrijdwijziging, of de eerstvolgende sessie is fors/zwaar). Anders "
-                  "hoef je ze niet te noemen. Zeg NOOIT toe dat je het schema aanpast (coach-agency).")
+                + "\nNeem de RELATIEVE dag (bijv. 'morgen', 'overmorgen', 'zaterdag') LETTERLIJK over "
+                  "zoals hierboven vermeld; reken die NOOIT zelf uit een datum of trainingsdatum.\n"
+                  "Weeg deze sessies ALLEEN mee als het voor DEZE feedback uitmaakt (de atleet noemt een "
+                  "komende dag/sessie, er is een verhoogd belasting-/herstelsignaal, deze training was "
+                  "onverwacht/extra, de atleet meldt pijn/vermoeidheid, de atleet vraagt om een schema- "
+                  "of wedstrijdwijziging, of de eerstvolgende sessie is fors/zwaar). Anders hoef je ze "
+                  "niet te noemen. Zeg NOOIT toe dat je het schema aanpast (coach-agency).")
+    except Exception:
+        return ""
+
+
+# Herkenning van een verbindings-/horloge-onderbreking of hervatting in de atleet-tekst.
+_SESSION_SPLIT_RE = re.compile(
+    r"verbind|verbinding|weg\s*(viel|gevallen|vallen)|opnieuw|verder\s*ge|doorge(lopen|gaan)|hervat|"
+    r"connect|drop|gps|horloge|klok|watch|uitgevallen|onderbroken|opgestart|gesplitst",
+    re.I)
+
+
+def _session_context(w: dict) -> str:
+    """P0 — niet-persistente, deterministische SESSIE-COHERENTIE voor de generatie. Herkent dat
+    meerdere same-day hardloop-registraties van dezelfde atleet WAARSCHIJNLIJK één sessie zijn (bv.
+    gesplitst door verbindings-/horloge-uitval), zodat de AI een klein fragment (bv. 0,85 km) niet
+    als 'vroeg gestopte training' leest. GEEN destructieve merge, GEEN nieuwe fetch (leest de
+    in-proces queue-cache `_cache`), GEEN persistente state. Nooit op één factor; ander sport of
+    twee volle losse runs → SEPARATE (geen blok). Best-effort: faalt stil naar ''."""
+    ak = w.get("athlete_key", "")
+    day = str(w.get("workout_date") or "")[:10]
+    wk = w.get("workout_key", "")
+    if not ak or not day:
+        return ""
+    try:
+        def _acts(x):
+            d = x.get("details") or {}
+            return (d.get("Activities") if isinstance(d, dict) else None) or x.get("Activities") or []
+
+        def _exec_km(x):
+            for a in _acts(x):
+                km = FS._norm_km((a or {}).get("amount"), (a or {}).get("amount_type"))
+                if km is not None:
+                    return km
+            return None
+
+        def _planned_km(x):
+            for a in _acts(x):
+                km = FS._norm_km((a or {}).get("planned_amount"),
+                                 (a or {}).get("planned_amount_type") or (a or {}).get("amount_type"))
+                if km is not None:
+                    return km
+            return FS._norm_km(x.get("planned_amount"), x.get("planned_amount_type"))
+
+        def _sport(x):
+            return str(x.get("workout_type") or "").lower()
+
+        def _comments(x):
+            cs = [str(c).strip() for c in (x.get("athlete_comments") or []) if str(c or "").strip()]
+            pn = str(x.get("post_notes") or "").strip()
+            if pn:
+                cs.append(pn)
+            return cs
+
+        cur_sport = _sport(w)
+        run_like = ("run", "running", "hardlopen", "")
+        sibs = []
+        for x in list(_cache.values()):
+            if x is w or x.get("athlete_key") != ak:
+                continue
+            if str(x.get("workout_date") or "")[:10] != day:
+                continue
+            if wk and x.get("workout_key") == wk:
+                continue
+            xs = _sport(x)
+            if xs not in run_like and xs != cur_sport:
+                continue                                       # ander sport → geen gesplitste sessie
+            sibs.append(x)
+        if not sibs:
+            return ""
+
+        members = [w] + sibs
+        dists = [d for d in (_exec_km(m) for m in members) if d is not None]
+        if len(dists) < 2:
+            return ""
+        summed = sum(dists)
+        planned = max([p for p in (_planned_km(m) for m in members) if p is not None] or [0]) or None
+        allc = []
+        for m in members:
+            allc.extend(_comments(m))
+        # Meerfactor-bewijs (nooit één alleen): fragment + gepland-totaal-match + hervat/verbind-comment.
+        frag = (min(dists) / max(dists) < 0.3) and (min(dists) < 2.0)
+        plan_match = bool(planned) and abs(summed - planned) / planned < 0.20
+        comment_hit = any(_SESSION_SPLIT_RE.search(c) for c in allc)
+        if sum([bool(frag), bool(plan_match), bool(comment_hit)]) < 2:
+            return ""                                          # onvoldoende bewijs → los behandelen
+
+        reg = [f"- registratie {km:g} km" if km is not None else "- registratie (afstand onbekend)"
+               for km in (_exec_km(m) for m in members)]
+        blok = ["━━━ ZELFDE-DAG SESSIE-CONTEXT (deterministisch — meerdere registraties op dezelfde dag) ━━━",
+                "Deze atleet heeft vandaag meerdere hardloop-registraties die WAARSCHIJNLIJK dezelfde "
+                "sessie zijn (mogelijk gesplitst door bijv. een verbindings-/horloge-onderbreking):"] + reg
+        tot = f"Samen ~{summed:.1f} km"
+        if planned:
+            tot += f", gepland ~{planned:g} km"
+        blok.append(tot + ".")
+        if comment_hit:
+            _c = next((c for c in allc if _SESSION_SPLIT_RE.search(c)), "")
+            if _c:
+                blok.append(f"In een andere registratie van dezelfde sessie schreef de atleet: \"{_c[:240]}\".")
+        blok.append(
+            "Behandel DEZE registratie daarom NIET als een losse, vroeg afgebroken training; concludeer "
+            "NIET dat de training 'vroeg gestopt' is. Verwijs naar 'deze registratie' i.p.v. de hele "
+            "training, en stel GEEN vraag die in een andere registratie al is beantwoord (vraag bijv. "
+            "niet 'wat er gebeurde' als een andere registratie de onderbreking al uitlegt). Twijfel je, "
+            "benoem de onzekerheid ('deze registratie lijkt onderdeel van een langere sessie').")
+        return "\n".join(blok)
     except Exception:
         return ""
 
@@ -374,8 +512,10 @@ def genereer(wid: str) -> str:
     _refresh_thread(w)                                   # §9: actuele thread-state vóór dispatch
     brein = _brein_context(w)                            # Masterbrein-context (gated)
     nf = _near_future_block(w)                            # P1: begrensde near-future planning (bounded read)
-    if brein or nf:
-        w = {**w, "brein_context": brein, "near_future_block": nf}   # kopie: cache niet met prompttekst muteren
+    sess = _session_context(w)                            # P0: same-day sessie-coherentie (in-proces, geen fetch)
+    if brein or nf or sess:
+        # kopie: cache niet met prompttekst muteren
+        w = {**w, "brein_context": brein, "near_future_block": nf, "session_block": sess}
     import ai_feedback                                   # lui: pas hier is de key nodig
     thread = w.get("thread") or []
     if feedback_mode(thread) == FOLLOW_UP_REPLY:
