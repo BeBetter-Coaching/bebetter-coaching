@@ -423,45 +423,19 @@ def _zone_distribution(laps: list, zones: list, is_pace) -> str:
     o.b.v. de bestaande per-lap-classificatie (`classify_pace_hr_zone`) — GEEN nieuwe zone-math.
     Elke lap weegt mee met zijn afstand (aandelen zijn eenheid-onafhankelijk); ontbreekt de
     afstand overal, dan telt elke lap even zwaar. Zo hoeft de AI 'de meeste km in Zx' niet uit
-    het ruwe verloop te raden (dé bron van de audit-overclaims). Leeg bij < 2 bruikbare laps."""
-    if not laps or not zones or is_pace is None:
-        return ""
-    import fs_client as _fs
-    from collections import defaultdict
-    per: dict = defaultdict(float)
-    tot = 0.0
-    used = 0
-    any_dist = False
-    for lap in laps:
-        if not isinstance(lap, dict):
-            continue
-        d = _fs._safe_float(lap.get("amount"))
-        if d is None:
-            d = _fs._safe_float(lap.get("distance_display"))
-        if d and d > 0:
-            any_dist = True
-        if is_pace:
-            _pm = _fs._pace_to_float(lap.get("pace_display") or "")
-            val = _pm * 60 if _pm not in (0, float("inf")) else None
-        else:
-            val = _fs._safe_float(lap.get("hr_avg"))
-        if val is None:
-            continue
-        cls = _fs.classify_pace_hr_zone(zones, val, is_pace=is_pace)
-        if not cls:
-            continue
-        key = f"Z{cls['num']}" if cls.get("status") == "IN_ZONE" else "buiten de zones"
-        w = d if (d and d > 0) else 1.0
-        per[key] += w
-        tot += w
-        used += 1
-    if tot <= 0 or used < 2:
+    het ruwe verloop te raden (dé bron van de audit-overclaims). Leeg bij < 2 bruikbare laps.
+
+    v3: de aandelen komen uit één gedeelde bron (`feedback_obligations.zone_shares`), zodat de
+    zoneverdeling-tekst en de deterministische evidence-arbitration NOOIT kunnen divergeren."""
+    import feedback_obligations as _ob
+    shares, any_dist, used = _ob.zone_shares(laps, zones, is_pace)
+    if not shares or used < 2:
         return ""
 
     def _order(k):
         return (1, 99) if k == "buiten de zones" else (0, int(k[1:]))
 
-    parts = [f"{k} {round(v / tot * 100)}%" for k, v in sorted(per.items(), key=lambda kv: _order(kv[0]))]
+    parts = [f"{k} {shares[k]}%" for k in sorted(shares.keys(), key=_order)]
     eenheid = "afstand" if any_dist else "laps"
     return (f"ZONEVERDELING (deterministisch — aandeel van de {eenheid} per zone, o.b.v. de laps): "
             + ", ".join(parts) + ". "
@@ -672,6 +646,41 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     zone_dist_text = _zone_distribution(laps, athlete_zones_struct, _classified_is_pace) if _can_classify else ""
     zone_dist_section = f"\n\n{zone_dist_text}" if zone_dist_text else ""
 
+    # ── v3 — deterministische EVIDENCE-ARBITRATION & VERPLICHTINGEN (feedback_obligations) ──
+    # Één structurele laag vóór de generatie (geen downstream rewriter): bindt het model aan de
+    # exacte zoneverdeling (modaliteit labelen, niet afronden, geen materiële zone weglaten),
+    # verifieert een atleet-zoneclaim vóór instemming, en dwingt dat een materiële bericht-
+    # (kan-niet-komen/pijn/vraag) én signaalverplichting (actieve klacht/verhoogde belasting bij
+    # zware uitvoering of zware sessie op komst) niet worden genegeerd. Puur over AL vergaarde
+    # data — geen nieuwe fetch/store/AI. Schone case → leeg blok (geen ruis). Nooit fataal.
+    obligations_section = ""
+    try:
+        import feedback_obligations as _ob
+        _ob_shares, _ob_any_dist, _ob_used = (
+            _ob.zone_shares(laps, athlete_zones_struct, _classified_is_pace) if _can_classify else ({}, False, 0))
+        _ob_targets = {int(b["target_zone"]) for b in (_block_assessment or {}).get("blocks", []) or []
+                       if b.get("target_zone") and b.get("type") not in ("WARMUP", "REST", "COOLDOWN")}
+        _ob_msg = "\n".join([post_notes or ""] + [c for c in athlete_comments if c and c.strip()]).strip()
+        _ob_diag = workout_data.get("_brein_diag") or {}
+        _ob_complaints = _ob_diag.get("complaint_areas") or []
+        _ob_load = bool(_ob_diag.get("load_active"))
+        try:
+            _ob_rpe_high = bool(effort) and float(str(effort).split()[0].replace(",", ".")) >= 7
+        except (TypeError, ValueError):
+            _ob_rpe_high = False
+        _ob_above = any(b.get("status") == "ABOVE_TARGET"
+                        for b in (_block_assessment or {}).get("blocks", []) or [])
+        _ob_upcoming = bool((workout_data.get("near_future_block") or "").strip())
+        _ob_res = _ob.build(
+            modality=athlete_zone_type, shares=_ob_shares, any_dist=_ob_any_dist,
+            planned_target_zones=_ob_targets, athlete_text=_ob_msg,
+            complaint_areas=_ob_complaints, load_elevated=_ob_load,
+            intensity_high=bool(_ob_rpe_high or _ob_above), has_upcoming=_ob_upcoming)
+        if _ob_res.get("prompt_block"):
+            obligations_section = f"\n\n{_ob_res['prompt_block']}"
+    except Exception:
+        obligations_section = ""
+
     plan_parts = []
     if plan_description.strip():
         plan_parts.append(plan_description.strip()[:600])
@@ -864,7 +873,7 @@ Samenvattende data:
 {activity_summary}{deviation_section}{session_section}{unplanned_section}{lap_section}{zone_dist_section}{near_future_section}{datum_section}{profiel_section}{brein_section}
 
 Wat {first_name} zelf schrijft/zegt:
-{athlete_input}"""
+{athlete_input}{obligations_section}"""
 
     return context, first_name
 

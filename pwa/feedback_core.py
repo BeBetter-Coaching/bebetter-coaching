@@ -151,7 +151,7 @@ def _brein_context(w: dict) -> str:
         raised = _athlete_raises_race(w)
         block = _ad.feedback_context_block(ak, w.get("workout_key", ""), athlete_raised_race=raised)
         w["_brein_diag"] = {k: block.get(k) for k in
-                            ("source_gaps", "has_load", "complaint_areas", "overall")}
+                            ("source_gaps", "has_load", "complaint_areas", "overall", "load_active")}
         return (block.get("prompt_block") or "") if mode == "v2" else ""
     except Exception:
         return ""
