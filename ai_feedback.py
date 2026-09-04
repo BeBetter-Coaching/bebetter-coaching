@@ -131,6 +131,18 @@ ZONE-ACCURACY — KRITIEKE REGELS (niet onderhandelbaar):
    Bij een gestructureerde interval-/blokkentraining beoordeel je PER BLOK (zie BLOK-ANALYSE), niet
    via een sessie-brede dominante zone: warming-up, herstel en cooldown kunnen die dominante zone
    bepalen en zijn dan misleidend.
+11. GEEN ZONEPERCENTAGES OF DISTRIBUTIE-BREUKEN NAAR DE ATLEET (niet onderhandelbaar):
+   Noem in je bericht NOOIT een zonepercentage ("56% in Z3", "33% in Z2", "ongeveer 40%", "23%") en
+   ook geen distributie-breuk die van een zoneverdeling is afgeleid ("de helft", "een derde", "bijna
+   driekwart", "grofweg de helft"). Die exacte waarden worden aantoonbaar onbetrouwbaar overgenomen
+   en zijn voor de atleet weinig waard. Beschrijf de intensiteit in plaats daarvan KWALITATIEF
+   (bijv. "het grootste deel bleef rustig, maar er zat ook een stuk boven je rustige bereik in") en
+   label de modaliteit (op tempo / op hartslag). Voor gestructureerde trainingen mag je exacte
+   AANTALLEN werkblokken/laps noemen ("drie van de vijf werkblokken in Z4") — dat is betrouwbaar en
+   waardevol. Kwalitatieve hoeveelheidswoorden ("grootste deel", "overwegend", "deels", "een stuk")
+   mogen, mits gedekt door de aangeleverde ZONE-DUIDING; een percentage of exacte breuk NOOIT.
+   Vertellen hartslag en tempo een verschillend verhaal, kies dan niet stil het geruststellende
+   verhaal, maar benoem het verschil.
 
 PLAN VS UITVOERING:
 Als er een geplande structuur beschikbaar is (workout builder), vergelijk dan ACTIEF de uitvoering daarmee. Was het geplande tempo gehaald? Liep de atleet in de geplande zone? Dat is het meest waardevolle wat je kunt zeggen."""
@@ -588,6 +600,17 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     _block_assessment = _fs.assess_workout_blocks(
         builder_steps_raw, laps, athlete_zones_struct, athlete_zone_type)
     blok_section = _format_block_assessment(_block_assessment, first_name)
+    # v4 — exacte, athlete-facing-veilige WERKBLOK-TELLING per zone (AANTALLEN, geen percentages).
+    # Vervangt de behoefte aan een percentage-uitspraak bij gestructureerd werk (Jordi: 'drie van de
+    # vijf werkblokken in Z4'). Alleen bij een betrouwbare (MATCHED) blokkoppeling.
+    if _can_classify and (_block_assessment or {}).get("confidence") == "MATCHED":
+        try:
+            import feedback_obligations as _obc
+            blok_section += _obc.block_zone_counts(
+                _block_assessment.get("blocks"), athlete_zones_struct,
+                _classified_is_pace, athlete_zone_type)
+        except Exception:
+            pass
 
     felt = workout_data.get("felt")
     effort = workout_data.get("effort")
@@ -641,23 +664,19 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     else:
         lap_section = ""
 
-    # P1 — deterministische zoneverdeling over de hele training (aandeel per zone), zodat een
-    # 'meeste km in Zx'-samenvatting op een FEIT rust i.p.v. op een gok uit het lap-verloop.
-    zone_dist_text = _zone_distribution(laps, athlete_zones_struct, _classified_is_pace) if _can_classify else ""
-    zone_dist_section = f"\n\n{zone_dist_text}" if zone_dist_text else ""
-
-    # ── v3 — deterministische EVIDENCE-ARBITRATION & VERPLICHTINGEN (feedback_obligations) ──
-    # Één structurele laag vóór de generatie (geen downstream rewriter): bindt het model aan de
-    # exacte zoneverdeling (modaliteit labelen, niet afronden, geen materiële zone weglaten),
-    # verifieert een atleet-zoneclaim vóór instemming, en dwingt dat een materiële bericht-
-    # (kan-niet-komen/pijn/vraag) én signaalverplichting (actieve klacht/verhoogde belasting bij
-    # zware uitvoering of zware sessie op komst) niet worden genegeerd. Puur over AL vergaarde
-    # data — geen nieuwe fetch/store/AI. Schone case → leeg blok (geen ruis). Nooit fataal.
+    # ── v3 + v4 — deterministische EVIDENCE-ARBITRATION & VERPLICHTINGEN (feedback_obligations) ──
+    # Één structurele laag vóór de generatie (geen downstream rewriter). v4: de exacte zoneverdeling
+    # (percentages) gaat NIET meer athlete-facing mee (het model nam die aantoonbaar onbetrouwbaar
+    # over); de verdeling blijft INTERN bewijs voor een KWALITATIEVE duiding (materieel deel boven
+    # target, geen geruststellend totaalverhaal), plus exacte blok/lap-AANTALLEN. De laag verifieert
+    # verder een atleet-zoneclaim vóór instemming (kwalitatief), en dwingt dat een materiële bericht-
+    # (kan-niet-komen/pijn/vraag) én signaalverplichting (actieve klacht bij relevante belasting →
+    # neutrale check-in) niet worden genegeerd. Geen nieuwe fetch/store/AI. Schone case → leeg blok.
     obligations_section = ""
     try:
         import feedback_obligations as _ob
-        _ob_shares, _ob_any_dist, _ob_used = (
-            _ob.zone_shares(laps, athlete_zones_struct, _classified_is_pace) if _can_classify else ({}, False, 0))
+        _ob_shares = (_ob.zone_shares(laps, athlete_zones_struct, _classified_is_pace)[0]
+                      if _can_classify else {})
         _ob_targets = {int(b["target_zone"]) for b in (_block_assessment or {}).get("blocks", []) or []
                        if b.get("target_zone") and b.get("type") not in ("WARMUP", "REST", "COOLDOWN")}
         _ob_msg = "\n".join([post_notes or ""] + [c for c in athlete_comments if c and c.strip()]).strip()
@@ -671,9 +690,13 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
         _ob_above = any(b.get("status") == "ABOVE_TARGET"
                         for b in (_block_assessment or {}).get("blocks", []) or [])
         _ob_upcoming = bool((workout_data.get("near_future_block") or "").strip())
+        try:
+            _ob_structured = len(_fs._planned_blocks(builder_steps_raw)) >= 2
+        except Exception:
+            _ob_structured = False
         _ob_res = _ob.build(
-            modality=athlete_zone_type, shares=_ob_shares, any_dist=_ob_any_dist,
-            planned_target_zones=_ob_targets, athlete_text=_ob_msg,
+            modality=athlete_zone_type, shares=_ob_shares,
+            planned_target_zones=_ob_targets, athlete_text=_ob_msg, is_structured=_ob_structured,
             complaint_areas=_ob_complaints, load_elevated=_ob_load,
             intensity_high=bool(_ob_rpe_high or _ob_above), has_upcoming=_ob_upcoming)
         if _ob_res.get("prompt_block"):
@@ -870,7 +893,7 @@ WAT WAS DE BEDOELING (workout builder):
 {plan_text}{zones_section}{garmin_section}
 
 Samenvattende data:
-{activity_summary}{deviation_section}{session_section}{unplanned_section}{lap_section}{zone_dist_section}{near_future_section}{datum_section}{profiel_section}{brein_section}
+{activity_summary}{deviation_section}{session_section}{unplanned_section}{lap_section}{near_future_section}{datum_section}{profiel_section}{brein_section}
 
 Wat {first_name} zelf schrijft/zegt:
 {athlete_input}{obligations_section}"""

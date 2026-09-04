@@ -1,34 +1,33 @@
-"""Feedback Evidence Arbitration & Message Coverage v3 (P0/P1).
+"""Feedback Evidence Arbitration & Message Coverage — v3 + v4 (athlete-facing zone simplification).
 
 Eén deterministische VERPLICHTINGEN-laag vóór de generatie. GEEN nieuwe fetch, GEEN store,
 GEEN AI, GEEN downstream rewriter: puur een projectie over data die AL is vergaard
 (zoneverdeling, geplande target, atleetbericht, actieve signalen). Ze maakt de prompt
-STRENGER, zodat het model:
-  - een zone-% claim aan een MODALITEIT (tempo/hartslag) koppelt;
-  - EXACTE percentages gebruikt en NIET afrondt/verzint (33% blijft 33%, geen 'helft' voor 56%);
-  - geen materiële (gelijk-of-hogere) zone weglaat uit een zone-samenvatting;
-  - een atleet-claim ('ik dacht Z1-Z2') NIET met 'Klopt' bevestigt als de bron dat niet draagt;
-  - een materiële bericht-verplichting (kan niet komen, vraag, pijn, schemaverzoek) niet negeert;
-  - een actief klacht-/belastingsignaal daadwerkelijk laat meewegen (veilig, geen diagnose).
+STRENGER én simpeler, zodat het model:
 
-Als er niets te arbitreren valt (schone case) is het blok LEEG — schone PASS-cases blijven
-kort en coachend (P2). De laag verzint nooit een percentage: ze rekent uitsluitend met de
-bestaande, deterministische zone-classificatie (fs_client.classify_pace_hr_zone).
+  v4 (kern) — GEEN zonepercentages of distributie-breuken naar de atleet. De exacte verdeling
+    bleef bij het model onbetrouwbaar (live: 23%→27%, 57%→71%, 56%→50% — drie van de drie fout).
+    Percentages blijven INTERN bruikbaar (Masterbrein/QA/classificatie), maar de athlete-facing
+    tekst krijgt KWALITATIEVE duiding + exacte blok/lap-AANTALLEN i.p.v. percentages.
+  - een zone-duiding aan een MODALITEIT (tempo/hartslag) koppelt en bij verschil niet stil het
+    geruststellende verhaal kiest;
+  - een atleet-claim ('ik dacht Z1-Z2') NIET met 'Klopt' bevestigt als de bron dat niet draagt —
+    zonder percentages, kwalitatief;
+  - een materiële bericht-verplichting (kan niet komen, vraag, pijn, schemaverzoek) niet negeert;
+  - een actieve klacht bij relevante belasting DETERMINISTISCH een neutrale check-in oplevert.
+
+Schone case → LEEG blok (kort/coachend). De laag rekent uitsluitend met de bestaande
+deterministische zone-classificatie (fs_client.classify_pace_hr_zone); geen nieuwe zone-math.
 """
 from __future__ import annotations
 
 import re
 
-# Een zone-aandeel >= dit percentage is 'materieel' — het mag niet stil uit een samenvatting
-# verdwijnen (Sophie: 13% Z3 verdween terwijl het even groot was als de wél genoemde 13% Z2).
+# Een zone-aandeel >= dit percentage is 'materieel' — intern (nooit in athlete-facing tekst).
 _MATERIAL_SHARE = 10
 
 _MODALITY_NL = {"tempo": "op tempo", "hartslag": "op hartslag"}
 _MODALITY_ZONE = {"tempo": "tempozone", "hartslag": "hartslagzone"}
-
-# Instemmings-woorden die een atleet-interpretatie als WAAR bevestigen — verboden als de bron
-# de claim niet (volledig) draagt.
-_AFFIRM_WORDS = ("klopt", "precies", "inderdaad", "helemaal goed", "exact", "klopt helemaal")
 
 # Totaliteits-claim van de atleet ('alles ging in Z2', 'precies volgens plan').
 _TOTALITY_RE = re.compile(r"\b(alles|helemaal|volledig|precies|de\s+hele|hele\s+tijd|constant|steeds)\b", re.I)
@@ -56,12 +55,10 @@ _ZONE_RANGE_RE = re.compile(r"z(?:one)?\s*([1-5])\s*(?:[-–—]|tot|en|/|,)\s*z
 
 def zone_shares(laps, zones, is_pace):
     """DETERMINISTISCHE zoneverdeling (aandeel per zone) uit de per-lap classificatie
-    (`fs_client.classify_pace_hr_zone`) — GEEN nieuwe zone-math/-grenzen. Elke lap weegt met
-    zijn afstand (aandelen zijn eenheid-onafhankelijk); ontbreekt de afstand overal, dan telt
-    elke lap even zwaar. Geeft `(shares, any_dist, used)` terug:
-      shares = {"Z1": 74, ..., "buiten de zones": n}  (afgerond percentage, zelfde afronding
-               als ai_feedback._zone_distribution — dat delegeert hiernaartoe: één bron).
-    < 2 bruikbare laps → ({}, any_dist, used<2). Nooit fataal buiten deze pure berekening."""
+    (`fs_client.classify_pace_hr_zone`) — GEEN nieuwe zone-math/-grenzen. INTERN bewijs
+    (Masterbrein/QA/classificatie); v4 exposeert deze percentages NOOIT athlete-facing. Elke lap
+    weegt met zijn afstand; ontbreekt de afstand overal, dan telt elke lap even zwaar. Geeft
+    `(shares, any_dist, used)`; shares = {"Z1": 74, ..., "buiten de zones": n}. < 2 laps → ({}, ..)."""
     if not laps or not zones or is_pace is None:
         return {}, False, 0
     import fs_client as _fs
@@ -99,6 +96,41 @@ def zone_shares(laps, zones, is_pace):
     return shares, any_dist, used
 
 
+def block_zone_counts(blocks, zones, is_pace, zone_type):
+    """Deterministische TELLING van werkblokken per zone (exacte AANTALLEN, GEEN percentages) —
+    athlete-facing veilig en in eerdere audits betrouwbaar ('drie van de vijf werkblokken in Z4').
+    Alleen ACTIVE werkblokken; classificeert de gemeten waarde van de classificeerbare zonetabel
+    via de bestaande classifier. Geeft een kant-en-klare prompttekst of '' (< 2 telbare blokken)."""
+    if not blocks or not zones or is_pace is None or zone_type not in ("tempo", "hartslag"):
+        return ""
+    import fs_client as _fs
+    from collections import Counter
+    cnt: Counter = Counter()
+    total = 0
+    for b in blocks:
+        if not isinstance(b, dict) or b.get("type") in ("WARMUP", "REST", "COOLDOWN"):
+            continue
+        if zone_type == "hartslag":
+            val = _fs._safe_float(b.get("observed_hr"))
+        else:
+            pm = _fs._pace_to_float(b.get("observed_pace") or "")
+            val = pm * 60 if pm not in (0, float("inf")) else None
+        if val is None:
+            continue
+        total += 1
+        cls = _fs.classify_pace_hr_zone(zones, val, is_pace=is_pace)
+        cnt[cls["num"] if (cls and cls.get("status") == "IN_ZONE") else "buiten"] += 1
+    if total < 2 or not cnt:
+        return ""
+    mod = _MODALITY_NL.get(zone_type, "")
+    parts = [f"{cnt[z]} in Z{z}" for z in sorted(k for k in cnt if k != "buiten")]
+    if cnt.get("buiten"):
+        parts.append(f"{cnt['buiten']} buiten de zones")
+    return ("\n\nWERKBLOK-TELLING (deterministisch — exacte AANTALLEN, geen percentages): van de "
+            f"{total} werkblokken kwamen er {mod} " + ", ".join(parts) + " uit. Je mag deze AANTALLEN "
+            "noemen (bijv. 'drie van de vijf werkblokken in Z4'); maak er GEEN percentages van.")
+
+
 def _numbered(shares: dict) -> dict:
     """Alleen de genummerde zones (Z1..Z5) → {num:int -> pct:int}."""
     out = {}
@@ -120,49 +152,57 @@ def _claimed_zones(text: str) -> set:
     return zs
 
 
-def _zone_evidence_section(modality: str, shares: dict, target_zones: set) -> str:
-    """Bindende zone-evidence: modaliteit labelen, exacte %, geen materiële (hogere) zone
-    weglaten. Vuurt alleen bij >= 2 materiële genummerde zones (dan is verwarring/omissie een
-    reëel risico); één dominante zone (bv. Z1 95%) heeft geen arbitrage nodig → geen ruis."""
-    numbered = _numbered(shares)
+def _zone_qualitative_section(modality: str, numbered: dict, ceiling, has_plan_target: bool,
+                              is_structured: bool) -> str:
+    """v4 — KWALITATIEVE zone-duiding, ZONDER percentages. Vuurt alleen bij >= 2 materiële zones
+    (dan is een verkeerde totaal-duiding een reëel risico). Vertaalt de interne verdeling naar
+    coachtaal: materieel deel boven target eerlijk benoemen, geruststellend totaalverhaal vermijden
+    bij gestructureerd werk, modaliteit labelen. NOOIT een getal/percentage/breuk."""
     if not numbered:
         return ""
     material = {z: p for z, p in numbered.items() if p >= _MATERIAL_SHARE}
     if len(material) < 2:
         return ""
-    mod = _MODALITY_NL.get(modality, "")
-    zone_woord = _MODALITY_ZONE.get(modality, "zone")
-    volgorde = ", ".join(f"Z{z} {numbered[z]}%" for z in sorted(numbered))
+    mod = _MODALITY_NL.get(modality, "op tempo/hartslag")
     regels = [
-        f"ZONE-EVIDENCE (deterministisch — de exacte {zone_woord}-verdeling): {volgorde}.",
-        f"- Noem een zone-percentage ALTIJD met de modaliteit ('{mod or 'op tempo/hartslag'}'), zodat "
-        f"tempo en hartslag niet verward worden.",
-        "- Gebruik deze EXACTE percentages. Rond NIET af (33% is 33%, niet 40%) en vervang een "
-        "percentage niet door een vage maat ('de helft', 'grootste deel') zonder het exacte getal.",
-        f"- Laat GEEN materiële zone weg: elke zone met minstens {_MATERIAL_SHARE}% hoort in je "
-        "samenvatting. Noem een zone niet 'een klein stukje' terwijl een even grote of grotere "
-        "HOGERE zone onbenoemd verdwijnt.",
+        "ZONE-DUIDING (kwalitatief — GEEN percentages of breuken in je bericht):",
+        f"- Beschrijf de intensiteit KWALITATIEF en label de modaliteit ('{mod}'). Noem GEEN "
+        "zonepercentages en ook geen distributie-breuken ('de helft', 'een derde', 'bijna "
+        "driekwart'); gebruik voor gestructureerd werk exacte blok/lap-aantallen.",
     ]
-    if target_zones:
-        boven = sorted(z for z in material if z > max(target_zones))
+    if is_structured:
+        regels.append(
+            "- Dit is gestructureerd werk: beoordeel PER WERKBLOK (zie blok-analyse/werkblok-telling) "
+            "en trek GEEN geruststellende totaalconclusie over de hele sessie. Vertellen hartslag en "
+            "tempo een verschillend verhaal, kies dan niet stil de geruststellende kant, maar benoem "
+            "het verschil.")
+        return "\n".join(regels)
+    if ceiling is not None:
+        boven = sorted(z for z in material if z > ceiling)
+        anker = f"de geplande zone {ceiling}" if has_plan_target else f"het rustige bereik (t/m zone {ceiling})"
         if boven:
-            zlist = ", ".join(f"Z{z}" for z in boven)
             regels.append(
-                f"- Let op: {zlist} ligt BOVEN het geplande target (Z{max(target_zones)}). Met een "
-                f"materieel aandeel daar mag je NIET bevestigen dat het 'helemaal rustig' of 'precies "
-                f"volgens plan' bleef; benoem dat deel eerlijk. (Dit is geen waarschuwing als de "
-                f"uitvoering verder binnen het plan valt, wel volledigheid.)")
+                f"- Een MATERIEEL deel lag boven {anker} (in {', '.join('Z' + str(z) for z in boven)}). "
+                f"Bevestig daarom NIET dat het helemaal binnen dat bereik bleef; benoem dat deel "
+                f"eerlijk en kwalitatief (bijv. 'grootste deel bleef rustig, maar er zat ook een stuk "
+                f"boven je rustige bereik in'). Dit is geen waarschuwing als de uitvoering verder "
+                f"binnen plan valt, wel volledigheid.")
+        else:
+            regels.append(
+                f"- De uitvoering bleef in hoofdzaak binnen {anker}; je mag kwalitatief bevestigen dat "
+                f"het overwegend binnen het bedoelde bereik bleef, zonder percentages.")
+    else:
+        regels.append(
+            "- De intensiteit lag verspreid over meerdere zones; beschrijf dat kwalitatief en kies "
+            "niet stil één geruststellende zone.")
     return "\n".join(regels)
 
 
-def _claim_section(modality: str, shares: dict, athlete_text: str) -> str:
-    """Verifieer een deterministisch checkbare atleet-zoneclaim vóór instemming. Vuurt alleen als
-    de atleet zelf een zone noemt ÉN de bron de claim niet volledig draagt (anders geen ruis)."""
-    numbered = _numbered(shares)
-    if not numbered:
-        return ""
-    claimed = _claimed_zones(athlete_text)
-    if not claimed:
+def _claim_section(modality: str, numbered: dict, claimed: set, athlete_text: str) -> str:
+    """Verifieer een deterministisch checkbare atleet-zoneclaim vóór instemming — v4 ZONDER
+    percentages. Vuurt alleen als de atleet zelf een zone noemt ÉN de bron de claim niet volledig
+    draagt (anders geen ruis)."""
+    if not numbered or not claimed:
         return ""
     material = {z for z, p in numbered.items() if p >= _MATERIAL_SHARE}
     if not material:
@@ -170,30 +210,30 @@ def _claim_section(modality: str, shares: dict, athlete_text: str) -> str:
     dominant = max(numbered, key=lambda z: numbered[z])
     totality = bool(_TOTALITY_RE.search(athlete_text or ""))
     missed_material = sorted(material - claimed)
-    # Status bepalen (deterministisch, alleen op zones/afstand/verdeling — geen NL-semantiek breed).
     if dominant not in claimed:
         status = "CONTRADICTED"
     elif missed_material:
         status = "CONTRADICTED" if totality else "PARTIALLY_SUPPORTED"
     else:
-        # atleet dekt alle materiële zones; bij totaliteitsclaim moet dat exact kloppen
         status = "SUPPORTED"
     if status == "SUPPORTED":
         return ""                                        # atleet had gelijk → normale flow bevestigt prima
     mod = _MODALITY_NL.get(modality, "")
-    verdeling = ", ".join(f"Z{z} {numbered[z]}%" for z in sorted(numbered))
     claim_txt = "/".join(f"Z{z}" for z in sorted(claimed))
     regels = [
         f"ATLEET-CLAIM (verifieer vóór je instemt): de atleet duidt de intensiteit als {claim_txt}. "
-        f"De deterministische verdeling {mod} is: {verdeling}. Status: {status}.".replace("  ", " "),
+        f"Status volgens de bron: {status}.",
     ]
     if missed_material:
-        hoog = ", ".join(f"Z{z} ({numbered[z]}%)" for z in missed_material)
-        regels.append(f"- De atleet noemt {hoog} niet, terwijl dat een materieel aandeel is.")
+        hoog = ", ".join(f"Z{z}" for z in missed_material)
+        regels.append(
+            f"- De bron laat {mod} ook een materieel deel in {hoog} zien, dat de atleet niet noemt "
+            f"(kwalitatief benoemen, GEEN percentages).".replace("  ", " "))
     regels.append(
         "- Bevestig deze interpretatie daarom NIET met 'Klopt', 'Precies' of 'Inderdaad'. Erken kort "
-        "wat de atleet dacht en beschrijf daarna eerlijk wat de data laat zien. Doe dit rustig en "
-        "coachend, maak er geen probleem van als de uitvoering binnen het plan viel.")
+        "wat de atleet dacht en beschrijf daarna eerlijk, KWALITATIEF, wat de data laat zien "
+        "(bijv. 'grootste deel was rustig, maar qua tempo zat er ook een stuk boven Z2 in, dus "
+        "helemaal Z1-Z2 was het niet'). Rustig en coachend; geen probleem als het binnen plan viel.")
     return "\n".join(regels)
 
 
@@ -225,19 +265,23 @@ def _message_section(athlete_text: str) -> str:
 
 
 def _signal_section(complaint_areas, load_elevated, intensity_high, has_upcoming) -> str:
-    """Signaalverplichting: een actief klacht-/belastingsignaal MOET de feedback sturen wanneer
-    coachrelevant (zware/afwijkende uitvoering of zware/lange sessie op komst). Medisch
-    terughoudend (geen diagnose/oorzaak/behandeling). Vuurt alleen wanneer relevant."""
+    """Signaal-verplichting: een actieve klacht MOET bij relevante belasting (zware/afwijkende
+    uitvoering OF zware/lange sessie op komst) een NEUTRALE check-in opleveren — deterministisch en
+    testbaar (Douwe's scheenklacht werd 3× live genegeerd). Medisch terughoudend. Vuurt niet bij een
+    stale/achtergrond-klacht zonder relevante belasting."""
     areas = [str(a) for a in (complaint_areas or []) if a]
     coachrelevant = bool(intensity_high or has_upcoming)
     regels = []
     if areas and coachrelevant:
         al = ", ".join(sorted(set(areas)))
+        deel = al if len(areas) == 1 else "klacht"
         regels.append(
-            f"Er is een ACTIEVE klacht ({al}) en deze/of de eerstvolgende sessie is zwaar. Adresseer "
-            f"de klacht met een korte, neutrale check-in; verhoog de belasting deze week niet en wees "
-            f"voorzichtig richting de eerstvolgende zware of lange sessie. Wees medisch terughoudend: "
-            f"geen diagnose, geen oorzaak, geen behandeladvies, en geen wegwuivende geruststelling.")
+            f"Er is een ACTIEVE klacht ({al}) en deze en/of de eerstvolgende sessie is zwaar. NEEM een "
+            f"korte, NEUTRALE check-in op over de {deel} (bijv. 'hou even in de gaten hoe je {deel} "
+            f"hierop reageert' of 'hoe reageert je {deel} hier nu op?'). Verhoog de belasting deze week "
+            f"niet en wees voorzichtig richting de eerstvolgende zware of lange sessie. Wees medisch "
+            f"terughoudend: geen diagnose, geen oorzaak, geen behandeladvies, geen wegwuivende "
+            f"geruststelling.")
     if load_elevated and coachrelevant:
         regels.append(
             "De recente belasting is VERHOOGD in combinatie met een zware uitvoering of een zware "
@@ -248,18 +292,20 @@ def _signal_section(complaint_areas, load_elevated, intensity_high, has_upcoming
     return "SIGNAAL-VERPLICHTING (veilig laten meewegen):\n" + "\n".join("- " + r for r in regels)
 
 
-def build(*, modality: str = "", shares: dict | None = None, any_dist: bool = False,
-          planned_target_zones=None, athlete_text: str = "", complaint_areas=None,
+def build(*, modality: str = "", shares: dict | None = None, planned_target_zones=None,
+          athlete_text: str = "", is_structured: bool = False, complaint_areas=None,
           load_elevated: bool = False, intensity_high: bool = False,
           has_upcoming: bool = False) -> dict:
-    """Bouw de deterministische evidence-contract/verplichtingen-projectie en render de bindende
-    promptsectie. Alleen ACTIEVE sub-secties komen in het blok; is er niets te arbitreren, dan is
-    `prompt_block` LEEG (schone cases blijven kort). Nooit fataal: bij een interne fout leeg."""
+    """Bouw de deterministische verplichtingen-projectie en render de bindende promptsectie
+    (v4: KWALITATIEF, geen athlete-facing percentages). Alleen ACTIEVE sub-secties komen in het
+    blok; niets te arbitreren → `prompt_block` LEEG (schone cases blijven kort). Nooit fataal."""
     try:
-        shares = shares or {}
+        numbered = _numbered(shares or {})
         target = set(int(z) for z in (planned_target_zones or []) if z)
-        zone_sec = _zone_evidence_section(modality, shares, target)
-        claim_sec = _claim_section(modality, shares, athlete_text)
+        claimed = _claimed_zones(athlete_text)
+        ceiling = max(target) if target else (max(claimed) if claimed else None)
+        zone_sec = _zone_qualitative_section(modality, numbered, ceiling, bool(target), is_structured)
+        claim_sec = _claim_section(modality, numbered, claimed, athlete_text)
         msg_sec = _message_section(athlete_text)
         sig_sec = _signal_section(complaint_areas, load_elevated, intensity_high, has_upcoming)
     except Exception:

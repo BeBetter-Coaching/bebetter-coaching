@@ -63,46 +63,63 @@ def test_zone_distribution_delegates_and_matches():
     assert "ZONEVERDELING" in out and "Z2 80%" in out and "Z4 20%" in out
 
 
-# ══ G17 — easy/recovery run met weggelaten hogere zone (Sophie) ═════════════════
+def _no_zone_pct(text):
+    """Geen athlete-facing zonepercentage-WAARDE in de tekst (v4). De ban-INSTRUCTIE mag de
+    verboden voorbeelden ('de helft', '56%') uiteraard wél noemen — dit checkt alleen echte
+    zone→percentage-waarden en de percentage-verdeling."""
+    import re as _re
+    assert not _re.search(r"Z[1-5]\s*\d+\s*%", text)         # geen 'Z2 33%'
+    assert "ZONEVERDELING" not in text                        # geen percentage-verdeling athlete-facing
+
+
+# ══ G17 — easy/recovery run: hogere zone kwalitatief benoemen, geen % (Sophie) ══
 def test_g17_easy_run_omitted_higher_zone():
     res = ob.build(modality="tempo", shares={"Z1": 74, "Z2": 13, "Z3": 13},
                    athlete_text="ik dacht Z1, nu zie ik Z1-Z2, maakt vast niet uit")
     pb = res["prompt_block"]
     assert "EVIDENCE-CONTRACT" in pb
     assert "op tempo" in pb                                   # modaliteit gelabeld
-    assert "Z3 13%" in pb                                     # de gelijk-grote hogere zone NIET weggelaten
-    assert "materiële" in pb.lower() or "materiele" in pb.lower()
+    assert "boven het rustige bereik" in pb and "Z3" in pb    # hogere zone kwalitatief benoemd
+    _no_zone_pct(pb)                                          # geen percentages/breuken
     # claim-verificatie: niet blind bevestigen
-    assert "Status: PARTIALLY_SUPPORTED" in pb or "Status: CONTRADICTED" in pb
+    assert "PARTIALLY_SUPPORTED" in pb or "CONTRADICTED" in pb
     assert "'Klopt'" in pb and "Precies" in pb               # verboden instemmingswoorden benoemd
 
 
-def test_g17_completeness_rule_wording():
+def test_g17_qualitative_no_percentage_rule():
     res = ob.build(modality="tempo", shares={"Z1": 74, "Z2": 13, "Z3": 13}, athlete_text="")
     pb = res["prompt_block"]
-    assert "klein stukje" in pb                               # verbiedt '13% = klein stukje' terwijl Z3 verdwijnt
-    assert "Rond NIET af" in pb
+    assert "GEEN percentages" in pb                           # expliciete ban in de zone-duiding
+    _no_zone_pct(pb)
 
 
-# ══ G18 — dual-modality: exacte %, modaliteit gelabeld, geen afronding (Douwe) ══
-def test_g18_no_rounding_modality_labeled():
+# ══ G18 — dual-modality: modaliteit gelabeld, GEEN percentages (Douwe) ══════════
+def test_g18_no_percentages_modality_labeled():
     res = ob.build(modality="hartslag", shares={"Z1": 11, "Z2": 33, "Z3": 56},
                    planned_target_zones={3}, athlete_text="")
     pb = res["prompt_block"]
     assert "op hartslag" in pb
-    assert "Z2 33%" in pb and "Z3 56%" in pb                  # exacte getallen
-    assert "33% is 33%, niet 40%" in pb                       # expliciet tegen de 33→40 afronding
-    assert "de helft" in pb.lower()                           # verbiedt vage 'helft' voor 56%
-    # geen atleet-claim → geen claim-sectie
-    assert "ATLEET-CLAIM" not in pb
+    _no_zone_pct(pb)                                          # geen 33%/56% — de live-bottleneck
+    assert "zonder percentages" in pb or "GEEN percentages" in pb
+    assert "ATLEET-CLAIM" not in pb                           # geen atleet-claim → geen claim-sectie
 
 
-def test_g18_above_target_surfaced():
-    # target Z3, materieel aandeel in Z4 → mag niet als 'precies volgens plan' worden bevestigd.
+def test_g18_above_target_surfaced_qualitatively():
+    # target Z3, materieel aandeel in Z4 → kwalitatief benoemen, geen 'precies volgens plan', geen %.
     res = ob.build(modality="tempo", shares={"Z1": 20, "Z3": 27, "Z4": 53},
                    planned_target_zones={3}, athlete_text="")
     pb = res["prompt_block"]
-    assert "BOVEN het geplande target" in pb and "Z4" in pb
+    assert "boven de geplande zone 3" in pb and "Z4" in pb
+    _no_zone_pct(pb)
+
+
+def test_g18_structured_no_reassuring_total():
+    # gestructureerd + HR/tempo-verschil → per blok beoordelen, geen geruststellend totaalverhaal.
+    res = ob.build(modality="hartslag", shares={"Z2": 33, "Z3": 56}, planned_target_zones={3},
+                   is_structured=True, athlete_text="")
+    pb = res["prompt_block"]
+    assert "PER WERKBLOK" in pb and "geruststellende" in pb
+    _no_zone_pct(pb)
 
 
 # ══ G19 — actieve klacht + threshold-werk → veilige check-in ════════════════════
@@ -140,8 +157,9 @@ def test_g21_athlete_claim_contradicted():
                    athlete_text="volgens mij ging alles in Z2")
     pb = res["prompt_block"]
     assert "ATLEET-CLAIM" in pb
-    assert "Status: CONTRADICTED" in pb                       # 'alles' + dominante Z3 niet geclaimd
+    assert "CONTRADICTED" in pb                               # 'alles' + dominante Z3 niet geclaimd
     assert "NIET met 'Klopt'" in pb
+    _no_zone_pct(pb)                                          # correctie zonder percentages
 
 
 def test_supported_claim_no_section():
@@ -204,9 +222,9 @@ def test_g17_integration_pace_run(fs_pace):
     ctx = ai_feedback._build_workout_context(_wd_pace(laps, comments=["ik dacht dat alles Z1-Z2 was"]))[0]
     assert "EVIDENCE-CONTRACT" in ctx
     assert "op tempo" in ctx
-    assert "Z3 20%" in ctx                                    # hogere zone niet weggelaten
     assert "ATLEET-CLAIM" in ctx                              # claim wordt geverifieerd
-    assert "ZONEVERDELING" in ctx                             # bestaande verdeling nog intact
+    assert "ZONEVERDELING" not in ctx                         # v4: geen percentage-verdeling athlete-facing
+    _no_zone_pct(ctx)                                         # geen zonepercentages in de context
 
 
 def test_g22_integration_clean_run(fs_pace):
