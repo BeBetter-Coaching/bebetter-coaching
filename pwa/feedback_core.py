@@ -156,6 +156,81 @@ def _brein_context(w: dict) -> str:
         return ""
 
 
+_NEAR_FUTURE_DAYS = 5
+
+
+def _near_future_block(w: dict) -> str:
+    """P1 — begrensde near-future planning voor de generatie: de eerstvolgende (max 3) GEPLANDE
+    sessies met datum, type, geplande afstand/duur en race-markering. ÉÉN bounded FinalSurge-read
+    (upcoming workouts) die NERGENS anders wordt gehaald (geen dubbele call), en ALLEEN bij een
+    expliciete generatie-actie — dus geen nieuwe fan-out op het snelle case-open-pad. Best-effort:
+    faalt stil naar ''. Deterministisch; de relevantie-afweging (wél/niet noemen) doet de AI."""
+    ak = w.get("athlete_key", "")
+    if not ak:
+        return ""
+    try:
+        import fs_client as FS
+        from datetime import date, timedelta
+        today = date.today()
+        try:
+            wd = date.fromisoformat((w.get("workout_date") or "")[:10])
+        except ValueError:
+            wd = today
+        anchor = max(today, wd)                              # strikt ná de beoordeelde training/vandaag
+        start, end = anchor + timedelta(days=1), today + timedelta(days=_NEAR_FUTURE_DAYS)
+        if end < start:
+            return ""
+        wk_key = w.get("workout_key", "")
+        upcoming = FS.get_workouts_deduped(ak, start, end) or []
+        _WD = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+        rows = []
+        for x in sorted(upcoming, key=lambda z: str(z.get("workout_date"))[:10]):
+            if wk_key and x.get("workout_key") == wk_key:
+                continue
+            if not FS.is_planned_workout(x):
+                continue
+            try:
+                dd = date.fromisoformat(str(x.get("workout_date") or "")[:10])
+            except ValueError:
+                continue
+            if dd <= anchor:
+                continue
+            naam = (x.get("name") or "training").strip()
+            km = FS._norm_km(x.get("planned_amount"), x.get("planned_amount_type") or x.get("amount_type"))
+            if km is None:
+                for act in (x.get("Activities") or []):
+                    km = FS._norm_km(act.get("planned_amount"), act.get("planned_amount_type") or act.get("amount_type"))
+                    if km is not None:
+                        break
+            pd = x.get("planned_duration") or next(
+                (a.get("planned_duration") for a in (x.get("Activities") or []) if a.get("planned_duration")), None)
+            try:
+                mins = round(float(pd) / 60) if pd else None
+            except (TypeError, ValueError):
+                mins = None
+            meta = []
+            if km is not None:
+                meta.append(f"{km:g} km")
+            if mins:
+                meta.append(f"{mins} min")
+            tag = " [WEDSTRIJD]" if x.get("is_race") else ""
+            rows.append(f"- {_WD[dd.weekday()]} {dd.day}/{dd.month}: {naam}"
+                        + ((" · " + ", ".join(meta)) if meta else "") + tag)
+            if len(rows) >= 3:
+                break
+        if not rows:
+            return ""
+        return ("━━━ KOMENDE GEPLANDE TRAININGEN (deterministisch uit FinalSurge — verzin er niets bij) ━━━\n"
+                + "\n".join(rows)
+                + "\nWeeg deze ALLEEN mee als het voor DEZE feedback uitmaakt (de atleet noemt een "
+                  "komende dag/sessie, er is een verhoogd belasting-/herstelsignaal, deze training "
+                  "was onverwacht/extra, de atleet meldt pijn/vermoeidheid, de atleet vraagt om een "
+                  "schema- of wedstrijdwijziging, of de eerstvolgende sessie is fors/zwaar). Anders "
+                  "hoef je ze niet te noemen. Zeg NOOIT toe dat je het schema aanpast (coach-agency).")
+    except Exception:
+        return ""
+
+
 # --- Conversation-aware dispatch (Fase 2 — Feedback conversation parity) ----------
 # De eerste feedback op een training is een trainingsanalyse; zodra de atleet daarna
 # inhoudelijk reageert loopt er een gesprek en moet de AI daarop antwoorden. De keuze is
@@ -298,8 +373,9 @@ def genereer(wid: str) -> str:
     w = _cache.get(wid) or w
     _refresh_thread(w)                                   # §9: actuele thread-state vóór dispatch
     brein = _brein_context(w)                            # Masterbrein-context (gated)
-    if brein:
-        w = {**w, "brein_context": brein}               # kopie: cache niet met prompttekst muteren
+    nf = _near_future_block(w)                            # P1: begrensde near-future planning (bounded read)
+    if brein or nf:
+        w = {**w, "brein_context": brein, "near_future_block": nf}   # kopie: cache niet met prompttekst muteren
     import ai_feedback                                   # lui: pas hier is de key nodig
     thread = w.get("thread") or []
     if feedback_mode(thread) == FOLLOW_UP_REPLY:

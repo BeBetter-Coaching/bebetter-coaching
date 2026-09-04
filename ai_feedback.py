@@ -63,6 +63,20 @@ VOORUITBLIK ALLEEN OP BASIS VAN BEKENDE CONTEXT (niet onderhandelbaar):
 - Een reeds gepasseerd event nooit als toekomst framen. Uitgebreide succeswensen voor races gaan via de aparte module; hier hooguit een korte verwijzing als de context die geeft.
 - Reageer primair op de training die net is gedaan en op wat de atleet daarover schrijft.
 
+COACH-AGENCY — GEEN TOEZEGGINGEN NAMENS DE COACH (niet onderhandelbaar):
+- Je schrijft een CONCEPT dat de coach nog nakijkt en zelf verstuurt. Doe NOOIT alsof de coach al iets heeft geregeld of gaat regelen. Schrijf dus NOOIT dat je (de coach) het schema aanpast, een training of wedstrijd toevoegt, verplaatst of schrapt, iets hebt ingepland, ingeschreven of geboekt, iemand hebt gemaild of gebeld, of later nog een actie uitvoert.
+- Alleen als in de aangeleverde context EXPLICIET staat dat die beslissing al genomen is (een gelabelde coach-afspraak/instructie), mag je er kort feitelijk naar verwijzen. Staat dat er niet: doe geen enkele toezegging, ook niet als de zin natuurlijk klinkt.
+- Vraagt de atleet om een schema- of wedstrijdwijziging: bevestig eerlijk dat je het ziet, benoem de HUIDIGE zichtbare stand (wat er nu op die dag/dat plan staat, en een eventueel spanningsveld daarmee), en houd het bij een voorwaardelijke vervolgstap ("laten we eerst even kijken wat hier de bedoeling is"). Zeg NOOIT toe dat je het omzet.
+
+MEDISCH & MEDICATIE — ALLEEN ALS ATLEETRAPPORTAGE (niet onderhandelbaar):
+- Wat de atleet zegt over medicatie, een blessure of een medisch effect is een SUBJECTIEVE eigen waarneming. Geef dat terug als HAAR/ZIJN ervaring ("fijn dat jij merkt dat ..."), NOOIT als vaststaand feit of werking ("de medicatie werkt", "de medicatie begint aan te slaan").
+- Upgrade een zelfrapportage nooit naar een klinische of causale uitspraak, en vier de werking van medicatie niet als feit. Stel geen diagnose en geef geen medisch advies; blijf binnen coaching (training, belasting, herstel).
+- Plak geen luchtige emoji direct op een medische of gevoelige mededeling.
+
+GERUSTSTELLING PAST BIJ DE SIGNALEN (niet onderhandelbaar):
+- Is er een relevant ACTIEF signaal (verhoogde belasting in de achtergrondcontext, de atleet meldt vermoeidheid, hoge hartslag, pijn of dat het niet soepel ging, of een negatieve hersteltrend), gebruik dan GEEN wegwuivende geruststelling zoals "geen alarm", "niks aan de hand" of "geen reden om je zorgen te maken", tenzij een expliciete, sterke regel in de context dat echt onderbouwt.
+- Doe dan in plaats daarvan: erken wat de atleet meldt, koppel het aan het signaal, en geef een voorzichtige check of een voorwaardelijke stap. Diagnosticeer niet, maar stel ook niet vals gerust.
+
 ZONE-ACCURACY — KRITIEKE REGELS (niet onderhandelbaar):
 1. Zones bestaan in twee smaken: TEMPO-zones (min/km) en HARTSLAG-zones (bpm). Deze zijn NIET uitwisselbaar.
 2. Als alleen TEMPO-zones beschikbaar zijn: beoordeel intensiteit uitsluitend via tempo. Zeg NOOIT dat de hartslag "hoog", "te hoog", "in zone X" of "opvallend" was — ook niet als suggestie of tussenzin. Benoem hartslag alleen als neutraal getal als het relevant is (bijv. "HF van 148 bpm"), zonder oordeel.
@@ -103,6 +117,17 @@ ZONE-ACCURACY — KRITIEKE REGELS (niet onderhandelbaar):
    Z2), dan is die zwaardere zone GEPLAND en dus GOED — frame Z2 daar NOOIT als afwijking of "te
    hard". Beoordeel elk segment tegen het GEPLANDE target van DAT blok, nooit tegen de zone van een
    ander blok.
+10. GEEN ONGEGRONDE HOEVEELHEIDSCLAIMS OVER DE HELE TRAINING (niet onderhandelbaar):
+   Uitspraken als "de meeste kilometers", "het grootste deel", "bijna alles", "de rest liep je in
+   Zx", "de hele training in zone X" of "het gemiddelde lag onder/boven target" mag je ALLEEN doen
+   als ze deterministisch onderbouwd zijn door een aangeleverde ZONEVERDELING (percentages/afstand
+   per zone) of het door de app berekende gemiddelde ('BEREKENDE POSITIE'). Leid zo'n samenvatting
+   NOOIT zelf af uit de losse per-lap-labels of het ruwe verloop — die labels zijn per lap, geen
+   sessieverdeling. Staat er geen zoneverdeling en geen berekend gemiddelde, doe dan geen
+   kwantitatieve zone-uitspraak over de hele training; beschrijf hooguit concrete losse laps.
+   Bij een gestructureerde interval-/blokkentraining beoordeel je PER BLOK (zie BLOK-ANALYSE), niet
+   via een sessie-brede dominante zone: warming-up, herstel en cooldown kunnen die dominante zone
+   bepalen en zijn dan misleidend.
 
 PLAN VS UITVOERING:
 Als er een geplande structuur beschikbaar is (workout builder), vergelijk dan ACTIEF de uitvoering daarmee. Was het geplande tempo gehaald? Liep de atleet in de geplande zone? Dat is het meest waardevolle wat je kunt zeggen."""
@@ -382,6 +407,58 @@ def _dominant_planned_metric(planned_blocks: list) -> str | None:
     return None
 
 
+def _zone_distribution(laps: list, zones: list, is_pace) -> str:
+    """DETERMINISTISCHE zoneverdeling over de HELE training: het aandeel per persoonlijke zone,
+    o.b.v. de bestaande per-lap-classificatie (`classify_pace_hr_zone`) — GEEN nieuwe zone-math.
+    Elke lap weegt mee met zijn afstand (aandelen zijn eenheid-onafhankelijk); ontbreekt de
+    afstand overal, dan telt elke lap even zwaar. Zo hoeft de AI 'de meeste km in Zx' niet uit
+    het ruwe verloop te raden (dé bron van de audit-overclaims). Leeg bij < 2 bruikbare laps."""
+    if not laps or not zones or is_pace is None:
+        return ""
+    import fs_client as _fs
+    from collections import defaultdict
+    per: dict = defaultdict(float)
+    tot = 0.0
+    used = 0
+    any_dist = False
+    for lap in laps:
+        if not isinstance(lap, dict):
+            continue
+        d = _fs._safe_float(lap.get("amount"))
+        if d is None:
+            d = _fs._safe_float(lap.get("distance_display"))
+        if d and d > 0:
+            any_dist = True
+        if is_pace:
+            _pm = _fs._pace_to_float(lap.get("pace_display") or "")
+            val = _pm * 60 if _pm not in (0, float("inf")) else None
+        else:
+            val = _fs._safe_float(lap.get("hr_avg"))
+        if val is None:
+            continue
+        cls = _fs.classify_pace_hr_zone(zones, val, is_pace=is_pace)
+        if not cls:
+            continue
+        key = f"Z{cls['num']}" if cls.get("status") == "IN_ZONE" else "buiten de zones"
+        w = d if (d and d > 0) else 1.0
+        per[key] += w
+        tot += w
+        used += 1
+    if tot <= 0 or used < 2:
+        return ""
+
+    def _order(k):
+        return (1, 99) if k == "buiten de zones" else (0, int(k[1:]))
+
+    parts = [f"{k} {round(v / tot * 100)}%" for k, v in sorted(per.items(), key=lambda kv: _order(kv[0]))]
+    eenheid = "afstand" if any_dist else "laps"
+    return (f"ZONEVERDELING (deterministisch — aandeel van de {eenheid} per zone, o.b.v. de laps): "
+            + ", ".join(parts) + ". "
+            "Gebruik UITSLUITEND deze verdeling (of het berekende gemiddelde) voor een "
+            "'meeste/grootste deel/de rest/bijna alles'-uitspraak; leid zulke claims nooit zelf "
+            "af uit het losse lap-verloop.")
+
+
 def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     """
     Bouw de workout-context op voor de AI.
@@ -575,12 +652,30 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     else:
         lap_section = ""
 
+    # P1 — deterministische zoneverdeling over de hele training (aandeel per zone), zodat een
+    # 'meeste km in Zx'-samenvatting op een FEIT rust i.p.v. op een gok uit het lap-verloop.
+    zone_dist_text = _zone_distribution(laps, athlete_zones_struct, _classified_is_pace) if _can_classify else ""
+    zone_dist_section = f"\n\n{zone_dist_text}" if zone_dist_text else ""
+
     plan_parts = []
     if plan_description.strip():
         plan_parts.append(plan_description.strip()[:600])
     if builder_steps_text:
         plan_parts.append(builder_steps_text)
     plan_text = "\n\n".join(plan_parts) if plan_parts else "Geen beschrijving."
+
+    # P1 — onverwachte/extra training: geen geplande structuur om tegen te vergelijken. Deterministisch
+    # uit dezelfde plandata (spiegelt fs_client.is_planned_workout); relevant bij belasting/herstel.
+    _has_plan = bool(details.get("has_structured_workout") or plan_description.strip()
+                     or details.get("planned_amount") or details.get("planned_duration")
+                     or any((a or {}).get("planned_amount") or (a or {}).get("planned_duration")
+                            for a in activities))
+    unplanned_section = "" if _has_plan else (
+        "\n\nGEPLAND VS UITVOERING: deze training was NIET vooraf gepland (extra/los). Er is dus geen "
+        "geplande structuur om tegen af te zetten; beoordeel op de uitvoering en op wat de atleet "
+        "schrijft. Was het een extra/pittige inspanning én staat er een verhoogd belasting-/herstel"
+        "signaal of een zware sessie kort erna (zie context), weeg dat dan mee — maak van een extra "
+        "training op zich geen probleem.")
 
     if athlete_zones_text:
         # PRIMARY-METRIC PRECEDENCE (Class 2): de expliciet geplande metric is leidend; de AI mag
@@ -735,13 +830,18 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     brein = (workout_data.get("brein_context") or "").strip()
     brein_section = f"\n\n{brein}" if brein else ""
 
+    # P1 — begrensde near-future planning (komende sessies/races + weeknotitie), server-side
+    # gelezen via één bounded read (feedback_core._near_future_block). Leeg als niets/onbeschikbaar.
+    nf = (workout_data.get("near_future_block") or "").strip()
+    near_future_section = f"\n\n{nf}" if nf else ""
+
     context = f"""Training: {workout_name}
 
 WAT WAS DE BEDOELING (workout builder):
 {plan_text}{zones_section}{garmin_section}
 
 Samenvattende data:
-{activity_summary}{deviation_section}{lap_section}{datum_section}{profiel_section}{brein_section}
+{activity_summary}{deviation_section}{unplanned_section}{lap_section}{zone_dist_section}{near_future_section}{datum_section}{profiel_section}{brein_section}
 
 Wat {first_name} zelf schrijft/zegt:
 {athlete_input}"""
