@@ -328,6 +328,16 @@ def to_prompt_text(proj: dict) -> str:
     return "\n\n".join(delen)
 
 
+# V-25: expliciete labels zodat verschillende volume-CONCEPTEN niet als tegenstrijdig lezen.
+# 'km per week' = recent berekend gemiddelde (FS-log); 'huidig volume intake' = eigen opgave bij
+# intake. Teampuls toont daarnaast de rolling-7 referentie ('laatste 7 dagen · gem. X km/wk').
+# Geen rekenwijziging — alleen duidelijker benoemen.
+_FIELD_LABELS = {
+    "km_per_week": "km/week (recent gemiddelde)",
+    "huidig_volume_intake": "volume bij intake (eigen opgave)",
+}
+
+
 def _blok_regels(cat: str, blok: dict) -> list:
     regels = []
     if cat == "health":
@@ -348,7 +358,7 @@ def _blok_regels(cat: str, blok: dict) -> list:
     for k, v in blok.items():
         if isinstance(v, list):
             v = ", ".join(str(x) for x in v)
-        regels.append(f"{k.replace('_', ' ')}: {v}")
+        regels.append(f"{_FIELD_LABELS.get(k, k.replace('_', ' '))}: {v}")
     return regels
 
 
@@ -357,6 +367,10 @@ def ui_sections(ctx: dict) -> list:
     secties = []
     for cat in ("training", "recovery", "health", "feedback", "goals", "profile", "coach"):
         blok = ctx.get(cat)
+        # V-22: het doel staat al in 'Doelen & agenda' (goals) → niet nóg eens in 'Profiel &
+        # voorkeuren' herhalen. Alleen deze UI-sectie; de AI-context (ctx) blijft ongemoeid.
+        if cat == "profile" and isinstance(blok, dict) and ctx.get("goals", {}).get("doel"):
+            blok = {k: v for k, v in blok.items() if k != "doel"}
         regels = _blok_regels(cat, blok) if blok else []
         secties.append({"titel": _SECTIE_TITELS.get(cat, cat),
                         "regels": regels, "onbekend": not regels})

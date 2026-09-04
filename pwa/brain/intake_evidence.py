@@ -30,11 +30,25 @@ from .models import (ACTIVE, ATHLETE_REPORTED, COACH_REPORTED, HISTORICAL, INTAK
 _MAXLEN = 240        # verbatim, maar begrensd (zelfde geest als complaints/coach)
 
 
+def _clip(value) -> str:
+    """V-31: begrens de weergavelengte op een WOORDGRENS met een expliciete '…' i.p.v. een
+    blinde tekenknip die een zin/haakje midden kan afbreken (blessurehistorie las 'kapot').
+    Puur weergave — verzint niets, wijzigt geen status/classificatie; alleen de grens."""
+    s = str(value).strip()
+    if len(s) <= _MAXLEN:
+        return s
+    cut = s[:_MAXLEN]
+    sp = cut.rfind(" ")
+    if sp >= _MAXLEN - 40:               # knip op de laatste woordgrens als die dichtbij ligt
+        cut = cut[:sp]
+    return cut.rstrip(" ,;:(") + "…"
+
+
 def _ev(key: str, domain: str, value, athlete_key: str, ik_ts: str, *,
         status: str, truth: str = ATHLETE_REPORTED, reporter: str = "athlete",
         detail: dict | None = None) -> Evidence:
     return Evidence(
-        key=key, domain=domain, value=str(value).strip()[:_MAXLEN],
+        key=key, domain=domain, value=_clip(value),
         truth_type=truth, status=status, strength=LOW,
         source="intake", source_kind=INTAKE_STORE, observed_at=ik_ts,
         athlete_key=athlete_key, reporter=reporter, detail=detail or {},

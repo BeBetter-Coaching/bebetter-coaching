@@ -87,7 +87,7 @@ def test_b10_enter_confirms_in_picker():
     ov = _APP[_APP.index("function openAthletePickerOverlay"):_APP.index("function openAthletePickerOverlay") + 2100]
     assert 'e.key === "Enter"' in ov and "picker.getSelected()" in ov and "opts.onConfirm(a)" in ov
     # gedeelde inline-picker: Enter gebruikt focus óf reeds-geselecteerd
-    assert "const k = focusKey || selKey;" in _APP
+    assert "let k = focusKey || selKey;" in _APP        # V-28: fallback naar enig-zichtbaar resultaat
 
 
 # ── B11: één desktop-sidebarbreedte (geen Workspace-collapse) ────────────────

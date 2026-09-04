@@ -234,7 +234,9 @@ class TestClientWiring:
             assert token in _APP
 
     def test_home_and_teampuls_stamp_generation(self):
-        assert 'genMount("#home-genbar"' in _APP
+        # V-11: Home stampt de generatie via de niet-obstructieve 'Bijgewerkt HH:MM'-status
+        # (homeSetUpdated → noteGeneration); Teampuls houdt de gedeelde generatie-banner.
+        assert 'homeSetUpdated(' in _APP
         assert 'genMount("#tp-genbar"' in _APP
 
     def test_refresh_adopts_new_generation_without_silent_swap(self):

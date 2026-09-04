@@ -12,7 +12,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   -webkit-font-smoothing:antialiased}
 body{display:flex;flex-direction:column;max-width:640px;margin:0 auto;overflow:hidden}
-#scroller{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+#scroller{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
   padding:0 16px calc(20px + env(safe-area-inset-bottom))}
 
 /* ── Iconen ───────────────────────────────────────────────────────────────── */
@@ -338,6 +338,9 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .dagstat.teal b{color:var(--acc)} .dagstat.teal .mt-ic{color:var(--acc)}
 .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .sec-note{font-size:11px;color:var(--muted);font-weight:600}
+/* V-02/V-11: gereserveerde, altijd-zichtbare snapshot-leeftijd in de kop (mensentaal),
+   i.p.v. een zwevende overlay-chip over de atletenlijst. */
+.sec-updated{margin-left:auto;font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap}
 
 #sb-na{margin-top:10px;display:flex;flex-direction:column;gap:8px}
 #sb-na .btn{width:100%}
@@ -838,6 +841,8 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 .fbg-pill b{color:var(--text);font-weight:750;margin-left:2px}
 .fbg-pill.on{border-color:var(--acc);color:var(--text);background:#0d284c}
 .fbg-pill.on b{color:var(--acc)}
+/* V-07: groep met 0 onder het actieve statusfilter → gedempt en niet-klikbaar (belooft niets). */
+.fbg-pill.zero{opacity:.4;cursor:default}
 
 /* Categorie-koppen boven de rijen (bij één geselecteerde groep) */
 .fbq-cat{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.6px;
@@ -1295,10 +1300,14 @@ button.sb-ready:hover{filter:brightness(1.08)}
 .dc-val{text-align:right;font-size:14px}
 .dc-reg-meta{display:flex;align-items:center;gap:10px;margin-top:3px}
 .dc-why{background:none;border:0;color:var(--acc);cursor:pointer;font-size:12px;padding:0;text-decoration:underline}
-.dc-why-box{margin:6px 0 0;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:8px}
-.dc-why-box p{margin:0 0 4px}
+/* V-04: 'Waarom?' mag de pagina nooit horizontaal verschuiven. De provenance-keten
+   kan een lange, ononderbroken sleutel/id bevatten → hard laten breken (geen wide,
+   niet-wrappende regel die #scroller zijwaarts duwt). Samen met #scroller{overflow-x:hidden}. */
+.dc-why-box{margin:6px 0 0;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:8px;
+  max-width:100%;overflow-wrap:anywhere;word-break:break-word;min-width:0}
+.dc-why-box p{margin:0 0 4px;overflow-wrap:anywhere}
 .dc-why-chain{list-style:none;margin:4px 0 0;padding:0;font-size:12px;color:var(--muted)}
-.dc-why-chain li{padding:2px 0;border-top:1px dashed var(--border)}
+.dc-why-chain li{padding:2px 0;border-top:1px dashed var(--border);overflow-wrap:anywhere;word-break:break-word}
 
 /* Z4 tijdlijn */
 

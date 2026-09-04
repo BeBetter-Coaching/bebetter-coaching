@@ -46,7 +46,7 @@ const ok = (c, n, extra) => { if (!c) failures.push(n + (extra ? "  [" + extra +
   // no hardcoded '/ 30' denominator in the header count (old: `${FB.items.length}<i> / 30</i>`)
   ok(!/<i>\s*\/\s*30<\/i>/.test(SRC), "B7: header count drops the hardcoded '/ 30' denominator");
   ok(/#fb-count.*textContent = String\(FB\.items\.length\)/s.test(
-       SRC.slice(SRC.indexOf("function renderTabs"), SRC.indexOf("function renderTabs") + 900)),
+       SRC.slice(SRC.indexOf("function renderTabs"), SRC.indexOf("function renderTabs") + 1400)),
      "B7: header count = total queue truth (FB.items.length)");
   // empty inbox
   FB.items = []; fbUpdateInfo();

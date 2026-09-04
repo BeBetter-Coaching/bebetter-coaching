@@ -178,7 +178,9 @@ def analyse_belasting(entries: list[dict], vandaag: date | None = None) -> dict 
     # 1. Volumesprong — alleen bij een serieuze basis (geen starters flaggen)
     if (ratio is not None and basis_week >= BASIS_MIN_KM_WEEK
             and n_runs_basis >= 4 and ratio >= VOLUME_RATIO_LET_OP):
-        signalen.append(f"Volume +{(ratio - 1) * 100:.0f}% deze week "
+        # V-26: dit is de rolling-7 belasting (km_recent = laatste 7 dagen), NIET de
+        # kalenderweek — dus consistent 'laatste 7 dagen' labelen (Home/Teampuls/Workspace).
+        signalen.append(f"Volume +{(ratio - 1) * 100:.0f}% laatste 7 dagen "
                         f"({km_recent:.0f} km vs gem. {basis_week:.0f} km/wk)")
         codes.append("volume")
 

@@ -287,10 +287,12 @@ function athleteNav(activeView, user_key) {
   if (!user_key) return "";
   // B8: 'Dossier' is de canonieke naam voor de #dossier-module (Masterbrein-geheugen).
   // De #atleten-module is het atleet-profiel/detail → 'Profiel' (voorkomt twee keer 'Dossier').
+  // V-12: één canonieke volgorde op elke atleet-pagina — Workspace | Profiel | Dossier | Schema.
+  // De actieve view valt weg maar de relatieve volgorde blijft gelijk (geen drie volgordes meer).
   const opts = [
     { view: "atleten", label: "Profiel" },
-    { view: "schema", label: "Schema" },
     { view: "dossier", label: "Dossier" },
+    { view: "schema", label: "Schema" },
   ];
   const chips = opts.filter(o => o.view !== activeView).map(o =>
     `<button type="button" class="anav-chip" onclick="openAthleteModule('${o.view}','${esc(user_key)}')">${esc(o.label)}</button>`).join("");
@@ -403,8 +405,13 @@ function dsPanel(label, body, o) {
 function dsKv(rows) {
   const r = (rows || []).filter(x => x && x.label != null);
   if (!r.length) return "";
-  return `<dl class="ds-kv">` + r.map(x =>
-    `<div><dt>${esc(x.label)}</dt><dd>${esc(x.value == null ? "—" : x.value)}</dd></div>`).join("") + `</dl>`;
+  return `<dl class="ds-kv">` + r.map(x => {
+    const v = x.value == null ? "—" : String(x.value);
+    // V-30: lange prozawaarde (bv. een wedstrijdagenda) → gestapeld + LINKS uitgelijnd i.p.v.
+    // rechts uitgelijnd in een smalle kolom (rafelig blok). Korte waarden blijven inline.
+    const long = v.length > 38;
+    return `<div${long ? ' class="kv-long"' : ""}><dt>${esc(x.label)}</dt><dd>${esc(v)}</dd></div>`;
+  }).join("") + `</dl>`;
 }
 
 // Compacte stream/tijdlijn (recent veranderd, historie).
@@ -487,6 +494,16 @@ function genMount(sel, gen) {
   noteGeneration(gen);
   const el = $(sel);
   if (el) el.innerHTML = gen && gen.generation_id ? genBanner(gen) : "";
+}
+// V-02/V-11: Home toont de snapshot-leeftijd ALTIJD in mensentaal in een gereserveerd
+// kopslot ('Bijgewerkt HH:MM'), niet als zwevende overlay-chip over de atletenlijst. De
+// gedeelde generatie wordt nog steeds geadopteerd (cross-module coherentie); de nieuwe stand
+// wordt niet stil toegepast — daarvoor dient de niet-obstructieve inline '#prio-nieuw'-balk.
+function homeSetUpdated(gen) {
+  noteGeneration(gen);
+  const el = $("#home-updated");
+  const at = ((gen && gen.generated_at) || "").slice(11, 16);
+  if (el) el.textContent = at ? `Bijgewerkt ${at}` : "";
 }
 
 // ── Gedeelde refresh-feedback (Cohesion live-repair, cluster C) ──────────────
@@ -578,7 +595,7 @@ async function renderHome() {
     // staleness (nieuwe dag / TTL) op de achtergrond.
     api("/api/home/stats").then(s => {
       if (!s || !s.fs) return;
-      genMount("#home-genbar", s.generation);              // v2: gedeelde generation-coherentie
+      homeSetUpdated(s.generation);              // v2: gedeelde generation-coherentie
       renderFeedbackStrip(s.feedback, true);
       if (s.feedback && s.feedback.stale) feedbackQueueWarm();
       cockpitVersen(s);
@@ -610,7 +627,7 @@ async function renderHome() {
       <div class="skel skel-line w60" style="margin:10px 0 2px"></div>
     </button>
 
-    <div class="sec-head"><p class="sec-label">Prioriteit vandaag</p><span class="sec-note" id="prio-note"></span></div>
+    <div class="sec-head"><p class="sec-label">Prioriteit vandaag</p><span class="sec-note" id="prio-note"></span><span class="sec-updated" id="home-updated" aria-live="polite"></span></div>
     <div id="home-prio">
       ${[0, 0, 0].map(() => `<div class="prio-skel"><span class="skel prio-skel-av"></span><span class="prio-skel-body"><span class="skel skel-line w40"></span><span class="skel skel-line w60"></span></span></div>`).join("")}
     </div>
@@ -624,7 +641,7 @@ async function renderHome() {
   // 2) Cockpit-snapshot (direct) → hero-telling/status, feedback, prioriteit.
   //    Verouderd? Dan op de achtergrond verversen (stale-while-revalidate).
   api("/api/home/stats").then(s => {
-    if (s) genMount("#home-genbar", s.generation);         // v2: gedeelde generation-coherentie
+    if (s) homeSetUpdated(s.generation);         // v2: gedeelde generation-coherentie
     // Eerste-ooit (pending): laat de skeletons staan en bouw op de achtergrond op.
     if (s && s.pending) { cockpitVersen(s); return; }
     vulCockpit(s); cockpitVersen(s);
@@ -702,7 +719,7 @@ function cockpitVersen(s) {
     if (!fresh || fresh.pending) return;     // nog niet klaar → skeletons blijven
     const box = $("#home-prio");
     const heeftLijst = box && box.querySelector(".prio-item, .prio-leeg");
-    if (!heeftLijst) { vulCockpit(fresh, true); genMount("#home-genbar", fresh.generation); return; }   // eerste build → direct tonen (autoritatief)
+    if (!heeftLijst) { vulCockpit(fresh, true); homeSetUpdated(fresh.generation); return; }   // eerste build → direct tonen (autoritatief)
     // Feedbacktegel convergeert altijd naar de canonieke sweep (los van de lijst-diff),
     // zodat een post/skip-invalidatie de telling ook in diff-modus bijwerkt.
     renderFeedbackStrip(fresh.feedback, true);
@@ -755,7 +772,7 @@ function cockpitToepassen() {
   const snap = pendingSnap; pendingSnap = null;
   cockpitNieuwBalkWeg();
   vulCockpit(snap, true);                     // toegepaste verse snapshot = autoritatief
-  genMount("#home-genbar", snap.generation);  // v2: toegepaste generatie → banner weer actueel
+  homeSetUpdated(snap.generation);  // v2: toegepaste generatie → banner weer actueel
   requestAnimationFrame(() => { if (sc) sc.scrollTo({ top: y }); });   // geen scrollsprong (#12)
 }
 function markVersen(on) {
@@ -791,6 +808,7 @@ function renderFeedbackStrip(fbs, fresh) {
   fbs = fbs || {};
   const fb = $("#home-fb");
   if (!fb) return;
+  fb.onclick = () => openModuleFromNav("feedback");        // kop 'N wachten op feedback' routeert naar de queue (queue-first, geen auto-open)
   if (fresh) homeFbDelta = { wachten: 0, gepost: 0 };     // autoritatieve read binnen → transiënt optimisme verrekend
   // Class 1: alleen een UNKNOWN open-set (koud proces / queue nog niet gebouwd → GEEN count,
   // wachten==null) toont 'bijwerken…'. Een STALE-maar-geldige open-set draagt de gereconcilieerde
@@ -1049,8 +1067,9 @@ function prioDetailHtml(it) {
   // canonieke detailvelden als het dominante cijfer rechtsboven — nooit een
   // voor-afgeronde bron-zin (+91%) naast het canonieke percentage (+92%).
   const bd = (bel && bel.detail) || {};
+  // V-26: één formulering + consistente afronding (hele km, gelijk aan de ingeklapte regel).
   const belZin = (bd.pct != null && bd.km_recent != null && bd.km_basis != null)
-    ? `Volume ${bd.pct > 0 ? "+" : ""}${bd.pct}% laatste 7 dagen (${bd.km_recent} km vs gem. ${bd.km_basis} km/wk)` : "";
+    ? `Volume ${bd.pct > 0 ? "+" : ""}${bd.pct}% laatste 7 dagen (${Math.round(bd.km_recent)} km vs gem. ${Math.round(bd.km_basis)} km/wk)` : "";
   const titelVan = s => (s.soort === "belasting" && belZin) ? belZin : s.reden;
 
   let h = `<div class="pb ${tone}">`;
@@ -1104,10 +1123,11 @@ function prioSignaalBody(s) {
   const d = s.detail || {};
   if (s.soort === "belasting") {
     const chips = [];
-    if (d.km_recent != null && d.km_basis != null) {
-      const p = d.pct;
-      chips.push(`<div class="pd-chip"><b>Volume${p != null ? " " + (p > 0 ? "+" : "") + p + "%" : ""}</b>
-        <span>${d.km_recent} km laatste 7 dagen · basis ${d.km_basis} km/wk</span></div>`);
+    // V-26: de volume-zin staat al in de kaarttitel (belZin) zodra pct bekend is → hier NIET
+    // herhalen. Alleen tonen als de titel het volume niet droeg (pct ontbreekt).
+    if (d.km_recent != null && d.km_basis != null && d.pct == null) {
+      chips.push(`<div class="pd-chip"><b>Volume</b>
+        <span>${Math.round(d.km_recent)} km laatste 7 dagen · basis ${Math.round(d.km_basis)} km/wk</span></div>`);
     }
     if (d.gevoel_recent != null || d.rpe_recent != null)
       chips.push(`<div class="pd-chip"><b>Gevoel / RPE</b>
@@ -1556,8 +1576,8 @@ function bronStatus(cloud) {
   const el = $("#bron");
   if (!el) return;
   el.textContent = cloud
-    ? "Verbonden met de gedeelde opslag (GitHub) — zelfde data als Streamlit."
-    : "Lokale opslag (zelfde bestand als Streamlit lokaal).";
+    ? "Verbonden met de gedeelde opslag (GitHub)."
+    : "Lokale opslag.";
 }
 
 // ── Offline-queue: acties die offline gebeuren, verstuurd zodra je online bent ─
@@ -1900,7 +1920,13 @@ function renderPicker(cfg) {
   const onKey = e => {
     if (e.key === "ArrowDown") { e.preventDefault(); beweeg(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); beweeg(-1); }
-    else if (e.key === "Enter") { const k = focusKey || selKey; if (k) { e.preventDefault(); kies(k, true); } }  // B10: focus óf reeds-geselecteerd
+    else if (e.key === "Enter") {
+      // B10 + V-28: Enter opent de focus- of reeds-geselecteerde rij; is er niets geselecteerd
+      // maar precies ÉÉN zichtbaar resultaat, dan dat ene (nooit bij >1, geen dubbele open).
+      let k = focusKey || selKey;
+      if (!k) { const v = gefilterd(); if (v.length === 1) k = v[0].key; }
+      if (k) { e.preventDefault(); kies(k, true); }
+    }
     else if (e.key === "Escape") { if (inEl && inEl.value) { inEl.value = ""; teken(); } else if (cfg.onEscape) cfg.onEscape(); }
   };
   inEl?.addEventListener("input", teken);
@@ -1911,6 +1937,7 @@ function renderPicker(cfg) {
   return {
     setItems(newItems) { cfg.items = newItems; bouwChips(); teken(); },
     getSelected() { return items().find(x => x.key === selKey) || null; },
+    singleVisible() { const v = gefilterd(); return v.length === 1 ? v[0] : null; },   // V-28: enig zichtbaar resultaat
     setSelected(k) { selKey = k; focusKey = k; teken(); },
     focusSearch() { inEl && inEl.focus(); },
     // Reset een (mogelijk stale) zoekfilter zodat de lijst de geselecteerde atleet niet kan
@@ -1940,7 +1967,12 @@ function openAthletePickerOverlay(opts) {
   // Precies één keer openen: sluit() haalt de listener weg vóór onConfirm.
   const onKey = e => {
     if (e.key === "Escape") { sluit(); return; }
-    if (e.key === "Enter") { const a = picker.getSelected(); if (a) { e.preventDefault(); sluit(); opts.onConfirm(a); } }
+    if (e.key === "Enter") {
+      // V-28: bevestig de geselecteerde atleet; is er niets geselecteerd maar precies één
+      // zichtbaar zoekresultaat, dan dat ene (geen actie bij >1 of 0 resultaten).
+      const a = picker.getSelected() || picker.singleVisible();
+      if (a) { e.preventDefault(); sluit(); opts.onConfirm(a); }
+    }
   };
   document.addEventListener("keydown", onKey);
   ov.addEventListener("click", e => { if (e.target === ov) sluit(); });     // backdrop = annuleren (geen write)
@@ -2031,9 +2063,15 @@ function tekenAtleet(d) {
   const wk = (d.training && d.training.week) ? d.training.week.deze_week : 0;
   const recent = (d.training && d.training.recent) || [];
   const recentHtml = recent.length
-    ? recent.map(t => `<div class="tr-row"><span class="tr-d">${esc((t.datum || "").slice(5))}</span>
+    ? recent.map(t => {
+        // V-21: hardlopen toont afstand + duur (zelfde eenheid als Workspace); overige duur.
+        const meta = t.afstand_km != null
+          ? `${nlNum(t.afstand_km)} km${t.duur_min ? " · " + t.duur_min + " min" : ""}`
+          : (t.duur_min ? `${t.duur_min} min` : "");
+        return `<div class="tr-row"><span class="tr-d">${esc((t.datum || "").slice(5))}</span>
         <span class="tr-t">${esc(t.type || "Training")}</span>
-        ${t.duur_min ? `<span class="tr-m">${t.duur_min} min</span>` : ""}</div>`).join("")
+        ${meta ? `<span class="tr-m">${esc(meta)}</span>` : ""}</div>`;
+      }).join("")
     : '<p class="muted klein">Geen trainingen in de laatste 2 weken.</p>';
 
   const dos = d.dossier;
@@ -2126,7 +2164,7 @@ function tekenAtleet(d) {
     <section class="panel">
       <button class="acc-toggle" data-target="d-prof">${ic("brain")} Coach-geheugen</button>
       <div id="d-prof" class="collapse">
-        <p class="hint">Wat de AI over deze atleet weet. Groeit mee bij feedback in Streamlit; jouw aanpassing is leidend.${prof.bijgewerkt ? " Laatst bijgewerkt: " + esc(prof.bijgewerkt) + "." : ""}</p>
+        <p class="hint">Wat BeBetter over deze atleet weet. Groeit mee met je feedback; jouw aanpassing is leidend.${prof.bijgewerkt ? " Laatst bijgewerkt: " + esc(prof.bijgewerkt) + "." : ""}</p>
         <textarea id="pf-tekst" rows="5" placeholder="Nog leeg.">${esc(prof.tekst || "")}</textarea>
         <button class="btn primary" id="pf-save">Geheugen opslaan</button>
       </div>
@@ -2256,7 +2294,7 @@ async function laadOrphanIntakes() {
   const orphans = (r && r.orphans) || [];
   if (!orphans.length) { box.innerHTML = ""; return; }
   box.innerHTML = `<p class="sec-label">Losse intakes — nog niet gekoppeld</p>
-    <p class="hint">Overgenomen toen de atleet nog niet in FinalSurge stond (zichtbaar zolang ze los staan, net als in Streamlit). Koppel aan het FinalSurge-account zodra dat bestaat — daarna gebruikt Schema de intake.</p>
+    <p class="hint">Overgenomen toen de atleet nog niet in FinalSurge stond (zichtbaar zolang ze los staan). Koppel aan het FinalSurge-account zodra dat bestaat — daarna gebruikt Schema de intake.</p>
     <section class="lijst">${orphans.map(a => `
       <button class="listcard" data-orphan="${esc(a.key)}">
         <span class="avatar">${initialen(a.naam)}</span>
@@ -2732,15 +2770,20 @@ function fbGroupOrder(items) {                        // aanwezige groepen in ba
 }
 function renderGroupsBar() {
   const bar = $("#fb-groups"); if (!bar) return;
-  const order = fbGroupOrder(FB.items);
-  // tellingen uit de ZICHTBARE items (na sent/skip-filter) zodat pill-getallen kloppen
-  const tel = {}; FB.items.forEach(i => { const g = i.groep || "overig"; tel[g] = (tel[g] || 0) + 1; });
+  const order = fbGroupOrder(FB.items);                    // alle groepen, stabiele backend-volgorde
+  // V-07: de groepstellers RESPECTEREN het actieve statusfilter (Wachten/Vandaag/Aandacht) —
+  // het getal = precies wat de coach ziet als hij de chip aanklikt. Nooit '1' beloven en '0'
+  // renderen. De totale wachtrij blijft apart zichtbaar (kop + tabs).
+  const base = fbFilterItems();
+  const tel = {}; base.forEach(i => { const g = i.groep || "overig"; tel[g] = (tel[g] || 0) + 1; });
   const label = k => (FB.groups.find(g => g.key === k) || {}).label || (FB.items.find(i => i.groep === k) || {}).groep_label || "Overig";
   if (order.length <= 1) { bar.hidden = true; return; }   // één groep → geen selector nodig
-  let html = `<button class="fbg-pill${FB.group === "alle" ? " on" : ""}" type="button" data-g="alle">Alle <b>${FB.items.length}</b></button>`;
-  order.forEach(k => { html += `<button class="fbg-pill${FB.group === k ? " on" : ""}" type="button" data-g="${esc(k)}">${esc(label(k))} <b>${tel[k]}</b></button>`; });
+  let html = `<button class="fbg-pill${FB.group === "alle" ? " on" : ""}" type="button" data-g="alle">Alle <b>${base.length}</b></button>`;
+  order.forEach(k => { const n = tel[k] || 0;
+    html += `<button class="fbg-pill${FB.group === k ? " on" : ""}${n ? "" : " zero"}" type="button" data-g="${esc(k)}"${n ? "" : ' aria-disabled="true"'}>${esc(label(k))} <b>${n}</b></button>`; });
   bar.innerHTML = html; bar.hidden = false;
   $$(".fbg-pill", bar).forEach(p => p.onclick = () => {
+    if (p.classList.contains("zero")) return;              // 0 onder dit filter → geen zinloze klik
     FB.group = p.dataset.g; fbLog("group_select", { current_group: FB.group });
     renderGroupsBar(); renderQueue();
   });
@@ -2796,7 +2839,13 @@ function renderTabs() {
   };
   bar.innerHTML = _FB_TABS.map(([k, lbl, cls]) =>
     `<button type="button" class="fbq-tab ${cls || ""} ${FB.filter === k ? "on" : ""}" data-tab="${k}" role="tab" aria-selected="${FB.filter === k}">${lbl} <span class="c">${counts[k]}</span></button>`).join("");
-  $$(".fbq-tab", bar).forEach(t => t.addEventListener("click", () => { FB.filter = t.dataset.tab; renderQueue(); }));
+  $$(".fbq-tab", bar).forEach(t => t.addEventListener("click", () => {
+    // V-19: nogmaals klikken op een ACTIEF secundair filter (Vandaag/Aandacht/Afgerond) zet
+    // 'm uit → terug naar de standaard 'Wachten'. 'wachten' is de basis en toggelt niet weg.
+    const tab = t.dataset.tab;
+    FB.filter = (FB.filter === tab && tab !== "wachten") ? "wachten" : tab;
+    renderQueue();
+  }));
   // B7: de kop toont de totale wachtrij-waarheid (geen hardgecodeerde '/ 30'-noemer meer).
   const cnt = $("#fb-count"); if (cnt) cnt.textContent = String(FB.items.length);
 }
@@ -2818,6 +2867,18 @@ function renderQueue() {
   let shown = fbFilterItems();
   if (FB.group !== "alle" && !FB.items.some(i => i.groep === FB.group)) FB.group = "alle";
   if (FB.group !== "alle") shown = shown.filter(i => i.groep === FB.group);
+  // V-08: valt de geopende case buiten het huidige filter, sluit 'm netjes naar de neutrale
+  // focus-lege-staat (geen losse case naast een gefilterde lijst). Draft blijft bewaard
+  // (fbDrafts, per id) en er wordt GEEN andere case automatisch geopend.
+  if (FB.selId && !shown.some(i => i.id === FB.selId)) {
+    FB.selId = null; FB.sel = null;
+    if (isDesktop()) renderFocusEmpty();
+    else {
+      const col = $("#fb-focus-col");
+      if (col) { col.classList.remove("on"); col.setAttribute("aria-hidden", "true"); }
+      document.body.classList.remove("fb-focus-open");
+    }
+  }
   fbUpdateInfo(shown.length);                                // B7: resultaatregel = zichtbaar vs totaal
   if (!shown.length) {
     box.innerHTML = `<div class="leeg">${ic("check")}<p>${FB.items.length ? "Geen items in deze filter." : "Niks te beoordelen — netjes bijgewerkt."}</p></div>`;
@@ -2847,7 +2908,7 @@ function fbRowHtml(it) {
       <span class="fbq-sub">${esc(it.workout)}</span>
       ${meta ? `<span class="fbq-wk">${esc(meta)}</span>` : ""}${prev}
     </span>
-    <span class="fbq-r"><span class="fbq-time">${esc(fbShortTime(it))}</span><span class="fbq-stat">Wachten</span></span>
+    <span class="fbq-r"><span class="fbq-time">${esc(fbShortTime(it))}</span><span class="fbq-stat" title="De atleet reageerde als laatste — jouw beurt om te reageren of af te handelen">Wachten</span></span>
   </button>`;
 }
 function fbShortTime(it) {
@@ -2927,7 +2988,7 @@ function renderFocusEmpty() {
   $("#fb-focus").innerHTML = `<div class="fb-focus-empty">${ic("message")}<p>Kies links een training om te beoordelen.</p></div>`;
   // Rustige/neutrale rechter-context tot er een case gekozen is (geen module-skeleton,
   // geen context-deepread vóór expliciete selectie).
-  const cc = $("#fb-ctx-col"); if (cc) cc.innerHTML = `<div class="fb-ctx-h">Context &amp; Masterbrein</div><div class="fb-card muted" style="text-align:center;padding:20px 14px">Kies een training voor context &amp; Masterbrein.</div>`;
+  const cc = $("#fb-ctx-col"); if (cc) cc.innerHTML = `<div class="fb-ctx-h">Relevante context</div><div class="fb-card muted" style="text-align:center;padding:20px 14px">Kies een training voor de relevante context.</div>`;
 }
 function fbHeadHtml(naam, voornaam, datum, workout, cat, akey, groepLabel) {
   // Hero: volledige naam = dominant, fase + categorie eronder, training + datum rechts.
@@ -2951,7 +3012,7 @@ function fbDockHtml(id) {
       <button class="btn ghost small" id="fb-copy" type="button">${ic("copy")} Kopieer</button>
     </div>
     <div class="fb-cta">
-      <button class="btn primary fb-cta-primary" id="fb-send" type="button">${ic("message")} Feedback sturen</button>
+      <button class="btn primary fb-cta-primary" id="fb-send" type="button"${(fbDraftGet(id) || "").trim() ? "" : ' disabled aria-disabled="true"'}>${ic("message")} Feedback sturen</button>
       <div class="fb-cta-sec">
         <button class="btn ghost" id="fb-goschema" type="button">${ic("file")} Naar schema</button>
         <button class="btn ghost" id="fb-godossier" type="button">${ic("brain")} Open dossier</button>
@@ -2964,7 +3025,7 @@ function fbBindDock(id) {
   const back = $("#fb-back"); if (back) back.onclick = fbClose;
   const ta = $("#fb-ta");
   if (ta) {
-    ta.addEventListener("input", () => { fbDraftSave(id, ta.value); fbGrow(ta); });
+    ta.addEventListener("input", () => { fbDraftSave(id, ta.value); fbGrow(ta); fbSyncSend(); });
     // kb-open = simpele UI-state (composer mode). GEEN keyboardhoogte-berekening:
     // in composer mode wordt de focus-view een normale scroll-flow en brengt Safari
     // zelf het gefocuste textarea boven het toetsenbord (zie styles.css).
@@ -2985,6 +3046,17 @@ function fbBindDock(id) {
   const it = FB.items.find(i => i.id === id) || {};
   const gs = $("#fb-goschema"); if (gs) gs.onclick = () => { if (it.athlete_key) openAthleteModule("schema", it.athlete_key); };
   const gd = $("#fb-godossier"); if (gd) gd.onclick = () => { if (it.athlete_key) openAthleteModule("dossier", it.athlete_key); };
+  fbSyncSend();                                       // V-23: begintoestand (leeg concept → verzendknop uit)
+}
+// V-23: 'Feedback sturen' is pas actief als er echt iets te versturen is (getrimd niet leeg).
+// De onomkeerbaarste knop van de app mag nooit klaar-voor-gebruik ogen bij een leeg conceptveld.
+// Verzendsemantiek zelf blijft ongewijzigd (fbSend guard + dedup + geen extra confirm).
+function fbSyncSend() {
+  const btn = $("#fb-send"), ta = $("#fb-ta");
+  if (!btn) return;
+  const heeft = !!(ta && (ta.value || "").trim());
+  btn.disabled = !heeft;
+  btn.setAttribute("aria-disabled", String(!heeft));
 }
 // Bind een primaire composer-actie zó dat een tap de editor NIET blurt (keyboard
 // blijft open, geen reflow) en de click meteen afvuurt.
@@ -3092,13 +3164,16 @@ function fbRenderCase() {
     + `<div class="fbf-scroll">
         <div class="fbf-weeksel" id="fb-weeksel"></div>
         <div class="fb-metrics" id="fb-metrics"></div>
-        <div class="fb-2col"><div class="fb-sub" id="fb-bericht"></div><div class="fb-sub" id="fb-mb"></div></div>
+        <div class="fb-sub fb-mb-full" id="fb-mb"></div>
         <div id="fb-weekchart" class="fb-weekchart-slot"></div>
         <div id="fb-detailbody"></div>
        </div>`
     + fbDockHtml(FB.sel.id);
   fbBindDock(FB.sel.id);
-  fbRenderMetricsSlot(); fbRenderBerichtSlot(); fbRenderMbSlot(); fbRenderWeekSlots(); fbRenderDetailBody();
+  // V-09/V-10: het atleetbericht staat NIET meer als aparte (smalle) topkaart — de volledige
+  // tekst leeft één keer, full-width, in de gespreksthread (fbThreadHtml, vlak boven de composer).
+  // De topregel houdt alleen de Masterbrein-synthese (onderscheidende AI-waarde), full-width.
+  fbRenderMetricsSlot(); fbRenderMbSlot(); fbRenderWeekSlots(); fbRenderDetailBody();
   fbRenderCtxCol();
   fbBindZoneRetries();
   if (d) fbScrollThreadBottom();
@@ -3159,7 +3234,7 @@ function fbRenderDetailBody() {
 function fbRenderCtxCol() {
   const cc = $("#fb-ctx-col"); if (!cc) return;
   cc.innerHTML = FB.sel.cockpit ? fbCtxColHtml(FB.sel.cockpit)
-    : (FB.sel.cockpitErr ? `<div class="fb-ctx-h">Context &amp; Masterbrein</div>${fbZoneRetryHtml("cockpit", "Context")}`
+    : (FB.sel.cockpitErr ? `<div class="fb-ctx-h">Relevante context</div>${fbZoneRetryHtml("cockpit", "Context")}`
        : fbCtxColSkeleton());
 }
 function fbZoneRetryHtml(kind, label) {
@@ -3281,7 +3356,7 @@ function fbApplyContext(cockpit, week, d) {
   }
   if (d) FB.sel.d = d;
   FB.sel.week = week || null; FB.sel.cockpit = cockpit || null;
-  fbRenderMetricsSlot(); fbRenderMbSlot(); fbRenderBerichtSlot(); fbRenderWeekSlots();
+  fbRenderMetricsSlot(); fbRenderMbSlot(); fbRenderWeekSlots();
   fbRenderDetailBody(); fbRenderCtxCol();
 }
 function fbWeekSelHtml(week) {
@@ -3313,8 +3388,8 @@ function fbWeekChartHtml(week) {
       ${bars}${labels}</svg></div>`;
 }
 // Rechter kolom: echte cockpit-context (zelfde waarheid als Dossier). Geen fake relaties.
-function fbCtxColSkeleton() { return `<div class="fb-ctx-h">Context &amp; Masterbrein</div><div class="fb-card fb-skel">Context laden…</div>`; }
-function fbCtxColEmpty() { return `<div class="fb-ctx-h">Context &amp; Masterbrein</div><div class="fb-card muted" style="text-align:center;padding:22px 14px">Context tijdelijk niet beschikbaar — interne fout, geen bronfout.</div>`; }
+function fbCtxColSkeleton() { return `<div class="fb-ctx-h">Relevante context</div><div class="fb-card fb-skel">Context laden…</div>`; }
+function fbCtxColEmpty() { return `<div class="fb-ctx-h">Relevante context</div><div class="fb-card muted" style="text-align:center;padding:22px 14px">Context tijdelijk niet beschikbaar — interne fout, geen bronfout.</div>`; }
 function fbCtxColHtml(vm) {
   // UX/IA v1 (Target E): het rechterpaneel is GEEN mini-dossier. De belasting-metriek en de
   // Masterbrein-synthese (klachten/afwijking) staan al in het midden — die herhalen we hier
@@ -3327,7 +3402,7 @@ function fbCtxColHtml(vm) {
   const doelCard = (doel || race)
     ? `<div class="fb-card is-calm"><div class="fbcard-h"><span class="ci">${ic("flag")}</span><b>Doel &amp; richting</b></div>
         ${doel ? `<div class="fb-doel">${esc(doel.value)}</div>` : ""}
-        ${race ? `<div class="fb-plrows"><div><span>Wedstrijd</span><b>${esc(race.value)}</b></div></div>` : ""}</div>`
+        ${race ? `<div class="fb-plrows"><div${String(race.value || "").length > 32 ? ' class="stack"' : ""}><span>Wedstrijd</span><b>${esc(race.value)}</b></div></div>` : ""}</div>`
     : "";
   // Eén actieve klacht (decision-relevant) — beknopt; de volledige lijst leeft in Dossier.
   const compl = attn.filter(c => c.kind === "complaint" || c.kind === "recovery_neg" || c.kind === "possible_relation");
@@ -3421,7 +3496,7 @@ async function fbGen(id) {
     return melding(r && r.err || "Genereren mislukt.", true);
   }
   fbLog("generate_success", { generate_duration_ms: dur });
-  const ta = $("#fb-ta"); if (ta) { ta.value = r.tekst || ""; fbDraftSave(id, ta.value); fbGrow(ta); ta.focus(); }
+  const ta = $("#fb-ta"); if (ta) { ta.value = r.tekst || ""; fbDraftSave(id, ta.value); fbGrow(ta); fbSyncSend(); ta.focus(); }
 }
 async function fbSend(id) {
   if (FB.sending || FB.sentSet.has(id)) { fbLog("send_blocked_duplicate", { target: id }); return; }  // dubbel-post-guard
@@ -5099,7 +5174,16 @@ function tekenAdmin(d) {
 let dcPicker = null, dcCache = [], dcSel = "", dcOpenPending = "", dcGroepVolgorde = [];
 const dcLog = (ev, data) => { try { console.debug("[dossier]", ev, data || ""); } catch {} };
 
-const _DC_OVERALL = { GOOD: "Goed", STABLE: "Stabiel", ATTENTION: "Aandacht", INSUFFICIENT_DATA: "Te weinig data" };
+// V-01: het Dossier-oordeel is de KENNIS/BEELD-stand uit het atleetgeheugen (brain
+// AthleteState.overall) — een ANDER concept dan de operationele urgentie (ACTIE/AANDACHT/
+// RUSTIG) die Workspace/Home tonen. Daarom bewust evidence-taal (geen 'Aandacht'/'Actie')
+// én een neutrale 'Beeld'-chip (geen actie-kleur), zodat het niet als to-do-urgentie leest.
+const _DC_OVERALL = { GOOD: "Op koers", STABLE: "Stabiel", ATTENTION: "Aandachtspunt", INSUFFICIENT_DATA: "Te weinig data" };
+// Neutrale evidence-chip: labelt expliciet dat dit het BEELD uit het geheugen is (niet de
+// coach-urgentie). Kleur/rol los van 'bronnen vers' (source health) — dat blijft dsFresh.
+function dcBeeldChip(overall) {
+  return `<span class="dc-beeld"><small>Beeld</small><b>${esc(_DC_OVERALL[overall] || overall || "—")}</b></span>`;
+}
 const _DC_TRUTH = { ATHLETE_REPORTED: "atleet-gemeld", COACH_REPORTED: "coach-gemeld",
   DERIVED: "afgeleid", FACT: "feit", AI_INTERPRETATION: "AI-duiding", UNKNOWN: "onbekend" };
 const _DC_KIND_IC = { complaint: "alert", load_signal: "pulse", possible_relation: "pulse",
@@ -5539,10 +5623,22 @@ function dcScene(d) {
   const src = vm.source_health || [];
   const vers = src.filter(s => s.available && !s.stale).length;
   const dated = events.filter(e => /\d/.test(e.when)).map(e => e.when);
-  const period = emptyHistory ? "nu + vooruit" : (dated.length > 1 ? `${dated[0]} – ${dated[dated.length - 1]}` : (dated[0] || "—"));
+  // V-13: de periodechip moet het ZICHTBARE bereik dekken. 'Vandaag'/'actief'/'loopt' dragen
+  // geen datum-label; is het laatste (chronologisch geordende) event zo'n nu/vooruit-item, dan
+  // eindigt het bereik op 'nu' resp. 'vooruit' i.p.v. op de laatste gedateerde verleden-datum —
+  // anders sluit de chip zichtbare Vandaag-items uit (bv. '14 aug – 31 aug' met Vandaag eronder).
+  const lastEv = events[events.length - 1] || {};
+  let period;
+  if (emptyHistory) period = "nu + vooruit";
+  else if (!dated.length) period = lastEv.cls === "future" ? "nu + vooruit" : "nu";
+  else {
+    const start = dated[0];
+    const end = /\d/.test(lastEv.when) ? dated[dated.length - 1] : (lastEv.cls === "future" ? "vooruit" : "nu");
+    period = start === end ? start : `${start} – ${end}`;
+  }
   const ctrl = `<div class="dc-ctrl">
     <div class="dc-cpill"><span class="cpi">${ic("clock")}</span><span class="cpt"><small>Periode</small><b>${esc(period)}</b></span></div>
-    <div class="dc-cpill"><span class="cpi">${ic("users")}</span><span class="cpt"><small>In beeld</small><b>${events.length} events</b></span></div>
+    <div class="dc-cpill"><span class="cpi">${ic("users")}</span><span class="cpt"><small>In beeld</small><b>${events.length} ${events.length === 1 ? "gebeurtenis" : "gebeurtenissen"}</b></span></div>
     <span class="dc-ctrl-sp"></span>
     ${src.length ? `<div class="dc-cpill"><span class="cpi">${ic("check")}</span><span class="cpt"><small>Bronnen</small><b>${vers}/${src.length} vers</b></span></div>` : ""}</div>`;
 
@@ -5650,6 +5746,10 @@ function dcOpenDomain(wrap, vm, key) {
       <div class="mem-body"><div class="mem-sec"><span class="si">${ic("note")}</span><div><div class="sh">Vastgelegde kennis</div>${rows}</div></div></div>
       <div class="mem-foot"><span>Uit het atleetgeheugen · met provenance</span></div></div>`;
     center.querySelectorAll(".dc-why").forEach(b => b.addEventListener("click", () => dcWaarom(b)));
+    // V-14: een net-geopend bewijsdomein begint bij ZIJN eigen top — niet halverwege de
+    // vorige (langere) inhoud. Scroll het detail-paneel in beeld (behoudt de tijdlijn-context
+    // erboven; reset niet de hele browser).
+    if (center.scrollIntoView) requestAnimationFrame(() => center.scrollIntoView({ block: "start", behavior: "auto" }));
   }
   wrap.querySelectorAll(".dc-tl-item").forEach(el => el.classList.remove("sel"));
   wrap.querySelectorAll(".dc-domchip").forEach(el => el.classList.toggle("on", el.dataset.dom === key));
@@ -5666,7 +5766,7 @@ function dcHeader(vm, st, rel, relTone, relTxt) {
   return `<header class="dc-head2">
     <div class="dc-id2"><span class="dc-mono">${esc(initialen(vm.naam || vm.key))}</span>
       <div><h2 class="dc-name">${esc(vm.naam || vm.key)}</h2>
-        <p class="dc-sub">${vm.groep ? esc(vm.groep) + '<span class="sep">·</span>' : ""}${dsChip(_DC_OVERALL[st.overall] || st.overall || "—", relTone)}${dsFresh(rel.level || "unknown", relTxt)}</p></div></div>
+        <p class="dc-sub">${vm.groep ? esc(vm.groep) + '<span class="sep">·</span>' : ""}${dcBeeldChip(st.overall)}${dsFresh(rel.level || "unknown", relTxt)}</p></div></div>
     <div class="dc-title"><h1>Dossier <span class="dc-badge">Levend geheugen</span></h1>
       <p>Wat veranderde, wanneer &amp; waarom het ertoe doet</p></div>
     <div class="dc-nav2">${athleteNav("dossier", vm.key)}</div>
@@ -5690,7 +5790,7 @@ function dcStack(d) {
   // Nu-ankerpunt bovenaan.
   h += `<div class="dcm-now ${coreTone}"><span class="dcm-sun"></span>
     <div><div class="dcm-k">Vandaag · ${esc(dcToday())}</div><div class="dcm-t">${esc(d.domIssue)}</div>
-    <div class="dcm-s">${d.nowSub}</div></div>${dsChip(_DC_OVERALL[st.overall] || st.overall || "—", coreTone)}</div>`;
+    <div class="dcm-s">${d.nowSub}</div></div>${dcBeeldChip(st.overall)}</div>`;
   // Verticale spine: recente veranderingen → ouder.
   h += `<div class="dcm-spine">`;
   if (emptyHistory) {
@@ -5999,7 +6099,12 @@ function wsLoadInstrument(bel) {
   const area = `${line} L${pts[pts.length - 1][0].toFixed(1)} 100 L${pts[0][0].toFixed(1)} 100 Z`;
   const tip = pts[pts.length - 1];
   const yRef = ref != null ? yCum(ref) : null;
-  return `<svg class="ws-loadinst" viewBox="0 0 320 128" style="color:var(--tone)" aria-hidden="true">
+  // V-27: expliciete legenda + eenheid (zoals de Feedback-grafiek) — staven = km per dag,
+  // lijn = cumulatief volume, stippellijn = referentie. Geen wijziging aan de waarden.
+  const leg = `<div class="ws-loadleg" aria-hidden="true"><span class="wl-i wl-bar"></span>km per dag`
+    + `<span class="wl-i wl-cum"></span>cumulatief`
+    + (ref != null ? `<span class="wl-i wl-ref"></span>referentie ${esc(nlNum(ref))} km/wk` : "") + `</div>`;
+  return `<div class="ws-loadchart">${leg}<svg class="ws-loadinst" viewBox="0 0 320 128" style="color:var(--tone)" role="img" aria-label="Belasting laatste 7 dagen: km per dag en cumulatief volume t.o.v. de wekelijkse referentie">
     <defs><linearGradient id="ws-liarea" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="currentColor" stop-opacity=".24"/>
       <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient>
@@ -6017,7 +6122,7 @@ function wsLoadInstrument(bel) {
     <circle class="li-tip-o" cx="${tip[0].toFixed(1)}" cy="${tip[1].toFixed(1)}" r="6"/>
     <circle class="li-tip" cx="${tip[0].toFixed(1)}" cy="${tip[1].toFixed(1)}" r="3.4"/>
     ${dayl}
-  </svg>`;
+  </svg></div>`;
 }
 
 // Eén regel context: tone-streep + tekst + optionele waarde. Vervangt de kaart.
@@ -6048,7 +6153,10 @@ function wsRender(wrap, vm) {
   const chip = attn.length
     ? dsChip(tone === "is-critical" ? "actie" : "aandacht", tone)
     : dsChip("rustig", "is-calm");
-  const fresh = bel.datum ? dsFresh(gfr.belasting || "unknown",
+  // V-03: geen 'belasting vers' als er geen stand is (km_recent==null). Versheid hoort bij
+  // een waarde; zonder waarde toont de load-kaart 'Geen belastingstand bekend' en géén vers-chip.
+  const heeftStand = bel.km_recent != null;
+  const fresh = (heeftStand && bel.datum) ? dsFresh(gfr.belasting || "unknown",
     gfr.belasting === "fresh" ? "belasting vers" : `stand ${bel.datum}`) : "";
 
   // 1 — Aandacht nu (primair; geen KPI-dubbeling — load/feedback hebben hun eigen kaart)
@@ -6067,11 +6175,19 @@ function wsRender(wrap, vm) {
       ${wsLoadInstrument(bel)}`
     : `<p class="ws-calm">Geen belastingstand bekend.</p>`;
 
-  // 4 — Volgende actie (één prominente coachactie)
+  // 4 — Volgende actie (één prominente coachactie) — MOET coherent zijn met de badge:
+  // staat er een aandachtspunt (badge ACTIE/AANDACHT), dan NOOIT 'alles bij'. Belasting heeft
+  // zijn eigen 1-tap-actie; andere signalen (compliance/schema/feedback) benoemen de reden en
+  // leiden naar het dossier — geen nieuwe aanbevelings-engine, alleen de bestaande reden + route.
+  const topAttn = attn.length
+    ? attn.slice().sort((a, b) => (_DS_RANK[dsTone(b.tier)] || 0) - (_DS_RANK[dsTone(a.tier)] || 0))[0] : null;
   const nextBody = bel.actief
     ? `<p class="ws-next-lead">Belastingssignaal ${esc(bel.ernst === "hoog" ? "verhoogd" : "let op")}.</p>
        <button type="button" class="ws-next-btn ${belTone}" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">${ic("check")} Belasting gezien</button>`
-    : `<p class="ws-calm">Geen directe actie — alles bij.</p>`;
+    : topAttn
+      ? `<p class="ws-next-lead">${esc(topAttn.kort || "Aandachtspunt open")}.</p>
+         <button type="button" class="ws-next-btn ${tone}" onclick="openAthleteModule('dossier','${esc(key)}')">${ic("brain")} Bekijk in dossier</button>`
+      : `<p class="ws-calm">Geen directe actie — alles bij.</p>`;
 
   // 5 — Feedback (één open-reactie-samenvatting + lazy duiding; geen dubbeling met Aandacht)
   const fbBody = fb.status === "unknown"
@@ -6091,9 +6207,12 @@ function wsRender(wrap, vm) {
     title: sc.kort || "schema-signaal", sub: sc.einddatum ? `t/m ${sc.einddatum}` : "" }) : "";
 
   let h = genBanner(vm.generation);
+  // V-17: Workspace krijgt een zichtbare paginatitel (consistent met de andere modules), zodat
+  // het niet met Dossier verward wordt. De atleetnaam staat al in de switcher → hier niet herhalen.
+  h += `<div class="ws-pagehead"><h1 class="ws-pagetitle">Workspace</h1><p class="ws-pagesub">Wat vraagt deze atleet nu?</p></div>`;
   const attnCls = attn.length ? `ds-tone ${tone}` : "";
   const loadCls = bel.actief ? `ds-tone ${belTone}` : "";
-  const nextCls = bel.actief ? `ds-tone ${tone}` : "";
+  const nextCls = (bel.actief || attn.length) ? `ds-tone ${tone}` : "";
   const fbCls = (fb.open || fb.status === "unknown") ? `ds-tone ${fbTone}` : "";
   h += `<div class="ws-grid">
     <section class="ds-panel ws-panel ws-attn-panel ${attnCls}" style="grid-area:attn">
