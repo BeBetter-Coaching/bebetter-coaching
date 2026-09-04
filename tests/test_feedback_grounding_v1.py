@@ -114,10 +114,13 @@ def test_zone_distribution_needs_two_laps():
 
 
 def test_zone_distribution_in_context(fs):
+    # v4: de exacte ZONEVERDELING (percentages) gaat NIET meer athlete-facing mee; de verdeling
+    # blijft intern bewijs voor kwalitatieve duiding + blok/lap-aantallen.
     laps = [{"amount": 1, "hr_avg": 138, "pace_display": "5:30"} for _ in range(7)] \
         + [{"amount": 1, "hr_avg": 168, "pace_display": "4:10"} for _ in range(3)]
     ctx = _ctx(_wd(hr_avg=145, laps=laps, structured=True))
-    assert "ZONEVERDELING" in ctx
+    assert "ZONEVERDELING" not in ctx                         # geen percentage-verdeling athlete-facing
+    assert "80%" not in ctx and "20%" not in ctx              # geen zone-percentages
 
 
 # ══ P1 — bounded near-future planning ═══════════════════════════════════════════
@@ -201,25 +204,25 @@ def test_feedback_context_ready_empty_is_silent(monkeypatch):
 
 # ══ GOLDEN ARCHETYPES (deterministic context contract) ══════════════════════════
 def test_g5_structured_interval_block_and_distribution(fs):
-    # G5: gestructureerde 5-blok interval — BLOK-ANALYSE + zoneverdeling aanwezig, gemiddelde is
-    # géén sessiebrede goedkeuring (bestaand PF-4-contract blijft).
+    # G5: gestructureerde 5-blok interval — BLOK-ANALYSE aanwezig, gemiddelde is géén sessiebrede
+    # goedkeuring (PF-4). v4: geen ZONEVERDELING-percentages; wél kwalitatieve duiding.
     fs["steps"] = _steps_interval()
     laps = [{"amount": 1, "hr_avg": 128} for _ in range(2)] + [{"amount": 1, "hr_avg": 168} for _ in range(5)] \
         + [{"amount": 1, "hr_avg": 120}]
     ctx = _ctx(_wd(hr_avg=150, laps=laps, structured=True))
     assert "BLOK-ANALYSE" in ctx
-    assert "ZONEVERDELING" in ctx
+    assert "ZONEVERDELING" not in ctx                         # geen percentage-verdeling athlete-facing
     assert "bewijst NIET of de geplande werkblokken hun target haalden" in ctx
 
 
 def test_g7_fartlek_distribution_prevents_overclaim(fs):
-    # G7: fartlek met echte zoneverdeling — de AI krijgt de verdeling i.p.v. te moeten raden.
+    # G7: fartlek met meerdere zones — v4 krijgt de AI een KWALITATIEVE duiding i.p.v. percentages.
     fs["steps"] = []
     laps = [{"amount": 1, "hr_avg": 138} for _ in range(3)] + [{"amount": 1, "hr_avg": 150} for _ in range(3)] \
         + [{"amount": 1, "hr_avg": 168} for _ in range(4)]
     ctx = _ctx(_wd(hr_avg=150, laps=laps, structured=False, description="fartlek"))
-    assert "ZONEVERDELING" in ctx
-    assert "Z2" in ctx and "Z3" in ctx and "Z4" in ctx
+    assert "ZONEVERDELING" not in ctx                         # geen percentages
+    assert "verspreid over meerdere zones" in ctx             # kwalitatieve duiding i.p.v. gok/percentage
 
 
 def test_context_has_no_raw_boolean(fs):
