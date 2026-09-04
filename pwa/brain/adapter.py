@@ -491,6 +491,9 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
         "source_gaps": sorted(_gaps_rel),
         "readiness": ("PARTIAL" if _partial else "READY"),
         "has_load": km is not None and not tl_gap,
+        # v3 — actueel VERHOOGD belastingssignaal (load.signal 'hoog'/'let op'), zodat de
+        # deterministische obligations-laag een signaalverplichting kan afleiden (niet alleen 'km bekend').
+        "load_active": _load_active,
         "complaint_areas": [(c.get("detail") or {}).get("area") or c.get("value") for c in complaints],
         "event": {"status": event["status"], "days": event["days"], "date": event["date"]},
         "prompt_block": tekst,
