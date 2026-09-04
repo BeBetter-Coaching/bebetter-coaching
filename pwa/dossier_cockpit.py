@@ -148,9 +148,16 @@ def _attention(st) -> list:
                                    "Verhoogd belastingssignaal",
                                    "; ".join(sig) or str(e.value or ""), e, rank=1))
         elif k == "load.possible_relation":
+            # V-05: NOOIT de ruwe enum-value ("possible_relation") als coach-tekst tonen.
+            # Bouw een leesbare zin uit de detail (klacht + de vastgelegde 'associatie'-caveat);
+            # overdrijf de zekerheid niet (expliciet géén causaliteit).
+            _det = e.detail or {}
+            _comp = _det.get("complaint")
+            _note = _det.get("note") or "associatie, geen oorzaak"
+            _why = f"Signaal bij '{_comp}' — {_note}" if _comp else _note
             cards.append(_card_obj("possible_relation", "load", "belastbaarheid",
                                    "Mogelijk verband klacht ↔ training",
-                                   str(e.value or "associatie, geen oorzaak"), e, rank=1))
+                                   _why, e, rank=1))
         elif k == "zones.structural_over" and e.value == "ZONE_REVIEW_CANDIDATE":
             cards.append(_card_obj("zone_review", "zones", "belastbaarheid",
                                    "Zones mogelijk niet passend", "zone-review kandidaat", e, rank=2))

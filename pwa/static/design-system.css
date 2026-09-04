@@ -203,6 +203,9 @@
 .ds-kv dt{margin:0;font-size:var(--ds-t-sm);color:var(--ds-text-3);flex:0 1 auto}
 .ds-kv dd{margin:0;font-size:var(--ds-t-body);color:var(--ds-text);text-align:right;font-weight:600;
   min-width:0;overflow-wrap:anywhere}
+/* V-30: lange prozawaarde → gestapeld label boven, waarde LINKS (geen rafelig rechts-blok). */
+.ds-kv>div.kv-long{flex-direction:column;align-items:stretch;gap:3px}
+.ds-kv>div.kv-long dd{text-align:left;font-weight:600;line-height:1.45}
 
 /* ═══════ Primitive: stream / compacte tijdlijn ═════════════════════════ */
 .ds-stream{list-style:none;margin:0;padding:0;position:relative}
@@ -532,6 +535,17 @@
 .ws-calm{margin:0;font-size:13px;color:var(--ds-text-2);line-height:1.5;overflow-wrap:anywhere}
 .ws-load-pct{font-size:16px;font-weight:800;color:var(--tone);font-variant-numeric:tabular-nums}
 .ws-load-sub{margin:5px 0 0;font-size:11.5px;color:var(--ds-text-3);overflow-wrap:anywhere}
+/* V-17: zichtbare Workspace-paginatitel (consistent met de shell; atleetnaam staat in de switcher). */
+.ws-pagehead{margin:0 0 var(--ds-3)}
+.ws-pagetitle{margin:0;font-size:clamp(19px,1.7vw,24px);font-weight:700;letter-spacing:-.01em;color:var(--text)}
+.ws-pagesub{margin:2px 0 0;font-size:var(--ds-t-sm);color:var(--ds-text-3)}
+/* V-27: legenda + eenheid bij de belastinggrafiek (zoals de Feedback-grafiek). */
+.ws-loadchart{margin-top:6px}
+.ws-loadleg{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;margin:0 0 5px;font-size:10.5px;color:var(--ds-text-3)}
+.ws-loadleg .wl-i{flex:0 0 auto}
+.ws-loadleg .wl-bar{width:9px;height:9px;border-radius:2px;background:var(--acc)}
+.ws-loadleg .wl-cum{width:15px;height:2px;border-radius:2px;background:var(--acc)}
+.ws-loadleg .wl-ref{width:15px;height:0;border-top:2px dashed var(--ds-text-3)}
 .ws-next-lead{margin:0 0 12px;font-size:13.5px;color:var(--ds-text-2);line-height:1.45;overflow-wrap:anywhere}
 .ws-next-btn{display:inline-flex;align-items:center;gap:8px;font:inherit;font-weight:700;font-size:13.5px;
   cursor:pointer;padding:11px 18px;border-radius:12px;border:1px solid var(--tone-bd);
@@ -1044,6 +1058,12 @@
 .dc-sub{margin:4px 0 0;display:flex;align-items:center;gap:var(--ds-2);flex-wrap:wrap;
   font-size:var(--ds-t-sm);color:var(--ds-text-3)}
 .dc-sub .sep{opacity:.35}
+/* V-01: neutrale 'Beeld'-chip = de kennis/geheugen-stand (GEEN operationele urgentie).
+   Bewust neutraal (geen actie-rood/oranje) en expliciet gelabeld, los van 'bronnen vers'. */
+.dc-beeld{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--ds-r-pill);
+  background:var(--card2);border:1px solid var(--border);white-space:nowrap;line-height:1}
+.dc-beeld small{font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.dc-beeld b{font-size:var(--ds-t-xs);font-weight:700;color:var(--text)}
 .dc-title{text-align:center;min-width:0}
 .dc-title h1{margin:0;font-size:clamp(18px,1.6vw,23px);font-weight:700;letter-spacing:-.01em;
   display:inline-flex;align-items:center;gap:11px}
@@ -1118,10 +1138,15 @@
 .dc-tl-item .tl-node{position:relative;z-index:1;width:38px;height:38px;border-radius:11px;justify-self:center;display:grid;place-items:center;
   color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
 .dc-tl-item .tl-node .ic{width:18px;height:18px}
+/* V-06: de tijdlijn is een compacte index; een lang doel valt hier niet meer woord-per-regel
+   over 13 regels. Titel krijgt de vrijgekomen breedte (metric is begrensd, niet meer 'auto'
+   die de rij opeet) en wordt tot 3 regels geklemd — de volledige tekst leest in het
+   detail-midden (dcMemPanel) zodra het event geselecteerd is. */
 .dc-tl-item .tl-b{min-width:0}
-.dc-tl-item .tl-t{display:block;font-size:13.5px;font-weight:650;color:var(--ds-text);line-height:1.3}
+.dc-tl-item .tl-t{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  font-size:13.5px;font-weight:650;color:var(--ds-text);line-height:1.3;overflow-wrap:anywhere}
 .dc-tl-item .tl-s{display:block;font-size:10.5px;color:var(--ds-text-3);margin-top:1px}
-.dc-tl-item .tl-m{text-align:right;white-space:nowrap}
+.dc-tl-item .tl-m{text-align:right;justify-self:end;max-width:92px}
 .dc-tl-item .tl-m small{display:block;font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ds-text-3)}
 .dc-tl-item .tl-m b{font-size:12px;font-weight:700;color:var(--tone)}
 .dc-tl-item:hover{background:rgba(94,230,235,.04)}
@@ -1456,6 +1481,9 @@
 .fb-cockpit .fb-metric small{display:block;font-size:9.5px;letter-spacing:.02em;color:var(--ds-text-3);margin-top:6px}
 .fb-cockpit .fb-metric.hot b{color:var(--ds-critical)}
 .fb-cockpit .fb-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+/* V-09/V-10: de Masterbrein-synthese staat full-width bovenaan (geen smalle 200px-kolom naast
+   een halflege kaart); het atleetbericht leeft één keer in de gespreksthread. */
+.fb-cockpit .fb-mb-full{margin-bottom:16px}
 .fb-cockpit .fb-sub{padding:14px 16px;border-radius:15px;background:rgba(11,24,46,.32);border:1px solid rgba(122,168,255,.07)}
 .fb-cockpit .fb-sub .sh{display:flex;align-items:center;gap:8px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3);margin-bottom:9px}
 .fb-cockpit .fb-sub .sh svg{width:14px;height:14px}
@@ -1531,6 +1559,9 @@
 .fb-cockpit .fb-plrows{margin-top:9px;display:grid;gap:6px}
 .fb-cockpit .fb-plrows div{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--ds-text-3)}
 .fb-cockpit .fb-plrows b{color:var(--ds-text-2);font-weight:600;text-align:right}
+/* V-30: lange wedstrijdtekst → gestapeld + links (geen rafelig rechts-blok in een smalle kolom). */
+.fb-cockpit .fb-plrows div.stack{flex-direction:column;align-items:flex-start;gap:2px}
+.fb-cockpit .fb-plrows div.stack b{text-align:left;line-height:1.45}
 .fb-cockpit .fb-kennis{margin:0;padding:0;list-style:none;display:grid;gap:9px}
 .fb-cockpit .fb-kennis li{display:flex;align-items:flex-start;gap:9px;font-size:12.5px;color:var(--ds-text-2);line-height:1.4}
 .fb-cockpit .fb-kennis li svg{width:14px;height:14px;flex:0 0 auto;margin-top:1px;fill:none;stroke:var(--ds-success);stroke-width:2}

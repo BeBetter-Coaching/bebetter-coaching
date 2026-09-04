@@ -200,7 +200,10 @@ class TestLockedFunctionalityPreserved:
         for token in ("function noteGeneration(", "function genBanner(", "function genMount(",
                       "source_versions", "_genDominates"):
             assert token in _APP, f"generation-contract mist {token}"
-        assert 'genMount("#home-genbar"' in _APP and 'genMount("#tp-genbar"' in _APP
+        # V-11: Home stampt de generatie niet meer als zwevende overlay-banner, maar via de
+        # niet-obstructieve, gereserveerde 'Bijgewerkt HH:MM'-status (homeSetUpdated → noteGeneration).
+        assert 'function homeSetUpdated(' in _APP and 'homeSetUpdated(' in _APP
+        assert 'genMount("#tp-genbar"' in _APP
 
     def test_18_workspace_quick_actions_hergebruiken_bestaande_routes(self):
         body = _fn("wsRender")

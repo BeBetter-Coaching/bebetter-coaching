@@ -45,7 +45,8 @@ const REAL = [
   sliceFrom("function dsKv("), sliceFrom("function dsStream("), sliceFrom("function dsAction("),
   sliceFrom("function dsEmpty("), sliceFrom("function dsSkeletonBlock("),
   // Dossier consts
-  sliceFrom("const _DC_OVERALL = {"), sliceFrom("const _DC_TRUTH = {"), sliceFrom("const _DC_KIND_IC = {"),
+  sliceFrom("const _DC_OVERALL = {"), sliceFrom("function dcBeeldChip("),
+  sliceFrom("const _DC_TRUTH = {"), sliceFrom("const _DC_KIND_IC = {"),
   sliceFrom("const _DC_TONE_HEX = {"), sliceLine("const dcHex = "), sliceLine("const DC_MEM = "),
   sliceLine("const _DC_MND = "), sliceFrom("const _DC_ATTN_IC = {"), sliceFrom("const _DC_DOM_IC = {"),
   sliceLine("let dcEvents = "), sliceLine("let _dcResizeBound = "),
@@ -144,6 +145,10 @@ function A_desktop_render() {
   ok(/dc-grid-2/.test(wrap.innerHTML), "A: 2-zone grid (timeline | detail)");
   ok(!/Gerelateerde draden|dc-rt-pane|dc-rt-card/.test(wrap.innerHTML), "A: duplicate related-threads pane removed");
   ok(/dc-tl-item/.test(wrap.innerHTML) && /dc-mem/.test(wrap.innerHTML), "A: timeline + selected detail both render");
+  // V-01: het overall-oordeel = neutrale 'Beeld'-chip met evidence-taal, NIET de operationele
+  // ACTIE/AANDACHT-urgentie in dezelfde rol (status.overall === "ATTENTION" → "Aandachtspunt").
+  ok(/dc-beeld/.test(wrap.innerHTML) && />Beeld</.test(wrap.innerHTML), "A1: neutral 'Beeld' evidence chip present");
+  ok(/Aandachtspunt/.test(wrap.innerHTML), "A1: ATTENTION reframed as evidence word 'Aandachtspunt' (not operational 'Aandacht')");
 }
 
 // ── B. Real narrow renderer (dcStack via dcRender, innerWidth < 1280) ─────────

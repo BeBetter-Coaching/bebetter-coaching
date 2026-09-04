@@ -13,6 +13,7 @@ Workouts naar FinalSurge terugschrijven (schema-push) is een aparte, latere stap
 from __future__ import annotations
 
 import os
+import re
 import sys
 from datetime import date, timedelta
 
@@ -76,10 +77,16 @@ def recente_trainingen(user_key: str, dagen: int = 14) -> list[dict]:
             duur_min = round(float(duur) / 60) if duur else None
         except (TypeError, ValueError):
             duur_min = None
+        typ = a0.get("activity_type_name") or w.get("name") or "Training"
+        # V-21: afstand komt uit DEZELFDE reeds-opgehaalde activity (geen extra bron-call).
+        # Toon km alleen voor hardlopen (afstand is dan betekenisvol); niet-run houdt duur.
+        is_run = bool(re.search(r"run|loop|hardloop", str(typ), re.I))
+        km = FS._norm_km(a0.get("amount"), a0.get("amount_type")) if is_run else None
         out.append({
             "datum": (w.get("workout_date") or "")[:10],
-            "type": a0.get("activity_type_name") or w.get("name") or "Training",
+            "type": typ,
             "duur_min": duur_min,
+            "afstand_km": km,
         })
     out.sort(key=lambda x: x["datum"], reverse=True)
     return out[:8]
