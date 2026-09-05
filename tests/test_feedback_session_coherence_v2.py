@@ -133,8 +133,10 @@ def test_g14_near_future_uses_relative_label(monkeypatch):
            "planned_amount": 8, "planned_amount_type": "km", "is_race": False, "Activities": []}]
     monkeypatch.setattr(fs_client, "get_workouts_deduped", lambda ak, s, e: up)
     block = feedback_core._near_future_block({"athlete_key": "AK", "workout_key": "WK", "workout_date": "2026-09-04"})
-    assert "morgen (" in block                                 # relatief label vooraan
-    assert "LETTERLIJK over" in block                          # regel: niet zelf uitrekenen
+    # v6: geen athlete-facing relatief dag-woord meer; verwijs via de betekenis, weekdag alleen intern.
+    assert "de Duurloop (komt eraan" in block
+    assert "morgen (" not in block                             # geen 'morgen' als label
+    assert "intern: za 5/9" in block                           # exacte weekdag alleen intern (disambiguatie)
 
 
 # ══ G15 — mixed block lengths: exact size labels, no invented 'longer' ═══════════

@@ -137,12 +137,29 @@ ZONE-ACCURACY — KRITIEKE REGELS (niet onderhandelbaar):
    driekwart", "grofweg de helft"). Die exacte waarden worden aantoonbaar onbetrouwbaar overgenomen
    en zijn voor de atleet weinig waard. Beschrijf de intensiteit in plaats daarvan KWALITATIEF
    (bijv. "het grootste deel bleef rustig, maar er zat ook een stuk boven je rustige bereik in") en
-   label de modaliteit (op tempo / op hartslag). Voor gestructureerde trainingen mag je exacte
-   AANTALLEN werkblokken/laps noemen ("drie van de vijf werkblokken in Z4") — dat is betrouwbaar en
-   waardevol. Kwalitatieve hoeveelheidswoorden ("grootste deel", "overwegend", "deels", "een stuk")
-   mogen, mits gedekt door de aangeleverde ZONE-DUIDING; een percentage of exacte breuk NOOIT.
-   Vertellen hartslag en tempo een verschillend verhaal, kies dan niet stil het geruststellende
-   verhaal, maar benoem het verschil.
+   label de modaliteit (op tempo / op hartslag). Kwalitatieve hoeveelheidswoorden ("grootste deel",
+   "overwegend", "deels", "een stuk") mogen, mits gedekt door de aangeleverde ZONE-DUIDING; een
+   percentage of exacte breuk NOOIT. Vertellen hartslag en tempo een verschillend verhaal, kies dan
+   niet stil het geruststellende verhaal, maar benoem het verschil.
+12. TEL OF CLASSIFICEER ZELF GEEN BLOKKEN/LAPS (niet onderhandelbaar):
+   Leid NOOIT zelf een aantal of zone-indeling af uit de losse blok-/lap-regels ("drie van de vijf",
+   "twee in Z3", "de meeste blokken in Z4"). Zulke tellingen/patronen mag je alleen noemen als de app
+   ze KANT-EN-KLAAR heeft meegegeven (een 'WERKBLOK-TELLING' of 'BLOKVOLGORDE'-regel); neem die dan
+   LETTERLIJK over, verander de getallen niet en tel er niets bij. Zonder zo'n meegegeven telling
+   beschrijf je het verloop KWALITATIEF ("de eerste herhaling bleef rustiger, daarna kwam je beter op
+   target", "het derde blok viel duidelijk terug", "de laatste twee zaten hoger") of je noemt losse,
+   exacte blok-observaties, maar je telt zelf niet.
+13. GEEN KALENDER NAVERTELLEN — VERWIJS NAAR DE SESSIE ZELF (niet onderhandelbaar):
+   Gebruik nabije trainingscontext om te begrijpen wat er speelt, maar vertel de kalender niet na.
+   Schrijf STANDAARD GEEN relatieve dag-woorden ("gisteren", "eergisteren", "morgen", "overmorgen",
+   "N dagen geleden") en ook geen "de training van dinsdag" tenzij een exacte weekdag echt nodig is
+   om twee nabije sessies te onderscheiden (gebruik dan alleen de meegegeven weekdag, nooit zelf
+   afgeleid). Verwijs naar een nabije sessie via de BETEKENIS: "de intervaltraining", "de cruise
+   intervals", "de komende lange duurloop", "met die zware sessie in het vooruitzicht", "de training
+   van eerder deze week". Voegt de context niets toe aan het advies, laat hem dan helemaal weg.
+   Een tijdswoord uit een OUD atleetbericht ("kan er morgen niet bij zijn", dat gisteren is
+   geschreven) is historische tekst: kopieer het NIET letterlijk; laat het liever weg ("Jammer dat je
+   er niet bij kunt zijn", "dank dat je het laat weten").
 
 PLAN VS UITVOERING:
 Als er een geplande structuur beschikbaar is (workout builder), vergelijk dan ACTIEF de uitvoering daarmee. Was het geplande tempo gehaald? Liep de atleet in de geplande zone? Dat is het meest waardevolle wat je kunt zeggen."""
@@ -878,20 +895,23 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     # Feedback v1 (A): huidige weekdag is expliciet onderdeel van de context, en relatieve
     # dagwoorden uit de atleet worden tegen VANDAAG geïnterpreteerd. Zo wordt een afsluiting
     # over "zondag" (uit een training van gisteren) op maandag NIET als actuele wens geëchood.
+    # v6: datums bepalen de RELEVANTIE (intern), maar worden NIET athlete-facing naverteld. Deze
+    # sectie is achtergrond zodat je de woorden van de atleet correct plaatst; verwijs zelf naar
+    # 'deze training', niet met een relatieve dag.
     datum_section = (
-        f"\n\nDATUM-CONTEXT:\n"
+        f"\n\nDATUM-CONTEXT (intern — niet navertellen):\n"
         f"Trainingsdatum: {workout_date or 'onbekend'}"
         + (f" ({_train_weekdag})" if _train_weekdag else "") + "\n"
         f"Vandaag (wanneer jij reageert): {today_str}\n"
         f"{dag_info}\n"
-        f"Let op: een weekdag of tijdsaanduiding in de woorden van de atleet (zoals 'zondag', "
-        f"'morgen', 'vandaag') hoort bij de TRAININGSDATUM, niet bij vandaag. Reken die eerst om "
-        f"tegen vandaag ({today_str}) voordat je reageert. Een dag die al voorbij is (bijv. de "
-        f"atleet schrijft 'op naar zondag' terwijl het vandaag al {_vandaag_weekdag} is) mag je "
-        f"NIET als actuele afsluiting of vooruitblik echoën; reageer op de inhoud, niet op het tijdstip.\n"
+        f"Verwijs naar DEZE training als 'deze training' of via het type ('je duurloop', 'de "
+        f"intervaltraining'), STANDAARD zonder relatieve dag ('gisteren'/'vandaag'). Een weekdag of "
+        f"tijdswoord in de woorden van de atleet ('zondag', 'morgen', 'straks') hoort bij het moment "
+        f"van HAAR bericht, niet bij nu: kopieer zo'n woord NIET letterlijk en echo een al gepasseerde "
+        f"dag NIET als actuele afsluiting of vooruitblik; reageer op de inhoud, niet op het tijdstip.\n"
         f"Verzin ZELF NOOIT een dag-relatie met een EERDERE training ('na gisteren', 'gisteren nog "
-        f"intervallen', 'de dag ervoor'). Verwijs alleen naar een vorige training als hieronder een "
-        f"'VORIGE TRAINING'-blok met datum staat, en neem die relatieve dag dan letterlijk over."
+        f"intervallen', 'de dag ervoor'); verwijs naar een vorige/komende sessie alleen via de "
+        f"betekenis en alleen als hieronder een relevant sessie-blok staat."
     )
 
     # Coach-geheugen: wat we uit eerdere gesprekken over deze atleet weten

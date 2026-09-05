@@ -97,16 +97,17 @@ def zone_shares(laps, zones, is_pace):
 
 
 def block_zone_counts(blocks, zones, is_pace, zone_type):
-    """Deterministische TELLING van werkblokken per zone (exacte AANTALLEN, GEEN percentages) —
-    athlete-facing veilig en in eerdere audits betrouwbaar ('drie van de vijf werkblokken in Z4').
-    Alleen ACTIVE werkblokken; classificeert de gemeten waarde van de classificeerbare zonetabel
-    via de bestaande classifier. Geeft een kant-en-klare prompttekst of '' (< 2 telbare blokken)."""
+    """Deterministische, VOORAF berekende werkblok-evidence (v6): de exacte VOLGORDE van zones per
+    werkblok (Z3, Z4, Z3, Z4, Z4) én de TELLING per zone (AANTALLEN, geen percentages). Beide zijn
+    één immutable feit — het MODEL mag zelf niet tellen of classificeren (regel 12), het neemt deze
+    regel letterlijk over. Alleen ACTIVE werkblokken; classificeert de gemeten waarde van de
+    classificeerbare zonetabel via de bestaande classifier. Geeft '' bij < 2 telbare blokken."""
     if not blocks or not zones or is_pace is None or zone_type not in ("tempo", "hartslag"):
         return ""
     import fs_client as _fs
     from collections import Counter
+    seq = []
     cnt: Counter = Counter()
-    total = 0
     for b in blocks:
         if not isinstance(b, dict) or b.get("type") in ("WARMUP", "REST", "COOLDOWN"):
             continue
@@ -117,18 +118,25 @@ def block_zone_counts(blocks, zones, is_pace, zone_type):
             val = pm * 60 if pm not in (0, float("inf")) else None
         if val is None:
             continue
-        total += 1
         cls = _fs.classify_pace_hr_zone(zones, val, is_pace=is_pace)
+        label = f"Z{cls['num']}" if (cls and cls.get("status") == "IN_ZONE") else "buiten"
+        seq.append(label)
         cnt[cls["num"] if (cls and cls.get("status") == "IN_ZONE") else "buiten"] += 1
+    total = len(seq)
     if total < 2 or not cnt:
         return ""
     mod = _MODALITY_NL.get(zone_type, "")
+    volgorde = ", ".join("buiten de zones" if s == "buiten" else s for s in seq)
     parts = [f"{cnt[z]} in Z{z}" for z in sorted(k for k in cnt if k != "buiten")]
     if cnt.get("buiten"):
         parts.append(f"{cnt['buiten']} buiten de zones")
-    return ("\n\nWERKBLOK-TELLING (deterministisch — exacte AANTALLEN, geen percentages): van de "
-            f"{total} werkblokken kwamen er {mod} " + ", ".join(parts) + " uit. Je mag deze AANTALLEN "
-            "noemen (bijv. 'drie van de vijf werkblokken in Z4'); maak er GEEN percentages van.")
+    telling = ", ".join(parts)
+    return ("\n\nWERKBLOK-EVIDENCE (deterministisch door de app berekend — neem LETTERLIJK over, tel "
+            "of classificeer zelf NIETS, geen percentages):\n"
+            f"- Blokvolgorde {mod}: {volgorde}.\n"
+            f"- Telling {mod}: van de {total} werkblokken {telling}.\n"
+            "Je mag deze volgorde/aantallen noemen (bijv. 'drie van de vijf werkblokken in Z4') of het "
+            "verloop kwalitatief beschrijven; verander de getallen niet en leid zelf niets nieuws af.")
 
 
 def _numbered(shares: dict) -> dict:
@@ -268,9 +276,11 @@ def _message_section(athlete_text: str) -> str:
     punten = []
     if _UNAVAIL_RE.search(t):
         punten.append(
-            "De atleet geeft aan een KOMENDE sessie niet te kunnen doen. Erken die afwezigheid; "
-            "wens haar/hem daar GEEN plezier of succes voor alsof zij/hij er wél bij is, en instrueer "
-            "niet om zich erop voor te bereiden.")
+            "De atleet geeft aan een KOMENDE sessie niet te kunnen doen. Erken die afwezigheid kort "
+            "('Jammer dat je er niet bij kunt zijn', 'dank dat je het laat weten'); wens haar/hem daar "
+            "GEEN plezier of succes voor alsof zij/hij er wél bij is, en instrueer niet om zich erop "
+            "voor te bereiden. KOPIEER het tijdswoord uit haar bericht ('morgen'/'straks') NIET "
+            "letterlijk; dat hoort bij het moment van haar bericht, niet bij nu.")
     if _PAIN_RE.search(t):
         punten.append(
             "De atleet noemt zelf pijn/klacht. Adresseer dat met een korte, neutrale check (geen "
