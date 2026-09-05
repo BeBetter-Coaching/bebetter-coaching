@@ -542,6 +542,8 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     athlete_zones_text = ""
     athlete_zone_type = ""   # "tempo" | "hartslag" | ""
     athlete_zones_struct = []
+    _secondary_zone_type = ""   # v5: andere modaliteit uit dezelfde ZoneList (voor divergentie-guard)
+    _secondary_zones_struct = []
     if athlete_key:
         try:
             zones_result = _fs.get_athlete_zones(athlete_key)
@@ -550,6 +552,8 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
                 athlete_zones_struct = zones_result.get("zones", [])
                 zone_type_label = "tempo (min/km)" if athlete_zone_type == "tempo" else "hartslag (bpm)"
                 athlete_zones_text = f"Zones ({zone_type_label}):\n{zones_result['zones_text']}"
+                _secondary_zone_type = zones_result.get("secondary_zone_type") or ""
+                _secondary_zones_struct = zones_result.get("secondary_zones") or []
         except Exception:
             pass
 
@@ -694,11 +698,35 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
             _ob_structured = len(_fs._planned_blocks(builder_steps_raw)) >= 2
         except Exception:
             _ob_structured = False
+        # v5 — continue easy/recovery HR/tempo-divergentie-guard. Alleen bij een CONTINUE easy/
+        # recovery-run met BEIDE modaliteiten (primair + secundair uit dezelfde ZoneList): als de
+        # ene modaliteit binnen het rustige bereik blijft en de andere er materieel bovenuit komt,
+        # mag de run niet blanket 'precies goed' worden verklaard. Gestructureerd werk = blok-evidence
+        # leidend → guard vuurt daar NIET (geen over-applicatie).
+        _divergence = None
+        try:
+            _intent_txt = f"{workout_name} {plan_description}".lower()
+            _easy_intent = any(k in _intent_txt for k in
+                               ("herstel", "recovery", "rustig", "hersteldag", "regeneratie", "easy"))
+            if (_easy_intent and not _ob_structured and _can_classify
+                    and _secondary_zones_struct and _secondary_zone_type in ("tempo", "hartslag")
+                    and _secondary_zone_type != athlete_zone_type):
+                _prim_above = _ob.above_easy(_ob_shares)
+                _sec_shares = _ob.zone_shares(
+                    laps, _secondary_zones_struct, _secondary_zone_type == "tempo")[0]
+                _sec_above = _ob.above_easy(_sec_shares)
+                if _prim_above != _sec_above:
+                    _above_mod = athlete_zone_type if _prim_above else _secondary_zone_type
+                    _easy_mod = _secondary_zone_type if _prim_above else athlete_zone_type
+                    _divergence = {"above": _above_mod, "easy": _easy_mod}
+        except Exception:
+            _divergence = None
         _ob_res = _ob.build(
             modality=athlete_zone_type, shares=_ob_shares,
             planned_target_zones=_ob_targets, athlete_text=_ob_msg, is_structured=_ob_structured,
             complaint_areas=_ob_complaints, load_elevated=_ob_load,
-            intensity_high=bool(_ob_rpe_high or _ob_above), has_upcoming=_ob_upcoming)
+            intensity_high=bool(_ob_rpe_high or _ob_above), has_upcoming=_ob_upcoming,
+            divergence=_divergence)
         if _ob_res.get("prompt_block"):
             obligations_section = f"\n\n{_ob_res['prompt_block']}"
     except Exception:
@@ -860,7 +888,10 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
         f"'morgen', 'vandaag') hoort bij de TRAININGSDATUM, niet bij vandaag. Reken die eerst om "
         f"tegen vandaag ({today_str}) voordat je reageert. Een dag die al voorbij is (bijv. de "
         f"atleet schrijft 'op naar zondag' terwijl het vandaag al {_vandaag_weekdag} is) mag je "
-        f"NIET als actuele afsluiting of vooruitblik echoën; reageer op de inhoud, niet op het tijdstip."
+        f"NIET als actuele afsluiting of vooruitblik echoën; reageer op de inhoud, niet op het tijdstip.\n"
+        f"Verzin ZELF NOOIT een dag-relatie met een EERDERE training ('na gisteren', 'gisteren nog "
+        f"intervallen', 'de dag ervoor'). Verwijs alleen naar een vorige training als hieronder een "
+        f"'VORIGE TRAINING'-blok met datum staat, en neem die relatieve dag dan letterlijk over."
     )
 
     # Coach-geheugen: wat we uit eerdere gesprekken over deze atleet weten
@@ -882,6 +913,12 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     nf = (workout_data.get("near_future_block") or "").strip()
     near_future_section = f"\n\n{nf}" if nf else ""
 
+    # P0 v5 — deterministische VORIGE-TRAININGS-anker (feedback_core._prior_session_block): de meest
+    # recente uitgevoerde training vóór deze, met een deterministisch relatief dag-label, zodat het
+    # model geen 'na gisteren' verzint wanneer de relevante vorige sessie eerder deze week lag.
+    prior = (workout_data.get("prior_block") or "").strip()
+    prior_section = f"\n\n{prior}" if prior else ""
+
     # P0 — same-day sessie-coherentie (feedback_core._session_context): meerdere registraties van
     # dezelfde sessie samen begrijpen, zodat een klein fragment geen 'vroeg gestopte training' wordt.
     sess = (workout_data.get("session_block") or "").strip()
@@ -893,7 +930,7 @@ WAT WAS DE BEDOELING (workout builder):
 {plan_text}{zones_section}{garmin_section}
 
 Samenvattende data:
-{activity_summary}{deviation_section}{session_section}{unplanned_section}{lap_section}{near_future_section}{datum_section}{profiel_section}{brein_section}
+{activity_summary}{deviation_section}{session_section}{unplanned_section}{lap_section}{near_future_section}{prior_section}{datum_section}{profiel_section}{brein_section}
 
 Wat {first_name} zelf schrijft/zegt:
 {athlete_input}{obligations_section}"""

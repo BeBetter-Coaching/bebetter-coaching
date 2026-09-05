@@ -1506,10 +1506,43 @@ def delete_workout(workout_key: str, user_key: str) -> dict:
 # Schema-verloop
 # ---------------------------------------------------------------------------
 
+def _zone_struct_from_entry(entry: dict) -> list:
+    """Parse alleen de zone-STRUCT (num/naam/low/high in native eenheid) uit één ZoneList-entry.
+    Gedeeld door de primaire + secundaire modaliteit; geen tekstopmaak (die is alleen voor primair)."""
+    struct = []
+    for i in range(1, 11):
+        name = entry.get(f"zone_{i}_name")
+        low_raw = entry.get(f"zone_{i}_low")
+        high_raw = entry.get(f"zone_{i}_high")
+        if not name:
+            break
+        if low_raw is None and high_raw is None:
+            break
+        short_name = re.sub(r"^Zone\s*\d+\s*:\s*", "", name).strip()
+        try:
+            struct.append({"num": i, "naam": short_name,
+                           "low": float(low_raw) if low_raw is not None else None,
+                           "high": float(high_raw) if high_raw is not None else None})
+        except (TypeError, ValueError):
+            pass
+    return struct
+
+
+def _entry_zone_type(entry: dict) -> str:
+    raw = (entry.get("zone_type") or entry.get("type") or "").upper()
+    return "hartslag" if raw in ("H", "HR", "HEART_RATE", "HEARTRATE") else "tempo"
+
+
 def get_athlete_zones(user_key: str) -> dict:
     """
     Haal zones op voor een atleet uit FinalSurge.
     Geeft een dict terug met 'zone_type', 'zones_text', en debug-info.
+
+    v5 (additief, GEEN extra fetch): als DEZELFDE ZoneList-respons ook een run-zonetabel van de
+    ANDERE modaliteit bevat (bv. naast hartslag ook tempo), dan komen die als 'secondary_zone_type'
+    + 'secondary_zones' mee. Bestaande consumers negeren die keys; alleen de continue-run
+    divergentie-guard gebruikt ze (recovery-run niet blanket 'goed' verklaren als de andere
+    modaliteit boven het rustige bereik zat).
     """
     try:
         # Correct endpoint: ZoneList?user_key=... (geen scope/scopekey)
@@ -1600,11 +1633,29 @@ def get_athlete_zones(user_key: str) -> dict:
             elif low_raw is not None:
                 lines.append(f"Z{i} ({short_name}): >{_fmt(low_raw)} {unit}")
 
+        # v5 — secundaire run-zonetabel van de ANDERE modaliteit uit DEZELFDE respons (geen fetch).
+        secondary_type, secondary_struct = None, []
+        for entry in (zones_raw if isinstance(zones_raw, list) else [zones_raw]):
+            if entry is run_zones:
+                continue
+            atype = (entry.get("activity_type_name") or entry.get("activity_type_key")
+                     or entry.get("sport") or "").lower()
+            if "run" not in atype and "hardlo" not in atype:
+                continue
+            et = _entry_zone_type(entry)
+            if et != zone_type:
+                st = _zone_struct_from_entry(entry)
+                if st:
+                    secondary_type, secondary_struct = et, st
+                    break
+
         if lines:
             return {
                 "zone_type": zone_type,
                 "zones_text": "\n".join(lines),
                 "zones": zones_struct,
+                "secondary_zone_type": secondary_type,
+                "secondary_zones": secondary_struct,
                 "raw": run_zones,
                 "endpoint_used": "ZoneList",
             }

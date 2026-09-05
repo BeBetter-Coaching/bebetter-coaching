@@ -141,6 +141,12 @@ def _numbered(shares: dict) -> dict:
     return out
 
 
+def above_easy(shares: dict, ceiling: int = 2) -> bool:
+    """True als er een MATERIEEL aandeel (>= _MATERIAL_SHARE) in een zone BOVEN `ceiling` zit
+    (intern; voor de continue easy/recovery divergentie-guard)."""
+    return any(z > ceiling and p >= _MATERIAL_SHARE for z, p in _numbered(shares).items())
+
+
 def _claimed_zones(text: str) -> set:
     """Zone-nummers die de atleet zelf noemt (los + als bereik). Leeg = geen expliciete claim."""
     zs: set = set()
@@ -237,6 +243,24 @@ def _claim_section(modality: str, numbered: dict, claimed: set, athlete_text: st
     return "\n".join(regels)
 
 
+def _divergence_section(divergence) -> str:
+    """v5 — continue easy/recovery HR/tempo-divergentie: één modaliteit bleef rustig, de andere kwam
+    er materieel bovenuit. Verbiedt blanket geruststelling ('precies goed'/'je zat er gewoon goed
+    in') zonder het verschil te benoemen. Kwalitatief, geen percentages. Alleen bij een echt
+    gedetecteerde divergentie (beide modaliteiten geclassificeerd) — nooit geforceerd."""
+    if not divergence:
+        return ""
+    above = _MODALITY_NL.get(divergence.get("above"), "op de ene modaliteit")
+    easy = _MODALITY_NL.get(divergence.get("easy"), "op de andere modaliteit")
+    return ("CONTINU-DUIDING — HARTSLAG/TEMPO-VERSCHIL (kwalitatief, geen percentages):\n"
+            f"- Dit is een rustige/hersteltraining: {easy} bleef het rustig, maar {above} zat er ook "
+            f"een stuk BOVEN je rustige bereik in. Concludeer daarom NIET dat het 'precies goed', "
+            f"'helemaal volgens plan' of 'je zat er gewoon goed in' was; benoem eerlijk en kwalitatief "
+            f"dat hartslag en tempo hier niet hetzelfde verhaal vertellen (bijv. '{easy} bleef het "
+            f"rustig, maar qua tempo zat er ook een stuk boven je rustige bereik in'). Geen percentages "
+            f"of breuken.")
+
+
 def _message_section(athlete_text: str) -> str:
     """Bounded bericht-verplichtingen: adresseer materiële punten (kan niet komen, pijn,
     schemaverzoek, directe vraag). Vuurt alleen bij een gedetecteerd punt (geen ruis)."""
@@ -295,22 +319,24 @@ def _signal_section(complaint_areas, load_elevated, intensity_high, has_upcoming
 def build(*, modality: str = "", shares: dict | None = None, planned_target_zones=None,
           athlete_text: str = "", is_structured: bool = False, complaint_areas=None,
           load_elevated: bool = False, intensity_high: bool = False,
-          has_upcoming: bool = False) -> dict:
+          has_upcoming: bool = False, divergence=None) -> dict:
     """Bouw de deterministische verplichtingen-projectie en render de bindende promptsectie
     (v4: KWALITATIEF, geen athlete-facing percentages). Alleen ACTIEVE sub-secties komen in het
-    blok; niets te arbitreren → `prompt_block` LEEG (schone cases blijven kort). Nooit fataal."""
+    blok; niets te arbitreren → `prompt_block` LEEG (schone cases blijven kort). Nooit fataal.
+    v5: `divergence` (of None) = een gedetecteerd HR/tempo-verschil op een continue easy/recovery-run."""
     try:
         numbered = _numbered(shares or {})
         target = set(int(z) for z in (planned_target_zones or []) if z)
         claimed = _claimed_zones(athlete_text)
         ceiling = max(target) if target else (max(claimed) if claimed else None)
         zone_sec = _zone_qualitative_section(modality, numbered, ceiling, bool(target), is_structured)
+        div_sec = _divergence_section(divergence)
         claim_sec = _claim_section(modality, numbered, claimed, athlete_text)
         msg_sec = _message_section(athlete_text)
         sig_sec = _signal_section(complaint_areas, load_elevated, intensity_high, has_upcoming)
     except Exception:
         return {"prompt_block": "", "sections": []}
-    sections = [s for s in (zone_sec, claim_sec, msg_sec, sig_sec) if s]
+    sections = [s for s in (zone_sec, div_sec, claim_sec, msg_sec, sig_sec) if s]
     if not sections:
         return {"prompt_block": "", "sections": []}
     block = ("━━━ EVIDENCE-CONTRACT & VERPLICHTINGEN (deterministisch — bindend, ga hier niet "

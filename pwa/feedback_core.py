@@ -188,12 +188,15 @@ def _relative_day_label(d, today) -> str:
     return f"over {n} dagen"
 
 
-def _near_future_block(w: dict) -> str:
+def _near_future_block(w: dict, rows=None) -> str:
     """P1 — begrensde near-future planning voor de generatie: de eerstvolgende (max 3) GEPLANDE
     sessies met datum, type, geplande afstand/duur en race-markering. ÉÉN bounded FinalSurge-read
     (upcoming workouts) die NERGENS anders wordt gehaald (geen dubbele call), en ALLEEN bij een
     expliciete generatie-actie — dus geen nieuwe fan-out op het snelle case-open-pad. Best-effort:
-    faalt stil naar ''. Deterministisch; de relevantie-afweging (wél/niet noemen) doet de AI."""
+    faalt stil naar ''. Deterministisch; de relevantie-afweging (wél/niet noemen) doet de AI.
+
+    v5: `rows` mag een GEDEELDE, breder-gevensterde read zijn (zie `_timeline_rows`) zodat prior +
+    near-future uit ÉÉN call komen (geen extra fan-out). Dan bounden we het bovenvenster expliciet."""
     ak = w.get("athlete_key", "")
     if not ak:
         return ""
@@ -210,11 +213,11 @@ def _near_future_block(w: dict) -> str:
         if end < start:
             return ""
         wk_key = w.get("workout_key", "")
-        upcoming = FS.get_workouts_deduped(ak, start, end) or []
+        upcoming = rows if rows is not None else (FS.get_workouts_deduped(ak, start, end) or [])
         _WD = ["ma", "di", "wo", "do", "vr", "za", "zo"]
-        rows = []
+        rows_out = []
         for x in sorted(upcoming, key=lambda z: str(z.get("workout_date"))[:10]):
-            if wk_key and x.get("workout_key") == wk_key:
+            if wk_key and (x.get("workout_key") == wk_key or x.get("key") == wk_key):
                 continue
             if not FS.is_planned_workout(x):
                 continue
@@ -222,7 +225,7 @@ def _near_future_block(w: dict) -> str:
                 dd = date.fromisoformat(str(x.get("workout_date") or "")[:10])
             except ValueError:
                 continue
-            if dd <= anchor:
+            if dd <= anchor or dd > end:                     # v5: expliciete bovengrens (gedeelde rows)
                 continue
             naam = (x.get("name") or "training").strip()
             km = FS._norm_km(x.get("planned_amount"), x.get("planned_amount_type") or x.get("amount_type"))
@@ -244,14 +247,14 @@ def _near_future_block(w: dict) -> str:
                 meta.append(f"{mins} min")
             tag = " [WEDSTRIJD]" if x.get("is_race") else ""
             rel = _relative_day_label(dd, today)                 # P1: deterministische relatieve dag
-            rows.append(f"- {rel} ({_WD[dd.weekday()]} {dd.day}/{dd.month}): {naam}"
-                        + ((" · " + ", ".join(meta)) if meta else "") + tag)
-            if len(rows) >= 3:
+            rows_out.append(f"- {rel} ({_WD[dd.weekday()]} {dd.day}/{dd.month}): {naam}"
+                            + ((" · " + ", ".join(meta)) if meta else "") + tag)
+            if len(rows_out) >= 3:
                 break
-        if not rows:
+        if not rows_out:
             return ""
         return ("━━━ KOMENDE GEPLANDE TRAININGEN (deterministisch uit FinalSurge — verzin er niets bij) ━━━\n"
-                + "\n".join(rows)
+                + "\n".join(rows_out)
                 + "\nNeem de RELATIEVE dag (bijv. 'morgen', 'overmorgen', 'zaterdag') LETTERLIJK over "
                   "zoals hierboven vermeld; reken die NOOIT zelf uit een datum of trainingsdatum.\n"
                   "Weeg deze sessies ALLEEN mee als het voor DEZE feedback uitmaakt (de atleet noemt een "
@@ -259,6 +262,106 @@ def _near_future_block(w: dict) -> str:
                   "onverwacht/extra, de atleet meldt pijn/vermoeidheid, de atleet vraagt om een schema- "
                   "of wedstrijdwijziging, of de eerstvolgende sessie is fors/zwaar). Anders hoef je ze "
                   "niet te noemen. Zeg NOOIT toe dat je het schema aanpast (coach-agency).")
+    except Exception:
+        return ""
+
+
+def _relative_past_label(d, today) -> str:
+    """Deterministische relatieve dag in het VERLEDEN t.o.v. de generatiedatum: vandaag/gisteren/
+    eergisteren, dan de weekdag (binnen een week terug), anders 'N dagen geleden'. Nooit door de AI
+    afgeleid. 'gisteren' UITSLUITEND bij precies 1 dag terug (P0 v5)."""
+    n = (today - d).days
+    if n <= 0:
+        return "vandaag"
+    if n == 1:
+        return "gisteren"
+    if n == 2:
+        return "eergisteren"
+    if 3 <= n <= 6:
+        return _WD_FULL[d.weekday()]
+    return f"{n} dagen geleden"
+
+
+def _timeline_rows(w: dict):
+    """v5 — ÉÉN gedeelde, breder-gevensterde read (prior + near-future) zodat we GEEN extra
+    FinalSurge-fan-out toevoegen: waar generatie eerst alleen de near-future ophaalde, halen we nu
+    één keer [min(vandaag, trainingsdatum) − 8d, vandaag + near-future] en delen die met zowel
+    `_near_future_block` als `_prior_session_block`. Best-effort: faalt stil naar None (dan vallen de
+    blokken terug op hun eigen smalle read; nooit fataal)."""
+    ak = w.get("athlete_key", "")
+    if not ak:
+        return None
+    try:
+        from datetime import date, timedelta
+        today = _generation_date()
+        try:
+            wd = date.fromisoformat((w.get("workout_date") or "")[:10])
+        except ValueError:
+            wd = today
+        start = min(today, wd) - timedelta(days=8)
+        end = today + timedelta(days=_NEAR_FUTURE_DAYS)
+        return FS.get_workouts_deduped(ak, start, end) or []
+    except Exception:
+        return None
+
+
+def _prior_session_block(w: dict, rows=None) -> str:
+    """P0 v5 — deterministische VORIGE-TRAININGS-context: de meest recente UITGEVOERDE hardloop-
+    training strikt vóór deze training, met een deterministisch RELATIEF dag-label (t.o.v. de
+    generatiedatum). Zo kan het model niet zelf 'na gisteren' verzinnen (Sophie: vorige sessie was
+    dinsdag, niet gisteren). Leest uit de gedeelde `rows` (geen extra fetch) of, als die ontbreekt,
+    uit één eigen bounded read. Best-effort: faalt stil naar ''. De relevantie-afweging doet de AI."""
+    ak = w.get("athlete_key", "")
+    if not ak:
+        return ""
+    try:
+        from datetime import date, timedelta
+        today = _generation_date()
+        try:
+            wd = date.fromisoformat((w.get("workout_date") or "")[:10])
+        except ValueError:
+            return ""
+        wk_key = w.get("workout_key", "")
+        pool = rows if rows is not None else (FS.get_workouts_deduped(ak, wd - timedelta(days=8), wd) or [])
+        run_like = ("run", "running", "hardlopen", "")
+
+        def _executed_km(x):
+            for a in (x.get("Activities") or []):
+                km = FS._norm_km((a or {}).get("amount"), (a or {}).get("amount_type"))
+                if km is not None and km > 0:
+                    return km
+            return None
+
+        best = None
+        best_d = None
+        for x in pool:
+            if wk_key and (x.get("workout_key") == wk_key or x.get("key") == wk_key):
+                continue
+            if str(x.get("workout_type") or "").lower() not in run_like:
+                continue
+            try:
+                dd = date.fromisoformat(str(x.get("workout_date") or "")[:10])
+            except ValueError:
+                continue
+            if dd >= wd:                                     # strikt vóór de beoordeelde training
+                continue
+            if _executed_km(x) is None:                      # alleen daadwerkelijk uitgevoerde sessies
+                continue
+            if best_d is None or dd > best_d:
+                best, best_d = x, dd
+        if best is None:
+            return ""
+        naam = (best.get("name") or "training").strip()
+        rel = _relative_past_label(best_d, today)
+        _WD = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+        km = _executed_km(best)
+        meta = f" · {km:g} km" if km is not None else ""
+        return ("━━━ VORIGE TRAINING (deterministisch uit FinalSurge — verzin zelf GEEN dag of relatie) ━━━\n"
+                f"- {rel} ({_WD[best_d.weekday()]} {best_d.day}/{best_d.month}): {naam}{meta}\n"
+                "Noem een vorige training NOOIT als 'gisteren'/'eergisteren' of 'de dag ervoor' tenzij "
+                "dat hier LETTERLIJK zo staat; neem de relatieve dag hierboven letterlijk over en reken "
+                "die nooit zelf uit. Verwijs alleen naar deze vorige training als het voor DEZE feedback "
+                "relevant is (bijv. het plan noemt 'herstel na ...'); anders hoef je haar niet te noemen.")
     except Exception:
         return ""
 
@@ -511,11 +614,14 @@ def genereer(wid: str) -> str:
     w = _cache.get(wid) or w
     _refresh_thread(w)                                   # §9: actuele thread-state vóór dispatch
     brein = _brein_context(w)                            # Masterbrein-context (gated)
-    nf = _near_future_block(w)                            # P1: begrensde near-future planning (bounded read)
+    timeline = _timeline_rows(w)                          # v5: ÉÉN gedeelde read (prior + near-future)
+    nf = _near_future_block(w, timeline)                  # P1: begrensde near-future planning (bounded read)
+    prior = _prior_session_block(w, timeline)            # P0 v5: deterministische vorige-trainings-anker
     sess = _session_context(w)                            # P0: same-day sessie-coherentie (in-proces, geen fetch)
-    if brein or nf or sess:
+    if brein or nf or prior or sess:
         # kopie: cache niet met prompttekst muteren
-        w = {**w, "brein_context": brein, "near_future_block": nf, "session_block": sess}
+        w = {**w, "brein_context": brein, "near_future_block": nf,
+             "prior_block": prior, "session_block": sess}
     import ai_feedback                                   # lui: pas hier is de key nodig
     thread = w.get("thread") or []
     if feedback_mode(thread) == FOLLOW_UP_REPLY:
