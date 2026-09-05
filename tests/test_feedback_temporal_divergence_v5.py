@@ -158,10 +158,15 @@ def test_v5g3_integration_sophie_divergence(fs_both):
     # HF binnen Z1-Z2 (138 = Z2), tempo materieel boven Z2 (4:50=290s → Z3, 5:30=330s → Z2).
     laps = [{"amount": 1, "hr_avg": 138, "pace_display": "5:30"} for _ in range(6)] \
         + [{"amount": 1, "hr_avg": 140, "pace_display": "4:50"} for _ in range(4)]
-    ctx = ai_feedback._build_workout_context(_wd_recovery(laps))[0]
+    # v8: divergentie vuurt ALLEEN bij een expliciet DUAAL plan (pace-target ÉN HR-target).
+    dual = _wd_recovery(laps, desc="rustig lopen op tempo rond 4:30 en hartslag onder 150")
+    ctx = ai_feedback._build_workout_context(dual)[0]
     assert "HARTSLAG/TEMPO-VERSCHIL" in ctx
     assert "je zat er gewoon goed in" in ctx                  # verbod aanwezig
     assert not _ZONE_PCT.search(ctx)
+    # v8 Sophie-fix: HR-gestuurd plan (geen pace-metric) → GEEN divergentie ondanks snellere tempozone
+    hr_only = _wd_recovery(laps, desc="rustige hersteltraining op hartslag zone 1 tot 2")
+    assert "HARTSLAG/TEMPO-VERSCHIL" not in ai_feedback._build_workout_context(hr_only)[0]
 
 
 # ══ V5-G4 — structured session: no forced generic divergence ════════════════════

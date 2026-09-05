@@ -636,25 +636,45 @@ def genereer(wid: str) -> str:
     import ai_feedback                                   # lui: pas hier is de key nodig
     thread = w.get("thread") or []
     mode = feedback_mode(thread)
+    status = "REVIEW_REQUIRED"
     if mode == FOLLOW_UP_REPLY:
         # Vervolg in een lopend gesprek: reageer op het laatste athlete-bericht (conversationeel;
         # geen feitelijke ruggengraat opnieuw invoegen). Sport-/interne-taal-guards gelden wél.
         tekst = ai_feedback.generate_reply(w, thread)
     else:
-        # v7.1 — APPLICATION-OWNED factual spine: de LLM schrijft alleen de opener/duiding; de APP
-        # voegt de verplichte deterministische zinnen ná generatie in, zodat ze NOOIT kunnen
-        # ontbreken. Daarna valideren we EXACT de tekst die persistent/verstuurbaar wordt.
-        prose = ai_feedback.generate_feedback(w)
+        # v8 — probeer eerst AUTO_SAFE: een deterministische, uit GOEDGEKEURDE atomen geassembleerde
+        # boodschap (geen LLM-feiten), met de GEPLANDE sturingsvariabele als compliance-metriek. Lukt
+        # dat niet zeker → REVIEW_REQUIRED = de v7.1 LLM-draft (application-owned factual spine).
         try:
-            import feedback_facts as _ff
-            tekst = _ff.assemble_spine(prose, w.get("_fact_pack") or {})
+            import feedback_atoms as _fa
+            decision = _fa.build_decision(w)
         except Exception:
-            tekst = prose
-    # Fail-closed VALIDATOR op de UITEINDELIJKE tekst: geen rewrite, geen hergeneratie. Bij afkeuring
-    # gooien we een ValueError → de API geeft {ok:false, err} → de composer blijft leeg en Send blijft
-    # uit (bestaande error-flow); het concept wordt dus NIET als verstuurbaar bewaard.
+            decision = {"status": "REVIEW_REQUIRED", "text": ""}
+        if decision.get("status") == "AUTO_SAFE":
+            tekst, status = decision["text"], "AUTO_SAFE"
+        else:
+            prose = ai_feedback.generate_feedback(w)
+            try:
+                import feedback_facts as _ff
+                tekst = _ff.assemble_spine(prose, w.get("_fact_pack") or {})
+            except Exception:
+                tekst = prose
+    # Fail-closed VALIDATOR (defense in depth) op de UITEINDELIJKE tekst: geen rewrite, geen
+    # hergeneratie. Bij afkeuring gooien we ValueError → de API geeft {ok:false, err} → de composer
+    # blijft leeg en Send blijft uit; het concept wordt NIET als verstuurbaar bewaard.
     _validate_or_block(w, tekst, mode)
+    _GEN_STATUS[wid] = status
     return tekst
+
+
+# v8 — laatste generatie-status per workout (AUTO_SAFE | REVIEW_REQUIRED), zodat de API dit kan
+# doorgeven aan de UI (badge). Puur workflow-state (klein, in-proces), geen truth store.
+_GEN_STATUS: dict = {}
+
+
+def last_generation_status(wid: str) -> str:
+    """Status van de laatste genereer() voor deze workout (default REVIEW_REQUIRED = veilig)."""
+    return _GEN_STATUS.get(wid, "REVIEW_REQUIRED")
 
 
 def _validate_or_block(w: dict, tekst: str, mode: str) -> None:

@@ -3538,8 +3538,16 @@ async function fbGen(id) {
     if (fbIsStaleErr(r)) { melding("Even herladen…"); fbStaleRecover(id); return; }   // gerichte recovery i.p.v. dode kaart
     return melding(r && r.err || "Genereren mislukt.", true);
   }
-  fbLog("generate_success", { generate_duration_ms: dur });
+  fbLog("generate_success", { generate_duration_ms: dur, feedback_status: r.status || "" });
   const ta = $("#fb-ta"); if (ta) { ta.value = r.tekst || ""; fbDraftSave(id, ta.value); fbGrow(ta); fbSyncSend(); ta.focus(); }
+  // v8 — markeer of dit een AUTO_SAFE (deterministisch, uit goedgekeurde bouwstenen) concept is of
+  // een REVIEW VEREIST LLM-draft die de coach nog moet nakijken.
+  const badge = $("#fb-draft-badge");
+  if (badge) {
+    if (r.review) { badge.textContent = "REVIEW VEREIST · coach nakijken"; badge.style.color = "var(--danger, #d66)"; }
+    else if (r.status === "AUTO_SAFE") { badge.textContent = "Auto-veilig concept"; badge.style.color = "var(--ok, #4a9)"; }
+    else { badge.textContent = "Concept · niet verzonden"; badge.style.color = ""; }
+  }
 }
 async function fbSend(id) {
   if (FB.sending || FB.sentSet.has(id)) { fbLog("send_blocked_duplicate", { target: id }); return; }  // dubbel-post-guard

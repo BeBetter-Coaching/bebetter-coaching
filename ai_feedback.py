@@ -552,10 +552,13 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     builder_steps_raw = []
     if details.get("has_structured_workout") and workout_key and athlete_key:
         try:
-            builder_steps_raw = _fs.get_workout_builder(workout_key, athlete_key)
+            # v8: hergebruik een reeds-opgehaalde builder (AUTO_SAFE-beslissing) → geen dubbele fetch.
+            builder_steps_raw = (workout_data["_builder_raw"] if "_builder_raw" in workout_data
+                                 else _fs.get_workout_builder(workout_key, athlete_key))
             builder_steps_text = _format_builder_steps(builder_steps_raw)
         except Exception:
             pass
+    workout_data["_builder_raw"] = builder_steps_raw         # stash voor gedeeld gebruik
 
     athlete_zones_text = ""
     athlete_zone_type = ""   # "tempo" | "hartslag" | ""
@@ -564,7 +567,10 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     _secondary_zones_struct = []
     if athlete_key:
         try:
-            zones_result = _fs.get_athlete_zones(athlete_key)
+            # v8: hergebruik een reeds-opgehaalde zones-respons (AUTO_SAFE-beslissing) → geen dubbele fetch.
+            zones_result = (workout_data["_zones_result"] if "_zones_result" in workout_data
+                            else _fs.get_athlete_zones(athlete_key))
+            workout_data["_zones_result"] = zones_result
             if "zones_text" in zones_result:
                 athlete_zone_type = zones_result.get("zone_type", "")   # "tempo" of "hartslag"
                 athlete_zones_struct = zones_result.get("zones", [])
@@ -723,11 +729,19 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
         # leidend → guard vuurt daar NIET (geen over-applicatie).
         _divergence = None
         try:
+            # v8 — Sophie-fix: de GEPLANDE sturingsvariabele bepaalt de compliance-metriek. Een
+            # secundaire metriek (tempo) mag een correct uitgevoerde HR-training niet als afwijkend
+            # kwalificeren. De HR/tempo-divergentie-atom vuurt daarom ALLEEN bij een expliciet DUAAL
+            # plan (pace-target én HR-target); bij HR- of pace-primair is er geen divergentie-oordeel.
+            import metric_authority as _ma
+            _authority = _ma.derive(_fs._planned_blocks(builder_steps_raw), plan_description,
+                                    workout_data.get("workout_type"))
             _intent_txt = f"{workout_name} {plan_description}".lower()
             _easy_intent = any(k in _intent_txt for k in
                                ("herstel", "recovery", "rustig", "hersteldag", "regeneratie", "easy"))
-            if (_easy_intent and not _ob_structured and _can_classify
-                    and _secondary_zones_struct and _secondary_zone_type in ("tempo", "hartslag")
+            if (_authority.get("primary") == _ma.DUAL and _easy_intent and not _ob_structured
+                    and _can_classify and _secondary_zones_struct
+                    and _secondary_zone_type in ("tempo", "hartslag")
                     and _secondary_zone_type != athlete_zone_type):
                 _prim_above = _ob.above_easy(_ob_shares)
                 _sec_shares = _ob.zone_shares(

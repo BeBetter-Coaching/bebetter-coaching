@@ -247,7 +247,9 @@ def test_integration_divergence_fact_in_context(fs_both):
     wd = {"athlete_name": "S", "athlete_first_name": "S", "workout_name": "Herstelloop",
           "post_notes": "", "workout_key": "WK", "athlete_key": "AK", "workout_type": "run",
           "workout_date": "2026-09-04",
-          "details": {"has_structured_workout": False, "description": "herstel na cruise intervals",
+          # v8: divergentie-atom vuurt alleen bij een expliciet DUAAL plan (tempo- én HR-metric)
+          "details": {"has_structured_workout": False,
+                      "description": "rustig herstel op tempo rond 4:30 en hartslag onder 150",
                       "Activities": [{"hr_avg": 138, "pace_display": "5:00", "Laps": laps}]},
           "athlete_comments": []}
     ctx = ai_feedback._build_workout_context(wd)[0]
