@@ -446,7 +446,10 @@ def feedback_gen(body: FeedbackGen):
         return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "err": f"Genereren mislukt: {e}"}, status_code=500)
-    return {"ok": True, "tekst": tekst}
+    # v8 — status: AUTO_SAFE (deterministisch uit goedgekeurde atomen) | REVIEW_REQUIRED (LLM-draft,
+    # coach reviewt). Back-compat: bestaande clients negeren extra velden.
+    status = feedback.last_generation_status(body.id)
+    return {"ok": True, "tekst": tekst, "status": status, "review": status == "REVIEW_REQUIRED"}
 
 
 @app.post("/api/feedback/post")          # WRITE: post de reactie in FinalSurge

@@ -92,48 +92,33 @@ def test_jordi_no_sequence_when_coupling_insufficient(monkeypatch):
 
 
 # ══ 2. Sophie-like: divergentie aanwezig, blanket reassurance onmogelijk ═════════
-def test_sophie_divergence_present_no_blanket_when_clean(monkeypatch):
+def test_sophie_hr_guided_auto_safe_no_pace_criticism(monkeypatch):
+    # v8: HR-gestuurd plan + HR compliant → AUTO_SAFE deterministisch (LLM genegeerd), geen pace-kritiek
     laps = [{"amount": 1, "hr_avg": 138, "pace_display": "5:30"} for _ in range(6)] \
         + [{"amount": 1, "hr_avg": 140, "pace_display": "4:50"} for _ in range(4)]
-    w = _wd("S", "Sophie", "herstel na cruise intervals", laps, ["kan er morgen niet bij zijn"], False)
+    w = _wd("S", "Sophie", "herstel na cruise intervals", laps, ["kan er morgen niet bij zijn"], True)
+    w["details"]["Activities"][0]["hr_avg"] = 138           # gemiddelde HR binnen Z2 (compliant)
     zones = {"zone_type": "hartslag", "zones_text": "z", "zones": HR,
              "secondary_zone_type": "tempo", "secondary_zones": PACE}
-    res, txt = _run_genereer(monkeypatch, w, zones, [],
-                             "Mooie herstelloop Sophie. Fijn dat je lekker liep. Dank dat je het laat weten.")
+    res, txt = _run_genereer(monkeypatch, w, zones, [{"intensity": "ACTIVE", "durationType": "DISTANCE",
+                             "durationDist": 6, "distUnit": "km", "target": [{"targetType": "hr zone", "zone": 2}]}],
+                             "LLM zou hier iets verzinnen")
     assert res == "SENDABLE"
-    assert DIV in txt                                        # divergentie-feit aanwezig
-    assert "precies de bedoeling" not in txt.lower()
+    assert "rustige bereik" in txt and DIV not in txt        # geen divergentie-atom
+    assert txt != "LLM zou hier iets verzinnen"              # LLM niet gebruikt in AUTO_SAFE
 
 
-def test_sophie_blanket_reassurance_blocked(monkeypatch):
-    laps = [{"amount": 1, "hr_avg": 138, "pace_display": "5:30"} for _ in range(6)] \
-        + [{"amount": 1, "hr_avg": 140, "pace_display": "4:50"} for _ in range(4)]
-    w = _wd("S2", "Sophie", "herstel na cruise intervals", laps, [], False)
-    zones = {"zone_type": "hartslag", "zones_text": "z", "zones": HR,
-             "secondary_zone_type": "tempo", "secondary_zones": PACE}
-    res, txt = _run_genereer(monkeypatch, w, zones, [],
-                             "Mooie herstelloop, precies de bedoeling. Je zat er gewoon goed in.")
-    assert res == "BLOCKED" and "inhoudelijke controle" in txt
-
-
-# ══ 3. Douwe-like: kan niet én Z1-bevestiging én Z2-correctie bevatten ══════════
-def test_douwe_contradiction_blocked(monkeypatch):
+# ══ 3. Douwe-like: AUTO_SAFE correctie, geen enkel pad kan Z1 bevestigen ═════════
+def test_douwe_auto_safe_correction_no_z1(monkeypatch):
     w = _wd("D", "Douwe", "herstelblokken", [{"amount": 0.4, "hr_avg": v} for v in (148, 151, 153, 155)],
             ["elk rustblok gelukt om weer in Z1 te komen"], True)
+    # zelfs met een tegenstrijdige LLM-output wordt die NIET gebruikt: AUTO_SAFE komt uit atomen
     res, txt = _run_genereer(monkeypatch, w, {"zone_type": "hartslag", "zones_text": "z", "zones": REC},
                              [_rest() for _ in range(4)],
                              f"Goed bezig Douwe. {CORR} Fijn dat je rustblokken steeds terugkwamen naar Z1.")
-    assert res == "BLOCKED" and "inhoudelijke controle" in txt
-
-
-def test_douwe_correction_present_when_prose_clean(monkeypatch):
-    w = _wd("D2", "Douwe", "herstelblokken", [{"amount": 0.4, "hr_avg": v} for v in (148, 151, 153, 155)],
-            ["elk rustblok gelukt om weer in Z1 te komen"], True)
-    res, txt = _run_genereer(monkeypatch, w, {"zone_type": "hartslag", "zones_text": "z", "zones": REC},
-                             [_rest() for _ in range(4)],
-                             "Goed bezig Douwe, lekker rustig aangepakt vandaag.")
     assert res == "SENDABLE"
-    assert CORR in txt and "terug" not in txt.lower().split(CORR.lower())[-1]  # correctie aanwezig, geen tegenspraak
+    assert CORR in txt
+    assert "terugkwamen naar z1" not in txt.lower()          # geen Z1-bevestiging in het concept
 
 
 # ══ 4. rejected final text is never sendable ═══════════════════════════════════
