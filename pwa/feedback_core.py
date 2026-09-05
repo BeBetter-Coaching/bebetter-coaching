@@ -157,7 +157,10 @@ def _brein_context(w: dict) -> str:
         return ""
 
 
-_NEAR_FUTURE_DAYS = 5
+# v6 — bewust versimpeld contextvenster: maximaal 3 kalenderdagen terug/vooruit. Datums bepalen
+# de RELEVANTIE, ze worden niet meer athlete-facing naverteld (geen gisteren/morgen/overmorgen).
+_NEAR_FUTURE_DAYS = 3
+_PRIOR_DAYS = 3
 _WD_FULL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
 
 
@@ -246,22 +249,24 @@ def _near_future_block(w: dict, rows=None) -> str:
             if mins:
                 meta.append(f"{mins} min")
             tag = " [WEDSTRIJD]" if x.get("is_race") else ""
-            rel = _relative_day_label(dd, today)                 # P1: deterministische relatieve dag
-            rows_out.append(f"- {rel} ({_WD[dd.weekday()]} {dd.day}/{dd.month}): {naam}"
+            # v6: geen relatief dag-woord meer athlete-facing; verwijs via de BETEKENIS. De exacte
+            # weekdag staat alleen INTERN (voor disambiguatie van twee nabije sessies).
+            rows_out.append(f"- de {naam} (komt eraan; intern: {_WD[dd.weekday()]} {dd.day}/{dd.month})"
                             + ((" · " + ", ".join(meta)) if meta else "") + tag)
             if len(rows_out) >= 3:
                 break
         if not rows_out:
             return ""
-        return ("━━━ KOMENDE GEPLANDE TRAININGEN (deterministisch uit FinalSurge — verzin er niets bij) ━━━\n"
+        return ("━━━ RELEVANTE KOMENDE TRAINING (deterministisch uit FinalSurge — verzin er niets bij) ━━━\n"
                 + "\n".join(rows_out)
-                + "\nNeem de RELATIEVE dag (bijv. 'morgen', 'overmorgen', 'zaterdag') LETTERLIJK over "
-                  "zoals hierboven vermeld; reken die NOOIT zelf uit een datum of trainingsdatum.\n"
-                  "Weeg deze sessies ALLEEN mee als het voor DEZE feedback uitmaakt (de atleet noemt een "
-                  "komende dag/sessie, er is een verhoogd belasting-/herstelsignaal, deze training was "
-                  "onverwacht/extra, de atleet meldt pijn/vermoeidheid, de atleet vraagt om een schema- "
-                  "of wedstrijdwijziging, of de eerstvolgende sessie is fors/zwaar). Anders hoef je ze "
-                  "niet te noemen. Zeg NOOIT toe dat je het schema aanpast (coach-agency).")
+                + "\nVerwijs naar zo'n sessie via de BETEKENIS ('de komende lange duurloop', 'de "
+                  "intervaltraining die eraan komt', 'met die zware sessie in het vooruitzicht'), NIET met "
+                  "'morgen'/'overmorgen'/'over N dagen'. De exacte weekdag ('intern:') gebruik je ALLEEN "
+                  "als je twee nabije sessies echt moet onderscheiden; verzin zelf nooit een dag.\n"
+                  "Noem een komende sessie ALLEEN als die MATERIEEL uitmaakt voor DEZE feedback (de atleet "
+                  "vraagt ernaar, verhoogd belasting-/herstelsignaal, deze training was onverwacht/extra, "
+                  "de atleet meldt pijn/vermoeidheid, of de eerstvolgende sessie is fors/zwaar/een race). "
+                  "Anders laat je hem helemaal weg. Zeg NOOIT toe dat je het schema aanpast (coach-agency).")
     except Exception:
         return ""
 
@@ -298,8 +303,8 @@ def _timeline_rows(w: dict):
             wd = date.fromisoformat((w.get("workout_date") or "")[:10])
         except ValueError:
             wd = today
-        start = min(today, wd) - timedelta(days=8)
-        end = today + timedelta(days=_NEAR_FUTURE_DAYS)
+        start = min(today, wd) - timedelta(days=_PRIOR_DAYS)   # v6: max 3 dagen terug
+        end = today + timedelta(days=_NEAR_FUTURE_DAYS)        # v6: max 3 dagen vooruit
         return FS.get_workouts_deduped(ak, start, end) or []
     except Exception:
         return None
@@ -322,7 +327,9 @@ def _prior_session_block(w: dict, rows=None) -> str:
         except ValueError:
             return ""
         wk_key = w.get("workout_key", "")
-        pool = rows if rows is not None else (FS.get_workouts_deduped(ak, wd - timedelta(days=8), wd) or [])
+        pool = rows if rows is not None else (
+            FS.get_workouts_deduped(ak, wd - timedelta(days=_PRIOR_DAYS), wd) or [])   # v6: max 3 dagen terug
+        earliest = wd - timedelta(days=_PRIOR_DAYS)
         run_like = ("run", "running", "hardlopen", "")
 
         def _executed_km(x):
@@ -343,7 +350,7 @@ def _prior_session_block(w: dict, rows=None) -> str:
                 dd = date.fromisoformat(str(x.get("workout_date") or "")[:10])
             except ValueError:
                 continue
-            if dd >= wd:                                     # strikt vóór de beoordeelde training
+            if dd >= wd or dd < earliest:                    # strikt vóór de training, binnen 3 dagen
                 continue
             if _executed_km(x) is None:                      # alleen daadwerkelijk uitgevoerde sessies
                 continue
@@ -352,16 +359,20 @@ def _prior_session_block(w: dict, rows=None) -> str:
         if best is None:
             return ""
         naam = (best.get("name") or "training").strip()
-        rel = _relative_past_label(best_d, today)
         _WD = ["ma", "di", "wo", "do", "vr", "za", "zo"]
         km = _executed_km(best)
         meta = f" · {km:g} km" if km is not None else ""
-        return ("━━━ VORIGE TRAINING (deterministisch uit FinalSurge — verzin zelf GEEN dag of relatie) ━━━\n"
-                f"- {rel} ({_WD[best_d.weekday()]} {best_d.day}/{best_d.month}): {naam}{meta}\n"
-                "Noem een vorige training NOOIT als 'gisteren'/'eergisteren' of 'de dag ervoor' tenzij "
-                "dat hier LETTERLIJK zo staat; neem de relatieve dag hierboven letterlijk over en reken "
-                "die nooit zelf uit. Verwijs alleen naar deze vorige training als het voor DEZE feedback "
-                "relevant is (bijv. het plan noemt 'herstel na ...'); anders hoef je haar niet te noemen.")
+        # v6: geen relatief dag-woord meer athlete-facing; verwijs via de BETEKENIS. De exacte
+        # weekdag staat alleen INTERN (voor disambiguatie van twee nabije sessies).
+        return ("━━━ RELEVANTE VORIGE TRAINING (deterministisch uit FinalSurge) ━━━\n"
+                f"- de {naam} (eerder gedaan; intern: {_WD[best_d.weekday()]} {best_d.day}/{best_d.month})"
+                f"{meta}\n"
+                "Verwijs hiernaar via de BETEKENIS ('de intervaltraining', 'de cruise intervals', 'de "
+                "training van eerder deze week'), NIET met 'gisteren'/'eergisteren'/'N dagen geleden'. "
+                "De exacte weekdag ('intern:') gebruik je ALLEEN om twee nabije sessies te onderscheiden; "
+                "verzin zelf nooit een dag. Noem deze vorige training ALLEEN als het MATERIEEL uitmaakt "
+                "voor DEZE feedback (herstel na een zware sessie, de atleet meldt zware benen, het plan "
+                "noemt 'herstel na ...'); anders laat je haar helemaal weg.")
     except Exception:
         return ""
 

@@ -67,29 +67,43 @@ def test_v5g1_prior_tuesday_no_yesterday(monkeypatch):
     rows = _prior_pool("2026-09-04", [("2026-09-01", "Cruise intervals", 10)])
     w = {"athlete_key": "AK", "workout_key": "CUR", "workout_date": "2026-09-04"}
     block = feedback_core._prior_session_block(w, rows)
-    assert "VORIGE TRAINING" in block
-    assert "- dinsdag (" in block and "Cruise intervals" in block   # het anker-label = dinsdag
-    assert "- gisteren" not in block                          # geen 'gisteren'-labelregel (dinsdag ≠ gisteren)
+    assert "RELEVANTE VORIGE TRAINING" in block
+    # v6: verwijs via de BETEKENIS; exacte weekdag alleen intern, geen athlete-facing relatief dag-woord
+    assert "de Cruise intervals (eerder gedaan" in block
+    assert "intern: di 1/9" in block                          # dinsdag alleen als interne disambiguatie
+    assert "de dag ervoor" not in block.split("intern:")[0]   # geen relatief dag-woord in de labelregel
 
 
-def test_v5g2_prior_thursday_allows_yesterday(monkeypatch):
+def test_v5g2_prior_by_meaning_no_relative_day(monkeypatch):
     gen = date(2026, 9, 4)                                    # vrijdag
     monkeypatch.setattr(feedback_core, "_generation_date", lambda: gen)
-    rows = _prior_pool("2026-09-04", [("2026-09-03", "Intervallen", 8)])   # donderdag = gisteren
+    rows = _prior_pool("2026-09-04", [("2026-09-03", "Intervallen", 8)])   # donderdag (binnen 3d)
     w = {"athlete_key": "AK", "workout_key": "CUR", "workout_date": "2026-09-04"}
     block = feedback_core._prior_session_block(w, rows)
-    assert "gisteren" in block and "Intervallen" in block
+    # v6: verwijs via betekenis, geen athlete-facing 'gisteren'; weekdag alleen intern
+    assert "de Intervallen (eerder gedaan" in block
+    assert "intern: do 3/9" in block
+    assert "gisteren" not in block.split("intern:")[0]        # geen relatief dag-woord in de labelregel
+
+
+def test_prior_out_of_window_omitted(monkeypatch):
+    gen = date(2026, 9, 4)
+    monkeypatch.setattr(feedback_core, "_generation_date", lambda: gen)
+    # enige prior ligt 4 dagen terug (buiten het ±3-venster) → geen prior-blok
+    rows = _prior_pool("2026-09-04", [("2026-08-31", "Cruise intervals", 10)])
+    w = {"athlete_key": "AK", "workout_key": "CUR", "workout_date": "2026-09-04"}
+    assert feedback_core._prior_session_block(w, rows) == ""
 
 
 def test_prior_skips_non_executed(monkeypatch):
     gen = date(2026, 9, 4)
     monkeypatch.setattr(feedback_core, "_generation_date", lambda: gen)
-    # donderdag alleen GEPLAND (geen uitvoering) → sla over, val terug op dinsdag (uitgevoerd)
+    # donderdag alleen GEPLAND (geen uitvoering) → sla over, val terug op dinsdag (uitgevoerd, binnen 3d)
     rows = _prior_pool("2026-09-04", [("2026-09-03", "Geplande rust", 0),
                                       ("2026-09-01", "Cruise intervals", 10)])
     w = {"athlete_key": "AK", "workout_key": "CUR", "workout_date": "2026-09-04"}
     block = feedback_core._prior_session_block(w, rows)
-    assert "dinsdag" in block and "Cruise intervals" in block
+    assert "de Cruise intervals (eerder gedaan" in block and "intern: di 1/9" in block
 
 
 def test_prompt_forbids_invented_prior_day():

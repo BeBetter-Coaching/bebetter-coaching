@@ -67,12 +67,13 @@ def _wctx(monkeypatch, workout_date):
 
 
 def test_1_huidige_weekdag_en_relatieve_dag(monkeypatch):
-    # De huidige weekdag staat expliciet in de context, met de instructie om relatieve dagwoorden
-    # tegen vandaag om te rekenen en een voorbije dag niet als actuele afsluiting te echoën.
+    # v6: de weekdag blijft INTERN context (voor plaatsing van de woorden van de atleet), maar wordt
+    # niet meer athlete-facing naverteld; een tijdswoord van de atleet mag niet letterlijk worden
+    # gekopieerd en een voorbije dag niet als actuele afsluiting worden geëchood.
     ctx = _wctx(monkeypatch, (date.today() - timedelta(days=1)).isoformat())
     weekdagen = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
-    assert weekdagen[date.today().weekday()] in ctx          # weekdag van vandaag aanwezig
-    assert "Reken die eerst om" in ctx
+    assert weekdagen[date.today().weekday()] in ctx          # weekdag van vandaag aanwezig (intern)
+    assert "kopieer zo'n woord NIET letterlijk" in ctx       # geen stale tijdswoord kopiëren
     assert "NIET als actuele afsluiting" in ctx
 
 

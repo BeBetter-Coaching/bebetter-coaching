@@ -136,9 +136,10 @@ def test_near_future_block(monkeypatch):
     monkeypatch.setattr(fs_client, "get_workouts_deduped", lambda ak, s, e: up)
     block = feedback_core._near_future_block({"athlete_key": "AK", "workout_key": "WK",
                                               "workout_date": today.isoformat()})
-    assert "KOMENDE GEPLANDE TRAININGEN" in block
+    assert "RELEVANTE KOMENDE TRAINING" in block
     assert "Duurloop" in block and "10 km" in block
     assert "5 km Oss" in block and "[WEDSTRIJD]" in block          # G3/G4: race conflict zichtbaar
+    assert "via de BETEKENIS" in block and "NIET met 'morgen'" in block   # v6: geen relatief dag-woord
     assert "Zeg NOOIT toe dat je het schema aanpast" in block      # coach-agency herhaald bij near-future
 
 

@@ -78,7 +78,7 @@ def _ctx(wd):
 def test_system_prompt_bans_zone_percentages():
     assert "GEEN ZONEPERCENTAGES" in SYS
     assert '"56% in Z3"' in SYS and "distributie-breuk" in SYS
-    assert "AANTALLEN werkblokken/laps" in SYS              # counts expliciet toegestaan
+    assert "TEL OF CLASSIFICEER ZELF GEEN BLOKKEN" in SYS   # v6: counts alleen als app ze meegeeft
 
 
 def test_context_has_no_zone_percentage(fs):
@@ -106,8 +106,8 @@ def test_r2_jordi_block_counts(fs):
     # werkblok-HR 167/171/160/169/172 vs Z4 169-179 → 3 in Z4 (171,169,172).
     laps = [{"amount": 1, "hr_avg": v} for v in (167, 171, 160, 169, 172)]
     ctx = _ctx(_wd(hr_avg=168, laps=laps, structured=True))
-    assert "WERKBLOK-TELLING" in ctx
-    assert "3 in Z4" in ctx                                  # betrouwbare AANTALLEN i.p.v. percentage
+    assert "WERKBLOK-EVIDENCE" in ctx
+    assert "3 in Z4" in ctx                                  # deterministisch geteld, geen model-arithmetic
     assert not _ZONE_PCT.search(ctx)
 
 
@@ -116,6 +116,8 @@ def test_block_zone_counts_unit():
               for i, v in enumerate((167, 171, 160, 169, 172), 1)]
     line = ob.block_zone_counts(blocks, HR_ZONES["zones"], is_pace=False, zone_type="hartslag")
     assert "van de 5 werkblokken" in line and "3 in Z4" in line
+    assert "Blokvolgorde" in line                            # v6: deterministische volgorde meegegeven
+    assert "tel of classificeer zelf NIETS" in line          # model mag zelf niet tellen
     assert "%" not in line
 
 
