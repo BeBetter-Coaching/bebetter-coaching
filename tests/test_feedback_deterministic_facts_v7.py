@@ -192,7 +192,7 @@ def test_v7g8_clean_pack_empty():
 def test_fact_prompt_section_lists_sentences():
     pack = ff.build_fact_pack(workout_type="run", divergence={"above": "tempo", "easy": "hartslag"})
     sec = ff.fact_prompt_section(pack)
-    assert "VERPLICHTE ZINNEN" in sec and FACT in sec and "LETTERLIJK" in sec
+    assert "FEITELIJKE ZINNEN" in sec and FACT in sec and "de APP voegt deze automatisch" in sec
 
 
 # ══ fail-closed gate via feedback_core._validate_or_block ══════════════════════
@@ -251,5 +251,5 @@ def test_integration_divergence_fact_in_context(fs_both):
                       "Activities": [{"hr_avg": 138, "pace_display": "5:00", "Laps": laps}]},
           "athlete_comments": []}
     ctx = ai_feedback._build_workout_context(wd)[0]
-    assert "VERPLICHTE ZINNEN" in ctx and FACT in ctx
+    assert "FEITELIJKE ZINNEN" in ctx and FACT in ctx
     assert wd["_fact_pack"]["mandatory"][0]["id"] == "divergence"

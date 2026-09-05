@@ -141,36 +141,72 @@ def complaint_sentence(complaint_areas) -> str | None:
     return None
 
 
+# Verboden (tegenstrijdige) vrije-tekst-claims per verplicht feit — deterministisch checkbaar.
+# Bij een recovery-Z1-correctie mag de vrije tekst NIET alsnog beweren dat het herstel naar Z1 ging.
+_RECOVERY_Z1_AFFIRM = (r"(rust|herstel)\w*[^.]{0,45}\bz\s*1\b|weer\s+in\s+z\s*1|"
+                       r"terug\w*\s+(naar|in|op)\s+z\s*1|in\s+z\s*1\s+(kwam|kwamen|zat|zaten|bleef|bleven|geraakt|gekomen)")
+# Bij een HR/tempo-divergentie mag de vrije tekst NIET blanket geruststellen alsof alles op target was.
+_BLANKET_REASSURE = (r"precies (de bedoeling|goed|volgens plan|zoals gepland)|"
+                     r"helemaal (volgens plan|goed uitgevoerd|top|zoals gepland|goed)|"
+                     r"(gewoon|er)\s+goed\s+in|perfect uitgevoerd|helemaal op target|precies op target")
+
+
 def build_fact_pack(*, workout_type, divergence=None, block_sequence=None,
                     recovery_contradiction=None, complaint_line=None) -> dict:
-    """Bouw de niet-persistente fact-pack: sportprofiel + de VERPLICHTE, verbatim in te voegen
-    coach-zinnen (max een paar). Lege pack = schone case (model blijft kort)."""
+    """Bouw de niet-persistente fact-pack: sportprofiel + de VERPLICHTE coach-zinnen (max een paar,
+    door CODE gebouwd) + de deterministisch-checkbare VERBODEN tegenspraak-claims. Lege pack =
+    schone case. De app voegt de verplichte zinnen zelf in (assemble_spine); de LLM kopieert ze niet."""
     sport = sport_profile(workout_type)
     mandatory = []
+    forbidden = []
     # prioriteit: claim-correctie → divergentie → blokvolgorde → klacht-verplichting
     if recovery_contradiction:
         mandatory.append({"id": "recovery_claim", "sentence": recovery_contradiction})
+        forbidden.append({"id": "recovery_z1", "pattern": _RECOVERY_Z1_AFFIRM})
     if divergence:
         mandatory.append({"id": "divergence", "sentence": divergence_sentence(divergence)})
+        forbidden.append({"id": "blanket_reassure", "pattern": _BLANKET_REASSURE})
     if block_sequence:
         mandatory.append({"id": "block_sequence", "sentence": block_sequence})
     if complaint_line:
         mandatory.append({"id": "complaint", "sentence": complaint_line})
-    return {"sport": sport, "mandatory": mandatory}
+    return {"sport": sport, "mandatory": mandatory, "forbidden_claims": forbidden}
+
+
+def assemble_spine(prose: str, pack: dict) -> str:
+    """v7.1 — APPLICATION-OWNED factual spine: voeg de verplichte deterministische zin(nen) ACHTER
+    de (LLM-)opener/duiding toe, zodat ze NOOIT kunnen ontbreken (de LLM hoeft ze niet te kopiëren).
+    Al aanwezige zinnen worden niet gedupliceerd (whitespace-genormaliseerd). Lege pack → prose zoals
+    hij is (schone case blijft kort)."""
+    prose = (prose or "").strip()
+    mand = (pack or {}).get("mandatory") or []
+    if not mand:
+        return prose
+    nt = _norm(prose)
+    add = [m["sentence"].strip() for m in mand if _norm(m.get("sentence", "")) and _norm(m["sentence"]) not in nt]
+    if not add:
+        return prose
+    tail = " ".join(add)
+    if prose and prose[-1] not in ".!?…":
+        prose += "."
+    return (prose + " " + tail).strip() if prose else tail
 
 
 def fact_prompt_section(pack: dict) -> str:
-    """Rendert de VERPLICHTE-zinnen instructie voor de prompt: de LLM neemt elke zin LETTERLIJK op
-    en schrijft er natuurlijk omheen; niet herschrijven, niet herformuleren, geen getallen wijzigen."""
+    """v7.1 — instructie: de APP voegt de feitelijke zin(nen) zelf toe. De LLM schrijft ALLEEN een
+    korte opener/duiding eromheen en mag deze feiten NIET zelf herhalen of tegenspreken (geen eigen
+    zone-/blok-/herstel-uitspraak over dit punt)."""
     mand = (pack or {}).get("mandatory") or []
     if not mand:
         return ""
     regels = "\n".join(f"- {m['sentence']}" for m in mand)
-    return ("\n\n━━━ VERPLICHTE ZINNEN (door de app bepaald — neem elke zin LETTERLIJK en volledig "
-            "op in je bericht, exact zo geschreven; niet herschrijven, niet samenvatten, geen "
-            "getallen/zones veranderen) ━━━\n" + regels
-            + "\nSchrijf er natuurlijk, kort en coachend omheen (opener/duiding), maar deze zinnen "
-            "moeten woord-voor-woord in je definitieve bericht staan.")
+    return ("\n\n━━━ FEITELIJKE ZINNEN (de APP voegt deze automatisch aan je bericht toe — jij hoeft "
+            "ze NIET te typen) ━━━\n" + regels
+            + "\nSchrijf jij alleen een korte, warme opener en eventueel een beknopte duiding of vraag "
+            "eromheen (reageer op wat de atleet schrijft). HERHAAL deze feiten niet zelf en spreek ze "
+            "NOOIT tegen: doe zelf GEEN eigen uitspraak over de zones, werkblokken of het herstel van "
+            "dit punt (bijv. niet zelf zeggen dat het herstel wél naar Z1 ging). De app zorgt voor de "
+            "feitelijke zinnen; jij zorgt voor de menselijke toon eromheen.")
 
 
 def _norm(s: str) -> str:
@@ -178,8 +214,9 @@ def _norm(s: str) -> str:
 
 
 def validate_draft(text: str, *, is_running: bool = False, mandatory=None,
-                   athlete_message: str = "") -> dict:
-    """Fail-closed VALIDATOR (geen fixer, geen rewrite). Geeft {ok, kind, detail}:
+                   forbidden_claims=None, athlete_message: str = "") -> dict:
+    """Fail-closed VALIDATOR (geen fixer, geen rewrite) over EXACT de tekst die persistent wordt.
+    Geeft {ok, kind, detail}:
       kind == 'sport'   → 'Concept geblokkeerd — onjuiste sporttaal.'
       kind == 'content' → 'Concept geblokkeerd — inhoudelijke controle niet gehaald.'
     Accepteert (ok=True) alleen als ALLE regels slagen."""
@@ -193,16 +230,28 @@ def validate_draft(text: str, *, is_running: bool = False, mandatory=None,
     # 2. zone-gebonden percentage
     if _ZONE_PCT.search(t):
         return {"ok": False, "kind": "content", "detail": "zone%"}
-    # 3. verplichte feiten letterlijk aanwezig (whitespace-genormaliseerd)
+    # 3. verplichte feiten letterlijk aanwezig (whitespace-genormaliseerd). Na assemble_spine is dit
+    #    per constructie waar; blijft als vangnet zodat een lek nooit stil verstuurbaar wordt.
     nt = _norm(t)
     for m in (mandatory or []):
         s = _norm(m.get("sentence", ""))
         if s and s not in nt:
             return {"ok": False, "kind": "content", "detail": f"missing_fact:{m.get('id')}"}
-    # 4. stale relatieve dag (v6)
+    # 4. TEGENSPRAAK: vrije tekst mag een verplicht feit niet tegenspreken. Strip eerst de exacte
+    #    feit-zinnen (die bevatten bewust de ontkenning) en scan de REST op een verboden claim.
+    scan = nt
+    for m in (mandatory or []):
+        s = _norm(m.get("sentence", ""))
+        if s:
+            scan = scan.replace(s, " ")
+    for fc in (forbidden_claims or []):
+        pat = fc.get("pattern")
+        if pat and re.search(pat, scan, re.I):
+            return {"ok": False, "kind": "content", "detail": f"contradiction:{fc.get('id')}"}
+    # 5. stale relatieve dag (v6)
     if _REL_DAY.search(low):
         return {"ok": False, "kind": "content", "detail": "relative_day"}
-    # 5. sporttaal: een RUN mag nooit een 'rit'/'ritje'/'fietsrit' heten (harde productregel)
+    # 6. sporttaal: een RUN mag nooit een 'rit'/'ritje'/'fietsrit' heten (harde productregel)
     if is_running:
         if _RIT.search(t):
             return {"ok": False, "kind": "sport", "detail": "rit"}

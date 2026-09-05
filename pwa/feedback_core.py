@@ -637,22 +637,31 @@ def genereer(wid: str) -> str:
     thread = w.get("thread") or []
     mode = feedback_mode(thread)
     if mode == FOLLOW_UP_REPLY:
-        # Vervolg in een lopend gesprek: reageer op het laatste athlete-bericht, met
-        # dezelfde centrale waarheid + Masterbrein-context als de eerste analyse.
+        # Vervolg in een lopend gesprek: reageer op het laatste athlete-bericht (conversationeel;
+        # geen feitelijke ruggengraat opnieuw invoegen). Sport-/interne-taal-guards gelden wél.
         tekst = ai_feedback.generate_reply(w, thread)
     else:
-        tekst = ai_feedback.generate_feedback(w)
-    # v7 — fail-closed VALIDATOR vóór acceptatie: geen rewrite, geen hergeneratie. Bij afkeuring
-    # gooien we een ValueError → de API geeft {ok:false, err} → de composer blijft leeg en Send
-    # blijft uit (bestaande error-flow); het concept wordt dus NIET als verstuurbaar bewaard.
+        # v7.1 — APPLICATION-OWNED factual spine: de LLM schrijft alleen de opener/duiding; de APP
+        # voegt de verplichte deterministische zinnen ná generatie in, zodat ze NOOIT kunnen
+        # ontbreken. Daarna valideren we EXACT de tekst die persistent/verstuurbaar wordt.
+        prose = ai_feedback.generate_feedback(w)
+        try:
+            import feedback_facts as _ff
+            tekst = _ff.assemble_spine(prose, w.get("_fact_pack") or {})
+        except Exception:
+            tekst = prose
+    # Fail-closed VALIDATOR op de UITEINDELIJKE tekst: geen rewrite, geen hergeneratie. Bij afkeuring
+    # gooien we een ValueError → de API geeft {ok:false, err} → de composer blijft leeg en Send blijft
+    # uit (bestaande error-flow); het concept wordt dus NIET als verstuurbaar bewaard.
     _validate_or_block(w, tekst, mode)
     return tekst
 
 
 def _validate_or_block(w: dict, tekst: str, mode: str) -> None:
-    """Deterministische output-validatie (fail-closed). Verplichte feiten worden alleen op de
-    INITIËLE analyse afgedwongen (een vervolgreactie hoeft de feitelijke ruggengraat niet te
-    herhalen); de sporttaal-/interne-taal-/percentage-/dag-guards gelden altijd. Nooit rewriten."""
+    """Deterministische output-validatie (fail-closed) over EXACT de tekst die persistent/verstuurbaar
+    wordt (na app-assemblage van de feitelijke ruggengraat). Op de INITIËLE analyse tellen de
+    verplichte feiten + tegenspraak-guard mee; een vervolgreactie krijgt alleen de sporttaal-/interne-
+    taal-/percentage-/dag-guards. Nooit rewriten."""
     try:
         import feedback_facts as _ff
     except Exception:
@@ -660,11 +669,13 @@ def _validate_or_block(w: dict, tekst: str, mode: str) -> None:
     pack = w.get("_fact_pack") or {}
     sport = pack.get("sport") or {}
     is_running = bool(sport.get("is_running")) or (w.get("workout_type") == "run")
-    mandatory = (pack.get("mandatory") or []) if mode != FOLLOW_UP_REPLY else []
+    initial = (mode != FOLLOW_UP_REPLY)
+    mandatory = (pack.get("mandatory") or []) if initial else []
+    forbidden = (pack.get("forbidden_claims") or []) if initial else []
     athlete_msg = "\n".join([str(w.get("post_notes") or "")]
                             + [str(c) for c in (w.get("athlete_comments") or []) if str(c or "").strip()])
     res = _ff.validate_draft(tekst, is_running=is_running, mandatory=mandatory,
-                             athlete_message=athlete_msg)
+                             forbidden_claims=forbidden, athlete_message=athlete_msg)
     if not res.get("ok"):
         raise ValueError(_ff.block_message(res.get("kind")))
 
