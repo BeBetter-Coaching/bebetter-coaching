@@ -25,6 +25,16 @@ Dat je eerste intervallen tijdens het bellen iets sneller gingen, zegt inderdaad
 Fijn dat de laatste twee ook soepel gingen. Dat geeft vertrouwen dat de dip van vorige week vooral vermoeidheid was en niet dat je vorm weg is.
 Nu vooral zorgen dat je die slaap weer wat bijtrekt, dan kan dit gevoel mooi doorzetten 💪
 
+ATHLETE-FIRST, DATA-SECOND (de belangrijkste regel):
+- Bepaal EERST wat de atleet zegt of vraagt, en reageer daar menselijk op. Gebruik data pas DAARNA, en alleen als die het antwoord echt beter maakt. Dus niet: data zien, analyse maken, atleetbericht erbij plakken. Wél: atleetbericht begrijpen, coachreactie bepalen, alleen relevante data gebruiken.
+- Houd het KORT: normaal 2 tot 4 zinnen. Langer alleen bij een concrete inhoudelijke vraag, een klacht die nuance vraagt, een planningsaanpassing, of een complexe sessie die korte toelichting vraagt.
+- DATA-BUDGET: gebruik normaal MAXIMAAL 1 of 2 relevante datapunten. Geen opsomming van hartslag, zones, pace, per-lap-verloop. Vraagt de atleet niet om data en is er geen afwijking, benoem dan GEEN data. Goed is goed; geen analyse om de analyse, geen bewijsdrang.
+- Geen zone-discussie als de training gewoon prima was. Als de hoofdconclusie positief is, geef die kort en duidelijk; leg niet elk subdetail uit en praat jezelf niet vast in schijntegenstellingen.
+- GEEN DEFENSIEVE ZINNEN: schrijf nooit "dat kan ik niet uit de data halen", "op basis van de beschikbare data niet te zeggen" of vergelijkbaar. Reageer gewoon op wat de atleet zegt; maak geen claim die je niet kunt onderbouwen, maar benoem de afwezigheid van data niet onnodig.
+- GEEN INTERNE/TECHNISCHE TAAL athlete-facing: nooit "blokkoppeling", "lapdata", "dominante beeld", "door de bank", "brondata", "metriek", "execution fit", "compliance", "pipeline" of vergelijkbaar. Weten we iets niet betrouwbaar, dan zeggen we er NIETS over.
+- VOORUITKIJKEN natuurlijk en ondubbelzinnig: maak onderscheid tussen een training LATEN STAAN zoals gepland, een training UITVOEREN, en een training UITSTELLEN. Gebruik nooit het dubbelzinnige woord "aanhouden". Bijv. "Laat die intervaltraining voorlopig even staan zoals hij gepland is; kijk eerst wat de fysio zegt" of "Wacht met de intervaltraining tot je de fysio hebt gesproken".
+- VOLGORDE van je bericht: 1) reageer op de atleet, 2) hooguit één kernobservatie, 3) eventueel één coachcue of korte vooruitblik.
+
 STIJLREGELS:
 - Schrijf informeel, direct en menselijk, alsof je even snel een appje stuurt
 - GEEN AANHALINGSTEKENS OM DE BOODSCHAP: geef alleen de kale feedbacktekst terug, zet de volledige boodschap niet tussen aanhalingstekens. Aanhalingstekens BINNEN de tekst mogen wel als je inhoudelijk iets citeert
@@ -523,6 +533,7 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     # de prompt nooit een andere afwijking claimen dan de coach in de UI ziet.
     deviation_section = ""
     _orig_acts = details.get("Activities") or []
+    _partial_sync = False
     if _orig_acts:
         try:
             from feedback_core import afwijking as _afw
@@ -530,7 +541,31 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
             _dev = _afw(_act0.get("planned_amount"), _act0.get("amount"))
         except Exception:
             _dev = {"relevance": "n/a"}
-        rel = _dev.get("relevance")
+        # v-coachability — PARTIAL SYNC / onvolledige detail-payload: nooit zeggen dat de atleet 'maar
+        # 1 km liep' als de detail-laps veel minder optellen dan het activiteitstotaal, of als een
+        # enorm tekort (>=70%) op een lange geplande training met sparse laps staat. Bij zulke
+        # bron-conflicten: GEEN afstandsoordeel (het activiteitstotaal is autoritair boven een partieel
+        # lap-subtotaal). Dan onderdrukken we de afstandsafwijking volledig.
+        try:
+            _exec = _fs._safe_float(_act0.get("amount"))
+            _plan = _fs._safe_float(_act0.get("planned_amount"))
+            _lapkm = sum((_fs._safe_float((l or {}).get("amount")) or 0)
+                         for l in (_act0.get("Laps") or []) if isinstance(l, dict))
+            if _exec is not None and _plan and _plan > 0:
+                _short = 1 - (_exec / _plan)
+                _detail_incomplete = bool(_lapkm and _exec and _lapkm < 0.6 * _exec)
+                if _detail_incomplete or (_short >= 0.70 and _plan >= 8
+                                          and len(_act0.get("Laps") or []) <= 2):
+                    _partial_sync = True
+        except Exception:
+            _partial_sync = False
+        rel = None if _partial_sync else _dev.get("relevance")
+        if _partial_sync:
+            deviation_section = (
+                "\n\nAFSTAND (door de app bepaald — LEIDEND): de uitvoeringsdata lijkt onvolledig "
+                "gesynchroniseerd (het gedetailleerde verloop dekt niet de hele training). Doe daarom "
+                "GEEN uitspraak over de gelopen afstand en zeg NOOIT dat de atleet maar een klein "
+                "stukje liep; reageer op wat de atleet schrijft en op de wél betrouwbare info.")
         if rel == "ignore":
             deviation_section = (
                 "\n\nAFSTANDSAFWIJKING (door de app bepaald — LEIDEND): de uitgevoerde "
@@ -627,6 +662,14 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     #  de classifier/block-mapping zelf blijft ONGEWIJZIGD — FC-2 locked.)
     _block_assessment = _fs.assess_workout_blocks(
         builder_steps_raw, laps, athlete_zones_struct, athlete_zone_type)
+    # v-coachability km-lap-guard: sub-km werkblokken (400/600/800m) niet via km-auto-laps beoordelen —
+    # dan is de blokkoppeling misleidend (werk + herstel in dezelfde km-lap). Dan géén per-blok analyse.
+    try:
+        import feedback_facts as _ffk
+        if _ffk.km_lap_mismatch(_fs._planned_blocks(builder_steps_raw), laps):
+            _block_assessment = {"confidence": "AMBIGUOUS", "blocks": [], "reason": "km_lap_mismatch"}
+    except Exception:
+        pass
     blok_section = _format_block_assessment(_block_assessment, first_name)
     # v4 — exacte, athlete-facing-veilige WERKBLOK-TELLING per zone (AANTALLEN, geen percentages).
     # Vervangt de behoefte aan een percentage-uitspraak bij gestructureerd werk (Jordi: 'drie van de
@@ -1579,9 +1622,10 @@ def generate_session_summary(coach_name: str, items: list[dict]) -> str:
     Genereer een beknopte coaching handover voor WhatsApp/e-mail.
     items: lijst van {athlete_name, workout_name, feedback_text[, datum, groep_label]}
 
-    Feedback v1 (F): de samenvatting wordt GEGROEPEERD PER DATUM en daarbinnen per groep. Dit is
-    puur presentatie: ELK meegegeven item is een succesvol geposte feedback (successfully-posted
-    session truth); er wordt niets toegevoegd of weggelaten.
+    v-coachability — ATLEET-FIRST: één atleet = één blok, met zijn sessies eronder chronologisch
+    (recentste eerst). Groep/datum zijn labels, geen primaire structuur; dezelfde atleet komt NOOIT
+    verspreid meerdere keren voor. Puur presentatie: elk meegegeven item is een succesvol geposte
+    feedback (successfully-posted truth); er wordt niets toegevoegd of weggelaten.
     """
     if not items:
         return ""
@@ -1596,21 +1640,21 @@ def generate_session_summary(coach_name: str, items: list[dict]) -> str:
         except Exception:
             return "Zonder datum"
 
-    # Groepeer PER DATUM (oplopend), daarbinnen PER GROEP; binnen een groep per atleet.
-    per_datum: dict = {}
-    for it in items:
-        d = (it.get("datum") or "")[:10]
-        per_datum.setdefault(d, {}).setdefault(it.get("groep_label") or "Overig", []).append(it)
+    # ATLEET-FIRST groepering (één atleet = één blok, sessies chronologisch), via de gedeelde helper.
+    try:
+        from feedback_core import athlete_first_groups as _afg
+        groepen = _afg(items)
+    except Exception:
+        groepen = [{"athlete_name": it.get("athlete_name", ""), "groep_label": it.get("groep_label", "Overig"),
+                    "sessions": [it]} for it in items]
 
     blokken = []
-    for d in sorted(per_datum.keys()):
-        regels = [f"[{_datum_label(d)}]"]
-        for groep in sorted(per_datum[d].keys()):
-            regels.append(f"  Groep {groep}:")
-            for it in per_datum[d][groep]:
-                tekst = it["feedback_text"][:200] + ("…" if len(it["feedback_text"]) > 200 else "")
-                regels.append(f"    Atleet: {it['athlete_name']} | Training: {it['workout_name']}\n"
-                              f"    Feedback: {tekst}")
+    for g in groepen:
+        regels = [f"[{g['athlete_name']} · {g.get('groep_label', 'Overig')}]"]
+        for it in g["sessions"]:
+            tekst = it["feedback_text"][:200] + ("…" if len(it["feedback_text"]) > 200 else "")
+            regels.append(f"  {_datum_label(it.get('datum'))} · {it['workout_name']}\n"
+                          f"  Feedback: {tekst}")
         blokken.append("\n".join(regels))
     items_tekst = "\n\n".join(blokken)
 
@@ -1620,34 +1664,34 @@ def generate_session_summary(coach_name: str, items: list[dict]) -> str:
         today = str(date.today())
 
     n = len(items)
-    namen = ", ".join(it["athlete_name"].split()[0] for it in items)
+    namen = ", ".join(dict.fromkeys(g["athlete_name"].split()[0] for g in groepen if g["athlete_name"]))
 
     prompt = f"""Schrijf een beknopte coaching handover voor {coach_name} over de gegeven feedback.
 
 Datum van de sessie: {today}
 Coach: {coach_name}
-Aantal feedbacks deze sessie: {n} ({namen})
+Atleten deze sessie: {len(groepen)} ({namen})
 
-De gegeven feedback is hieronder al GEGROEPEERD PER TRAININGSDATUM en daarbinnen per groep:
+De feedback is hieronder al ATLEET-FIRST gegroepeerd: één atleet per blok, met zijn sessies chronologisch:
 {items_tekst}
 
-BELANGRIJK: neem ALLE {n} atleten/feedbacks op — sla niemand over.
+BELANGRIJK: neem ALLE {len(groepen)} atleten op — sla niemand over. Houd één blok per atleet aan; zet dezelfde atleet nooit verspreid meerdere keren neer.
 
 FORMAT (exact deze structuur, geen extra uitleg erbuiten):
 📋 Coaching update {today} — {coach_name}
 
-Per trainingsdatum een kopje "📅 <datum>", daaronder per groep een kopje "▸ <groep>", en daaronder per atleet één regel: Voornaam: kern van de feedback + aandachtspunt voor de volgende training indien relevant.
+Per atleet een kopje "👤 <Voornaam> (<groep>)", en daaronder per sessie één korte regel: <datum> · kern van de feedback + aandachtspunt indien relevant.
 
 Regels:
-- Behoud de datum- en groepindeling hierboven exact; verzin geen atleten of data bij
-- Eén regel per atleet, ALLE {n} vermelden
+- Behoud de atleet-indeling hierboven exact; verzin geen atleten of data bij
+- Eén blok per atleet, ALLE {len(groepen)} vermelden; sessies chronologisch (recentste eerst)
 - Alleen de essentie: wat was opvallend, wat moet de andere coach weten
 - Schrijf in het Nederlands, informeel
 - Geen streepjes als gedachtestreepje"""
 
     response = create_message(
         model="claude-sonnet-4-6",
-        max_tokens=150 * n + 150,  # ~150 tokens per atleet + header/kopjes
+        max_tokens=140 * n + 200,  # ~140 tokens per sessie + header/kopjes
         messages=[{"role": "user", "content": prompt}],
     )
 

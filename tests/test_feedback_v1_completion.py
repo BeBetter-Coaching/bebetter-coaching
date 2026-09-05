@@ -214,20 +214,23 @@ def test_13_date_first_ordering(monkeypatch):
 # ════════════════════════════════════════════════════════════════════════════
 # F — summary grouping per datum/groep (successfully-posted truth behouden)
 # ════════════════════════════════════════════════════════════════════════════
-def test_14_summary_gegroepeerd_per_datum_en_groep(monkeypatch):
+def test_14_summary_atleet_first(monkeypatch):
+    # v-coachability: sessie-samenvatting is ATLEET-FIRST — één blok per atleet, sessies chronologisch;
+    # dezelfde atleet komt nooit verspreid meerdere keren voor. Groep/datum zijn labels, geen structuur.
     cap = {}
     monkeypatch.setattr(ai_feedback, "create_message",
                         lambda **kw: cap.update(prompt=kw["messages"][0]["content"]) or _Resp("SAMENVATTING"))
     items = [
-        {"athlete_name": "Lisa", "workout_name": "Duurloop", "feedback_text": "top", "datum": "2026-08-20", "groep_label": "Getting Better"},
-        {"athlete_name": "Sem", "workout_name": "Interval", "feedback_text": "sterk", "datum": "2026-08-22", "groep_label": "High Performer"},
+        {"athlete_key": "L", "athlete_name": "Lisa", "workout_name": "Duurloop", "feedback_text": "top", "datum": "2026-08-20", "groep_label": "Getting Better"},
+        {"athlete_key": "L", "athlete_name": "Lisa", "workout_name": "Interval", "feedback_text": "sterk", "datum": "2026-08-22", "groep_label": "Getting Better"},
+        {"athlete_key": "S", "athlete_name": "Sem", "workout_name": "Interval", "feedback_text": "sterk", "datum": "2026-08-22", "groep_label": "High Performer"},
     ]
     out = ai_feedback.generate_session_summary("Jip", items)
     assert out == "SAMENVATTING"
     p = cap["prompt"]
-    assert "20 augustus" in p and "22 augustus" in p          # per datum
-    assert "Groep Getting Better" in p and "Groep High Performer" in p   # per groep
-    assert "GEGROEPEERD PER TRAININGSDATUM" in p
+    assert "ATLEET-FIRST" in p and "één atleet per blok" in p
+    assert "[Lisa" in p and "[Sem" in p                        # één blok per atleet
+    assert p.count("[Lisa") == 1                               # Lisa niet verspreid
 
 
 def test_14b_summary_alleen_geposte_items():

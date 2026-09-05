@@ -151,7 +151,8 @@ def _brein_context(w: dict) -> str:
         raised = _athlete_raises_race(w)
         block = _ad.feedback_context_block(ak, w.get("workout_key", ""), athlete_raised_race=raised)
         w["_brein_diag"] = {k: block.get(k) for k in
-                            ("source_gaps", "has_load", "complaint_areas", "overall", "load_active")}
+                            ("source_gaps", "has_load", "complaint_areas", "complaint_new",
+                             "overall", "load_active")}
         return (block.get("prompt_block") or "") if mode == "v2" else ""
     except Exception:
         return ""
@@ -659,6 +660,17 @@ def genereer(wid: str) -> str:
                 tekst = _ff.assemble_spine(prose, w.get("_fact_pack") or {})
             except Exception:
                 tekst = prose
+    # v-coachability — deterministische CopyQuality-opschoning vóór tonen: schrapt systeem-/technische
+    # zinnen en generieke 'kan-ik-niet-uit-de-data-halen'-disclaimers, ontdubbelt exact + semantisch
+    # (max één klacht-/follow-up-zin per onderwerp). Geen extra LLM-reroll. Zo hoeft de coach minder te
+    # schrappen; safety-status en copy-kwaliteit zijn aparte eisen.
+    try:
+        import feedback_copy as _fc
+        cleaned = _fc.clean_draft(tekst)
+        if cleaned:                                          # nooit naar leeg opschonen
+            tekst = cleaned
+    except Exception:
+        pass
     # Fail-closed VALIDATOR (defense in depth) op de UITEINDELIJKE tekst: geen rewrite, geen
     # hergeneratie. Bij afkeuring gooien we ValueError → de API geeft {ok:false, err} → de composer
     # blijft leeg en Send blijft uit; het concept wordt NIET als verstuurbaar bewaard.
@@ -795,6 +807,59 @@ def _clean_summary_items(items) -> list[dict]:
                     "datum": (it.get("datum") or "")[:10],
                     "groep_label": (it.get("groep_label") or "Overig")})
     return out
+
+
+# v-coachability — prioriteit van een sessie voor het ATLEET-FIRST overzicht (lager = eerder):
+# aandacht > recent atleetbericht/vraag > REVIEW_REQUIRED > AUTO_SAFE > (rest, op recentheid).
+_SESSION_PRIO = {"attention": 0, "question": 1, "review": 2, "auto_safe": 3, "done": 4}
+
+
+def _session_prio(it: dict) -> int:
+    if it.get("attention"):
+        return _SESSION_PRIO["attention"]
+    if it.get("question") or it.get("athlete_message"):
+        return _SESSION_PRIO["question"]
+    st = str(it.get("status") or "").upper()
+    if st == "REVIEW_REQUIRED":
+        return _SESSION_PRIO["review"]
+    if st == "AUTO_SAFE":
+        return _SESSION_PRIO["auto_safe"]
+    return _SESSION_PRIO["done"]
+
+
+def athlete_first_groups(items) -> list:
+    """v-coachability — ÉÉN atleet = ÉÉN context: groepeer sessies per atleet (nooit dezelfde atleet
+    meerdere keren op topniveau), met sessies eronder chronologisch (recentste eerst). Groep/datum
+    zijn labels, GEEN primaire structuur. Sorteert atleten op hoogste prioriteit (aandacht → vraag →
+    review → auto_safe → recent), dan op recentste sessie. Puur presentatie; geen truth/store."""
+    per: dict = {}
+    for it in (items or []):
+        if not isinstance(it, dict):
+            continue
+        key = it.get("athlete_key") or it.get("athlete_name") or "?"
+        per.setdefault(key, []).append(it)
+    groepen = []
+    for key, sess in per.items():
+        sess_sorted = sorted(sess, key=lambda x: (x.get("datum") or ""), reverse=True)
+        prio = min((_session_prio(s) for s in sess_sorted), default=4)
+        recent = max((s.get("datum") or "" for s in sess_sorted), default="")
+        first = sess_sorted[0]
+        groepen.append({
+            "athlete_key": key,
+            "athlete_name": first.get("athlete_name") or str(key),
+            "groep_label": first.get("groep_label") or "Overig",
+            "sessions": sess_sorted,
+            "open": len(sess_sorted),
+            "priority": prio,
+            "recent": recent,
+        })
+    groepen.sort(key=lambda g: (g["priority"], _neg_datum(g["recent"])))
+    return groepen
+
+
+def _neg_datum(d: str):
+    """Sorteersleutel: recentste datum eerst (omgekeerd op string)."""
+    return tuple(-c for c in (d or "").encode()) if d else ()
 
 
 def session_summary(coach: str, items) -> str:

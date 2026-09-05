@@ -65,6 +65,22 @@ def _zseq_join(labels: list) -> str:
     return ", ".join(labels[:-1]) + " en " + labels[-1]
 
 
+def km_lap_mismatch(planned_blocks, laps) -> bool:
+    """v-coachability — kilometerlaps mogen NIET als proxy dienen voor sub-km werkblokken
+    (400/600/800/1000m): dan vallen werk- en herstelstukken deels in dezelfde km-lap en wordt het werk
+    ten onrechte als rustig gezien. True als er sub-km ACTIVE-werkblokken zijn maar de laps op
+    km-schaal liggen (auto-laps) → geen betrouwbare per-blok zone-conclusie."""
+    import fs_client as _fs
+    active = [b for b in (planned_blocks or [])
+              if isinstance(b, dict) and b.get("type") not in ("WARMUP", "REST", "COOLDOWN")]
+    subkm = [b for b in active if b.get("dur_kind") == "dist" and b.get("dur_val") and b["dur_val"] < 900]
+    if not subkm:
+        return False
+    lap_km = [(_fs._safe_float((l or {}).get("amount")) or 0) for l in (laps or []) if isinstance(l, dict)]
+    kmish = [d for d in lap_km if d >= 0.9]
+    return len(kmish) >= max(1, len([d for d in lap_km if d > 0]) // 2)
+
+
 def block_sequence_sentence(blocks, zones, is_pace, zone_type) -> str | None:
     """Jordi-achtig: exacte, vooraf berekende werkblok-VOLGORDE als één coach-zin. Alleen als ELK
     werkblok schoon IN een zone valt (anders geen feit: het model bespreekt dan geen per-blok-verloop).

@@ -495,6 +495,11 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
         # deterministische obligations-laag een signaalverplichting kan afleiden (niet alleen 'km bekend').
         "load_active": _load_active,
         "complaint_areas": [(c.get("detail") or {}).get("area") or c.get("value") for c in complaints],
+        # v-coachability — RECENCY: alleen ACTUEEL/recent actieve klachten (ACTIVE/RECENT) mogen
+        # automatisch terugkomen; een puur TERUGKEREND (RECURRING) patroon zonder recente melding dooft
+        # uit (komt niet standaard bij elke training terug).
+        "complaint_new": [(c.get("detail") or {}).get("area") or c.get("value") for c in complaints
+                          if c.get("status") in (ACTIVE, RECENT)],
         "event": {"status": event["status"], "days": event["days"], "date": event["date"]},
         "prompt_block": tekst,
     }
