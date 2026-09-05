@@ -109,7 +109,7 @@ def test_douwe_correction_no_z1_confirmation(monkeypatch):
                   builder=[_rest() for _ in range(4)],
                   laps=[{"amount": 0.4, "hr_avg": v} for v in (148, 151, 153, 155)],
                   comments=["elk rustblok gelukt om weer in Z1 te komen"],
-                  diag={"complaint_areas": ["scheen"]})
+                  diag={"complaint_areas": ["scheen"], "complaint_new": ["scheen"]})
     assert d["status"] == fa.AUTO_SAFE
     ids = [a["id"] for a in d["atoms"]]
     assert "recovery_blocks_z2_not_z1" in ids and "complaint_scheen" in ids

@@ -60,6 +60,24 @@ def _hr_pace_zones(zones_result):
     return hr, pace
 
 
+def partial_sync(activity) -> bool:
+    """v-coachability — onvolledige sync/detail: het gedetailleerde verloop dekt niet de hele
+    training (lap-subtotaal << activiteitstotaal), of een enorm tekort op een lange geplande training
+    met sparse laps. Dan is geen betrouwbaar afstands-/uitvoeringsoordeel mogelijk → REVIEW_REQUIRED."""
+    import fs_client as _fs
+    if not isinstance(activity, dict):
+        return False
+    exec_km = _fs._safe_float(activity.get("amount"))
+    plan_km = _fs._safe_float(activity.get("planned_amount"))
+    laps = [l for l in (activity.get("Laps") or []) if isinstance(l, dict)]
+    lap_km = sum((_fs._safe_float(l.get("amount")) or 0) for l in laps)
+    if exec_km and lap_km and lap_km < 0.6 * exec_km:
+        return True
+    if exec_km is not None and plan_km and plan_km >= 8 and (1 - exec_km / plan_km) >= 0.70 and len(laps) <= 2:
+        return True
+    return False
+
+
 def _avg_zone(zones, value, is_pace):
     if not zones or value is None:
         return None
@@ -222,6 +240,9 @@ def _build_decision(w: dict) -> dict:
     plan_desc = (details.get("description") or "")
     activities = details.get("Activities") or []
     laps = activities[0].get("Laps", []) if activities else []
+    if activities and partial_sync(activities[0]):
+        return {"status": REVIEW_REQUIRED, "atoms": [], "authority": None,
+                "reasons": ["partial_sync"], "execution_fit": None, "text": ""}
 
     # gedeelde reads (stash voor _build_workout_context) — geen extra fan-out
     builder_raw = []
@@ -267,7 +288,9 @@ def _build_decision(w: dict) -> dict:
         try:
             import feedback_facts as _ff
             assess = _fs.assess_workout_blocks(builder_raw, laps, z, metric_nl)
-            if assess.get("confidence") == "MATCHED":
+            # km-lap-guard: sub-km werkblokken niet via km-auto-laps beoordelen (T6)
+            _mismatch = _ff.km_lap_mismatch(planned_blocks, laps)
+            if assess.get("confidence") == "MATCHED" and not _mismatch:
                 s = _ff.block_sequence_sentence(assess.get("blocks", []), z,
                                                 is_pace=(metric_nl == "tempo"), zone_type=metric_nl)
                 if s:
@@ -327,18 +350,25 @@ def _build_decision(w: dict) -> dict:
                            "answer", 90, "HR", ["plan_hr"]))
         answered = True
 
-    # F. KLACHT / BELASTING CHECK-IN (neutraal) — Douwe scheen
+    # F. KLACHT / BELASTING CHECK-IN — v-coachability: RECENCY-based. Een klacht komt ALLEEN terug
+    # als de atleet hem NU zelf noemt, óf er een ACTUEEL/verergerend signaal is (diag `complaint_new`).
+    # Een puur historisch-actieve klacht (atleet zegt er meerdere sessies niets over) → NIET opnemen,
+    # zodat oude knie-/klachtcontext uitdooft en niet bij elke training terugkomt.
     diag = w.get("_brein_diag") or {}
     areas = [a for a in (diag.get("complaint_areas") or []) if a]
-    intensity_high = bool(rec or block_atom) or _rpe_high(w) or (authority["primary"] in (MA.HR,) and False)
-    if areas and (intensity_high or is_structured):
-        for a in areas:
-            area = _COMPLAINT_AREA_NL.get(str(a).lower().strip())
-            if area:
-                atoms.append(_atom(f"complaint_{area}",
-                                   f"Hou ook even in de gaten hoe je {area} hierop reageert.",
-                                   "complaint", 50, "ANY", ["complaint"]))
-                break
+    _msg_low = atext.lower()
+    _acute = set(str(a).lower().strip() for a in (diag.get("complaint_new") or []) if a)
+    for a in areas:
+        key = str(a).lower().strip()
+        area = _COMPLAINT_AREA_NL.get(key)
+        if not area:
+            continue
+        mentioned_now = area in _msg_low or key in _msg_low
+        if mentioned_now or key in _acute:                   # nu genoemd óf actueel/verergerd → wél
+            atoms.append(_atom(f"complaint_{area}",
+                               f"Hou ook even in de gaten hoe je {area} hierop reageert.",
+                               "complaint", 50, "ANY", ["complaint_recent"]))
+            break
 
     # H. AANWEZIGHEID / LOGISTIEK
     if _UNAVAIL.search(atext):
