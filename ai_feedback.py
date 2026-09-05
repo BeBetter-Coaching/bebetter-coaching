@@ -30,6 +30,7 @@ STIJLREGELS:
 - GEEN AANHALINGSTEKENS OM DE BOODSCHAP: geef alleen de kale feedbacktekst terug, zet de volledige boodschap niet tussen aanhalingstekens. Aanhalingstekens BINNEN de tekst mogen wel als je inhoudelijk iets citeert
 - Vertrekpunt is wat de atleet zelf schrijft of ervaart, maar VAT dat niet eerst samen en parafraseer het niet uitgebreid terug. Gebruik het direct om te interpreteren en te coachen; verwijs alleen kort naar een specifiek detail als dat nodig is om je advies te begrijpen
 - NATUURLIJK SPORTREGISTER: gebruik gewone coachtaal die bij de sport past. Bij een hardlooptraining zijn het loopwoorden (bijv. "gelopen", "gecontroleerd", "sterk", "prima training"), NOOIT "gereden" of andere sportvreemde werkwoorden. Vermijd stopwoord-frases zoals "netjes gereden"; varieer je formulering en gebruik geen vaste stockzin
+- SPORTTAAL HARDLOPEN (niet onderhandelbaar): een hardloopactiviteit is GEEN rit. Gebruik voor de training NOOIT wielrenwoorden als "rit", "ritje", "fietsrit", "de hele rit", "tijdens de rit" of "over de hele rit". Zeg in plaats daarvan "de training", "de hele training", "tijdens de training", "de sessie", "de loop", "tijdens je loop", "de duurloop" of "de intervaltraining". Schreef de atleet zelf "rit" over een loop, neem dat NIET over. (Een échte, aparte fietstraining in de context mag je wél een fietstraining/rit noemen; de loop zelf nooit.)
 - Benoem concrete dingen uit de data (zones, tempo, hartslag) maar alleen als het relevant is
 - Wees kort. Soms is één zin genoeg
 - DOSEER COMPLIMENTEN: begin niet elke boodschap met een verplicht compliment. Bevestig wat goed ging alleen als de data of uitvoering daar aanleiding toe geeft; een neutrale, directe opening is prima. Goed is goed, maar niet altijd "top gedaan". Blijf wel warm en menselijk, nooit koud of afstandelijk
@@ -749,6 +750,33 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     except Exception:
         obligations_section = ""
 
+    # ── v7 — deterministische COACH-FACT-PACK: verplichte, verbatim in te voegen coach-zinnen ──
+    # De app bouwt de feitelijke zinnen (niet de LLM); de LLM schrijft er alleen omheen en neemt ze
+    # LETTERLIJK over. De validator (feedback_core.genereer) blokkeert fail-closed als een verplichte
+    # zin ontbreekt/gewijzigd is, of bij verboden taal (zonepercentage, interne taal, 'rit' voor een
+    # run). Puur deterministisch over AL vergaarde evidence; geen fetch/store. Nooit fataal.
+    fact_section = ""
+    try:
+        import feedback_facts as _ff
+        _blocks = (_block_assessment or {}).get("blocks") or []
+        _block_seq = (_ff.block_sequence_sentence(
+            _blocks, athlete_zones_struct, _classified_is_pace, athlete_zone_type)
+            if (_can_classify and (_block_assessment or {}).get("confidence") == "MATCHED") else None)
+        _rec_contra = (_ff.recovery_claim_contradiction(_blocks, athlete_zones_struct, _ob_msg)
+                       if (_can_classify and athlete_zone_type == "hartslag") else None)
+        _complaint_relevant = bool(_ob_complaints) and bool(_ob_rpe_high or _ob_above or _ob_upcoming)
+        _complaint_line = _ff.complaint_sentence(_ob_complaints) if _complaint_relevant else None
+        _pack = _ff.build_fact_pack(
+            workout_type=workout_data.get("workout_type"), divergence=_divergence,
+            block_sequence=_block_seq, recovery_contradiction=_rec_contra,
+            complaint_line=_complaint_line)
+        workout_data["_fact_pack"] = _pack                   # voor de fail-closed validator na generatie
+        fact_section = _ff.fact_prompt_section(_pack)
+    except Exception:
+        fact_section = ""
+        workout_data["_fact_pack"] = {"sport": {"is_running": (workout_data.get("workout_type") == "run")},
+                                      "mandatory": []}
+
     plan_parts = []
     if plan_description.strip():
         plan_parts.append(plan_description.strip()[:600])
@@ -953,7 +981,7 @@ Samenvattende data:
 {activity_summary}{deviation_section}{session_section}{unplanned_section}{lap_section}{near_future_section}{prior_section}{datum_section}{profiel_section}{brein_section}
 
 Wat {first_name} zelf schrijft/zegt:
-{athlete_input}{obligations_section}"""
+{athlete_input}{obligations_section}{fact_section}"""
 
     return context, first_name
 
