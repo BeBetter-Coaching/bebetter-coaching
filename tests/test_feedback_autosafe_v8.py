@@ -97,7 +97,7 @@ def test_sophie_hr_authority_ignores_pace(monkeypatch):
     assert d["status"] == fa.AUTO_SAFE
     assert d["authority"]["primary"] == MA.HR
     ids = [a["id"] for a in d["atoms"]]
-    assert "hr_compliant" in ids and "attendance" in ids
+    assert any(a["id"].startswith("fit_hartslag") for a in d["atoms"]) and "attendance" in ids
     assert "divergence" not in " ".join(ids)                 # geen tempo-divergentie-atom
     assert "tempo" not in d["text"].lower() and "boven" not in d["text"].lower()  # geen pace-kritiek
     assert "rustige bereik" in d["text"]
@@ -153,7 +153,7 @@ def test_A_hr_plan_pace_faster_no_review_from_pace(monkeypatch):
     zones = {"zone_type": "hartslag", "zones_text": "z", "zones": HR,
              "secondary_zone_type": "tempo", "secondary_zones": PACE}
     d = _decision(monkeypatch, zones=zones, builder=[_hr(2)], laps=laps, comments=[], hr_avg=135)
-    assert d["status"] == fa.AUTO_SAFE and "hr_compliant" in [a["id"] for a in d["atoms"]]
+    assert d["status"] == fa.AUTO_SAFE and any(a["id"].startswith("fit_hartslag") for a in d["atoms"])
 
 
 def test_B_pace_plan_hr_outside_no_hr_failure(monkeypatch):
@@ -162,7 +162,7 @@ def test_B_pace_plan_hr_outside_no_hr_failure(monkeypatch):
     zones = {"zone_type": "tempo", "zones_text": "z", "zones": PACE}
     d = _decision(monkeypatch, zones=zones, builder=[_pace(4)], laps=laps, comments=[], pace="4:35")
     assert d["authority"]["primary"] == MA.PACE
-    assert "pace_compliant" in [a["id"] for a in d["atoms"]] and d["status"] == fa.AUTO_SAFE
+    assert any(a["id"].startswith("fit_tempo") for a in d["atoms"]) and d["status"] == fa.AUTO_SAFE
 
 
 def test_D_unknown_authority_review(monkeypatch):
