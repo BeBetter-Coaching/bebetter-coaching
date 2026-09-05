@@ -635,11 +635,38 @@ def genereer(wid: str) -> str:
              "prior_block": prior, "session_block": sess}
     import ai_feedback                                   # lui: pas hier is de key nodig
     thread = w.get("thread") or []
-    if feedback_mode(thread) == FOLLOW_UP_REPLY:
+    mode = feedback_mode(thread)
+    if mode == FOLLOW_UP_REPLY:
         # Vervolg in een lopend gesprek: reageer op het laatste athlete-bericht, met
         # dezelfde centrale waarheid + Masterbrein-context als de eerste analyse.
-        return ai_feedback.generate_reply(w, thread)
-    return ai_feedback.generate_feedback(w)
+        tekst = ai_feedback.generate_reply(w, thread)
+    else:
+        tekst = ai_feedback.generate_feedback(w)
+    # v7 — fail-closed VALIDATOR vóór acceptatie: geen rewrite, geen hergeneratie. Bij afkeuring
+    # gooien we een ValueError → de API geeft {ok:false, err} → de composer blijft leeg en Send
+    # blijft uit (bestaande error-flow); het concept wordt dus NIET als verstuurbaar bewaard.
+    _validate_or_block(w, tekst, mode)
+    return tekst
+
+
+def _validate_or_block(w: dict, tekst: str, mode: str) -> None:
+    """Deterministische output-validatie (fail-closed). Verplichte feiten worden alleen op de
+    INITIËLE analyse afgedwongen (een vervolgreactie hoeft de feitelijke ruggengraat niet te
+    herhalen); de sporttaal-/interne-taal-/percentage-/dag-guards gelden altijd. Nooit rewriten."""
+    try:
+        import feedback_facts as _ff
+    except Exception:
+        return                                               # validator niet beschikbaar → niet blokkeren
+    pack = w.get("_fact_pack") or {}
+    sport = pack.get("sport") or {}
+    is_running = bool(sport.get("is_running")) or (w.get("workout_type") == "run")
+    mandatory = (pack.get("mandatory") or []) if mode != FOLLOW_UP_REPLY else []
+    athlete_msg = "\n".join([str(w.get("post_notes") or "")]
+                            + [str(c) for c in (w.get("athlete_comments") or []) if str(c or "").strip()])
+    res = _ff.validate_draft(tekst, is_running=is_running, mandatory=mandatory,
+                             athlete_message=athlete_msg)
+    if not res.get("ok"):
+        raise ValueError(_ff.block_message(res.get("kind")))
 
 
 def plaats(wid: str, tekst: str) -> bool:
