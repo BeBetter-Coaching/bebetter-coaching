@@ -51,7 +51,13 @@ def test_a2_workspace_coherent_next_action_and_freshness():
     ws = _fn("wsRender")
     assert "heeftStand = bel.km_recent != null" in ws
     assert "const fresh = (heeftStand && bel.datum)" in ws                    # geen 'vers' zonder stand
-    assert "topAttn" in ws and "Bekijk in dossier" in ws                      # geen 'alles bij' bij aandacht
+    # De actie wordt gebouwd door de gedeelde `wsNextHtml`/`wsActieBtn` (zodat de deep-read
+    # signaal + actie samen kan herbouwen); het contract blijft: bij een aandachtspunt nooit
+    # 'alles bij', maar een route naar de bijbehorende context.
+    assert "wsNextHtml(topAttn" in ws
+    assert "Bekijk in dossier" in _fn("wsActieBtn")
+    assert "Geen directe actie — alles bij." in _fn("wsNextHtml")
+    assert 'if (staat === "rustig")' in _fn("wsNextHtml")
     assert "nextCls = (bel.actief || attn.length)" in ws
 
 

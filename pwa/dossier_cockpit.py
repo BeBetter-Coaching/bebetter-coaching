@@ -361,9 +361,34 @@ def _load_context(dossier_evs: list) -> dict:
         }
     km, runs, trend = _val("load.km_per_week"), _val("load.runs_per_week"), _val("load.trend")
     stale = any(_adapter._is_stale(e) for e in ev.values())     # gedeelde stale-regel
+
+    # ONBEKEND ≠ NUL, aan de DATAGRENS (niet pas in de copy).
+    # `athlete_context.training_summary` geeft alleen `{}` terug bij een volledig leeg
+    # hardlooplog. Heeft een atleet wél historie maar geen runs in de laatste 4 weken, dan
+    # levert het km_per_week=0.0, runs_per_week=0 én trend='stabiel' — en die worden als
+    # ACTIEVE evidence weggeschreven. Dat is GEEN gemeten belasting van nul: het is de
+    # afwezigheid van recente hardloopbelasting (meestal precies de atleet met een lopende
+    # onderbreking). Presenteren als '0 km/week · 0× p/w · stabiel' leest als een meting en
+    # rechtvaardigt daarna ten onrechte een rustige alles-bij-stand.
+    #
+    # We raken `training_summary`/`derive` NIET aan (die voeden ook Schema/Feedback/Dossier);
+    # deze leeslaag stelt de grens: meetbaar = een POSITIEVE km- of runs-waarde. Anders
+    # blijft de load UNKNOWN (None), met een expliciete, testbare reden.
+    def _pos(v):
+        try:
+            return v is not None and float(v) > 0
+        except (TypeError, ValueError):
+            return False
+
+    meetbaar = _pos(km) or _pos(runs)
     return {
-        "known": any(v is not None for v in (km, runs, trend)),
-        "km_per_week": km, "runs_per_week": runs, "trend": trend,
+        "known": meetbaar,
+        # Bij niet-meetbaar bewust None: geen enkele consument mag 0/'stabiel' als
+        # meting overnemen.
+        "km_per_week": km if meetbaar else None,
+        "runs_per_week": runs if meetbaar else None,
+        "trend": trend if meetbaar else None,
+        "no_recent_running": bool(not meetbaar and (km is not None or runs is not None)),
         "stale": stale,
         "interruption": interruption,
         "prov": _prov_light(ev["load.km_per_week"]) if "load.km_per_week" in ev else None,

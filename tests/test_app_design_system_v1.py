@@ -323,7 +323,9 @@ class TestAthleteCanvas:
         # De belasting-1-tap zit sinds de targeted cleanup in de gedeelde actie-helper:
         # de PRIMAIRE actie hoort bij het PRIMAIRE signaal, dus één plek bouwt die knop.
         assert "wsMarkeerGezien(" in _fn("wsActieBtn")
-        assert "wsActieBtn(topAttn" in ws
+        # De actie hangt aan het primaire signaal via de gedeelde builder.
+        assert "wsNextHtml(topAttn" in ws
+        assert "wsActieBtn(topAttn, key, bel, sc, tone, belTone)" in _fn("wsNextHtml")
         assert "/api/teampuls/gezien" in _fn("wsMarkeerGezien")   # bestaande authority
 
     def test_32_workspace_one_load_truth(self):

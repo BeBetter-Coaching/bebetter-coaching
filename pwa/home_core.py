@@ -818,7 +818,13 @@ def prio_trainingen(user_key: str, vooruit: int = 0) -> dict:
         datum = (w.get("workout_date") or "")[:10]
         # `gepland` bestaat ALLEEN in het vooruit-venster. Zo blijft de Home-uitkomst
         # byte-identiek, ook als FinalSurge ooit een grens-/vandaag-item meestuurt.
-        if vooruit and datum >= vandaag_iso and not w.get("has_actual_data"):
+        #
+        # NIET op `has_actual_data` toetsen: FinalSurge zet dat veld óók op true voor
+        # GEPLANDE (structured) workouts die nog niet gelopen zijn — dat staat met zoveel
+        # woorden in `fs_client.is_executed_workout`. Daardoor viel een toekomstige sessie
+        # door naar de score-tak (amount 0 ⇒ score 0) en werd de TOEKOMST als GEMIST
+        # gepresenteerd. We gebruiken hier dus de canonieke uitgevoerd-predikaat.
+        if vooruit and datum >= vandaag_iso and not FS.is_executed_workout(w):
             status = "gepland"                          # nog te doen ≠ gemist
         else:
             if not w.get("has_actual_data"):

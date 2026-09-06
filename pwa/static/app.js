@@ -6184,6 +6184,31 @@ async function wsShow(ident) {
 // (ambient haze + orbitale lijnen + vignette) en onderaan een geïntegreerde
 // actiebalk. Zelfde data, zelfde acties, zelfde routes — alleen de presentatie.
 
+// ── Aandacht nu + Volgende actie: één gedeelde opbouw ────────────────────────
+// Beide slots worden door DEZELFDE functies gebouwd, bij de shell-render én opnieuw
+// wanneer de deep-read canonieke context (klacht/onderbreking) toevoegt. Zo kunnen
+// signaal en actie per constructie niet uit elkaar lopen.
+function wsSignalenHtml(attn, staat) {
+  if (attn.length) {
+    return `<ul class="ws-signals">${attn.map(a => `<li class="${dsTone(a.tier)}"><i class="ds-dot"></i>
+      <span class="ws-sig-t">${esc(a.kort || "")}</span>${a.tier ? `<em>${esc(a.tier)}</em>` : ""}</li>`).join("")}</ul>`;
+  }
+  return staat === "rustig"
+    ? `<p class="ws-calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`
+    : `<p class="ws-unknown">Nog geen oordeel: er is geen belastingstand voor deze atleet en er staan geen open signalen open.</p>`;
+}
+function wsNextHtml(topAttn, key, bel, sc, tone, belTone, staat) {
+  if (topAttn) {
+    return `<p class="ws-next-lead">${esc(wsActieLead(topAttn, bel))}</p>`
+      + wsActieBtn(topAttn, key, bel, sc, tone, belTone);
+  }
+  if (staat === "rustig") return `<p class="ws-calm">Geen directe actie — alles bij.</p>`;
+  // Geen signalen én geen stand → geen groen licht geven. De coach krijgt een eerlijke
+  // 'te weinig om op te oordelen'-stand plus de bestaande route naar het dossier.
+  return `<p class="ws-unknown" id="ws-next-unknown">Te weinig om op te oordelen — geen belastingstand en geen open signaal.</p>
+    <button type="button" class="ws-next-btn is-unknown" onclick="openAthleteModule('dossier','${esc(key)}')">${ic("brain")} Bekijk in dossier</button>`;
+}
+
 // ── Primaire actie: hoort bij het PRIMAIRE signaal ───────────────────────────
 // Eén doel per soort, allemaal bestaande routes. Geen nieuwe aanbevelings-engine: de
 // canonieke attention-lijst kiest het signaal, dit vertaalt dat naar de bijbehorende
@@ -6193,6 +6218,30 @@ function wsActieLead(a, bel) {
   if (a.soort === "belasting")
     return `Belastingssignaal ${bel && bel.ernst === "hoog" ? "verhoogd" : "let op"}.`;
   return `${a.kort || "Aandachtspunt open"}.`;
+}
+
+// ── Canonieke context-signalen uit de deep-read ──────────────────────────────
+// Een ACTIEVE klacht of een lopende/recente trainingsonderbreking is coachrelevant,
+// óók (juist) als er géén belastingstand is. Ze komen uit dezelfde AthleteState die het
+// Dossier toont — geen nieuwe parser, geen nieuwe bron. Ze krijgen tier 'aandacht': we
+// verzinnen geen escalatie, maar ze mogen wel nooit meer wegvallen tegen 'alles bij'.
+function wsContextSignalen(r) {
+  const out = [];
+  // Klacht eerst: de cockpit rangschikt klachten al als zwaarste aandachtssoort en de
+  // kaart draagt de CONCRETE inhoud ("Klacht: scheen — actief" + de notitiezin + datum).
+  for (const c of (r.attention || []).filter(a => a.kind === "complaint").slice(0, 2)) {
+    out.push({ soort: "klacht", tier: "aandacht", kort: c.title || "Klacht",
+               sub: c.why || ((c.prov || {}).observed_at || ""),
+               ev: c.id ? "cp-" + c.id : "" });
+  }
+  const intr = (r.load_context || {}).interruption;
+  if (intr && intr.tekst) {
+    out.push({ soort: "onderbreking", tier: "aandacht",
+               kort: `Trainingsonderbreking: ${intr.tekst}`,
+               sub: [intr.status ? String(intr.status).toLowerCase() : "", intr.wanneer || ""].filter(Boolean).join(" · "),
+               ev: intr.evidence_id ? "ch-" + intr.evidence_id : "" });
+  }
+  return out;
 }
 // Verlengen is de juiste actie zodra een schema afloopt of al verlopen is.
 function wsSchemaVerloopt(sc) {
@@ -6211,10 +6260,12 @@ function wsActieBtn(a, key, bel, sc, tone, belTone) {
     return `<button type="button" class="ws-next-btn ${tone}" onclick="wsToonTrainingen()">${ic("activity")} Bekijk gemiste trainingen</button>`;
   if (a.soort === "feedback")
     return `<button type="button" class="ws-next-btn ${tone}" onclick="openModuleFromNav('feedback')">${ic("message")} Naar feedback</button>`;
-  // Overig (klacht/notitie/bron): naar het dossier. `data-ev` wordt door de deep-read
-  // gevuld met het EXACTE event zodra dat bekend is (anders opent de cockpit zijn default).
-  return `<button type="button" class="ws-next-btn ${tone}" id="ws-next-btn" data-ev=""
-    onclick="openDossierEvent('${k}', this.dataset.ev)">${ic("brain")} Bekijk in dossier</button>`;
+  // Klacht/onderbreking uit de canonieke deep-read dragen hun EIGEN event-id mee, dus die
+  // openen meteen de juiste dossier-context (geen 'Belasting gezien' bij een klacht).
+  const label = a.soort === "klacht" ? "Bekijk klacht in dossier"
+    : (a.soort === "onderbreking" ? "Bekijk onderbreking in dossier" : "Bekijk in dossier");
+  return `<button type="button" class="ws-next-btn ${tone}" id="ws-next-btn" data-ev="${esc(a.ev || "")}"
+    onclick="openDossierEvent('${k}', this.dataset.ev)">${ic("brain")} ${label}</button>`;
 }
 
 // Randloze skeleton voor de lazy deep-slots.
@@ -6426,9 +6477,10 @@ function wsRender(wrap, vm) {
   // 'onbekend' later opwaarderen naar 'rustig' zodra een autoritatieve bron dat draagt.
   const belStand = bel.km_recent != null;
   const wsStaat = attn.length ? "aandacht" : (belStand ? "rustig" : "onbekend");
-  const chip = wsStaat === "aandacht"
+  // In een eigen slot, zodat de deep-read de stand kan bijstellen zonder de kaart te herbouwen.
+  const chip = `<span id="ws-badge">${wsStaat === "aandacht"
     ? dsChip(tone === "is-critical" ? "actie" : "aandacht", tone)
-    : (wsStaat === "rustig" ? dsChip("rustig", "is-calm") : dsChip("onbekend", "is-unknown"));
+    : (wsStaat === "rustig" ? dsChip("rustig", "is-calm") : dsChip("onbekend", "is-unknown"))}</span>`;
   // V-03: geen 'belasting vers' als er geen stand is (km_recent==null). Versheid hoort bij
   // een waarde; zonder waarde toont de load-kaart 'Geen belastingstand bekend' en géén vers-chip.
   const heeftStand = bel.km_recent != null;
@@ -6436,13 +6488,11 @@ function wsRender(wrap, vm) {
     gfr.belasting === "fresh" ? "belasting vers" : `stand ${bel.datum}`) : "";
 
   // 1 — Aandacht nu (primair; geen KPI-dubbeling — load/feedback hebben hun eigen kaart)
-  const attnBody = attn.length
-    ? `<ul class="ws-signals">${attn.map(a => `<li class="${dsTone(a.tier)}"><i class="ds-dot"></i>
-        <span class="ws-sig-t">${esc(a.kort || "")}</span>${a.tier ? `<em>${esc(a.tier)}</em>` : ""}</li>`).join("")}</ul>`
-    : (wsStaat === "rustig"
-      ? `<p class="ws-calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`
-      : `<p class="ws-unknown">Nog geen oordeel: er is geen belastingstand voor deze atleet en er staan geen open signalen open.</p>`)
-    // Actuele Dossier-context (onderbreking / concrete klacht) komt lazy uit de deep-read.
+  // Het signaal-slot en het context-slot zijn ALTIJD aanwezig. Ze stonden hiervoor in
+  // één ternaire expressie waarin `+ <ctx>` alleen aan de FALSE-tak bond: bij een atleet
+  // MET signalen werd `#ws-ctx` dus nooit gerenderd en liet de deep-read de canonieke
+  // klacht/onderbreking stil vallen — precies bij de atleten waar die context ertoe doet.
+  const attnBody = `<div id="ws-signals">${wsSignalenHtml(attn, wsStaat)}</div>`
     + `<div id="ws-ctx" class="ws-ctx"></div>`;
 
   // 2 — Belasting (DE ene load-kaart: enige plek met km/%/referentie · rolling-7)
@@ -6468,14 +6518,7 @@ function wsRender(wrap, vm) {
   // uit de al canonieke attention-lijst (geen nieuwe ranking).
   const topAttn = attn.length
     ? attn.slice().sort((a, b) => (_DS_RANK[dsTone(b.tier)] || 0) - (_DS_RANK[dsTone(a.tier)] || 0))[0] : null;
-  const nextBody = topAttn
-    ? `<p class="ws-next-lead">${esc(wsActieLead(topAttn, bel))}</p>${wsActieBtn(topAttn, key, bel, sc, tone, belTone)}`
-    : (wsStaat === "rustig"
-      ? `<p class="ws-calm">Geen directe actie — alles bij.</p>`
-      // Geen signalen én geen stand → geen groen licht geven. De coach krijgt een eerlijke
-      // 'te weinig om op te oordelen'-stand plus de bestaande route naar het dossier.
-      : `<p class="ws-unknown" id="ws-next-unknown">Te weinig om op te oordelen — geen belastingstand en geen open signaal.</p>
-         <button type="button" class="ws-next-btn is-unknown" onclick="openAthleteModule('dossier','${esc(key)}')">${ic("brain")} Bekijk in dossier</button>`);
+  const nextBody = `<div id="ws-next-body">${wsNextHtml(topAttn, key, bel, sc, tone, belTone, wsStaat)}</div>`;
 
   // 5 — Feedback (één open-reactie-samenvatting + lazy duiding; geen dubbeling met Aandacht)
   const fbBody = fb.status === "unknown"
@@ -6545,6 +6588,9 @@ function wsRender(wrap, vm) {
   </div>`;
   wrap.innerHTML = h;
   bbGenSync();                        // marker staat nu in de DOM → melding herwegen
+  // Shell-stand bewaren zodat de deep-read 'Aandacht nu' + badge + 'Volgende actie'
+  // met dezelfde gegevens kan herbouwen (geen tweede rendervorm, geen refetch).
+  wrap._ws = { attn, key, bel, sc, tone, belTone, staat: wsStaat };
   // Load hoort hier → wsLoadDeep herhaalt de belasting-observatie niet (dedup).
   wrap.dataset.belOwned = (bel.km_recent != null) ? "1" : "";
 }
@@ -6580,8 +6626,7 @@ async function wsLoadDeep(wrap, ident) {
           <p>Nog geen doel vastgelegd.<small>Leg een race- of trainingsdoel vast — het masterbrein plant erop.</small></p></div>`;
   }
   wsVulLoadContext(r);
-  wsVulContext(r);
-  wsKoppelEvent(r);
+  wsDeepContext(wrap, r);
 }
 
 // P0 — bekende belasting mag niet als UNKNOWN eindigen. De shell zag alleen de
@@ -6599,59 +6644,59 @@ function wsVulLoadContext(r) {
   const trend = lc.trend ? `<p class="ws-load-sub">trend ${esc(String(lc.trend))}${lc.stale ? " · laatst bekend" : ""}</p>` : "";
   slot.innerHTML = `<div class="ws-kmrow">${bits.join("")}</div>
     <p class="ws-load-sub">recente hardloopbelasting uit het dossier — geen actueel belastingssignaal</p>${trend}`;
-  // Bekende belasting + geen open signaal = de onbekend-stand mag naar rustig.
-  wsHefOnbekendOp(r);
 }
 
-// P1 — actuele Dossier-kennis die de shell niet kan zien: een lopende/recente
-// trainingsonderbreking en de CONCRETE klacht (lichaamsdeel + status + datum) i.p.v.
-// een kaal notitie-trefwoord. Alleen actueel/relevant — geen dossierhistorie dumpen.
-function wsVulContext(r) {
+// P1 — actuele Dossier-kennis die de shell niet kan zien, en de coherentie die daaruit
+// volgt. De shell leest bewust alleen goedkope stores; klacht/onderbreking komen uit de
+// canonieke deep-read. Zodra die er zijn, worden 'Aandacht nu', de badge én 'Volgende
+// actie' met DEZELFDE gedeelde functies herbouwd — signaal en actie kunnen dus niet uit
+// elkaar lopen, en een actieve klacht/onderbreking kan nooit meer in 'alles bij' eindigen.
+function wsDeepContext(wrap, r) {
+  const st = (wrap && wrap._ws) || null;
+  const ctx = wsContextSignalen(r);
+
   const box = $("#ws-ctx");
-  if (!box) return;
-  const rows = [];
-  const intr = (r.load_context || {}).interruption;
-  if (intr && intr.tekst) {
-    rows.push(wsLine({ tone: "is-attention", icon: "clock", title: `Trainingsonderbreking: ${intr.tekst}`,
-                       sub: [intr.status ? String(intr.status).toLowerCase() : "", intr.wanneer || ""].filter(Boolean).join(" · ") }));
+  if (box) {
+    box.innerHTML = ctx.map(c => wsLine({
+      tone: "is-attention", icon: c.soort === "klacht" ? "alert" : "clock",
+      title: c.kort, sub: c.sub })).join("");
   }
-  // De cockpit-klachtkaart is al concreet: `title` = "Klacht: <lichaamsdeel> — actief"
-  // en `why` = de daadwerkelijke notitiezin + datum. Dat is precies wat een kaal
-  // "Noemt in notities: last van · 31-08" mist — dus die tekst hergebruiken, niet
-  // opnieuw afleiden (belasting.py/Home/Teampuls blijven ongemoeid).
-  for (const c of (r.attention || []).filter(a => a.kind === "complaint").slice(0, 2)) {
-    rows.push(wsLine({ tone: "is-attention", icon: "alert", title: c.title || "Klacht",
-                       sub: c.why || ((c.prov || {}).observed_at || "") }));
-  }
-  box.innerHTML = rows.join("");
+  if (!st) return;
+
+  // Context-signalen vóór de shell-signalen: bij gelijke tier wint de concrete klacht/
+  // onderbreking (de sort hieronder is stabiel), zoals de cockpit ze ook rangschikt.
+  const merged = ctx.concat(st.attn || []);
+  const staat = merged.length ? "aandacht"
+    : (wsMagRustig(r) ? "rustig" : st.staat);
+  const tone = merged.length ? dsWorstTone(merged.map(a => dsTone(a.tier))) : st.tone;
+  const top = merged.length
+    ? merged.slice().sort((a, b) => (_DS_RANK[dsTone(b.tier)] || 0) - (_DS_RANK[dsTone(a.tier)] || 0))[0]
+    : null;
+
+  const sig = $("#ws-signals");
+  if (sig) sig.innerHTML = wsSignalenHtml(merged, staat);
+  const nxt = $("#ws-next-body");
+  if (nxt) nxt.innerHTML = wsNextHtml(top, st.key, st.bel, st.sc, tone, st.belTone, staat);
+  wsZetBadge(staat, tone);
 }
 
-// De 'onbekend'-stand mag alleen weg als een autoritatieve bron dat draagt: canonieke
-// load bekend én de AthleteState zelf zegt niet 'te weinig data'.
-function wsHefOnbekendOp(r) {
+// Rustig mag ALLEEN als een autoritatieve bron dat draagt: canonieke load echt gemeten
+// (niet 0/onbekend) én de AthleteState zegt zelf niet 'te weinig data'. Afwezige data
+// levert nooit een groen licht op.
+function wsMagRustig(r) {
+  const lc = r.load_context || {};
   const st = r.status || {};
-  if (st.insufficient) return;
-  const lead = $("#ws-next-unknown");
-  if (lead) lead.outerHTML = `<p class="ws-calm">Geen open actiepunt — belasting bekend en binnen de marge.</p>`;
-  const chip = document.querySelector('.ws-attn-panel .ds-chip');
-  if (chip && /onbekend/i.test(chip.textContent || "")) {
-    chip.textContent = "rustig";
-    chip.className = chip.className.replace("is-unknown", "is-calm");
-  }
+  return !!lc.known && !st.insufficient;
 }
 
-// Koppel de primaire dossier-actie aan het EXACTE event (zelfde id-schema als de cockpit:
-// complaint = `cp-<evidence id>`, onderbreking = `ch-<evidence id>`, belasting = `now-load`).
-// Zonder match blijft het bestaande gedrag: de cockpit kiest zijn eigen default.
-function wsKoppelEvent(r) {
-  const btn = $("#ws-next-btn");
-  if (!btn) return;
-  const compl = (r.attention || []).find(a => a.kind === "complaint" && a.id);
-  const intr = (r.load_context || {}).interruption;
-  const ev = compl ? "cp-" + compl.id
-    : (intr && intr.evidence_id) ? "ch-" + intr.evidence_id
-      : (r.load_observation ? "now-load" : "");
-  if (ev) btn.dataset.ev = ev;
+function wsZetBadge(staat, tone) {
+  const el = $("#ws-badge");
+  if (!el) return;
+  el.outerHTML = staat === "aandacht"
+    ? `<span id="ws-badge">${dsChip(tone === "is-critical" ? "actie" : "aandacht", tone)}</span>`
+    : (staat === "rustig"
+      ? `<span id="ws-badge">${dsChip("rustig", "is-calm")}</span>`
+      : `<span id="ws-badge">${dsChip("onbekend", "is-unknown")}</span>`);
 }
 
 // P1 — compact trainingsblok: recent (gedaan/half/gemist) + komend (gepland). Hergebruikt
