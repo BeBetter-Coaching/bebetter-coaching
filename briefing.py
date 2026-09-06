@@ -21,6 +21,19 @@ from dossier import _run_km
 
 _FELT_NL = {1: "geweldig", 2: "goed", 3: "normaal", 4: "slecht", 5: "vreselijk"}
 
+# ── Wat telt de briefing-noemer eigenlijk? ───────────────────────────────────
+# Home toont de VOLLEDIGE FinalSurge-roster (`len(FS.get_athletes())`). De briefing
+# telt een kleinere populatie: `verzamel_week` laat losse-schema-groepen, on-hold-
+# atleten en opgezegde klanten weg. Beide getallen zijn correct, maar zonder label
+# leest '44/48' naast '68 atleten' als tegenstrijdige waarheid. Deze twee constanten
+# zijn de ENIGE plek waar dat verschil in woorden staat; de PWA rendert ze letterlijk.
+POPULATIE_LABEL = "gecoachte atleten actief"
+POPULATIE_UITLEG = (
+    "Noemer: atleten in actieve coaching — zonder losse-schema-groepen, on hold of "
+    "opgezegd. Actief = minstens één voltooide training in de afgelopen 7 dagen. "
+    "Home telt de volledige FinalSurge-roster en ligt daarom hoger."
+)
+
 
 def week_label(vandaag: date | None = None) -> str:
     """ISO-weeklabel, bijv. '2026-W27'."""

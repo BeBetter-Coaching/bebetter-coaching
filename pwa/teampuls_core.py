@@ -211,4 +211,8 @@ def briefing(force: bool = False) -> dict:
         return {"fs": True, "ai": heeft_key(), "err": f"Briefing maken mislukt: {e}"}
     return {"fs": True, "ai": heeft_key(), "week": data.get("week"),
             "gemaakt": data.get("gemaakt"), "tekst": data.get("tekst", ""),
-            "stats": data.get("stats", {})}
+            "stats": data.get("stats", {}),
+            # Semantiek van de noemer, zodat '44/48' niet als tegenspraak met Home's
+            # roster-telling leest. Eén bron (briefing.py), letterlijk gerenderd.
+            "populatie_label": B.POPULATIE_LABEL,
+            "populatie_uitleg": B.POPULATIE_UITLEG}

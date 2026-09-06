@@ -32,6 +32,7 @@ for _m in ("streamlit", "pandas"):
 import fs_client as FS
 import feedback_core                                   # _filter_skipped (geen streamlit)
 import coach_read                                      # v2: gedeelde load_metric + generation
+import races_core                                      # gedeeld race-chipvenster (CHIP_DAGEN)
 from perf import Timer                                 # opt-in timing (no-op tenzij gated)
 
 try:
@@ -128,11 +129,14 @@ def _belasting_signal(b: dict) -> dict:
     # zodat Home/Teampuls/Dossier exact dezelfde +X% tonen (v2 consolidatie). Byte-
     # identiek aan het oude km-pad; alleen niet langer een tweede lokale formule.
     lm = coach_read.load_metric(b)
-    reden = lm["reden"]
     m = b.get("metrics") or {}
     km_r, km_b, pct = lm["km_recent"], lm["km_basis_week"], lm["pct"]
     det = {
         "ernst": b.get("ernst", ""),
+        # Canonieke hoofdreden (coach_read.load_metric) — de ingeklapte Home-regel én de
+        # uitgeklapte kaartkop lezen HIER uit, zodat ze nooit een andere reden tonen.
+        # De bronzinnen blijven eronder staan als onderbouwing.
+        "primair": lm["primair"],
         "signalen": b.get("signalen") or [],
         "groep": b.get("group", ""),
         "km_recent": km_r, "km_basis": km_b, "pct": pct,
@@ -140,8 +144,11 @@ def _belasting_signal(b: dict) -> dict:
         "rpe_recent": m.get("rpe_recent"), "rpe_basis": m.get("rpe_basis"),
         "runs": (m.get("runs_recent") or [])[:5],
     }
+    # `reden`/`kort` = de HOOFDREDEN (wat de coach ingeklapt te zien krijgt); de losse
+    # bronzinnen zitten in detail["signalen"] als onderbouwing. Fingerprint/severity
+    # blijven ongewijzigd → geen state-churn op Gezien/Later.
     return {"soort": "belasting", "tier": "actie" if hoog else "aandacht",
-            "reden": reden, "kort": reden, "fingerprint": f"b{b.get('ernst', '')}",
+            "reden": lm["primair"], "kort": lm["kort"], "fingerprint": f"b{b.get('ernst', '')}",
             "severity": 2 if hoog else 1, "detail": det,
             "context": [{"act": "teampuls", "label": "Teampuls", "icon": "pulse"}]}
 
@@ -549,8 +556,10 @@ def _bereken() -> dict:
     except Exception:
         schema_rows = []
     try:
+        # Eén telling, één venster: de chip leest exact wat de Races-pagina met het
+        # 7-dagen-filter toont (races_core.CHIP_DAGEN + 'zonder wens').
         with _t.step("upcoming_races"):
-            races = sum(1 for r in FS.get_upcoming_races(7) if not r.get("wish_given"))
+            races = races_core.chip_count()
     except Exception:
         races = 0
     with _t.step("roster"):

@@ -9,8 +9,8 @@
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-400.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-700.woff2">
-  <link rel="stylesheet" href="/static/styles.css?v=132a">
-  <link rel="stylesheet" href="/static/design-system.css?v=132a">
+  <link rel="stylesheet" href="/static/styles.css?v=133a">
+  <link rel="stylesheet" href="/static/design-system.css?v=133a">
 </head>
 <body>
   <!-- Iconen-sprite (lijn-iconen, werken offline) -->
@@ -68,8 +68,14 @@
     </form>
   </div>
 
-  <div id="offline" class="offline" hidden></div>
-  <div id="msg" class="msg" hidden></div>
+  <!-- Eén toast-stack: ALLE zwevende meldingen (offline, melding, undo, nieuwe-state)
+       stapelen hier verticaal met tussenruimte. Vroeger stond elke melding los op een
+       eigen `position:fixed`-coordinaat (72px / 82px / 84px / 120px) → twee meldingen
+       vielen praktisch over elkaar en dekten kaartinhoud af. -->
+  <div id="toaststack" role="region" aria-label="Meldingen" aria-live="polite">
+    <div id="offline" class="offline" hidden></div>
+    <div id="msg" class="msg" hidden></div>
+  </div>
 
   <!-- Zijbalk (alleen op laptop/desktop; telefoon gebruikt de onderbalk) -->
   <aside class="sidebar">
@@ -279,6 +285,13 @@
       <header class="appbar"><h1>Races</h1>
         <button class="iconbtn" id="rc-refresh" aria-label="Verversen"><svg class="ic"><use href="#ic-refresh"/></svg></button>
       </header>
+      <!-- Filter: de Home-chip belooft 'komende 7 dagen zonder wens' en opent hier
+           met precies dat filter actief (#races/7d). Vanuit de zijbalk staat 'Alle
+           aankomende' aan — de normale, ongefilterde ingang. -->
+      <div class="rc-filters" id="rc-filters" role="group" aria-label="Race-filter">
+        <button type="button" class="rc-fchip on" data-scope="alle">Alle aankomende</button>
+        <button type="button" class="rc-fchip" data-scope="7d">Komende 7 dagen · zonder wens</button>
+      </div>
       <p class="hint" id="rc-info">laden…</p>
       <section id="rc-lijst" class="lijst"></section>
     </section>
@@ -440,6 +453,6 @@
     </article>
   </template>
 
-  <script src="/static/app.js?v=132a"></script>
+  <script src="/static/app.js?v=133a"></script>
 </body>
 </html>

@@ -432,10 +432,19 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .login-err{margin:2px 0 0;font-size:13px;color:var(--danger)}
 
 /* ── Meldingen zweven (los van de layout, werkt op smal én breed) ─────────── */
-#msg,#offline{position:fixed;left:50%;transform:translateX(-50%);z-index:30;
-  width:calc(100% - 32px);max-width:560px;margin:0}
-#msg{bottom:calc(72px + env(safe-area-inset-bottom))}
-#offline{bottom:calc(120px + env(safe-area-inset-bottom))}
+/* P0 — TOAST-STACK. Elke melding zat eerst op een eigen vaste bottom-coordinaat; twee
+   tegelijk landden dus op (bijna) exact dezelfde plek en dekten elkaar én de kaart-
+   inhoud af. Nu is er ÉÉN container aan de veilige viewport-rand: flexkolom met vaste
+   tussenruimte, dus meldingen stapelen zonder overlap. De container zelf vangt geen
+   pointer (scrollen gaat er dwars doorheen); alleen de meldingen zelf doen dat, en de
+   niet-interactieve meldingen laten ook dát los. Compact, met safe-area op mobiel. */
+#toaststack{position:fixed;z-index:60;left:50%;transform:translateX(-50%);
+  bottom:calc(72px + env(safe-area-inset-bottom));
+  width:calc(100% - 32px);max-width:560px;
+  display:flex;flex-direction:column;gap:10px;pointer-events:none}
+#toaststack > *{pointer-events:auto;position:static;left:auto;right:auto;bottom:auto;
+  transform:none;width:auto;max-width:100%;margin:0}
+#msg,#offline{margin:0}
 
 /* ════════ LAPTOP / DESKTOP (≥ 900px): zijbalk links, content op breedte ════ */
 @media (min-width:900px){
@@ -457,10 +466,7 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
   .md-list{position:sticky;top:26px}
   .md-detail .btn.back{display:none}
   /* Toasts rechtsonder i.p.v. gecentreerd over het hele scherm */
-  #msg,#offline{left:auto;right:32px;transform:none;max-width:400px}
-  #msg{bottom:28px}
-  #offline{bottom:82px}
-  .gen-banner{bottom:26px}            /* B6: geen bottomnav op desktop */
+  #toaststack{left:auto;right:32px;transform:none;max-width:400px;bottom:28px}
 }
 @media (min-width:1200px){
   body{grid-template-columns:280px 1fr}
@@ -719,13 +725,23 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .prio-nieuw .ic{width:15px;height:15px}
 .prio-leeg{margin-top:6px}
 
-/* Undo-toast: snelle, herstelbare acties (nooit stille schade) */
-.prio-toast{position:fixed;left:50%;bottom:82px;transform:translateX(-50%) translateY(16px);
-  display:flex;align-items:center;gap:14px;max-width:88vw;
+/* Undo-toast: snelle, herstelbare acties (nooit stille schade). Leeft in #toaststack:
+   uit de flow zolang hij niet aanstaat (anders zou hij een lege regel reserveren). */
+.prio-toast{display:none;align-items:center;gap:14px;
   background:#0E2547;border:1px solid var(--border);border-radius:12px;padding:11px 16px;
-  box-shadow:0 10px 30px rgba(0,4,14,.5);color:var(--text);font-size:13px;font-weight:600;
-  opacity:0;pointer-events:none;transition:opacity .2s ease,transform .2s ease;z-index:60}
-.prio-toast.on{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+  box-shadow:0 10px 30px rgba(0,4,14,.5);color:var(--text);font-size:13px;font-weight:600}
+.prio-toast.on{display:flex;animation:toastIn .2s ease}
+@keyframes toastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* 'Nieuwe state beschikbaar' — compacte, niet-interactieve statusmelding in dezelfde
+   stack. Vangt géén pointer (blokkeert scrollen niet) en verdwijnt vanzelf. */
+.gen-toast{display:none;pointer-events:none;
+  background:rgba(239,159,39,.14);border:1px solid var(--warn);border-radius:var(--radius);
+  padding:8px 14px;color:var(--warn);font-size:13px;font-weight:600;
+  box-shadow:0 8px 24px rgba(0,0,0,.42)}
+.gen-toast.on{display:block;animation:toastIn .2s ease}
+/* De per-view generatie-marker is puur bookkeeping (data-gen/data-at) — nooit zichtbaar. */
+.gen-mark{display:none}
 .pt-undo{background:none;border:0;color:var(--acc);font-weight:700;font-size:13px;cursor:pointer;padding:2px 4px}
 
 /* Deeplink-doel op de bestemmingspagina kort oplichten (juiste atleet gevonden) */
@@ -764,6 +780,15 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 button.info-chip{cursor:pointer;transition:border-color .14s ease,color .14s ease}
 button.info-chip:hover{border-color:var(--acc);color:var(--text)}
 .info-chip.ok{color:var(--acc);border-color:rgba(94,230,235,.28)}
+
+/* Races-filter: dezelfde chip-taal, met een expliciet actieve stand zodat zichtbaar is
+   dat je de gefilterde (Home-chip) weergave bekijkt. */
+.rc-filters{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 2px}
+.rc-fchip{font-size:12.5px;font-weight:600;color:var(--muted);background:var(--card);
+  border:1px solid var(--border);border-radius:20px;padding:7px 13px;cursor:pointer;
+  transition:border-color .14s ease,color .14s ease}
+.rc-fchip:hover{border-color:var(--acc);color:var(--text)}
+.rc-fchip.on{color:var(--text);border-color:var(--acc);background:rgba(94,230,235,.10)}
 
 /* Snel toevoegen: compacte acties (geen grote startmenu-tegels) */
 .quick-actions{display:flex;flex-wrap:wrap;gap:9px}
@@ -1333,15 +1358,10 @@ button.sb-ready:hover{filter:brightness(1.08)}
 
 /* ── Coach Read Model v2 — generation-banner + Athlete Workspace ─────────── */
 .genbar-slot{margin:0}
-/* B6: layout-stabiele statusmelding. De banner verscheen eerst IN de flow (display:none→block
-   ná first paint) en duwde kaarten ~45px omlaag (misklik). Nu een non-flow status-chip onderaan
-   de app-shell: verschijnen/verdwijnen verandert GEEN kaartpositie en dekt geen primaire knop.
-   Refresh/versheid-betekenis ongewijzigd. */
-.gen-banner{display:none;position:fixed;z-index:26;left:50%;
-  bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);
-  max-width:calc(100% - 28px);margin:0;padding:8px 14px;border-radius:var(--radius);
-  background:rgba(239,159,39,.14);border:1px solid var(--warn);color:var(--warn);
-  font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.42)}
-.gen-banner.on{display:block}
+/* B6 (herzien in de toast-stack): de statusmelding stond hier als eigen `position:fixed`
+   overlay per view — twee views leverden twee overlays op exact dezelfde coordinaat, hij
+   dekte kaartinhoud af en verdween nooit vanzelf. De VIEW houdt nu alleen nog een onzicht-
+   bare `.gen-mark` (data-gen/data-at); de melding zelf is één `.gen-toast` in #toaststack.
+   Data-/state-betekenis ongewijzigd: 'deze view toont een oudere generatie'. */
   border:1px solid var(--border);background:var(--card2);color:var(--text)}
 .ws-deep-slot{min-height:18px}

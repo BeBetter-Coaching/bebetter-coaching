@@ -542,8 +542,8 @@ class RaceWens(BaseModel):
 
 
 @app.get("/api/races")
-def races_lijst(dagen: int = 42):
-    return races.komende(days_ahead=dagen)
+def races_lijst(dagen: int = 42, zonder_wens: bool = False):
+    return races.komende(days_ahead=dagen, alleen_zonder_wens=zonder_wens)
 
 
 @app.post("/api/races/wens")             # WRITE: plaats race-wens als coach-comment

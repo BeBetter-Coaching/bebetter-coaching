@@ -42,7 +42,12 @@ const REAL = [
   sliceFrom("function dsTone("), sliceFrom("function dsWorstTone("), sliceFrom("function dsChip("),
   sliceFrom("function dsFresh("), sliceFrom("function dsKv("), sliceFrom("function dsStream("),
   sliceLine("const _bbGen = "), sliceFrom("function _genDominates("), sliceFrom("function noteGeneration("),
-  sliceFrom("function bbGenSync("), sliceFrom("function genBanner("),
+  // De 'nieuwe state'-melding is een toast in de gedeelde stack (Home/Teampuls cleanup):
+  // bbGenSync leest de per-view marker en stuurt die ene toast aan.
+  sliceLine("const _GEN_TOAST_MS = "), "let _genToastT = 0;",
+  sliceFrom("function _genZichtbaar("), sliceFrom("function bbGenSync("),
+  sliceFrom("function genToast("), sliceFrom("function genToastWeg("),
+  sliceFrom("function toastHost("), sliceFrom("function genBanner("),
   sliceFrom("const _DC_KIND_IC = {"),
   sliceLine("let wsSel = "),
   sliceFrom("function nlNum("), sliceFrom("function wsWeekStrip("), sliceFrom("function wsLoadInstrument("),
@@ -141,7 +146,10 @@ function C_generation_guard() {
   const wrap = mkEl();
   app.wsRender(wrap, wsPayload());
   ok(app._peekGen().id === "gen-A", "C: noteGeneration adopted generation_id", app._peekGen().id);
-  ok(/gen-banner/.test(wrap.innerHTML) && /data-gen="gen-A"/.test(wrap.innerHTML), "C: generation banner stamped");
+  // De view stempelt sinds de toast-stack een onzichtbare marker met dezelfde generation_id;
+  // de melding zelf staat in de gedeelde #toaststack, niet als overlay in de view.
+  ok(/gen-mark/.test(wrap.innerHTML) && /data-gen="gen-A"/.test(wrap.innerHTML), "C: generation marker stamped");
+  ok(!/gen-banner/.test(wrap.innerHTML), "C: geen per-view overlay meer in de workspace");
 }
 
 async function D_lifecycle_shell_then_deep() {
