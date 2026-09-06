@@ -290,8 +290,14 @@ class TestGeenSpeculatieveMatching:
 
 # ══ T13/T14/T15 — locks ══════════════════════════════════════════════════════
 class TestLocks:
+    # Deze locks leggen een HISTORISCH feit vast: de run-deviations-build (e4f37f1 →
+    # 4959360) bleef server-side en raakte Home/Teampuls/Workspace/Feedback niet aan.
+    # Ze stonden tegen `e4f37f1..HEAD` en werden daardoor een bewegend doel: elke latere,
+    # volledig legitieme client-wijziging liet ze omvallen zonder dat er iets aan de
+    # run-deviations-scope veranderde. Nu vastgepind op exact die twee commits — zelfde
+    # assertie, alleen niet langer afhankelijk van wat er ná die build gebeurde.
     def _diff(self):
-        return subprocess.run(["git", "diff", "--name-only", "e4f37f1", "--"],
+        return subprocess.run(["git", "diff", "--name-only", "e4f37f1", "4959360", "--"],
                               cwd=_ROOT, capture_output=True, text=True).stdout.split()
 
     def test_t13_t14_home_teampuls_workspace_ongemoeid(self):

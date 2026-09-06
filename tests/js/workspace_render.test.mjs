@@ -51,6 +51,8 @@ const REAL = [
   sliceFrom("const _DC_KIND_IC = {"),
   sliceLine("let wsSel = "),
   sliceFrom("function nlNum("), sliceFrom("function wsWeekStrip("), sliceFrom("function wsLoadInstrument("),
+  // A3: gedeelde coach-copy-primitieven (datum + enkelvoud/meervoud) — de ECHTE functies.
+  sliceLine("const _NL_MND = "), sliceFrom("function nlDatum("), sliceFrom("function nlAantal("),
   sliceFrom("function wsLine("), sliceFrom("function wsSkel("),
   // Targeted cleanup: de primaire actie wordt door gedeelde helpers gebouwd (primair
   // signaal ⇄ primaire actie), en de deep-read vult load-context/dossier-event.
@@ -84,6 +86,7 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&a
 const ic = (n) => `<i:${n}>`;
 const initialen = (naam) => String(naam || "").slice(0, 2).toUpperCase();
 const openAthleteModule = () => {};
+const athleteNav = (v, k) => `<div class="anav" data-anav="${v}:${k}"></div>`;   // B1: gedeelde nav (eigen tests)
 const openSchemaMode = () => {};
 const openDossierEvent = () => {};
 const openModuleFromNav = () => {};
@@ -103,12 +106,12 @@ const locationShim = { hash: "" };
 const historyShim = { pushState() {} };
 async function api(url) { apiCalls.push(url); return apiRouter ? apiRouter(url) : null; }
 
-const shimNames = ["$", "esc", "ic", "initialen", "openAthleteModule", "wsMarkeerGezien", "melding",
+const shimNames = ["$", "esc", "ic", "initialen", "openAthleteModule", "athleteNav", "wsMarkeerGezien", "melding",
   "toonView", "pushRoute", "bindRefresh", "geladen", "huidigeView",
   "document", "window", "location", "history", "api", "jpost"];
 const build = () => new Function(...shimNames,
   REAL + "\nreturn { wsRender, wsLoadDeep, wsShow, laadWorkspace, noteGeneration, genBanner, _peekGen: () => _bbGen };"
-)($, esc, ic, initialen, openAthleteModule, wsMarkeerGezien, melding,
+)($, esc, ic, initialen, openAthleteModule, athleteNav, wsMarkeerGezien, melding,
   toonView, pushRoute, bindRefresh, geladen, huidigeView, documentShim, windowShim, locationShim,
   historyShim, api, async () => ({ ok: true }));
 

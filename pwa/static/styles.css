@@ -88,6 +88,9 @@ body{display:flex;flex-direction:column;max-width:640px;margin:0 auto;overflow:h
   padding:13px 15px;margin:9px 0;cursor:pointer;color:var(--text)}
 .listcard:hover{border-color:var(--acc)}
 .listcard:active{transform:scale(.99)}
+/* A5: het intake-aantal reist mee naar de Praktijk-lade (zelfde .nav-badge-bron,
+   maar in de kaartflow i.p.v. absoluut boven een onderbalk-icoon). */
+.listcard .lc-badge{position:static;top:auto;left:auto;flex:0 0 auto;margin-left:auto}
 .lc-ic{width:38px;height:38px;border-radius:11px;background:var(--card2);border:1px solid var(--border);
   display:flex;align-items:center;justify-content:center;color:var(--acc);flex:0 0 auto}
 .lc-ic .ic{width:20px;height:20px}
@@ -793,6 +796,19 @@ button.info-chip:hover{border-color:var(--acc);color:var(--text)}
   transition:border-color .14s ease,color .14s ease}
 .rc-fchip:hover{border-color:var(--acc);color:var(--text)}
 .rc-fchip.on{color:var(--text);border-color:var(--acc);background:rgba(94,230,235,.10)}
+
+/* ── B2: Vandaag-segmenten (Actie | Monitoring) ────────────────────────────
+   Zelfde chip-taal als het races-filter — één visueel vocabulaire voor 'dit is
+   een filterstand, geen andere pagina'. */
+.home-seg{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 4px}
+.hseg{font-size:12.5px;font-weight:600;color:var(--muted);background:var(--card);
+  border:1px solid var(--border);border-radius:20px;padding:7px 14px;cursor:pointer;
+  transition:border-color .14s ease,color .14s ease}
+.hseg:hover{border-color:var(--acc);color:var(--text)}
+.hseg.on{color:var(--text);border-color:var(--acc);background:rgba(94,230,235,.10)}
+.hseg:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#home-seg+#home-actie .sec-head{margin-top:10px}
+#home-brief{margin-top:22px}
 
 /* Snel toevoegen: compacte acties (geen grote startmenu-tegels) */
 .quick-actions{display:flex;flex-wrap:wrap;gap:9px}
