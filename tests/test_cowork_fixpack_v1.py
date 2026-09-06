@@ -63,9 +63,15 @@ def test_b5_teampuls_dossier_routes_to_dossier():
     assert "dossierPicker.clearQuery()" in _fn("openDossier")
 
 
-# ── B6: state-banner is non-flow (geen layout shift) ─────────────────────────
+# ── B6: state-melding is non-flow (geen layout shift) ────────────────────────
+# Herzien: de melding zit niet langer als eigen fixed overlay in de view, maar als
+# toast in de gedeelde stack. Non-flow blijft gelden (de view houdt een display:none
+# marker), en de melding zelf kan nu niet meer op dezelfde coordinaat als een andere
+# melding landen.
 def test_b6_banner_non_flow():
-    assert ".gen-banner{display:none;position:fixed" in _CSS   # non-flow status-chip
+    assert ".gen-mark{display:none}" in _CSS                   # marker is puur bookkeeping
+    assert ".gen-toast{display:none" in _CSS                   # melding zelf: non-flow tot 'on'
+    assert ".gen-banner{" not in _CSS                          # oude per-view overlay weg
     assert "margin:8px 12px 0" not in _CSS                     # oude in-flow marge weg
 
 

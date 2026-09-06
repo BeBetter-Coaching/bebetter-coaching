@@ -171,6 +171,7 @@ function toonView(view) {
   $$(".nav-item").forEach(n => n.classList.toggle("on", n.dataset.openView === view));
   $("#scroller").scrollTo({ top: 0 });
   haptic(6);
+  bbGenSync();                        // melding volgt de ZICHTBARE view (nooit een verborgen marker)
   if (view === "home") renderHome();
   if (laders[view] && !geladen[view]) { geladen[view] = true; laders[view](); }
   pushRoute(view);
@@ -200,7 +201,10 @@ function applyRoute() {
     if (view === "atleten" && ident) openDossier(ident);   // synchrone prefix draait nog binnen de guard
     else if (view === "schema") { if (ident) openSchemaAthlete(ident); else { schemaOpenPending = ""; sbToonLijst(); } }
     else if (view === "dossier") { if (ident) openDossierCockpit(ident); else { dcOpenPending = ""; dcToonLijst(); } }
-    else if (view === "workspace") { if (ident) openWorkspace(ident); else { wsOpenPending = ""; wsToonLijst(); } }
+    else if (view === "workspace") { if (ident) openWorkspace(ident); else { wsOpenPending = ""; wsLeegRoute(); } }
+    // Races draagt geen atleet maar wél een filter-scope (#races/7d) — zo blijft de
+    // Home-chip-belofte in de URL staan en overleeft hij een refresh/terug-navigatie.
+    else if (view === "races") rcZetScope(ident || "alle");
   } finally { _routing = false; }
 }
 window.addEventListener("popstate", applyRoute);
@@ -278,6 +282,9 @@ function openModuleFromNav(view) {
   // generieke openAthleteModule. Zo dragen Workspace en Dossier dezelfde geselecteerde atleet mee.
   if (key && view === "workspace") openWorkspace(key);
   else if (key && _ATHLETE_VIEWS.has(view)) openAthleteModule(view, key);
+  // Globale Races-ingang (zijbalk/onderbalk/'meer') = altijd ongefilterd; alleen de
+  // Home-chip opent het 7-dagenfilter.
+  else if (view === "races") openRaces("alle");
   else toonView(view);
 }
 // Gedeelde, compacte athlete-context navigatie (chips): de OVERIGE athlete-tools naast
@@ -476,16 +483,46 @@ function noteGeneration(gen) {
   if (_bbGen.id && !_genDominates(nv, _bbGen.sv)) return;  // niet-dominant → nooit latest
   _bbGen.id = id; _bbGen.at = gen.generation_at || ""; _bbGen.sv = nv; bbGenSync();
 }
+// De view houdt alleen een ONZICHTBARE marker (welke generatie toont deze view, en van
+// wanneer). De melding zelf is één toast in de gedeelde stack — zo kan hij nooit meer
+// kaartinhoud afdekken, stapelen twee views niet op dezelfde coordinaat, en verdwijnt hij
+// vanzelf. De trigger is identiek: een ZICHTBARE view toont een oudere generatie.
+const _GEN_TOAST_MS = 8000;                                // auto-dismiss (niet blijven staan)
+let _genToastT = 0;
+function _genZichtbaar(el) {
+  const v = el.closest ? el.closest(".view") : null;
+  return !v || v.classList.contains("on");                 // markers buiten een view tellen altijd
+}
 function bbGenSync() {
-  document.querySelectorAll(".gen-banner[data-gen]").forEach(el => {
-    el.classList.toggle("on", el.dataset.gen && el.dataset.gen !== _bbGen.id);
+  let stale = null;
+  document.querySelectorAll(".gen-mark[data-gen]").forEach(el => {
+    const oud = !!(el.dataset.gen && _bbGen.id && el.dataset.gen !== _bbGen.id);
+    el.classList.toggle("stale", oud);                     // state blijft leesbaar in de DOM
+    if (oud && _genZichtbaar(el)) stale = el;
   });
+  if (stale) genToast(`Bijgewerkt ${stale.dataset.at || ""} · nieuwe state beschikbaar`.replace("  ", " "));
+  else genToastWeg();
+}
+function genToast(txt) {
+  let t = $("#gen-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "gen-toast"; t.className = "gen-toast"; t.setAttribute("role", "status");
+    toastHost().appendChild(t);
+  }
+  t.textContent = txt;
+  t.classList.add("on");
+  clearTimeout(_genToastT);
+  _genToastT = setTimeout(() => t.classList.remove("on"), _GEN_TOAST_MS);
+}
+function genToastWeg() {
+  const t = $("#gen-toast");
+  if (t) { clearTimeout(_genToastT); t.classList.remove("on"); }
 }
 function genBanner(gen) {
   const id = (gen && gen.generation_id) || "";
   const at = ((gen && gen.generated_at) || "").slice(11, 16);
-  const old = !!(id && _bbGen.id && id !== _bbGen.id);
-  return `<div class="gen-banner${old ? " on" : ""}" data-gen="${esc(id)}">Bijgewerkt ${esc(at)} · nieuwe state beschikbaar</div>`;
+  return `<div class="gen-mark" data-gen="${esc(id)}" data-at="${esc(at)}" aria-hidden="true"></div>`;
 }
 // Stempel een dedicated slot (Home/Teampuls). ADOPTEER eerst de generatie (zodat deze
 // verse response de nieuwe 'latest' wordt en oudere views geflipt worden), render dan
@@ -494,6 +531,7 @@ function genMount(sel, gen) {
   noteGeneration(gen);
   const el = $(sel);
   if (el) el.innerHTML = gen && gen.generation_id ? genBanner(gen) : "";
+  bbGenSync();                        // de zojuist gemonteerde marker meewegen (kan zelf oud zijn)
 }
 // V-02/V-11: Home toont de snapshot-leeftijd ALTIJD in mensentaal in een gereserveerd
 // kopslot ('Bijgewerkt HH:MM'), niet als zwevende overlay-chip over de atletenlijst. De
@@ -553,6 +591,10 @@ function bindAccordions(root = document) {
   });
 }
 bindAccordions();
+
+// De gedeelde toast-stack (index.html). Fallback op <body> zodat een dynamisch
+// aangemaakte toast nooit dakloos is (bv. in een geïsoleerde testomgeving).
+function toastHost() { return $("#toaststack") || document.body; }
 
 function melding(txt, isErr = false) {
   const m = $("#msg");
@@ -891,10 +933,12 @@ function vulCockpit(s, fresh) {
   // feedbackbalk (daar hoort de metric inhoudelijk) en tonen hier alleen races.
   const inf = $("#home-info");
   if (inf) {
+    // De chip telt races ZONDER WENS in het 7-dagenvenster (races_core.chip_count) en
+    // opent Races met exact dat filter — label en bestemming beloven nu hetzelfde.
     inf.innerHTML = info.races
-      ? `<div class="info-strip"><button class="info-chip" data-open-view="races">${ic("flag")} ${info.races} race${info.races === 1 ? "" : "s"} komende 7 dgn</button></div>`
+      ? `<div class="info-strip"><button class="info-chip" id="home-race-chip">${ic("flag")} ${info.races} race${info.races === 1 ? "" : "s"} zonder wens · komende ${RC_CHIP_DAGEN} dgn</button></div>`
       : "";
-    $$("[data-open-view]", inf).forEach(b => b.addEventListener("click", () => openModuleFromNav(b.dataset.openView)));
+    $("#home-race-chip")?.addEventListener("click", () => openRaces("7d"));
   }
 }
 
@@ -981,6 +1025,29 @@ function swBtn(a, cls) {
 }
 
 // Eén prioriteit-item: swipe-lagen + gegroepeerde rij + (lazy) inline detail.
+// ── ÉÉN bron voor het primaire signaal ───────────────────────────────────────
+// De server rangschikt de signalen van een atleet al deterministisch (tier, dan soort);
+// `signalen[0]` IS dus de reden dat deze atleet in de lijst staat. Zowel de ingeklapte
+// regel als de uitgeklapte kaartkop lezen die ene keuze — geen tweede rangschikking.
+function prioHoofdSignaal(it) {
+  const sigs = (it && it.signalen) || [];
+  return sigs[0] || null;
+}
+// De hoofdreden in woorden. Voor belasting is dat de canonieke server-zin
+// (`detail.primair`), niet de eerste losse bronzin — die bleef anders als 'hoofdreden'
+// hangen terwijl de atleet om de belasting geprioriteerd is.
+function prioPrimairTekst(s) {
+  if (!s) return "";
+  if (s.soort === "belasting") {
+    const d = s.detail || {};
+    if (d.primair) return d.primair;
+    // Fallback voor een oudere snapshot zonder `primair`: zelfde formulering, client-side.
+    const woord = s.tier === "actie" ? "hoog" : "let op";
+    return d.pct != null ? `Belasting ${woord} · ${d.pct > 0 ? "+" : ""}${d.pct}% t.o.v. referentie` : `Belasting ${woord}`;
+  }
+  return s.reden || "";
+}
+
 function prioItem(it) {
   const ctx = prioContext(it);
   const multi = it.n_signalen > 1;
@@ -988,9 +1055,14 @@ function prioItem(it) {
   wrap.className = "prio-item";
   wrap.dataset.uk = it.user_key; wrap.dataset.sig = it.signature || "";
   wrap._it = it;
-  const secundair = multi
-    ? `<span class="prio-chips">${(it.chips || []).map(c => `<span class="pc ${c.tier}">${esc(c.kort)}</span>`).join("")}</span>`
-    : `<span class="prio-reden">${esc(it.reden)}</span>`;
+  // De ingeklapte regel leidt ALTIJD met de hoofdreden (dezelfde die de uitgeklapte kaart
+  // als kop toont en waarop de rij gerangschikt is). Bij meerdere signalen staan de
+  // ÓVERIGE signalen daaronder als secundaire chips — ze vervangen de hoofdreden nooit.
+  const hoofdTxt = prioPrimairTekst(prioHoofdSignaal(it)) || it.reden;
+  const rest = multi ? (it.chips || []).slice(1) : [];
+  const secundair = `<span class="prio-reden">${esc(hoofdTxt)}</span>` + (rest.length
+    ? `<span class="prio-chips">${rest.map(c => `<span class="pc ${c.tier}">${esc(c.kort)}</span>`).join("")}</span>`
+    : "");
   // Swipe = BULK over alle huidige signalen. Bij >1 signaal expliciet "Alles …" zodat
   // de coach niet denkt dat maar één aandachtspunt wordt geraakt.
   const gLabel = multi ? "Alles gezien" : "Gezien", lLabel = multi ? "Alles later" : "Later";
@@ -999,7 +1071,7 @@ function prioItem(it) {
       <div class="pa-layer pa-left">${swBtn({ act: "gezien", label: gLabel, icon: "check" }, "primary")}${swBtn({ act: "later", label: lLabel, icon: "clock", dagen: 7 }, "later")}</div>
       <div class="pa-layer pa-right">${ctx.map(a => swBtn(a)).join("")}</div>
       <article class="prio-row ${it.tier}" role="button" tabindex="0"
-        aria-expanded="false" aria-label="${esc(it.naam)} — ${multi ? it.n_signalen + " aandachtspunten" : esc(it.reden)}">
+        aria-expanded="false" aria-label="${esc(it.naam)} — ${esc(hoofdTxt)}${multi ? ` en ${it.n_signalen - 1} ander${it.n_signalen - 1 === 1 ? "" : "e"} aandachtspunt${it.n_signalen - 1 === 1 ? "" : "en"}` : ""}">
         <span class="prio-dot ${it.tier}"></span>
         <span class="avatar">${initialen(it.naam)}</span>
         <span class="prio-body">
@@ -1058,9 +1130,9 @@ function prioToggle(wrap, force) {
 function prioDetailHtml(it) {
   const sigs = it.signalen || [];
   const tone = dsWorstTone(sigs.map(s => dsTone(s.tier)));
-  // Dominant signaal = het zwaarste; de rest is ondersteunende context.
-  const hoofd = sigs.slice().sort((a, b) =>
-    (dsTone(a.tier) === "is-critical" ? 0 : 1) - (dsTone(b.tier) === "is-critical" ? 0 : 1))[0];
+  // Dominant signaal = precies het signaal waarmee de ingeklapte regel leidt
+  // (prioHoofdSignaal). Eén keuze, twee weergaven — geen tweede rangschikking meer.
+  const hoofd = prioHoofdSignaal(it);
   const bel = sigs.find(s => s.soort === "belasting");
   const pct = bel && bel.detail && bel.detail.pct != null ? bel.detail.pct : null;
   // Waarde-consistentie: de belasting-zin in de briefing komt uit DEZELFDE
@@ -1078,11 +1150,7 @@ function prioDetailHtml(it) {
   h += `<header class="pb-head">
     <span class="pb-orb">${esc(initialen(it.naam || ""))}</span>
     <div class="pb-id"><h3 class="pb-naam">${esc(it.naam || "")}</h3>
-      <p class="pb-reden">${esc(hoofd
-        ? (hoofd.soort === "belasting" && bd.pct != null
-            ? `Belasting ${hoofd.tier === "actie" ? "hoog" : "let op"} · ${bd.pct > 0 ? "+" : ""}${bd.pct}% t.o.v. referentie`
-            : titelVan(hoofd))
-        : "geen open signaal")}</p></div>
+      <p class="pb-reden">${esc(prioPrimairTekst(hoofd) || "geen open signaal")}</p></div>
     ${pct != null ? `<span class="pb-dom"><b>${pct > 0 ? "+" : ""}${esc(pct)}</b><i>%</i></span>` : ""}
   </header>`;
 
@@ -1313,7 +1381,7 @@ function prioLeegCheck() {
 
 function prioToast(txt, undoFn) {
   let t = $("#prio-toast");
-  if (!t) { t = document.createElement("div"); t.id = "prio-toast"; t.className = "prio-toast"; document.body.appendChild(t); }
+  if (!t) { t = document.createElement("div"); t.id = "prio-toast"; t.className = "prio-toast"; toastHost().appendChild(t); }
   t.innerHTML = `<span>${esc(txt)}</span>${undoFn ? `<button class="pt-undo" type="button">Ongedaan</button>` : ""}`;
   requestAnimationFrame(() => t.classList.add("on"));
   clearTimeout(t._h);
@@ -2299,7 +2367,13 @@ async function laadOrphanIntakes() {
       <button class="listcard" data-orphan="${esc(a.key)}">
         <span class="avatar">${initialen(a.naam)}</span>
         <span class="lc-body"><span class="lc-title">${esc(a.naam)}</span>
-          <span class="lc-sub">${a.suggestie ? "voorgestelde match: " + esc(a.suggestie.naam) : "losse intake · koppelen"}</span></span>${ic("chevron")}</button>`).join("")}</section>`;
+          <span class="lc-sub">${a.suggestie
+            // Een losse intake van iemand die AL als atleet in FinalSurge staat leest anders
+            // als 'nieuwe aanmelding' terwijl je 'm ook gewoon op Home ziet. Dit zegt wat de
+            // (bestaande, naam-gebaseerde) suggestie werkelijk is: een kandidaat om te
+            // bevestigen — geen automatische identiteits-koppeling.
+            ? `bestaat al als atleet: ${esc(a.suggestie.naam)}${a.suggestie.groep ? " · " + esc(a.suggestie.groep) : ""} — bevestig zelf`
+            : "losse intake · koppelen"}</span></span>${ic("chevron")}</button>`).join("")}</section>`;
   box.querySelectorAll("[data-orphan]").forEach(b =>
     b.addEventListener("click", () => openAthleteModule("atleten", b.dataset.orphan)));
 }
@@ -3610,7 +3684,7 @@ window.addEventListener("pagehide", fbFlushPendingSkip);
 // Eén toast met gegarandeerd precies één afloop: Ongedaan óf commit (nooit beide).
 function fbToast(txt, onUndo, onCommit, ms = 5000) {
   let t = $("#prio-toast");
-  if (!t) { t = document.createElement("div"); t.id = "prio-toast"; t.className = "prio-toast"; document.body.appendChild(t); }
+  if (!t) { t = document.createElement("div"); t.id = "prio-toast"; t.className = "prio-toast"; toastHost().appendChild(t); }
   t.innerHTML = `<span>${esc(txt)}</span><button class="pt-undo" type="button">Ongedaan</button>`;
   requestAnimationFrame(() => t.classList.add("on"));
   clearTimeout(t._h);
@@ -4907,22 +4981,61 @@ bindRefresh("sb-refresh", async () => {
 // ════════════════════════════════════════════════════════════════════════════
 // RACES — aankomende races + race-wens plaatsen (WRITE via post_comment)
 // ════════════════════════════════════════════════════════════════════════════
+// De Home-chip ("N races zonder wens · komende 7 dgn") opent Races MET dat filter, zodat
+// de bestemming de belofte van de chip waarmaakt. Route: #races/7d. Zijbalk → #races =
+// alle aankomende races (ongewijzigd gedrag). Zelfde datumvenster/filter als de chip-
+// telling op de server (races_core.CHIP_DAGEN + zonder_wens).
+const RC_CHIP_DAGEN = 7;
+let rcScope = "alle";
+// Entry point (chip, filterknop, deep-link). Route eerst, dán de view — anders schrijft
+// toonView zelf nog een bare `#races` over `#races/7d` heen (zelfde patroon als Workspace).
+function openRaces(scope) {
+  const s = scope === "7d" ? "7d" : "alle";
+  const h = s === "7d" ? "#races/7d" : "#races";
+  if (location.hash !== h) { try { history.pushState(null, "", h); } catch {} }
+  rcZetScope(s);
+}
+function rcZetScope(scope) {
+  const s = scope === "7d" ? "7d" : "alle";
+  const veranderd = s !== rcScope || !geladen.races;
+  rcScope = s;
+  geladen.races = true;                                    // eigen laadpad → geen dubbele fetch
+  if (huidigeView !== "races") {
+    const vorig = _routing;
+    _routing = true;
+    try { toonView("races"); } finally { _routing = vorig; }
+  }
+  $$("#rc-filters .rc-fchip").forEach(b => b.classList.toggle("on", b.dataset.scope === s));
+  if (veranderd) laadRaces();
+}
 async function laadRaces() {
   const box = $("#rc-lijst"), info = $("#rc-info");
+  const zeven = rcScope === "7d";
+  const mijn = rcScope;
   info.textContent = "Races ophalen uit FinalSurge…";
   skeleton(box, 4);
-  const r = await api("/api/races").catch(() => null);
+  const url = zeven ? `/api/races?dagen=${RC_CHIP_DAGEN}&zonder_wens=true` : "/api/races";
+  const r = await api(url).catch(() => null);
+  if (mijn !== rcScope) return;                            // filter intussen gewisseld
   if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
   if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
   const items = r.items || [];
   const open = items.filter(i => !i.wens_gegeven).length;
   info.textContent = items.length
-    ? `${items.length} aankomende race${items.length === 1 ? "" : "s"}${open ? ` · ${open} zonder wens` : " · alle wensen gegeven"}.`
+    ? (zeven
+        ? `${items.length} race${items.length === 1 ? "" : "s"} zonder wens in de komende ${RC_CHIP_DAGEN} dagen.`
+        : `${items.length} aankomende race${items.length === 1 ? "" : "s"}${open ? ` · ${open} zonder wens` : " · alle wensen gegeven"}.`)
     : "";
-  if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen races in de komende weken.</p></div>`; return; }
+  if (!items.length) {
+    box.innerHTML = `<div class="leeg">${ic("check")}<p>${zeven
+      ? `Geen races zonder wens in de komende ${RC_CHIP_DAGEN} dagen.`
+      : "Geen races in de komende weken."}</p></div>`;
+    return;
+  }
   box.innerHTML = "";
   items.forEach(it => box.appendChild(raceItem(it)));
 }
+$$("#rc-filters .rc-fchip").forEach(b => b.addEventListener("click", () => openRaces(b.dataset.scope)));
 
 function raceItem(it) {
   const el = document.createElement("article");
@@ -5090,6 +5203,25 @@ function pulsItem(it) {
   return el;
 }
 
+// De weekbriefing wordt één keer per ISO-week gemaakt en blijft daarna staan. Een op
+// woensdag gemaakte briefing las op zaterdag als 'de stand van nu' (alleen een kale ISO-
+// datum). Nu staat er in mensentaal wanneer hij gemaakt is, plus hoe oud hij is zodra dat
+// niet vandaag is. De briefingtekst zelf blijft ongewijzigd.
+const _BR_DAGEN = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
+const _BR_MND = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
+function briefGemaaktLabel(iso, vandaag) {
+  const raw = String(iso || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw ? `Gemaakt ${raw}` : "Gemaakt";
+  const d = new Date(raw + "T00:00:00");
+  if (isNaN(d)) return `Gemaakt ${raw}`;
+  const nu = vandaag ? new Date(vandaag + "T00:00:00") : new Date(new Date().toDateString());
+  const dagen = Math.round((nu - d) / 86400000);
+  const wanneer = `${_BR_DAGEN[d.getDay()]} ${d.getDate()} ${_BR_MND[d.getMonth()]}`;
+  if (dagen <= 0) return `Gemaakt vandaag (${wanneer})`;
+  if (dagen === 1) return `Gemaakt gisteren (${wanneer})`;
+  return `Gemaakt ${wanneer} · ${dagen} dagen oud`;
+}
+
 async function laadBriefing(force = false) {
   const brief = $("#tp-briefing");
   brief.innerHTML = `<div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w80"></div></div>`;
@@ -5097,9 +5229,14 @@ async function laadBriefing(force = false) {
   if (!r || !r.fs) { brief.innerHTML = `<p class="muted klein">Weekbriefing niet beschikbaar.</p>`; return; }
   if (r.err) { brief.innerHTML = `<p class="muted klein">${esc(r.err)}</p>`; return; }
   const s = r.stats || {};
+  // De noemer is NIET de Home-roster: labelen wat er precies geteld wordt, met de volledige
+  // definitie in de tooltip. Home (volledige FinalSurge-roster) en de briefing (atleten in
+  // actieve coaching) mogen verschillen — ze mogen alleen niet als tegenspraak lezen.
+  const popLabel = r.populatie_label || "gecoachte atleten actief";
+  const popUitleg = r.populatie_uitleg || "";
   brief.innerHTML = `
     <article class="brief-kaart">
-      <p class="muted klein">Gemaakt ${esc(r.gemaakt || "")} · gedeeld met beide coaches · ${s.n_trainingen ?? "?"} trainingen · ±${s.km_totaal ?? "?"} km · ${s.n_actief ?? "?"}/${s.n_atleten ?? "?"} actief</p>
+      <p class="muted klein">${esc(briefGemaaktLabel(r.gemaakt))} · gedeeld met beide coaches · ${s.n_trainingen ?? "?"} trainingen · ±${s.km_totaal ?? "?"} km · <span${popUitleg ? ` title="${esc(popUitleg)}"` : ""}>${s.n_actief ?? "?"}/${s.n_atleten ?? "?"} ${esc(popLabel)}</span></p>
       <div class="brief-tekst">${briefHtml(r.tekst || "")}</div>
       <button class="btn ghost small" id="tp-brief-refresh">${ic("refresh")} Vernieuw briefing</button>
     </article>`;
@@ -5961,12 +6098,34 @@ function wsLeegScherm() {
 
 // Entry point — athlete-aware maar bewust BUITEN _ATHLETE_VIEWS (Cohesion-contract
 // byte-identiek). Schrijft de route en laadt de shell via wsShow.
+//
+// ROUTE-COHERENTIE (P0): de route wordt EERST geschreven en `toonView` draait daarna
+// onder de `_routing`-guard. Zonder die volgorde schreef `toonView` zelf nog een bare
+// `#workspace` (pushRoute) vóór de echte `#workspace/<key>` — één klik vanaf Home liet
+// dus TWEE history-entries achter. Browser Back landde dan op `#workspace` zonder atleet:
+// een tussenstand waarin de URL geen atleet draagt terwijl het scherm de vorige atleet nog
+// toont. Nu is Home → Workspace precies één stap, en Back gaat coherent terug naar Home.
 function openWorkspace(user_key) {
   if (!user_key) { toonView("workspace"); return; }
-  if (huidigeView !== "workspace") toonView("workspace");
   const h = "#workspace/" + encodeURIComponent(user_key);
   if (location.hash !== h) { try { history.pushState(null, "", h); } catch {} }
+  if (huidigeView !== "workspace") {
+    const vorig = _routing;
+    _routing = true;                                       // onderdruk de bare `#workspace`-push
+    try { toonView("workspace"); } finally { _routing = vorig; }
+  }
   wsShow(user_key);
+}
+
+// Bare `#workspace` (geen atleet in de route) → de rustige kies-scène. `applyRoute`
+// riep hier een functie aan die bij een eerdere opruiming was VERWIJDERD (de oude
+// rail-toggle `wsToonLijst`), wat een ReferenceError gaf zodra je op een bare
+// `#workspace` landde (browser Back, of een refresh op die URL). De popstate-handler
+// brak dan af ná `toonView`, waardoor de vorige atleet in beeld bleef staan onder een
+// URL zonder atleet. Nu is elke zichtbare URL weer consistent met wat er staat.
+function wsLeegRoute() {
+  wsSel = "";                                              // geen actieve atleet meer (ook voor _shownAthleteKey)
+  wsLeegScherm();
 }
 
 async function wsShow(ident) {
@@ -6297,6 +6456,7 @@ function wsRender(wrap, vm) {
     </section>
   </div>`;
   wrap.innerHTML = h;
+  bbGenSync();                        // marker staat nu in de DOM → melding herwegen
   // Load hoort hier → wsLoadDeep herhaalt de belasting-observatie niet (dedup).
   wrap.dataset.belOwned = (bel.km_recent != null) ? "1" : "";
 }

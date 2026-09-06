@@ -383,9 +383,14 @@ class TestGenerationMonotone:
         assert "if (id === _bbGen.id) return" in note                # zelfde generation → no-op
 
     def test_client_banner_still_from_id(self):
-        # Banner 'oud?' blijft op generation_id (equality), niet op arrival-order.
-        body = _fn("genBanner")
-        assert "_bbGen.id" in body and "generation_id" in body
+        # 'Oud?' blijft op generation_id (equality), niet op arrival-order. De view houdt
+        # sinds de toast-stack alleen nog een onzichtbare marker met die id; het oordeel
+        # zelf staat in bbGenSync (één plek, zelfde equality-regel).
+        marker = _fn("genBanner")
+        assert "generation_id" in marker and "data-gen=" in marker
+        sync = _fn("bbGenSync")
+        assert "_bbGen.id" in sync
+        assert "el.dataset.gen !== _bbGen.id" in sync
 
 
 # ── Fix #3: volledige ordening via per-source version-dominance ──────────────

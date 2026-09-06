@@ -36,14 +36,40 @@ def _wens(race: dict) -> str:
     return ""
 
 
-def komende(days_ahead: int = 42) -> dict:
-    """Aankomende races, genormaliseerd voor de lijst."""
+# ── Het Home-chip-venster ────────────────────────────────────────────────────
+# De Home-chip belooft "races komende N dagen zonder wens". Die belofte en de Races-
+# pagina moeten dezelfde datum- én filterlogica gebruiken, anders opent een chip van 9
+# een pagina met 60. Daarom staat het venster HIER, wordt het door home_core gelezen
+# voor de telling, en past de Races-pagina exact hetzelfde filter toe.
+CHIP_DAGEN = 7
+CHIP_SCOPE = "7d"                                   # route-token (#races/7d)
+
+
+def chip_count() -> int:
+    """Het getal op de Home-chip: races binnen CHIP_DAGEN waarvoor nog geen wens staat.
+    Zelfde bron + filter als `komende(days_ahead=CHIP_DAGEN, alleen_zonder_wens=True)`."""
+    if not heeft_token():
+        return 0
+    try:
+        return sum(1 for r in FS.get_upcoming_races(days_ahead=CHIP_DAGEN)
+                   if not r.get("wish_given"))
+    except Exception:
+        return 0
+
+
+def komende(days_ahead: int = 42, alleen_zonder_wens: bool = False) -> dict:
+    """Aankomende races, genormaliseerd voor de lijst.
+
+    `alleen_zonder_wens` = het actionable deel (wat de Home-chip telt); met
+    days_ahead=CHIP_DAGEN levert dat exact `chip_count()` items."""
     if not heeft_token():
         return {"items": [], "fs": False}
     try:
         races = FS.get_upcoming_races(days_ahead=days_ahead)
     except Exception:
         return {"items": [], "fs": True, "err": "Kon FinalSurge niet bereiken."}
+    if alleen_zonder_wens:
+        races = [r for r in races if not r.get("wish_given")]
 
     items = []
     for r in races:
@@ -60,7 +86,8 @@ def komende(days_ahead: int = 42) -> dict:
             "wens_gegeven": bool(r.get("wish_given")),
             "wens": _wens(r),
         })
-    return {"items": items, "fs": True}
+    return {"items": items, "fs": True,
+            "dagen": days_ahead, "alleen_zonder_wens": bool(alleen_zonder_wens)}
 
 
 def _coach_athlete_key(athlete_key: str):

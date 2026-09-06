@@ -228,7 +228,9 @@ class TestLockedFunctionalityPreserved:
         assert '_ATHLETE_VIEWS = new Set(["atleten", "schema", "dossier"])' in _APP
         assert _APP.count("function openAthleteModule(") == 1
         assert _APP.count("function applyRoute") == 1
-        assert _APP.count("openModuleFromNav(b.dataset.openView)") == 4   # anti-DRY lock
+        # anti-DRY lock: sidebar + bottomnav + 'meer'-grid gaan via de ENE adapter. De
+        # Home-races-chip staat er bewust buiten (eigen filter-entry openRaces("7d")).
+        assert _APP.count("openModuleFromNav(b.dataset.openView)") == 3
         assert ".anav-chip{" in _CSS                                      # in styles.css
 
     def test_21_workspace_shell_blijft_niet_blokkerend(self):

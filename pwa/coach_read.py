@@ -66,13 +66,30 @@ def load_metric(res: dict | None) -> dict:
     except (TypeError, ValueError, ZeroDivisionError):
         ratio = None
     pct = round((ratio - 1) * 100) if ratio is not None else None
+    ernst = res.get("ernst", "")
+    ernst_woord = "hoog" if ernst == "hoog" else "let op"
+    # PRIMAIR SIGNAAL — één bron voor "waarom staat deze atleet in de lijst?".
+    # `reden` is de EERSTE onderliggende bronzin uit belasting.analyse_belasting; die
+    # volgorde is de volgorde waarin de analyse ze toevallig aanmaakt, dus daar kan een
+    # ondersteunend signaal ("Noemt in notities: gevoelig") bovenaan komen terwijl de
+    # atleet om de BELASTING in de lijst staat. De ingeklapte Home-regel toonde die
+    # bronzin, de uitgeklapte kaart de belasting-kop → twee verschillende 'hoofdredenen'.
+    # `primair` is nu de canonieke hoofdreden (zelfde formulering als de uitgeklapte kop);
+    # `reden`/`signalen` blijven ongewijzigd als ONDERSTEUNENDE onderbouwing.
+    primair = f"Belasting {ernst_woord}"
+    kort = f"belasting {ernst_woord}"
+    if pct is not None:
+        primair += f" · {'+' if pct > 0 else ''}{pct}% t.o.v. referentie"
+        kort += f" {'+' if pct > 0 else ''}{pct}%"
     return {
-        "ernst": res.get("ernst", ""),
+        "ernst": ernst,
         "pct": pct,
         "km_recent": km_r,
         "km_basis_week": km_b,
         "signalen": res.get("signalen") or [],
         "reden": (res.get("signalen") or ["belasting-signaal"])[0],
+        "primair": primair,
+        "kort": kort,
     }
 
 

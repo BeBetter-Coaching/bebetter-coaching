@@ -77,8 +77,13 @@ class TestAthleteAwareSidebar:
         assert "else toonView(view)" in body
 
     def test_7_alle_data_open_view_handlers_via_adapter(self):
-        # sidebar + bottomnav + 'meer'-grid + home-kaarten → athlete-aware adapter
-        assert _APP.count("openModuleFromNav(b.dataset.openView)") == 4
+        # sidebar + bottomnav + 'meer'-grid + home-kaarten → athlete-aware adapter.
+        # De Home-races-chip is bewust GEEN generieke data-open-view meer: die draagt een
+        # filter-intentie (komende 7 dagen zonder wens) en heeft daarom een eigen entry
+        # (openRaces("7d")) i.p.v. de context-loze module-open. De adapter blijft de enige
+        # route voor alle generieke navigatie.
+        assert _APP.count("openModuleFromNav(b.dataset.openView)") == 3
+        assert 'openRaces("7d")' in _APP                            # chip opent gefilterd
         assert "() => toonView(b.dataset.openView)" not in _APP     # geen kale context-loze route meer
 
     def test_8_globale_views_blijven_globaal(self):
