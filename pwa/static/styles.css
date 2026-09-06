@@ -687,6 +687,8 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .pd-s-st.gedaan{background:rgba(93,202,165,.16);color:#7FD9B7}
 /* 'gepland' = nog te doen: neutraal, nooit als prestatie-oordeel lezen. */
 .pd-s-st.gepland{background:rgba(147,167,196,.16);color:var(--muted)}
+/* 'rust' = geplande rustdag: neutraal, nooit als uitgevoerde training lezen. */
+.pd-s-st.rust{background:rgba(94,230,235,.10);color:var(--muted)}
 .pd-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .pd-acts .pa-btn{border-radius:10px;height:38px;flex:1 1 auto;min-width:110px}
 

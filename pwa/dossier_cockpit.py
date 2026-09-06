@@ -139,9 +139,14 @@ def _attention(st) -> list:
             why = (ms[0].value if ms else str(area))
             datum = (ms[0].observed_at if ms else e.observed_at) or ""
             st_txt = "terugkerend" if e.status == RECURRING else "actief"
-            cards.append(_card_obj("complaint", "health", "gezondheid",
-                                   f"Klacht: {area} — {st_txt}",
-                                   f"{why}" + (f" · {datum}" if datum else ""), e, rank=0))
+            _c = _card_obj("complaint", "health", "gezondheid",
+                           f"Klacht: {area} — {st_txt}",
+                           f"{why}" + (f" · {datum}" if datum else ""), e, rank=0)
+            # Status + laatste datum expliciet mee: hierop ordenen we hieronder, en de
+            # Workspace kan er zonder tekst-parsing mee tonen wat het is.
+            _c["status"] = e.status
+            _c["datum"] = str(e.observed_at or datum or "")
+            cards.append(_c)
         elif k == "load.signal" and e.value == "hoog":
             sig = (e.detail or {}).get("signalen") or []
             cards.append(_card_obj("load_signal", "load", "belastbaarheid",
@@ -180,8 +185,40 @@ def _attention(st) -> list:
                       "why": "belastbaarheid onzeker — bouw/oordeel voorzichtig", "rank": 1,
                       "strength": MEDIUM, "prov": None})
 
-    cards.sort(key=lambda c: (c.get("rank", 9), _STRENGTH_RANK.get(c.get("strength"), 9)))
+    # ORDENING. Klachten deelden allemaal rank 0 en werden daarbinnen alleen op STRENGTH
+    # gesorteerd — en dat draaide de klinische prioriteit precies om: een TERUGKERENDE klacht
+    # heeft per definitie >=2 meldingen en is dus altijd MEDIUM (rank 1), terwijl een verse
+    # ACTIEVE klacht met één atleetmelding LOW is (niet in _STRENGTH_RANK → 9). Een oude
+    # terugkerende klacht stond daardoor structureel boven een actuele actieve klacht, die
+    # in de Workspace zelfs helemaal buiten beeld viel. Status is hier de leidende as:
+    # actief vóór terugkerend vóór de rest, en binnen dezelfde status de nieuwste eerst.
+    # Strength blijft de laatste tiebreak (ongewijzigd voor alle andere kaartsoorten).
+    cards.sort(key=lambda c: (c.get("rank", 9), _complaint_rank(c), _neg_datum(c),
+                              _STRENGTH_RANK.get(c.get("strength"), 9)))
     return cards
+
+
+# Klinische volgorde binnen klachten: actueel gaat vóór historisch patroon.
+_COMPLAINT_STATUS_RANK = {ACTIVE: 0, RECENT: 1, RECURRING: 2}
+
+
+def _complaint_rank(c: dict) -> int:
+    """0/1/2 voor actief/recent/terugkerend; alle niet-klachtkaarten delen dezelfde waarde
+    zodat hun onderlinge volgorde exact blijft zoals hij was."""
+    if c.get("kind") != "complaint":
+        return 0
+    return _COMPLAINT_STATUS_RANK.get(c.get("status"), 3)
+
+
+def _neg_datum(c: dict) -> str:
+    """Nieuwste eerst binnen dezelfde status: ISO-datums keren we om via een inverse sleutel.
+    Geen datum → achteraan. Alleen voor klachtkaarten; de rest krijgt een vaste waarde."""
+    if c.get("kind") != "complaint":
+        return ""
+    d = str(c.get("datum") or "")
+    if not d:
+        return "~"                                    # sorteert ná elke cijfer-datum
+    return "".join(chr(ord("9") - (ord(ch) - ord("0"))) if ch.isdigit() else ch for ch in d)
 
 
 def _card_obj(kind, domain, opens, title, why, e, rank):

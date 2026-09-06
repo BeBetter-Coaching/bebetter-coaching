@@ -118,7 +118,7 @@ class TestToekomstIsGepland:
 
     def test_gebruikt_de_canonieke_predikaat(self):
         src = open(os.path.join(_ROOT, "pwa", "home_core.py")).read()
-        blok = src[src.index("def prio_trainingen("):src.index('return {"trainingen": rijen}')]
+        blok = src[src.index("def prio_trainingen("):src.index('"van": start.isoformat()')]
         assert "FS.is_executed_workout(w)" in blok
         assert 'datum >= vandaag_iso and not w.get("has_actual_data")' not in blok
 
@@ -198,11 +198,11 @@ class TestSignaalActieCoherent:
         """Geen nieuwe klachtparser: de cockpit-kaart draagt lichaamsdeel + status + de
         notitiezin al; de Workspace hergebruikt exact die tekst."""
         src = open(os.path.join(_ROOT, "pwa", "dossier_cockpit.py")).read()
-        seg = src[src.index('cards.append(_card_obj("complaint"'):][:400]
+        seg = src[src.index('_c = _card_obj("complaint"'):][:400]
         assert 'f"Klacht: {area} — {st_txt}"' in seg
-        i = _APP.index("function wsContextSignalen(")
-        blok = _APP[i:i + 1400]
-        assert 'a.kind === "complaint"' in blok
+        i = _APP.index("const _WS_CTX_KIND = {")
+        blok = _APP[i:_APP.index("function wsUniekeSignalen(")]
+        assert "complaint:" in blok and 'soort: "klacht"' in blok
         assert "c.title" in blok and "c.why" in blok
         assert "regex" not in blok.lower() and "match(" not in blok
 

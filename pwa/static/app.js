@@ -1232,7 +1232,7 @@ function prioSessiesHtml(rows) {
   if (!rows.length) return `<p class="muted klein">Geen losse sessies gevonden.</p>`;
   // 'gepland' = nog te doen. Bewust een EIGEN status: een toekomstige sessie zonder
   // uitvoering is geen gemiste training (afwezige data ≠ nul).
-  const pill = { gemist: "gemist", half: "half", gedaan: "gedaan", gepland: "gepland" };
+  const pill = { gemist: "gemist", half: "half", gedaan: "gedaan", gepland: "gepland", rust: "rust" };
   return `<ul class="pd-sessies-lijst">${rows.map(t => `<li>
     <span class="pd-s-d">${esc((t.datum || "").slice(5))}</span>
     <span class="pd-s-t">${esc(t.type || "Training")}</span>
@@ -6191,22 +6191,34 @@ async function wsShow(ident) {
 function wsSignalenHtml(attn, staat) {
   if (attn.length) {
     return `<ul class="ws-signals">${attn.map(a => `<li class="${dsTone(a.tier)}"><i class="ds-dot"></i>
-      <span class="ws-sig-t">${esc(a.kort || "")}</span>${a.tier ? `<em>${esc(a.tier)}</em>` : ""}</li>`).join("")}</ul>`;
+      <span class="ws-sig-t">${esc(a.kort || "")}${a.sub ? `<small>${esc(a.sub)}</small>` : ""}</span>${a.tier ? `<em>${esc(a.tier)}</em>` : ""}</li>`).join("")}</ul>`;
   }
   return staat === "rustig"
     ? `<p class="ws-calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`
     : `<p class="ws-unknown">Nog geen oordeel: er is geen belastingstand voor deze atleet en er staan geen open signalen open.</p>`;
 }
-function wsNextHtml(topAttn, key, bel, sc, tone, belTone, staat) {
+function wsNextHtml(topAttn, key, bel, sc, tone, belTone, staat, alle) {
   if (topAttn) {
     return `<p class="ws-next-lead">${esc(wsActieLead(topAttn, bel))}</p>`
-      + wsActieBtn(topAttn, key, bel, sc, tone, belTone);
+      + wsActieBtn(topAttn, key, bel, sc, tone, belTone)
+      + wsTweedeActie(topAttn, alle, key, bel, sc);
   }
   if (staat === "rustig") return `<p class="ws-calm">Geen directe actie — alles bij.</p>`;
   // Geen signalen én geen stand → geen groen licht geven. De coach krijgt een eerlijke
   // 'te weinig om op te oordelen'-stand plus de bestaande route naar het dossier.
   return `<p class="ws-unknown" id="ws-next-unknown">Te weinig om op te oordelen — geen belastingstand en geen open signaal.</p>
     <button type="button" class="ws-next-btn is-unknown" onclick="openAthleteModule('dossier','${esc(key)}')">${ic("brain")} Bekijk in dossier</button>`;
+}
+
+// Bij meerdere signalen blijft ÉÉN actie primair, maar het eerstvolgende signaal van een
+// ANDER soort mag niet onbereikbaar worden (bv. een lopende onderbreking naast een schema
+// dat vandaag afloopt). Compacte tweede knop, zelfde bestaande bestemmingen.
+function wsTweedeActie(top, alle, key, bel, sc) {
+  const rest = (alle || []).filter(a => a && a.soort !== (top || {}).soort);
+  if (!rest.length) return "";
+  const tweede = rest[0];
+  return `<div class="ws-next-2"><span class="ws-next-2-l">Ook open</span>`
+    + wsActieBtn(tweede, key, bel, sc, "is-calm", "is-calm") + `</div>`;
 }
 
 // ── Primaire actie: hoort bij het PRIMAIRE signaal ───────────────────────────
@@ -6221,29 +6233,51 @@ function wsActieLead(a, bel) {
 }
 
 // ── Canonieke context-signalen uit de deep-read ──────────────────────────────
-// Een ACTIEVE klacht of een lopende/recente trainingsonderbreking is coachrelevant,
-// óók (juist) als er géén belastingstand is. Ze komen uit dezelfde AthleteState die het
-// Dossier toont — geen nieuwe parser, geen nieuwe bron. Ze krijgen tier 'aandacht': we
-// verzinnen geen escalatie, maar ze mogen wel nooit meer wegvallen tegen 'alles bij'.
+// Een ACTIEVE klacht, een lopende onderbreking of aanhoudende herstel-druk is coach-
+// relevant, óók (juist) als er géén belastingstand is. Ze komen uit dezelfde AthleteState
+// die het Dossier toont — geen nieuwe parser, geen nieuwe bron. Tier 'aandacht': we
+// verzinnen geen escalatie, maar ze mogen nooit meer wegvallen tegen 'alles bij'.
+//
+// De VOLGORDE is die van de server (`dossier_cockpit._attention`): klachten eerst, en
+// daarbinnen actief vóór terugkerend en nieuwste eerst. Hier dus NIET hersorteren — één
+// bron voor klinische prioriteit.
+const _WS_CTX_KIND = {
+  complaint: { soort: "klacht", icon: "alert" },
+  recovery_neg: { soort: "herstel", icon: "pulse" },
+};
 function wsContextSignalen(r) {
   const out = [];
-  // Klacht eerst: de cockpit rangschikt klachten al als zwaarste aandachtssoort en de
-  // kaart draagt de CONCRETE inhoud ("Klacht: scheen — actief" + de notitiezin + datum).
-  for (const c of (r.attention || []).filter(a => a.kind === "complaint").slice(0, 2)) {
-    out.push({ soort: "klacht", tier: "aandacht", kort: c.title || "Klacht",
+  for (const c of (r.attention || [])) {
+    const m = _WS_CTX_KIND[c.kind];
+    if (!m) continue;                                  // load_signal/source_gap: al elders gedekt
+    out.push({ soort: m.soort, tier: "aandacht", icon: m.icon,
+               kort: c.title || "Signaal",
                sub: c.why || ((c.prov || {}).observed_at || ""),
                ev: c.id ? "cp-" + c.id : "" });
   }
   const intr = (r.load_context || {}).interruption;
   if (intr && intr.tekst) {
-    out.push({ soort: "onderbreking", tier: "aandacht",
+    out.push({ soort: "onderbreking", tier: "aandacht", icon: "clock",
                kort: `Trainingsonderbreking: ${intr.tekst}`,
                sub: [intr.status ? String(intr.status).toLowerCase() : "", intr.wanneer || ""].filter(Boolean).join(" · "),
                ev: intr.evidence_id ? "ch-" + intr.evidence_id : "" });
   }
-  return out;
+  return wsUniekeSignalen(out);
 }
-// Verlengen is de juiste actie zodra een schema afloopt of al verlopen is.
+
+// ÉÉN semantisch signaal = ÉÉN zichtbare eenheid. De contextregels stonden hiervoor zowel
+// in de signalenlijst als in een apart contextblok eronder — dezelfde klacht dus twee keer.
+function wsUniekeSignalen(list) {
+  const gezien = new Set(), uit = [];
+  for (const a of list || []) {
+    const k = `${a.soort}|${String(a.kort || "").toLowerCase().trim()}`;
+    if (gezien.has(k)) continue;
+    gezien.add(k);
+    uit.push(a);
+  }
+  return uit;
+}
+
 function wsSchemaVerloopt(sc) {
   const d = sc && sc.days_left;
   return typeof d === "number" && d <= 7;
@@ -6488,12 +6522,12 @@ function wsRender(wrap, vm) {
     gfr.belasting === "fresh" ? "belasting vers" : `stand ${bel.datum}`) : "";
 
   // 1 — Aandacht nu (primair; geen KPI-dubbeling — load/feedback hebben hun eigen kaart)
-  // Het signaal-slot en het context-slot zijn ALTIJD aanwezig. Ze stonden hiervoor in
-  // één ternaire expressie waarin `+ <ctx>` alleen aan de FALSE-tak bond: bij een atleet
-  // MET signalen werd `#ws-ctx` dus nooit gerenderd en liet de deep-read de canonieke
-  // klacht/onderbreking stil vallen — precies bij de atleten waar die context ertoe doet.
-  const attnBody = `<div id="ws-signals">${wsSignalenHtml(attn, wsStaat)}</div>`
-    + `<div id="ws-ctx" class="ws-ctx"></div>`;
+  // Het signaal-slot is ALTIJD aanwezig, zodat de deep-read de canonieke klacht/
+  // onderbreking/herstel-druk kan bijschrijven (dat viel eerder stil weg bij precies de
+  // atleten die signalen hebben).
+  // ÉÉN slot. Het aparte context-blok eronder toonde dezelfde klacht/onderbreking nog een
+  // tweede keer; die staan nu als één eenheid in de signalenlijst (label + detail eronder).
+  const attnBody = `<div id="ws-signals">${wsSignalenHtml(attn, wsStaat)}</div>`;
 
   // 2 — Belasting (DE ene load-kaart: enige plek met km/%/referentie · rolling-7)
   const nRuns = (bel.runs || []).length;
@@ -6551,7 +6585,7 @@ function wsRender(wrap, vm) {
       ${attnBody}
     </section>
     <section class="ds-panel ws-panel ws-load-panel ${loadCls}" style="grid-area:load">
-      <div class="ds-sechead"><h3 class="ds-label">Belasting — laatste 7 dagen</h3>${nRuns ? `<span class="ds-sechead-note">${nRuns} runs</span>` : ""}</div>
+      <div class="ds-sechead"><h3 class="ds-label">Belasting — laatste 7 dagen</h3>${nRuns ? `<span class="ds-sechead-note">${nRuns} runs in dit venster</span>` : ""}</div>
       ${loadBody}
     </section>
     <section class="ds-panel ws-panel ws-plan-panel" style="grid-area:plan">
@@ -6566,7 +6600,7 @@ function wsRender(wrap, vm) {
       </div>
     </section>
     <section class="ds-panel ws-panel ws-tr-panel" style="grid-area:tr" id="ws-tr-panel">
-      <div class="ds-sechead"><h3 class="ds-label">Trainingen</h3><span class="ds-sechead-note">7 dagen terug · komend</span></div>
+      <div class="ds-sechead"><h3 class="ds-label">Trainingen</h3><span class="ds-sechead-note" id="ws-tr-scope">uitgevoerd + gepland</span></div>
       <div id="ws-tr" class="ws-deep-slot">${wsSkel(3)}</div>
     </section>
     <section class="ds-panel ws-panel ws-next-panel ${nextCls}" style="grid-area:next">
@@ -6620,13 +6654,43 @@ async function wsLoadDeep(wrap, ident) {
   }
   if (plan) {
     const rows = (r.planning && r.planning.rows) || [];
-    // Geen doel → ontworpen rustige lege staat (geen kale zin in een kaart).
+    // GEEN DOEL ≠ GEEN SCHEMA. De lege staat ging over allebei tegelijk, terwijl er wél een
+    // lopend schema kon zijn (Verlengen toont dat) — dan las de kaart alsof er geen plan was.
+    // Het schema-feit komt uit wat we al hebben: het canonieke schema-signaal uit de shell
+    // (einddatum/dagen) of, zonder signaal, de geplande sessies die het trainingsblok al ophaalde.
     plan.innerHTML = rows.length ? dsKv(rows)
       : `<div class="ws-goal"><div class="ws-goal-ring"><i></i></div>
           <p>Nog geen doel vastgelegd.<small>Leg een race- of trainingsdoel vast — het masterbrein plant erop.</small></p></div>`;
+    plan.innerHTML += `<div id="ws-schema-feit" class="ws-schema-feit"></div>`;
+    wsSchemaFeit(wrap);
   }
   wsVulLoadContext(r);
   wsDeepContext(wrap, r);
+}
+
+// Toon dat er een LOPEND schema is, ook als er geen expliciet doel staat. Geen nieuwe
+// bron en geen extra call: het schema-signaal zit al in de shell, en het aantal geplande
+// sessies komt uit het trainingsblok dat toch al geladen wordt.
+function wsSchemaFeit(wrap) {
+  const el = $("#ws-schema-feit");
+  if (!el) return;
+  const st = (wrap && wrap._ws) || {};
+  const sc = st.sc;
+  if (sc && (sc.einddatum || sc.days_left != null)) {
+    const d = sc.days_left;
+    const dagen = typeof d === "number"
+      ? (d < 0 ? `${Math.abs(d)} dag${Math.abs(d) === 1 ? "" : "en"} verlopen`
+        : (d === 0 ? "loopt vandaag af" : `nog ${d} dag${d === 1 ? "" : "en"}`))
+      : "";
+    el.innerHTML = wsLine({ tone: dsTone(sc.tier), icon: "clock", title: "Actief schema",
+                            sub: [sc.einddatum ? `t/m ${wsDatum(sc.einddatum)}` : "", dagen].filter(Boolean).join(" · ") });
+    return;
+  }
+  const gepland = (st.gepland || 0);
+  el.innerHTML = gepland
+    ? wsLine({ tone: "is-calm", icon: "calendar", title: "Actief schema",
+               sub: `${gepland} geplande sessie${gepland === 1 ? "" : "s"} in het komende venster` })
+    : "";
 }
 
 // P0 — bekende belasting mag niet als UNKNOWN eindigen. De shell zag alleen de
@@ -6642,8 +6706,13 @@ function wsVulLoadContext(r) {
   if (lc.km_per_week != null) bits.push(`<span class="ws-km">${esc(nlNum(lc.km_per_week))}<i> km/week</i></span>`);
   if (lc.runs_per_week != null) bits.push(`<span class="ws-rt">${esc(nlNum(lc.runs_per_week))}× p/w</span>`);
   const trend = lc.trend ? `<p class="ws-load-sub">trend ${esc(String(lc.trend))}${lc.stale ? " · laatst bekend" : ""}</p>` : "";
+  // De belastingSTAND bevat per ontwerp alleen GEVLAGDE atleten. Een atleet zonder stand is
+  // dus niet 'zonder data' maar 'zonder actief signaal' — dat moet de kaart ook zeggen, met
+  // het eigen venster erbij (deze cijfers zijn een 4-weeks gemiddelde, niet de rolling 7
+  // dagen uit de kop). Anders leest verse, bekende data als ontbrekend of verouderd.
   slot.innerHTML = `<div class="ws-kmrow">${bits.join("")}</div>
-    <p class="ws-load-sub">recente hardloopbelasting uit het dossier — geen actueel belastingssignaal</p>${trend}`;
+    <p class="ws-load-sub">gemiddelde over de laatste 4 weken (hardlopen)</p>${trend}
+    <p class="ws-load-note">${ic("check")} Belasting bekend · geen actief belastingssignaal${lc.stale ? " · laatst bekende stand" : ""}</p>`;
 }
 
 // P1 — actuele Dossier-kennis die de shell niet kan zien, en de coherentie die daaruit
@@ -6655,17 +6724,11 @@ function wsDeepContext(wrap, r) {
   const st = (wrap && wrap._ws) || null;
   const ctx = wsContextSignalen(r);
 
-  const box = $("#ws-ctx");
-  if (box) {
-    box.innerHTML = ctx.map(c => wsLine({
-      tone: "is-attention", icon: c.soort === "klacht" ? "alert" : "clock",
-      title: c.kort, sub: c.sub })).join("");
-  }
   if (!st) return;
 
   // Context-signalen vóór de shell-signalen: bij gelijke tier wint de concrete klacht/
   // onderbreking (de sort hieronder is stabiel), zoals de cockpit ze ook rangschikt.
-  const merged = ctx.concat(st.attn || []);
+  const merged = wsUniekeSignalen(ctx.concat(st.attn || []));
   const staat = merged.length ? "aandacht"
     : (wsMagRustig(r) ? "rustig" : st.staat);
   const tone = merged.length ? dsWorstTone(merged.map(a => dsTone(a.tier))) : st.tone;
@@ -6676,7 +6739,7 @@ function wsDeepContext(wrap, r) {
   const sig = $("#ws-signals");
   if (sig) sig.innerHTML = wsSignalenHtml(merged, staat);
   const nxt = $("#ws-next-body");
-  if (nxt) nxt.innerHTML = wsNextHtml(top, st.key, st.bel, st.sc, tone, st.belTone, staat);
+  if (nxt) nxt.innerHTML = wsNextHtml(top, st.key, st.bel, st.sc, tone, st.belTone, staat, merged);
   wsZetBadge(staat, tone);
 }
 
@@ -6710,6 +6773,21 @@ async function wsTrainingen(wrap, ident) {
   const rows = (r && r.trainingen) || [];
   box.innerHTML = rows.length ? prioSessiesHtml(rows)
     : `<p class="ws-calm">Geen geplande trainingen in dit venster.</p>`;
+  // Expliciet venster: dit blok kijkt BEWUST breder (uitgevoerd + gepland) dan de
+  // rolling-7 belastinggrafiek ernaast. Zonder dat label lijken 3 runs en 4 gedane
+  // trainingen elkaar tegen te spreken terwijl ze een andere periode beslaan.
+  const sc = $("#ws-tr-scope");
+  if (sc && r && r.van && r.tot) sc.textContent = `${wsDatum(r.van)} – ${wsDatum(r.tot)} · uitgevoerd + gepland`;
+  if (wrap && wrap._ws) {
+    wrap._ws.gepland = rows.filter(t => t.status === "gepland").length;
+    wsSchemaFeit(wrap);                                // schema-feit kan nu concreter worden
+  }
+}
+
+const _WS_MND = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
+function wsDatum(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+  return m ? `${+m[3]} ${_WS_MND[+m[2] - 1]}` : String(iso || "");
 }
 
 // Scroll het trainingsblok in beeld (primaire actie bij een compliance-signaal: de gemiste
