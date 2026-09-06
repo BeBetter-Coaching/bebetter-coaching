@@ -434,8 +434,10 @@ def home_handled(body: HomeHandled, request: Request):
 
 
 @app.get("/api/home/prio/{user_key}/trainingen")   # lazy: gemiste sessies van één afhaker
-def home_prio_trainingen(user_key: str):
-    return home_core.prio_trainingen(user_key)
+def home_prio_trainingen(user_key: str, vooruit: int = 0):
+    # `vooruit` (dagen) is opt-in: Home vraagt 'm niet en krijgt exact dezelfde lijst als
+    # voorheen; de Workspace vraagt `vooruit=7` voor recent + komend in één blok.
+    return home_core.prio_trainingen(user_key, vooruit=vooruit)
 
 
 @app.post("/api/feedback/generate")

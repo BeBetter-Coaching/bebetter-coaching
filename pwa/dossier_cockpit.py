@@ -323,6 +323,53 @@ def _load_observation(raw: dict, today: date) -> dict | None:
             "datum": sd}
 
 
+# ── Canonieke load-context (typed doorgifte, GEEN tweede engine) ─────────────
+_LOAD_KEYS = ("load.km_per_week", "load.runs_per_week", "load.trend", "load.interruption")
+
+
+def _load_context(dossier_evs: list) -> dict:
+    """Typed doorgifte van de AL canonieke `load.*` evidence uit dezelfde AthleteState die
+    ook de Belastbaarheid-kaart voedt.
+
+    WAAROM DIT BESTAAT: de Workspace-shell (`coach_read.athlete`) leest bewust alleen de
+    goedkope belasting-STAND, en die bevat per ontwerp UITSLUITEND gevlagde atleten —
+    `belasting.check_alle` geeft niets terug voor wie geen signaal heeft. Een atleet met
+    prima bekende hardloopbelasting stond dus niet in de stand en kreeg in de Workspace
+    'Geen belastingstand bekend', terwijl het Dossier km/week, runs/week en de trend wél
+    kent. Bekende data mag niet als onbekend eindigen.
+
+    Dit is GEEN tweede load-engine: er wordt niets herberekend, geen extra bron gelezen en
+    geen percentage afgeleid. `coach_read.load_metric` blijft de enige plek waar de
+    +X%-vergelijking en de ernst vandaan komen; de belasting-STAND blijft de enige bron
+    voor het rolling-7 signaal en de grafiek. Hier gaat alleen dezelfde evidence typed mee,
+    zodat de presentatie bekende waarheid niet als onbekend hoeft te tonen."""
+    ev = {e["key"]: e for e in dossier_evs if e.get("key") in _LOAD_KEYS}
+
+    def _val(key):
+        e = ev.get(key)
+        return None if e is None else e.get("value")
+
+    intr = ev.get("load.interruption")
+    interruption = None
+    if intr is not None and intr.get("value") not in (None, ""):
+        det = intr.get("detail") or {}
+        interruption = {
+            "tekst": str(intr.get("value")),
+            "status": intr.get("status"),
+            "wanneer": intr.get("observed_at") or det.get("resolved_at") or "",
+            "evidence_id": intr.get("id"),
+        }
+    km, runs, trend = _val("load.km_per_week"), _val("load.runs_per_week"), _val("load.trend")
+    stale = any(_adapter._is_stale(e) for e in ev.values())     # gedeelde stale-regel
+    return {
+        "known": any(v is not None for v in (km, runs, trend)),
+        "km_per_week": km, "runs_per_week": runs, "trend": trend,
+        "stale": stale,
+        "interruption": interruption,
+        "prov": _prov_light(ev["load.km_per_week"]) if "load.km_per_week" in ev else None,
+    }
+
+
 # ── Domeinkaarten (Z3) ───────────────────────────────────────────────────────
 def _domains(dossier_evs: list, open_cards: set) -> list:
     cards = []
@@ -430,6 +477,9 @@ def cockpit(key: str, today: date | None = None) -> dict:
         "attention": attention,
         "attention_domains": sorted(open_cards),
         "load_observation": load_observation,
+        # Canonieke load-evidence typed mee (zie _load_context): de Workspace kan
+        # bekende hardloopbelasting tonen zonder een tweede engine of extra read.
+        "load_context": _load_context(dossier_evs),
         "changes": changes,
         "planning": planning,
         "domains": domains,

@@ -1230,7 +1230,9 @@ async function prioVulSessies(wrap) {
 }
 function prioSessiesHtml(rows) {
   if (!rows.length) return `<p class="muted klein">Geen losse sessies gevonden.</p>`;
-  const pill = { gemist: "gemist", half: "half", gedaan: "gedaan" };
+  // 'gepland' = nog te doen. Bewust een EIGEN status: een toekomstige sessie zonder
+  // uitvoering is geen gemiste training (afwezige data ≠ nul).
+  const pill = { gemist: "gemist", half: "half", gedaan: "gedaan", gepland: "gepland" };
   return `<ul class="pd-sessies-lijst">${rows.map(t => `<li>
     <span class="pd-s-d">${esc((t.datum || "").slice(5))}</span>
     <span class="pd-s-t">${esc(t.type || "Training")}</span>
@@ -3890,9 +3892,20 @@ function sbBackToList() { sbState = null; pushRoute("schema"); laadSchema(); }
 function sbToonLijst() { $("#sb-werk").hidden = true; $("#sb-lijst").hidden = false; }
 // Deep-link: open (of markeer voor openen zodra de roster geladen is) een athlete-
 // workbench uit de route. Hergebruikt de bestaande hash-routing (geen nieuwe laag).
+// Gewenste modus voor de eerstvolgende schema-open ('' = de gewone 'nieuw'-entry).
+// Bewust GEEN derde routesegment: de hash-grammatica is `#<view>/<ident>` en `ident` is
+// alles ná de eerste slash — een `#schema/<key>/verlengen` zou als atleetsleutel worden
+// gelezen. Dit volgt exact het bestaande `schemaOpenPending`-patroon: een pending waarde
+// die de entry consumeert, zodat routing/deep-links/identiteit ongewijzigd blijven.
+let schemaOpenMode = "";
+function openSchemaMode(user_key, mode) {
+  schemaOpenMode = mode || "";
+  openAthleteModule("schema", user_key);
+}
 function openSchemaAthlete(ident) {
   const a = (schemaAtleten || []).find(x => x.key === ident);
-  if (a) { schemaOpenPending = ""; schemaWerk(a); }
+  const mode = schemaOpenMode;
+  if (a) { schemaOpenPending = ""; schemaOpenMode = ""; schemaWerk(a, mode || undefined); }
   else { schemaOpenPending = ident; }
 }
 
@@ -5360,6 +5373,15 @@ function tekenAdmin(d) {
 // dossier-fase-b-cockpit-design.md.
 // ════════════════════════════════════════════════════════════════════════════
 let dcPicker = null, dcCache = [], dcSel = "", dcOpenPending = "", dcGroepVolgorde = [];
+// Event dat na het renderen van de cockpit geselecteerd moet worden (deep-link vanuit een
+// ander scherm). Zelfde pending-patroon als dcOpenPending → geen extra routesegment, geen
+// wijziging aan de bestaande dossier-deep-linkmechaniek. Onbekend id of smalle layout →
+// `dcSelectEvent` is een veilige no-op en de cockpit toont gewoon zijn eigen default.
+let dcOpenEvent = "";
+function openDossierEvent(user_key, evId) {
+  dcOpenEvent = evId || "";
+  openAthleteModule("dossier", user_key);
+}
 const dcLog = (ev, data) => { try { console.debug("[dossier]", ev, data || ""); } catch {} };
 
 // V-01: het Dossier-oordeel is de KENNIS/BEELD-stand uit het atleetgeheugen (brain
@@ -5457,6 +5479,10 @@ async function openDossierCockpit(ident) {
   }
   dcLog("cockpit_open", { key: ident, overall: r.status && r.status.overall });
   dcRender(wrap, r);
+  // Deep-link: selecteer het aangevraagde event i.p.v. de eigen default (dcBuildEvents
+  // kiest anders het eerste 'now'-event, bv. 'Herstel onder druk', ongeacht waarvandaan
+  // de coach kwam). dcEvents is na dcRender gevuld; onbekend id = no-op.
+  if (dcOpenEvent) { const _ev = dcOpenEvent; dcOpenEvent = ""; dcSelectEvent(wrap, _ev); }
 }
 
 function dcProv(p) {
@@ -6158,6 +6184,39 @@ async function wsShow(ident) {
 // (ambient haze + orbitale lijnen + vignette) en onderaan een geïntegreerde
 // actiebalk. Zelfde data, zelfde acties, zelfde routes — alleen de presentatie.
 
+// ── Primaire actie: hoort bij het PRIMAIRE signaal ───────────────────────────
+// Eén doel per soort, allemaal bestaande routes. Geen nieuwe aanbevelings-engine: de
+// canonieke attention-lijst kiest het signaal, dit vertaalt dat naar de bijbehorende
+// bestaande bestemming.
+function wsActieLead(a, bel) {
+  if (!a) return "";
+  if (a.soort === "belasting")
+    return `Belastingssignaal ${bel && bel.ernst === "hoog" ? "verhoogd" : "let op"}.`;
+  return `${a.kort || "Aandachtspunt open"}.`;
+}
+// Verlengen is de juiste actie zodra een schema afloopt of al verlopen is.
+function wsSchemaVerloopt(sc) {
+  const d = sc && sc.days_left;
+  return typeof d === "number" && d <= 7;
+}
+function wsActieBtn(a, key, bel, sc, tone, belTone) {
+  const k = esc(key);
+  if (a.soort === "belasting")
+    return `<button type="button" class="ws-next-btn ${belTone}" onclick="wsMarkeerGezien('${k}','${esc(bel.ernst || "let_op")}')">${ic("check")} Belasting gezien</button>`;
+  if (a.soort === "schema")
+    return wsSchemaVerloopt(sc)
+      ? `<button type="button" class="ws-next-btn ${tone}" onclick="openSchemaMode('${k}','verlengen')">${ic("clock")} Schema verlengen</button>`
+      : `<button type="button" class="ws-next-btn ${tone}" onclick="openSchemaMode('${k}','verlengen')">${ic("clock")} Huidig schema bekijken</button>`;
+  if (a.soort === "compliance")
+    return `<button type="button" class="ws-next-btn ${tone}" onclick="wsToonTrainingen()">${ic("activity")} Bekijk gemiste trainingen</button>`;
+  if (a.soort === "feedback")
+    return `<button type="button" class="ws-next-btn ${tone}" onclick="openModuleFromNav('feedback')">${ic("message")} Naar feedback</button>`;
+  // Overig (klacht/notitie/bron): naar het dossier. `data-ev` wordt door de deep-read
+  // gevuld met het EXACTE event zodra dat bekend is (anders opent de cockpit zijn default).
+  return `<button type="button" class="ws-next-btn ${tone}" id="ws-next-btn" data-ev=""
+    onclick="openDossierEvent('${k}', this.dataset.ev)">${ic("brain")} Bekijk in dossier</button>`;
+}
+
 // Randloze skeleton voor de lazy deep-slots.
 function wsSkel(n) {
   return Array.from({ length: n || 2 },
@@ -6360,9 +6419,16 @@ function wsRender(wrap, vm) {
   const ratioLbl = (bel.km_recent != null && bel.km_basis_week)
     ? (Math.round((bel.km_recent / bel.km_basis_week) * 10) / 10).toFixed(1).replace(".", ",") + "×" : "";
   const belPct = (bel.pct != null) ? `${bel.pct > 0 ? "+" : ""}${bel.pct}%` : "";
-  const chip = attn.length
+  // P0 — ONBEKEND is geen RUSTIG. De shell leest alleen de belasting-STAND, en die bevat
+  // per ontwerp uitsluitend GEVLAGDE atleten (belasting.check_alle geeft niets terug zonder
+  // signaal). Geen stand + geen andere signalen betekende hiervoor 'RUSTIG / alles bij' —
+  // geruststelling uit AFWEZIGE data. Nu drie expliciete standen; de deep-read mag
+  // 'onbekend' later opwaarderen naar 'rustig' zodra een autoritatieve bron dat draagt.
+  const belStand = bel.km_recent != null;
+  const wsStaat = attn.length ? "aandacht" : (belStand ? "rustig" : "onbekend");
+  const chip = wsStaat === "aandacht"
     ? dsChip(tone === "is-critical" ? "actie" : "aandacht", tone)
-    : dsChip("rustig", "is-calm");
+    : (wsStaat === "rustig" ? dsChip("rustig", "is-calm") : dsChip("onbekend", "is-unknown"));
   // V-03: geen 'belasting vers' als er geen stand is (km_recent==null). Versheid hoort bij
   // een waarde; zonder waarde toont de load-kaart 'Geen belastingstand bekend' en géén vers-chip.
   const heeftStand = bel.km_recent != null;
@@ -6373,7 +6439,11 @@ function wsRender(wrap, vm) {
   const attnBody = attn.length
     ? `<ul class="ws-signals">${attn.map(a => `<li class="${dsTone(a.tier)}"><i class="ds-dot"></i>
         <span class="ws-sig-t">${esc(a.kort || "")}</span>${a.tier ? `<em>${esc(a.tier)}</em>` : ""}</li>`).join("")}</ul>`
-    : `<p class="ws-calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`;
+    : (wsStaat === "rustig"
+      ? `<p class="ws-calm">Geen open actiepunt uit belasting, compliance, schema of feedback.</p>`
+      : `<p class="ws-unknown">Nog geen oordeel: er is geen belastingstand voor deze atleet en er staan geen open signalen open.</p>`)
+    // Actuele Dossier-context (onderbreking / concrete klacht) komt lazy uit de deep-read.
+    + `<div id="ws-ctx" class="ws-ctx"></div>`;
 
   // 2 — Belasting (DE ene load-kaart: enige plek met km/%/referentie · rolling-7)
   const nRuns = (bel.runs || []).length;
@@ -6383,21 +6453,29 @@ function wsRender(wrap, vm) {
         ${ratioLbl ? `<span class="ws-rt">${esc(ratioLbl)}</span>` : ""}</div>
       <p class="ws-load-sub">t.o.v. referentie ${esc(nlNum(bel.km_basis_week))} km/wk</p>
       ${wsLoadInstrument(bel)}`
-    : `<p class="ws-calm">Geen belastingstand bekend.</p>`;
+    // LOCK: exact deze zin blijft staan zolang de waarheid ECHT onbekend is. Kent de
+    // canonieke AthleteState wél km/week (Dossier weet dat), dan vervangt de deep-read
+    // dit slot — bekende data mag niet als onbekend eindigen.
+    : `<div id="ws-load-ctx"><p class="ws-calm">Geen belastingstand bekend.</p></div>`;
 
   // 4 — Volgende actie (één prominente coachactie) — MOET coherent zijn met de badge:
   // staat er een aandachtspunt (badge ACTIE/AANDACHT), dan NOOIT 'alles bij'. Belasting heeft
   // zijn eigen 1-tap-actie; andere signalen (compliance/schema/feedback) benoemen de reden en
   // leiden naar het dossier — geen nieuwe aanbevelings-engine, alleen de bestaande reden + route.
+  // P1 — het PRIMAIRE signaal bepaalt de PRIMAIRE actie. Hiervoor won `bel.actief` altijd,
+  // ook als het zwaarste aandachtspunt een klacht of schema-signaal was: de kaart toonde dan
+  // een notitie-klacht terwijl de knop 'Belasting gezien' zei. Eén bron: het bovenste item
+  // uit de al canonieke attention-lijst (geen nieuwe ranking).
   const topAttn = attn.length
     ? attn.slice().sort((a, b) => (_DS_RANK[dsTone(b.tier)] || 0) - (_DS_RANK[dsTone(a.tier)] || 0))[0] : null;
-  const nextBody = bel.actief
-    ? `<p class="ws-next-lead">Belastingssignaal ${esc(bel.ernst === "hoog" ? "verhoogd" : "let op")}.</p>
-       <button type="button" class="ws-next-btn ${belTone}" onclick="wsMarkeerGezien('${esc(key)}','${esc(bel.ernst || "let_op")}')">${ic("check")} Belasting gezien</button>`
-    : topAttn
-      ? `<p class="ws-next-lead">${esc(topAttn.kort || "Aandachtspunt open")}.</p>
-         <button type="button" class="ws-next-btn ${tone}" onclick="openAthleteModule('dossier','${esc(key)}')">${ic("brain")} Bekijk in dossier</button>`
-      : `<p class="ws-calm">Geen directe actie — alles bij.</p>`;
+  const nextBody = topAttn
+    ? `<p class="ws-next-lead">${esc(wsActieLead(topAttn, bel))}</p>${wsActieBtn(topAttn, key, bel, sc, tone, belTone)}`
+    : (wsStaat === "rustig"
+      ? `<p class="ws-calm">Geen directe actie — alles bij.</p>`
+      // Geen signalen én geen stand → geen groen licht geven. De coach krijgt een eerlijke
+      // 'te weinig om op te oordelen'-stand plus de bestaande route naar het dossier.
+      : `<p class="ws-unknown" id="ws-next-unknown">Te weinig om op te oordelen — geen belastingstand en geen open signaal.</p>
+         <button type="button" class="ws-next-btn is-unknown" onclick="openAthleteModule('dossier','${esc(key)}')">${ic("brain")} Bekijk in dossier</button>`);
 
   // 5 — Feedback (één open-reactie-samenvatting + lazy duiding; geen dubbeling met Aandacht)
   const fbBody = fb.status === "unknown"
@@ -6436,7 +6514,17 @@ function wsRender(wrap, vm) {
     <section class="ds-panel ws-panel ws-plan-panel" style="grid-area:plan">
       <div class="ds-sechead"><h3 class="ds-label">Doel &amp; planning</h3></div>
       ${planHead}<div id="ws-plan" class="ws-deep-slot">${wsSkel(2)}</div>
-      <button type="button" class="ws-cta quiet" onclick="openAthleteModule('schema','${esc(key)}')">Schema openen</button>
+      <!-- 'Schema openen' landde in een LEEG 'Nieuw'-plan, ook als er een schema liep.
+           Er is geen losse schema-viewer; de verleng-/herijkingsweergave is de bestaande
+           bestemming die het HUIDIGE blok toont (en eerlijk meldt als er geen loopt). -->
+      <div class="ws-ctas">
+        <button type="button" class="ws-cta quiet" onclick="openSchemaMode('${esc(key)}','verlengen')">${sc && wsSchemaVerloopt(sc) ? "Schema verlengen" : "Huidig schema &amp; verlengen"}</button>
+        <button type="button" class="ws-cta quiet" onclick="openSchemaMode('${esc(key)}','nieuw')">Nieuw schema bouwen</button>
+      </div>
+    </section>
+    <section class="ds-panel ws-panel ws-tr-panel" style="grid-area:tr" id="ws-tr-panel">
+      <div class="ds-sechead"><h3 class="ds-label">Trainingen</h3><span class="ds-sechead-note">7 dagen terug · komend</span></div>
+      <div id="ws-tr" class="ws-deep-slot">${wsSkel(3)}</div>
     </section>
     <section class="ds-panel ws-panel ws-next-panel ${nextCls}" style="grid-area:next">
       <div class="ds-sechead"><h3 class="ds-label">Volgende actie</h3></div>
@@ -6470,13 +6558,15 @@ function dsFoldToggle(btn) {
 // Rijke context lazy + parallel uit het bestaande cockpit-endpoint. Faalt/traag → de
 // shell blijft staan; alleen deze twee slots tonen een nette fallback.
 async function wsLoadDeep(wrap, ident) {
+  wsTrainingen(wrap, ident);                               // trainingsblok parallel (eigen endpoint)
   let r;
   try { r = await api("/api/cockpit?key=" + encodeURIComponent(ident)); }
   catch { r = null; }
   if (!wrap || wsSel !== ident) return;                    // leak guard
   // UX/IA (B12): de Feedback-kaart bezit GEEN klachtenhistorie meer — die leeft in het Dossier.
-  // Workspace-deep vult hier alleen nog de Doel&planning-lens. Klacht/tegenstrijdigheid-rijen
-  // zijn bewust verwijderd uit de Feedback-kaart (geen '0 alles beantwoord' boven klachtrijen).
+  // Workspace-deep vult de Doel&planning-lens én — nieuw — de drie plekken waar de shell
+  // (die bewust alleen goedkope stores leest) te weinig weet: de belasting-kaart, de
+  // actuele Dossier-context, en het exacte dossier-event achter de primaire actie.
   const plan = $("#ws-plan");
   if (!r || !r.ok) {
     if (plan) plan.innerHTML = `<p class="ws-calm">Doel &amp; planning nu niet beschikbaar.</p>`;
@@ -6489,6 +6579,101 @@ async function wsLoadDeep(wrap, ident) {
       : `<div class="ws-goal"><div class="ws-goal-ring"><i></i></div>
           <p>Nog geen doel vastgelegd.<small>Leg een race- of trainingsdoel vast — het masterbrein plant erop.</small></p></div>`;
   }
+  wsVulLoadContext(r);
+  wsVulContext(r);
+  wsKoppelEvent(r);
+}
+
+// P0 — bekende belasting mag niet als UNKNOWN eindigen. De shell zag alleen de
+// belasting-STAND (alléén gevlagde atleten); de canonieke AthleteState kent km/week,
+// runs/week en de trend ook zonder signaal. Zelfde evidence als de Dossier-kaart
+// (`load_context`), geen tweede engine en geen extra call: dit is dezelfde deep-read.
+function wsVulLoadContext(r) {
+  const slot = $("#ws-load-ctx");
+  if (!slot) return;                                       // er is een echte stand → kaart blijft
+  const lc = r.load_context || {};
+  if (!lc.known) return;                                   // écht onbekend → LOCK-zin blijft staan
+  const bits = [];
+  if (lc.km_per_week != null) bits.push(`<span class="ws-km">${esc(nlNum(lc.km_per_week))}<i> km/week</i></span>`);
+  if (lc.runs_per_week != null) bits.push(`<span class="ws-rt">${esc(nlNum(lc.runs_per_week))}× p/w</span>`);
+  const trend = lc.trend ? `<p class="ws-load-sub">trend ${esc(String(lc.trend))}${lc.stale ? " · laatst bekend" : ""}</p>` : "";
+  slot.innerHTML = `<div class="ws-kmrow">${bits.join("")}</div>
+    <p class="ws-load-sub">recente hardloopbelasting uit het dossier — geen actueel belastingssignaal</p>${trend}`;
+  // Bekende belasting + geen open signaal = de onbekend-stand mag naar rustig.
+  wsHefOnbekendOp(r);
+}
+
+// P1 — actuele Dossier-kennis die de shell niet kan zien: een lopende/recente
+// trainingsonderbreking en de CONCRETE klacht (lichaamsdeel + status + datum) i.p.v.
+// een kaal notitie-trefwoord. Alleen actueel/relevant — geen dossierhistorie dumpen.
+function wsVulContext(r) {
+  const box = $("#ws-ctx");
+  if (!box) return;
+  const rows = [];
+  const intr = (r.load_context || {}).interruption;
+  if (intr && intr.tekst) {
+    rows.push(wsLine({ tone: "is-attention", icon: "clock", title: `Trainingsonderbreking: ${intr.tekst}`,
+                       sub: [intr.status ? String(intr.status).toLowerCase() : "", intr.wanneer || ""].filter(Boolean).join(" · ") }));
+  }
+  // De cockpit-klachtkaart is al concreet: `title` = "Klacht: <lichaamsdeel> — actief"
+  // en `why` = de daadwerkelijke notitiezin + datum. Dat is precies wat een kaal
+  // "Noemt in notities: last van · 31-08" mist — dus die tekst hergebruiken, niet
+  // opnieuw afleiden (belasting.py/Home/Teampuls blijven ongemoeid).
+  for (const c of (r.attention || []).filter(a => a.kind === "complaint").slice(0, 2)) {
+    rows.push(wsLine({ tone: "is-attention", icon: "alert", title: c.title || "Klacht",
+                       sub: c.why || ((c.prov || {}).observed_at || "") }));
+  }
+  box.innerHTML = rows.join("");
+}
+
+// De 'onbekend'-stand mag alleen weg als een autoritatieve bron dat draagt: canonieke
+// load bekend én de AthleteState zelf zegt niet 'te weinig data'.
+function wsHefOnbekendOp(r) {
+  const st = r.status || {};
+  if (st.insufficient) return;
+  const lead = $("#ws-next-unknown");
+  if (lead) lead.outerHTML = `<p class="ws-calm">Geen open actiepunt — belasting bekend en binnen de marge.</p>`;
+  const chip = document.querySelector('.ws-attn-panel .ds-chip');
+  if (chip && /onbekend/i.test(chip.textContent || "")) {
+    chip.textContent = "rustig";
+    chip.className = chip.className.replace("is-unknown", "is-calm");
+  }
+}
+
+// Koppel de primaire dossier-actie aan het EXACTE event (zelfde id-schema als de cockpit:
+// complaint = `cp-<evidence id>`, onderbreking = `ch-<evidence id>`, belasting = `now-load`).
+// Zonder match blijft het bestaande gedrag: de cockpit kiest zijn eigen default.
+function wsKoppelEvent(r) {
+  const btn = $("#ws-next-btn");
+  if (!btn) return;
+  const compl = (r.attention || []).find(a => a.kind === "complaint" && a.id);
+  const intr = (r.load_context || {}).interruption;
+  const ev = compl ? "cp-" + compl.id
+    : (intr && intr.evidence_id) ? "ch-" + intr.evidence_id
+      : (r.load_observation ? "now-load" : "");
+  if (ev) btn.dataset.ev = ev;
+}
+
+// P1 — compact trainingsblok: recent (gedaan/half/gemist) + komend (gepland). Hergebruikt
+// het BESTAANDE per-atleet endpoint en exact dezelfde rij-renderer als de Home-kaart
+// (`prioSessiesHtml`) — geen tweede trainings-engine, geen nieuwe store.
+async function wsTrainingen(wrap, ident) {
+  const box = $("#ws-tr");
+  if (!box) return;
+  const r = await api(`/api/home/prio/${encodeURIComponent(ident)}/trainingen?vooruit=7`).catch(() => null);
+  if (!box.isConnected || wsSel !== ident) return;
+  const rows = (r && r.trainingen) || [];
+  box.innerHTML = rows.length ? prioSessiesHtml(rows)
+    : `<p class="ws-calm">Geen geplande trainingen in dit venster.</p>`;
+}
+
+// Scroll het trainingsblok in beeld (primaire actie bij een compliance-signaal: de gemiste
+// sessies staan hier, de coach hoeft de Workspace niet te verlaten).
+function wsToonTrainingen() {
+  const el = $("#ws-tr-panel");
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
 }
 
 // Snelle actie 'Belasting gezien' — dezelfde canonieke authority als Teampuls

@@ -207,8 +207,10 @@ class TestLockedFunctionalityPreserved:
 
     def test_18_workspace_quick_actions_hergebruiken_bestaande_routes(self):
         body = _fn("wsRender")
-        for call in ("openAthleteModule('schema'", "openModuleFromNav('feedback'"):
-            assert call in body, f"route {call} verdwenen"
+        # Schema loopt via `openSchemaMode` (zet alleen de modus) → zelfde route-aanroep.
+        assert "openSchemaMode('" in body
+        assert "openAthleteModule(\"schema\", user_key)" in _fn("openSchemaMode")
+        assert "openModuleFromNav('feedback'" in body
         # geen duplicate write-logica: dempen loopt via de bestaande authority
         assert "/api/teampuls/gezien" in _fn("wsMarkeerGezien")
 
@@ -316,8 +318,12 @@ class TestAthleteCanvas:
         # niet meer 'Cockpit openen'→Dossier. Essentiële acties: schema openen, naar feedback,
         # belasting-signaal afhandelen. Dossier is athlete-aware via de sidebar bereikbaar.
         ws = _fn("wsRender")
-        for call in ("openAthleteModule('schema'", "openModuleFromNav('feedback'", "wsMarkeerGezien("):
-            assert call in ws, f"actie {call} verdwenen uit de Workspace-grid"
+        assert "openSchemaMode('" in ws                       # schema (zelfde route, met modus)
+        assert "openModuleFromNav('feedback'" in ws
+        # De belasting-1-tap zit sinds de targeted cleanup in de gedeelde actie-helper:
+        # de PRIMAIRE actie hoort bij het PRIMAIRE signaal, dus één plek bouwt die knop.
+        assert "wsMarkeerGezien(" in _fn("wsActieBtn")
+        assert "wsActieBtn(topAttn" in ws
         assert "/api/teampuls/gezien" in _fn("wsMarkeerGezien")   # bestaande authority
 
     def test_32_workspace_one_load_truth(self):

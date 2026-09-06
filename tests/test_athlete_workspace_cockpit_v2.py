@@ -255,10 +255,18 @@ class TestClientWiring:
     def test_workspace_quick_actions_reuse_existing_routes(self):
         # UX/IA v1 (Target A/C): de redundante interne bottom-nav (Teampuls/Profiel) is weg;
         # de essentiële athlete-acties hergebruiken de bestaande routes.
+        # De schema-actie loopt sinds de targeted cleanup via `openSchemaMode`, dat NIETS
+        # aan het routecontract verandert: het zet alleen de gewenste modus en roept
+        # daarna exact dezelfde `openAthleteModule('schema', key)` aan (geen tweede
+        # navigatielaag, geen extra routesegment).
         body = _fn("wsRender")
-        assert "openAthleteModule('schema'" in body
+        assert "openSchemaMode('" in body
+        assert "openAthleteModule(\"schema\", user_key)" in _fn("openSchemaMode")
         assert "openModuleFromNav('feedback'" in body      # Cowork B8: Feedback-kaart → generieke queue
-        assert "wsMarkeerGezien(" in body
+        # De belasting-1-tap wordt gebouwd door de gedeelde actie-helper: de PRIMAIRE actie
+        # hoort bij het PRIMAIRE signaal, dus één plek kiest knop + doel.
+        assert "wsActieBtn(topAttn" in body
+        assert "wsMarkeerGezien(" in _fn("wsActieBtn")
 
 
 # ═══════════ External-review correctness delta — generation-contract ═════════

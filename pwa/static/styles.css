@@ -685,6 +685,8 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .pd-s-st.gemist{background:rgba(229,103,75,.16);color:#F0917D}
 .pd-s-st.half{background:rgba(239,159,39,.16);color:#F0BC63}
 .pd-s-st.gedaan{background:rgba(93,202,165,.16);color:#7FD9B7}
+/* 'gepland' = nog te doen: neutraal, nooit als prestatie-oordeel lezen. */
+.pd-s-st.gepland{background:rgba(147,167,196,.16);color:var(--muted)}
 .pd-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .pd-acts .pa-btn{border-radius:10px;height:38px;flex:1 1 auto;min-width:110px}
 
