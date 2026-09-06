@@ -514,14 +514,14 @@
    (min-width:0), en de hiërarchie is Aandacht → Belasting/Doel → Volgende actie/Feedback
    → Bronnen. Zelfde ds-panel-taal als Dossier (één visuele familie). */
 .ws-grid{display:grid;gap:var(--ds-4);grid-template-columns:1fr;align-items:start;
-  grid-template-areas:"attn" "load" "next" "plan" "fb" "src"}
+  grid-template-areas:"attn" "load" "next" "tr" "plan" "fb" "src"}
 @media (min-width:900px){
   .ws-grid{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);
-    grid-template-areas:"attn attn" "load plan" "next fb" "src src"}
+    grid-template-areas:"attn attn" "load plan" "next tr" "fb tr" "src src"}
 }
 @media (min-width:1300px){
   .ws-grid{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr);
-    grid-template-areas:"attn attn attn" "load plan next" "load fb next" "src src src"}
+    grid-template-areas:"attn attn attn" "load plan next" "load tr next" "fb tr next" "src src src"}
 }
 .ws-panel{min-width:0}
 .ws-panel>.ds-sechead{margin-bottom:var(--ds-3)}
@@ -554,6 +554,13 @@
 .ws-next-btn:hover{filter:brightness(1.08)}
 .ws-next-btn:focus-visible{outline:2px solid var(--tone);outline-offset:2px}
 .ws-deep-slot{font-size:12.5px;color:var(--ds-text-2);line-height:1.5;margin-top:2px;min-width:0}
+/* Onbekend ≠ rustig: eigen, niet-geruststellende toon voor 'te weinig om op te oordelen'. */
+.ws-unknown{margin:0;font-size:13px;line-height:1.45;color:var(--ds-text-2)}
+.ws-unknown::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;
+  margin-right:8px;vertical-align:middle;background:var(--ds-text-2);opacity:.75}
+/* Actuele Dossier-context onder 'Aandacht nu' (leeg = neemt geen ruimte). */
+.ws-ctx{display:flex;flex-direction:column;gap:8px}
+.ws-ctx:not(:empty){margin-top:var(--ds-3)}
 
 /* ── Z0 — omgeving ── */
 .ws-bg{position:absolute;inset:-64px -32px -16px;pointer-events:none;z-index:0;overflow:hidden}
@@ -856,6 +863,9 @@
 .ws-goal p{margin:0;font-size:12.5px;color:var(--ds-text-2);line-height:1.45}
 .ws-goal p small{display:block;font-size:10.5px;color:var(--ds-text-3);margin-top:2px}
 .ws-cta{font:inherit;cursor:pointer}
+/* Twee quiet-CTA's naast elkaar houden hun eigen klikvlak en leesruimte. */
+.ws-ctas{display:flex;flex-wrap:wrap;gap:16px;align-items:baseline}
+.ws-ctas .ws-cta.quiet{margin-top:9px}
 .ws-cta.quiet{margin-top:9px;padding:0;background:none;border:0;display:inline-block;
   font-size:11.5px;font-weight:700;color:var(--ds-accent)}
 .ws-cta.quiet:hover{text-decoration:underline}

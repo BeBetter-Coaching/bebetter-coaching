@@ -784,17 +784,28 @@ def handled(user_key: str, status: str = "gezien", snooze_dagen: int = 7,
     return ok, msg
 
 
-def prio_trainingen(user_key: str) -> dict:
-    """Lazy detail voor een afhaker: WELKE geplande trainingen (laatste 7 dagen)
-    gemist/half/gedaan zijn. Eén atleet — geen roster-sweep. Client cachet dit."""
+def prio_trainingen(user_key: str, vooruit: int = 0) -> dict:
+    """Lazy detail voor één atleet: WELKE geplande trainingen gemist/half/gedaan zijn
+    (laatste 7 dagen), optioneel aangevuld met de eerstvolgende GEPLANDE sessies.
+
+    `vooruit=0` (default) = exact het bestaande Home-gedrag, byte-identieke uitkomst:
+    alleen het verleden, want de Home-kaart gaat over 'wie haakte af'. De Workspace vraagt
+    `vooruit=7` zodat de coach recent + komend in één blok ziet zonder de pagina te
+    verlaten. Dezelfde canonieke reader (`get_workouts_deduped`) en dezelfde rijvorm —
+    geen tweede trainings-engine, geen nieuwe store, één FinalSurge-call.
+
+    Een toekomstige datum heeft per definitie nog geen uitvoering: die krijgt status
+    `gepland` in plaats van `gemist` (afwezige data is geen gemiste training)."""
     if not user_key or not _heeft_token():
         return {"trainingen": []}
     today = date.today()
-    start, end = today - timedelta(days=7), today - timedelta(days=1)
+    start = today - timedelta(days=7)
+    end = today + timedelta(days=max(0, int(vooruit or 0))) if vooruit else today - timedelta(days=1)
     try:
         workouts = FS.get_workouts_deduped(user_key, start, end)
     except Exception:
         return {"trainingen": []}
+    vandaag_iso = today.isoformat()
     rijen = []
     for w in workouts:
         if w.get("is_race"):
@@ -804,17 +815,23 @@ def prio_trainingen(user_key: str) -> dict:
         p_sec = float(act.get("planned_duration") or 0)
         if not (p_km or p_sec or (w.get("description") or "").strip()):
             continue                                    # geen echte geplande training
-        if not w.get("has_actual_data"):
-            score = 0.0
-        elif p_km:
-            score = min(float(act.get("amount") or 0) / p_km, 1.0)
-        elif p_sec:
-            score = min(float(act.get("duration") or 0) / p_sec, 1.0)
+        datum = (w.get("workout_date") or "")[:10]
+        # `gepland` bestaat ALLEEN in het vooruit-venster. Zo blijft de Home-uitkomst
+        # byte-identiek, ook als FinalSurge ooit een grens-/vandaag-item meestuurt.
+        if vooruit and datum >= vandaag_iso and not w.get("has_actual_data"):
+            status = "gepland"                          # nog te doen ≠ gemist
         else:
-            score = 1.0
-        status = "gemist" if score <= 0 else ("half" if score < 0.5 else "gedaan")
+            if not w.get("has_actual_data"):
+                score = 0.0
+            elif p_km:
+                score = min(float(act.get("amount") or 0) / p_km, 1.0)
+            elif p_sec:
+                score = min(float(act.get("duration") or 0) / p_sec, 1.0)
+            else:
+                score = 1.0
+            status = "gemist" if score <= 0 else ("half" if score < 0.5 else "gedaan")
         rijen.append({
-            "datum": (w.get("workout_date") or "")[:10],
+            "datum": datum,
             "type": act.get("name") or w.get("name") or "Training",
             "status": status,
             "km_planned": round(p_km, 1) if p_km else None,

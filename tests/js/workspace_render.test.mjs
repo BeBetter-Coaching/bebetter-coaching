@@ -52,6 +52,13 @@ const REAL = [
   sliceLine("let wsSel = "),
   sliceFrom("function nlNum("), sliceFrom("function wsWeekStrip("), sliceFrom("function wsLoadInstrument("),
   sliceFrom("function wsLine("), sliceFrom("function wsSkel("),
+  // Targeted cleanup: de primaire actie wordt door gedeelde helpers gebouwd (primair
+  // signaal ⇄ primaire actie), en de deep-read vult load-context/dossier-event.
+  sliceFrom("function wsActieLead("), sliceFrom("function wsSchemaVerloopt("),
+  sliceFrom("function wsActieBtn("), sliceFrom("function wsVulLoadContext("),
+  sliceFrom("function wsVulContext("), sliceFrom("function wsHefOnbekendOp("),
+  sliceFrom("function wsKoppelEvent("), sliceFrom("async function wsTrainingen("),
+  sliceFrom("function prioSessiesHtml("),
   sliceFrom("function wsRender("), sliceFrom("async function wsLoadDeep("),
   sliceFrom("function wsSwitchVul("), sliceFrom("async function laadWorkspace("), sliceFrom("async function wsShow("),
 ].join("\n\n");
@@ -73,6 +80,12 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&a
 const ic = (n) => `<i:${n}>`;
 const initialen = (naam) => String(naam || "").slice(0, 2).toUpperCase();
 const openAthleteModule = () => {};
+const openSchemaMode = () => {};
+const openDossierEvent = () => {};
+const openModuleFromNav = () => {};
+const nlNum = (x) => String(x).replace(".", ",");
+const wsToonTrainingen = () => {};
+const wsSel = "u1";
 const wsMarkeerGezien = () => {};
 const melding = () => {};
 const toonView = () => {};
