@@ -142,6 +142,55 @@ def _duration_per_week(log: list, today: date) -> float | None:
     return round(total / 4, 0) if seen else None
 
 
+# ── Plan-uitvoeringsafwijkingen op HARDLOPEN (comment-onafhankelijk) ─────────
+# Productregel: een gemiste geplande run en een extra uitgevoerde run zijn coachrelevante
+# feiten, ook zonder atleetcommentaar. Ze komen uit ÉÉN canonieke logregel per training —
+# FinalSurge draagt plan én uitvoering in hetzelfde workout-record — dus er wordt NERGENS
+# een geplande training aan een uitvoering gekoppeld. Geen matching, dus ook geen
+# speculatieve matching.
+#
+# STRIKT HARDLOPEN. `activity.running_log` filtert al op `dossier._is_run`, maar dat
+# predikaat neemt een LEEG activity_type bewust mee ("onbekend → meenemen") omdat dat voor
+# volume veilig is. Voor een UITSPRAAK over een afwijking is dat te ruim: bij een
+# onbekende sport claimen we niets.
+# Vanaf hoeveel gemiste runs in het venster is het meer dan informatief?
+RUN_MISSED_ATTENTION = 2
+
+_RUN_WOORDEN = ("hardlo", "run", "trail")
+_NIET_RUN_WOORDEN = ("wandel", "walk", "hike")
+
+
+def _expliciete_run(e: dict) -> bool:
+    """Alleen True als het activiteitstype ONDUBBELZINNIG hardlopen zegt."""
+    t = str(e.get("activity_type") or "").strip().lower()
+    if not t or any(k in t for k in _NIET_RUN_WOORDEN):
+        return False
+    return any(k in t for k in _RUN_WOORDEN)
+
+
+def _heeft_plan(e: dict) -> bool:
+    """Geplande training volgens de BESTAANDE compliance-semantiek (`_compliance`)."""
+    return bool(e.get("planned_km") or e.get("planned_min") or e.get("description"))
+
+
+def _plan_afwijking(e: dict, d, today) -> str:
+    """'missed' | 'unplanned' | '' voor één run-logregel. Alleen bij een betrouwbaar feit.
+
+    missed    = gepland, datum ECHT verstreken, geen betrouwbare uitvoering
+                (`completed` komt uit `fs_client.is_executed_workout`, niet uit het
+                onbetrouwbare has_actual_data). Vandaag telt niet mee: die dag loopt nog.
+    unplanned = betrouwbaar uitgevoerd zonder enige planning op dezelfde logregel.
+    Races vallen buiten beide (een race is geen planafwijking)."""
+    if e.get("is_race") or not _expliciete_run(e):
+        return ""
+    gepland, gedaan = _heeft_plan(e), bool(e.get("completed"))
+    if gepland and not gedaan and d < today:
+        return "missed"
+    if gedaan and not gepland:
+        return "unplanned"
+    return ""
+
+
 def all(raw: dict, athlete_key: str, today: date, base_evidence: list) -> list:
     """Alle Fase-A-derivaties. `base_evidence` levert provenance-ankers (bv. zones).
 
@@ -201,7 +250,9 @@ def all(raw: dict, athlete_key: str, today: date, base_evidence: list) -> list:
                                         strength=MEDIUM, provenance=prov_log, window="14v28",
                                         athlete_key=athlete_key, detail=tr))
 
-    # afstandsafwijking op recente trainingen (met planned + actual)
+    # afstandsafwijking op recente trainingen (met planned + actual) + de twee
+    # plan-uitvoeringsafwijkingen op hardlopen (gemist / extra), comment-onafhankelijk.
+    n_missed = 0
     for e in log:
         try:
             d = date.fromisoformat(str(e.get("date"))[:10])
@@ -209,6 +260,32 @@ def all(raw: dict, athlete_key: str, today: date, base_evidence: list) -> list:
             continue
         if not recency.within(d.isoformat(), today, recency.COMPLAINT_RECENT) or e.get("is_race"):
             continue
+
+        wk = e.get("workout_key") or d.isoformat()
+        soort = _plan_afwijking(e, d, today)
+        if soort:
+            # ÉÉN event per onderliggende training. Een gemiste run heeft planned_km met
+            # actual 0 en zou anders óók als `distance_deviation` van -100% verschijnen:
+            # semantisch fout (niet 'veel korter gelopen' maar 'niet gelopen') én een tweede
+            # event voor dezelfde training. Daarom hier `continue`.
+            detail = {"soort": soort, "datum": d.isoformat(),
+                      "workout_key": e.get("workout_key") or "",
+                      "naam": e.get("name") or "", "beschrijving": e.get("description") or "",
+                      "planned_km": e.get("planned_km"), "planned_min": e.get("planned_min"),
+                      "actual_km": e.get("actual_km") if soort == "unplanned" else None,
+                      "actual_min": e.get("actual_min") if soort == "unplanned" else None,
+                      "activity_type": e.get("activity_type") or ""}
+            ev = derived_evidence(
+                f"training.run_{'missed' if soort == 'missed' else 'unplanned'}.{wk}",
+                "training_response", soort, status=ACTIVE, strength=LOW,
+                provenance=["fs.training_log"], window=d.isoformat(), athlete_key=athlete_key,
+                observed_at=d.isoformat(), detail=detail)
+            ev.workout_key = e.get("workout_key") or ""     # per-workout filter (zoals distance_deviation)
+            out.append(ev)
+            if soort == "missed":
+                n_missed += 1
+            continue
+
         dev = distance_deviation(e.get("planned_km"), e.get("actual_km"),
                                  e.get("felt"), e.get("effort"))
         if not dev or dev["band"] == "NEGLIGIBLE":
@@ -218,5 +295,15 @@ def all(raw: dict, athlete_key: str, today: date, base_evidence: list) -> list:
             "training_response", dev["band"], status=ACTIVE, strength=LOW,
             provenance=["fs.training_log"], window=d.isoformat(), athlete_key=athlete_key,
             observed_at=d.isoformat(), detail=dev))
+
+    # Aggregaat over hetzelfde venster: één gemiste run is informatief, herhaald missen is
+    # coachrelevant. Alleen tellen — de bestaande prioriteitslogica beslist wat ermee gebeurt.
+    if n_missed:
+        out.append(derived_evidence(
+            "training.run_missed_recent", "training_response", n_missed, status=ACTIVE,
+            strength=(MEDIUM if n_missed >= RUN_MISSED_ATTENTION else LOW),
+            provenance=prov_log, window=f"{recency.COMPLAINT_RECENT.days}d",
+            athlete_key=athlete_key, unit="gemiste runs",
+            detail={"dagen": recency.COMPLAINT_RECENT.days, "aantal": n_missed}))
 
     return out

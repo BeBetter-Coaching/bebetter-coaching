@@ -18,6 +18,7 @@ from datetime import date
 
 import athlete_read as _read                       # Canonical Athlete Read Layer v1 (gedeelde state-read)
 from brain import adapter as _adapter
+from brain import derive as _derive
 from brain import projections as _proj
 from brain import state as _state
 from brain import history as _history
@@ -63,7 +64,13 @@ _LABELS = {
     "profile.preference_dislikes": "Voorkeur (ziet tegenop)",
     "coach.memory": "Coachgeheugen", "coach.intake_note": "Coach-notitie (intake)",
     "zones.personal": "Zones", "zones.structural_over": "Zone-review",
+    "training.run_missed_recent": "Gemiste hardlooptrainingen (recent)",
 }
+
+# Plan-uitvoeringsafwijkingen op hardlopen: per-training keys met een leesbaar label,
+# nooit de ruwe enum-value als coachtekst (V-05-les).
+_RUN_DEV_LABEL = {"training.run_missed.": "Geplande hardlooptraining gemist",
+                  "training.run_unplanned.": "Extra hardlooptraining (niet gepland)"}
 
 _STRENGTH_RANK = {HIGH: 0, MEDIUM: 1}
 _LIVE = (ACTIVE, RECENT, RECURRING)
@@ -95,6 +102,9 @@ def _label(key: str) -> str:
         return _LABELS[key]
     if key.startswith("complaint."):
         return "Klacht"
+    for pre, lbl in _RUN_DEV_LABEL.items():
+        if key.startswith(pre):
+            return lbl
     return key.split(".", 1)[-1].replace("_", " ").capitalize()
 
 
@@ -105,10 +115,27 @@ def _prov_light(e: dict) -> dict:
             "status": e.get("status"), "strength": e.get("strength")}
 
 
+def _run_dev_text(e: dict) -> str:
+    """Menselijke regel voor één run-planafwijking: datum + wat er gepland/gedaan is.
+    Puur de al vastgelegde detailvelden — geen nieuwe afleiding."""
+    d = e.get("detail") or {}
+    datum = str(d.get("datum") or e.get("observed_at") or "")
+    naam = str(d.get("naam") or "").strip()
+    if d.get("soort") == "missed":
+        maat = (f"{d['planned_km']} km" if d.get("planned_km")
+                else (f"{d['planned_min']} min" if d.get("planned_min") else ""))
+        return " · ".join(x for x in (datum, naam or "geplande training", maat and f"gepland {maat}") if x)
+    maat = (f"{d['actual_km']} km" if d.get("actual_km")
+            else (f"{d['actual_min']} min" if d.get("actual_min") else ""))
+    return " · ".join(x for x in (datum, naam or "losse training", maat) if x)
+
+
 def _value_text(e: dict) -> str:
     if _is_complaint_group(e):
         area = (e.get("detail") or {}).get("area") or e.get("value")
         return str(area)
+    if any(str(e.get("key") or "").startswith(p) for p in _RUN_DEV_LABEL):
+        return _run_dev_text(e)
     v = e.get("value")
     return "" if v is None else str(v)
 
@@ -166,6 +193,19 @@ def _attention(st) -> list:
         elif k == "zones.structural_over" and e.value == "ZONE_REVIEW_CANDIDATE":
             cards.append(_card_obj("zone_review", "zones", "belastbaarheid",
                                    "Zones mogelijk niet passend", "zone-review kandidaat", e, rank=2))
+        elif k == "training.run_missed_recent":
+            # Eén gemiste run is informatief (staat in de Belastbaarheid-kaart); herhaald
+            # missen binnen hetzelfde venster vraagt aandacht. Bestaande kaart/rank-taal,
+            # geen nieuwe ranking — de drempel staat in brain.derive.
+            try:
+                _n = int(e.value)
+            except (TypeError, ValueError):
+                _n = 0
+            if _n >= _derive.RUN_MISSED_ATTENTION:
+                _dg = (e.detail or {}).get("dagen")
+                cards.append(_card_obj("run_missed", "training_response", "belastbaarheid",
+                                       f"{_n} geplande hardlooptrainingen gemist",
+                                       f"laatste {_dg} dagen" if _dg else "recent", e, rank=2))
         elif (k == "recovery.rpe_trend" and e.value == "zwaarder") or \
              (k == "recovery.feeling_trend" and e.value == "slechter"):
             cards.append(_card_obj("recovery_neg", "recovery", "herstel",

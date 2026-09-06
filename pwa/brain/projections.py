@@ -67,12 +67,21 @@ def for_feedback(state, workout_key: str = "") -> dict:
             if not workout_key or e.workout_key == workout_key:
                 keep.append(e)
             continue
+        # Plan-uitvoeringsafwijkingen op hardlopen: zelfde per-workout-conventie, zodat
+        # Feedback de gemiste/extra run ziet bij het beoordelen van die sessie — ook als
+        # de atleet niets schreef. Zichtbaarheid hangt dus niet aan een commentaar.
+        if e.key.startswith("training.run_missed.") or e.key.startswith("training.run_unplanned."):
+            if not workout_key or e.workout_key == workout_key:
+                keep.append(e)
+            continue
         if e.key in ("training.compliance", "recovery.rpe_trend", "recovery.feeling_trend",
                      "zones.personal", "load.trend", "load.well_tolerated",
                      "load.possible_relation", "zones.structural_over",
                      # longitudinale hardloopbelasting — zodat Feedback niet vraagt
                      # naar km/frequentie die het zelf betrouwbaar weet (run-only)
                      "load.km_per_week", "load.runs_per_week", "load.interruption",
+                     # herhaald missen van geplande runs = longitudinale context
+                     "training.run_missed_recent",
                      # FC-3: dezelfde canonieke race/doel-truth als Schema/Dossier, zodat
                      # Feedback deterministische event/tijd-context krijgt (geen vrije-tekst-reconstructie)
                      "goal.race", "goal.doel"):
