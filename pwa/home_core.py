@@ -784,6 +784,27 @@ def handled(user_key: str, status: str = "gezien", snooze_dagen: int = 7,
     return ok, msg
 
 
+_RUST_NAMEN = ("rust", "rest", "rustdag")
+
+
+def _is_rustdag(w: dict, act: dict) -> bool:
+    """Een GEPLANDE rustdag, herkend aan bestaande velden — geen nieuwe afleiding.
+
+    Voorwaarde is streng en observeerbaar: de naam is letterlijk een rust-naam, er staat
+    GEEN gepland volume of geplande duur tegenover, en er is niets uitgevoerd. Zonder deze
+    check kwam een rustdag door de score-tak (geen p_km én geen p_sec ⇒ score 1.0) en werd
+    hij als 'GEDAAN' gepresenteerd, alsof de atleet een training had afgewerkt."""
+    naam = str(act.get("name") or w.get("name") or "").strip().lower()
+    if naam not in _RUST_NAMEN:
+        return False
+    if (act.get("planned_amount") or 0) or (act.get("planned_duration") or 0):
+        return False                                    # er staat wél werk gepland
+    try:
+        return not FS.is_executed_workout(w)
+    except Exception:
+        return False
+
+
 def prio_trainingen(user_key: str, vooruit: int = 0) -> dict:
     """Lazy detail voor één atleet: WELKE geplande trainingen gemist/half/gedaan zijn
     (laatste 7 dagen), optioneel aangevuld met de eerstvolgende GEPLANDE sessies.
@@ -824,7 +845,9 @@ def prio_trainingen(user_key: str, vooruit: int = 0) -> dict:
         # woorden in `fs_client.is_executed_workout`. Daardoor viel een toekomstige sessie
         # door naar de score-tak (amount 0 ⇒ score 0) en werd de TOEKOMST als GEMIST
         # gepresenteerd. We gebruiken hier dus de canonieke uitgevoerd-predikaat.
-        if vooruit and datum >= vandaag_iso and not FS.is_executed_workout(w):
+        if vooruit and _is_rustdag(w, act):
+            status = "rust"                             # geplande rustdag ≠ uitgevoerde training
+        elif vooruit and datum >= vandaag_iso and not FS.is_executed_workout(w):
             status = "gepland"                          # nog te doen ≠ gemist
         else:
             if not w.get("has_actual_data"):
@@ -844,4 +867,6 @@ def prio_trainingen(user_key: str, vooruit: int = 0) -> dict:
             "km_actual": round(float(act.get("amount") or 0), 1) if p_km else None,
         })
     rijen.sort(key=lambda r: r["datum"])
-    return {"trainingen": rijen}
+    # Het venster expliciet meesturen: de Workspace zet het als scope-label boven het blok,
+    # zodat het naast de rolling-7 belastinggrafiek niet tegenstrijdig oogt.
+    return {"trainingen": rijen, "van": start.isoformat(), "tot": end.isoformat()}

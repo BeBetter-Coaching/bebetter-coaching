@@ -74,6 +74,8 @@ const HELPERS = [
   sliceFrom("function wsActieBtn("),
   sliceFrom("function wsLine("),
   sliceFrom("function wsVulLoadContext("),
+  sliceFrom("const _WS_CTX_KIND = {"), sliceFrom("function wsUniekeSignalen("),
+  sliceFrom("function wsTweedeActie("),
   sliceFrom("function wsContextSignalen("),
   sliceFrom("function wsDeepContext("),
   sliceFrom("function wsMagRustig("),
@@ -86,6 +88,7 @@ const HELPERS = [
 const app = new Function("$", "$$", "esc", "ic", "nlNum", "document",
   HELPERS + "\nreturn { wsActieLead, wsSchemaVerloopt, wsActieBtn, wsVulLoadContext," +
   " wsContextSignalen, wsDeepContext, wsMagRustig, wsZetBadge, wsSignalenHtml, wsNextHtml," +
+  " wsUniekeSignalen, wsTweedeActie," +
   " prioSessiesHtml };"
 )($, $$, esc, ic, nlNum, documentShim);
 
@@ -104,8 +107,12 @@ const app = new Function("$", "$$", "esc", "ic", "nlNum", "document",
      "T1.2 km/week uit het dossier wordt getoond", slot.innerHTML.slice(0, 120));
   ok(slot.innerHTML.includes("4") && slot.innerHTML.includes("p/w"), "T1.3 runs/week wordt getoond");
   ok(slot.innerHTML.includes("opbouwend"), "T1.4 belastingstrend wordt getoond");
-  ok(/geen actueel belastingssignaal/i.test(slot.innerHTML),
-     "T1.5 eerlijk gelabeld: dossierbelasting, geen rolling-7 signaal");
+  ok(/geen actief belastingssignaal/i.test(slot.innerHTML),
+     "T1.5 eerlijk gelabeld: bekend, alleen geen actief signaal", slot.innerHTML.slice(-140));
+  ok(/laatste 4 weken/i.test(slot.innerHTML),
+     "T1.5b eigen venster benoemd (4 weken, niet de rolling-7 uit de kop)");
+  ok(!/onbekend|niet beschikbaar|verouderd/i.test(slot.innerHTML),
+     "T1.5c leest niet als ontbrekende of stale data");
 
   // ECHT onbekend → de exacte LOCK-zin blijft staan.
   byId = { "ws-load-ctx": new El("div") };
@@ -143,8 +150,10 @@ const app = new Function("$", "$$", "esc", "ic", "nlNum", "document",
 
 // ══ T3/T4 — actuele Dossier-context in de Workspace ══════════════════════════
 {
-  const box = new El("div"); byId = { "ws-ctx": box };
-  app.wsDeepContext(null, {
+  const sigBox = new El("div"), nxtBox = new El("div"), badge = new El("span");
+  byId = { "ws-signals": sigBox, "ws-next-body": nxtBox, "ws-badge": badge };
+  const box = sigBox;                                   // context = signaalregels (één eenheid)
+  app.wsDeepContext({ _ws: { attn: [], key: "u1", bel: {}, sc: null, tone: "is-calm", belTone: "is-calm", staat: "onbekend" } }, {
     load_context: { interruption: { tekst: "circa 3 weken minder/geen training", status: "ACTIVE", wanneer: "2026-08-30" } },
     attention: [
       { kind: "complaint", id: "ev-9", title: "Klacht: scheen — actief", why: "last van mijn scheen na de lange duurloop · 31-08" },
@@ -159,9 +168,11 @@ const app = new Function("$", "$$", "esc", "ic", "nlNum", "document",
   ok(box.innerHTML.includes("31-08"), "T4.3 klacht draagt de bron-datum");
   ok(!/Bron ontbreekt/.test(box.innerHTML), "T4.4 alleen relevante context, geen dossier-dump");
 
-  const leeg = new El("div"); byId = { "ws-ctx": leeg };
-  app.wsDeepContext(null, { attention: [] });
-  ok(leeg.innerHTML === "", "T3.4 geen context → geen lege kaart-ruimte");
+  const leegSig = new El("div");
+  byId = { "ws-signals": leegSig, "ws-next-body": new El("div"), "ws-badge": new El("span") };
+  app.wsDeepContext({ _ws: { attn: [], key: "u1", bel: {}, sc: null, tone: "is-calm", belTone: "is-calm", staat: "onbekend" } },
+                    { attention: [] });
+  ok(!/ws-signals/.test(leegSig.innerHTML), "T3.4 geen context → geen signaalregels");
 }
 
 // ══ T5 — trainingsblok onderscheidt de vier statussen ════════════════════════
@@ -259,9 +270,9 @@ const app = new Function("$", "$$", "esc", "ic", "nlNum", "document",
 
 // ══ RONDE 2 — context forceert aandacht en bepaalt de actie ══════════════════
 function _slots() {
-  const sig = new El("div"), ctx = new El("div"), nxt = new El("div"), badge = new El("span");
-  byId = { "ws-signals": sig, "ws-ctx": ctx, "ws-next-body": nxt, "ws-badge": badge };
-  return { sig, ctx, nxt, badge };
+  const sig = new El("div"), nxt = new El("div"), badge = new El("span");
+  byId = { "ws-signals": sig, "ws-next-body": nxt, "ws-badge": badge };
+  return { sig, nxt, badge };
 }
 const _shell = (over = {}) => ({ _ws: {
   attn: [], key: "u1", bel: {}, sc: null, tone: "is-calm", belTone: "is-calm", staat: "onbekend",
@@ -284,7 +295,7 @@ const _shell = (over = {}) => ({ _ws: {
   ok(/openDossierEvent/.test(s1.nxt.innerHTML), "R1.5 bruikbare route naar de context (CTA blijft aan)");
   ok(/Klacht: knie/.test(s1.sig.innerHTML) && /Trainingsonderbreking/.test(s1.sig.innerHTML),
      "R1.6 beide contextsignalen staan in Aandacht nu");
-  ok(/Trainingsonderbreking/.test(s1.ctx.innerHTML), "R1.7 en als leesbare contextregel");
+  ok(/<small>/.test(s1.sig.innerHTML), "R1.7 met leesbaar detail onder het label (één eenheid)");
 }
 
 // R2 — Douwe: shell heeft een belasting-signaal (aandacht); de concrete klacht wint.
@@ -298,12 +309,13 @@ const _shell = (over = {}) => ({ _ws: {
                   why: "ontsteking (scheen) · 23-08" }],
   });
   ok(/Klacht: scheen/.test(s2.nxt.innerHTML), "R2.1 primaire actie volgt de klacht", s2.nxt.innerHTML.slice(0, 120));
-  ok(!/Belasting gezien/.test(s2.nxt.innerHTML), "R2.2 geen 'Belasting gezien' terwijl de klacht primair is");
+  const primair = s2.nxt.innerHTML.split('<div class="ws-next-2"')[0];
+  ok(!/Belasting gezien/.test(primair), "R2.2 geen 'Belasting gezien' als PRIMAIRE actie terwijl de klacht primair is", primair.slice(0, 100));
   ok(/data-ev="cp-ev-9"/.test(s2.nxt.innerHTML), "R2.3 opent de CONCRETE klacht in het dossier");
   const rows = s2.sig.innerHTML;
   ok(rows.indexOf("Klacht: scheen") < rows.indexOf("Belasting let op"),
      "R2.4 klacht boven het belasting-signaal, dat secundair blijft staan");
-  ok(/ontsteking \(scheen\)/.test(s2.ctx.innerHTML), "R2.5 de concrete bekende klachtinhoud is zichtbaar");
+  ok(/ontsteking \(scheen\)/.test(s2.sig.innerHTML), "R2.5 de concrete bekende klachtinhoud is zichtbaar");
 }
 
 // R3 — een ACTIE-tier belastingsignaal blijft primair; de klacht wordt secundair.
@@ -324,8 +336,8 @@ const _shell = (over = {}) => ({ _ws: {
   const render = sliceFrom("function wsRender(");
   ok(/const attnBody = `<div id="ws-signals">/.test(render),
      "R4.1 signaal-slot staat altijd in de kaart");
-  ok(/\+ `<div id="ws-ctx" class="ws-ctx"><\/div>`;/.test(render),
-     "R4.2 context-slot staat ALTIJD in de kaart (niet alleen bij 0 signalen)");
+  ok(!/id="ws-ctx"/.test(render),
+     "R4.2 geen apart contextslot meer — dat dupliceerde elk signaal");
   const s4 = _slots();
   const wrap = _shell({ attn: [{ soort: "belasting", tier: "aandacht", kort: "Belasting let op" }], staat: "aandacht" });
   app.wsDeepContext(wrap, {
@@ -333,8 +345,8 @@ const _shell = (over = {}) => ({ _ws: {
       interruption: { tekst: "3 weken minder/geen training", status: "RECENT", wanneer: "2026-08-30" } },
     attention: [],
   });
-  ok(/Trainingsonderbreking: 3 weken/.test(s4.ctx.innerHTML),
-     "R4.3 bekende onderbreking verschijnt óók bij een atleet mét signalen", s4.ctx.innerHTML.slice(0, 100));
+  ok(/Trainingsonderbreking: 3 weken/.test(s4.sig.innerHTML),
+     "R4.3 bekende onderbreking verschijnt óók bij een atleet mét signalen", s4.sig.innerHTML.slice(0, 100));
   ok(/Trainingsonderbreking/.test(s4.sig.innerHTML), "R4.4 en telt mee als aandachtssignaal");
 }
 
@@ -343,7 +355,7 @@ const _shell = (over = {}) => ({ _ws: {
   const s5 = _slots();
   const wrap = _shell({ staat: "onbekend" });
   app.wsDeepContext(wrap, { status: {}, load_context: { known: false }, attention: [] });
-  ok(s5.ctx.innerHTML === "", "R5.1 geen context → geen contextregels");
+  ok(!/Trainingsonderbreking|Klacht:/.test(s5.sig.innerHTML), "R5.1 geen context → geen contextregels");
   ok(/onbekend/.test(s5.badge.outerHTML), "R5.2 onbekend blijft onbekend", s5.badge.outerHTML);
   ok(/Te weinig om op te oordelen/.test(s5.nxt.innerHTML), "R5.3 en nooit een all-clear");
 
