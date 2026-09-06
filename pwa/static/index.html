@@ -9,8 +9,8 @@
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-400.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-700.woff2">
-  <link rel="stylesheet" href="/static/styles.css?v=136a">
-  <link rel="stylesheet" href="/static/design-system.css?v=136a">
+  <link rel="stylesheet" href="/static/styles.css?v=137a">
+  <link rel="stylesheet" href="/static/design-system.css?v=137a">
 </head>
 <body>
   <!-- Iconen-sprite (lijn-iconen, werken offline) -->
@@ -81,23 +81,22 @@
   <aside class="sidebar">
     <div class="sb-brand"><img class="sb-logo-img" src="/static/logo.png" alt="BeBetter Coaching"></div>
     <nav class="sb-nav">
+      <!-- A5/B2 — dagelijkse navigatie. Teampuls en Schema-verloop zijn geen primaire
+           bestemming meer: hun monitoring-inhoud staat als segment op Home (Vandaag) en
+           de routes blijven bestaan + bereikbaar via 'Praktijk & account'. Intake,
+           Strippenkaart, Documenten en Administratie zijn setup-/praktijkwerk en zitten
+           in dezelfde lade (het bestaande #meer-patroon). Geen enkele route gewijzigd. -->
       <button class="nav-item on" data-open-view="home"><svg class="ic"><use href="#ic-home"/></svg><span>Home</span></button>
       <button class="nav-item" data-open-view="feedback"><svg class="ic"><use href="#ic-message"/></svg><span>Feedback</span></button>
+      <p class="sb-label">Atleet</p>
+      <button class="nav-item" data-open-view="workspace"><svg class="ic"><use href="#ic-activity"/></svg><span>Workspace</span></button>
       <button class="nav-item" data-open-view="atleten"><svg class="ic"><use href="#ic-users"/></svg><span>Atleten</span></button>
-      <button class="nav-item" data-open-view="workspace"><svg class="ic"><use href="#ic-brain"/></svg><span>Workspace</span></button>
-      <button class="nav-item" data-open-view="dossier"><svg class="ic"><use href="#ic-brain"/></svg><span>Dossier</span></button>
-      <button class="nav-item" data-open-view="teampuls"><svg class="ic"><use href="#ic-pulse"/></svg><span>Teampuls</span></button>
+      <button class="nav-item" data-open-view="dossier"><svg class="ic"><use href="#ic-note"/></svg><span>Dossier</span></button>
+      <button class="nav-item" data-open-view="schema"><svg class="ic"><use href="#ic-calendar"/></svg><span>Schema bouwen</span></button>
       <p class="sb-label">Plannen</p>
-      <button class="nav-item" data-open-view="schema"><svg class="ic"><use href="#ic-brain"/></svg><span>Schema bouwen</span></button>
       <button class="nav-item" data-open-view="races"><svg class="ic"><use href="#ic-flag"/></svg><span>Races</span></button>
-      <button class="nav-item" data-open-view="schema-verloop"><svg class="ic"><use href="#ic-clock"/></svg><span>Schema-verloop</span></button>
       <p class="sb-label">Praktijk</p>
-      <button class="nav-item" data-open-view="intake"><svg class="ic"><use href="#ic-mail"/></svg><span>Intake</span><i class="nav-badge" hidden></i></button>
-      <button class="nav-item" data-open-view="strippen"><svg class="ic"><use href="#ic-ticket"/></svg><span>Strippenkaart</span></button>
-      <button class="nav-item" data-open-view="documenten"><svg class="ic"><use href="#ic-file"/></svg><span>Documenten</span></button>
-      <p class="sb-label">Zaken</p>
-      <button class="nav-item" data-open-view="admin"><svg class="ic"><use href="#ic-euro"/></svg><span>Administratie</span></button>
-      <button class="nav-item" data-open-view="meer"><svg class="ic"><use href="#ic-more"/></svg><span>Meer &amp; account</span></button>
+      <button class="nav-item" data-open-view="meer"><svg class="ic"><use href="#ic-more"/></svg><span>Praktijk &amp; account</span><i class="nav-badge" hidden></i></button>
     </nav>
     <p class="sb-foot">Gedeelde opslag</p>
   </aside>
@@ -338,23 +337,45 @@
     <section class="view" data-view="meer">
       <header class="appbar"><h1>Meer</h1></header>
 
-      <p class="sec-label">Plannen</p>
+      <!-- A5 — de lade draagt ALLES wat niet in de dagelijkse navigatie staat, gegroepeerd
+           zoals de coach denkt: atleet · team · praktijk. Elke route is ongewijzigd. -->
+      <p class="sec-label">Atleet</p>
       <button class="listcard" data-open-view="workspace">
-        <span class="lc-ic"><svg class="ic"><use href="#ic-brain"/></svg></span>
+        <span class="lc-ic"><svg class="ic"><use href="#ic-activity"/></svg></span>
         <span class="lc-body"><span class="lc-title">Workspace</span>
           <span class="lc-sub">Wat speelt er nu met deze atleet — dagelijkse werkplek</span></span>
         <svg class="ic"><use href="#ic-chevron"/></svg>
       </button>
+      <button class="listcard" data-open-view="atleten">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-users"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Atleten</span>
+          <span class="lc-sub">Profiel, intake, notities en coach-geheugen</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
       <button class="listcard" data-open-view="dossier">
-        <span class="lc-ic"><svg class="ic"><use href="#ic-brain"/></svg></span>
+        <span class="lc-ic"><svg class="ic"><use href="#ic-note"/></svg></span>
         <span class="lc-body"><span class="lc-title">Dossier</span>
-          <span class="lc-sub">Hoe staat een atleet ervoor — cockpit</span></span>
+          <span class="lc-sub">Wat veranderde, wanneer en waarom — levend geheugen</span></span>
         <svg class="ic"><use href="#ic-chevron"/></svg>
       </button>
       <button class="listcard" data-open-view="schema">
-        <span class="lc-ic"><svg class="ic"><use href="#ic-brain"/></svg></span>
+        <span class="lc-ic"><svg class="ic"><use href="#ic-calendar"/></svg></span>
         <span class="lc-body"><span class="lc-title">Schema bouwen</span>
           <span class="lc-sub">AI-trainingsplan → FinalSurge</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
+
+      <p class="sec-label">Team</p>
+      <button class="listcard" data-open-view="teampuls">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-pulse"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Teampuls</span>
+          <span class="lc-sub">Belasting-monitoring — staat ook als segment op Home</span></span>
+        <svg class="ic"><use href="#ic-chevron"/></svg>
+      </button>
+      <button class="listcard" data-open-view="schema-verloop">
+        <span class="lc-ic"><svg class="ic"><use href="#ic-clock"/></svg></span>
+        <span class="lc-body"><span class="lc-title">Schema-verloop</span>
+          <span class="lc-sub">Wie loopt bijna zonder schema — staat ook op Home</span></span>
         <svg class="ic"><use href="#ic-chevron"/></svg>
       </button>
       <button class="listcard" data-open-view="races">
@@ -363,18 +384,13 @@
           <span class="lc-sub">Aankomende races + race-wens</span></span>
         <svg class="ic"><use href="#ic-chevron"/></svg>
       </button>
-      <button class="listcard" data-open-view="schema-verloop">
-        <span class="lc-ic"><svg class="ic"><use href="#ic-clock"/></svg></span>
-        <span class="lc-body"><span class="lc-title">Schema-verloop</span>
-          <span class="lc-sub">Wie loopt bijna zonder schema</span></span>
-        <svg class="ic"><use href="#ic-chevron"/></svg>
-      </button>
 
       <p class="sec-label">Praktijk</p>
       <button class="listcard" data-open-view="intake">
         <span class="lc-ic"><svg class="ic"><use href="#ic-mail"/></svg></span>
         <span class="lc-body"><span class="lc-title">Intake</span>
           <span class="lc-sub">Nieuwe aanmeldingen + deelbare link</span></span>
+        <span class="lc-badge nav-badge" hidden></span>
         <svg class="ic"><use href="#ic-chevron"/></svg>
       </button>
       <button class="listcard" data-open-view="strippen">
@@ -389,8 +405,6 @@
           <span class="lc-sub">BeBetter-PDF voor een atleet</span></span>
         <svg class="ic"><use href="#ic-chevron"/></svg>
       </button>
-
-      <p class="sec-label">Zaken</p>
       <button class="listcard" data-open-view="admin">
         <span class="lc-ic"><svg class="ic"><use href="#ic-euro"/></svg></span>
         <span class="lc-body"><span class="lc-title">Administratie</span>
@@ -417,7 +431,7 @@
     <button class="nav-item on" data-open-view="home"><svg class="ic"><use href="#ic-home"/></svg><span>Home</span></button>
     <button class="nav-item" data-open-view="feedback"><svg class="ic"><use href="#ic-message"/></svg><span>Feedback</span></button>
     <button class="nav-item" data-open-view="atleten"><svg class="ic"><use href="#ic-users"/></svg><span>Atleten</span></button>
-    <button class="nav-item" data-open-view="teampuls"><svg class="ic"><use href="#ic-pulse"/></svg><span>Teampuls</span></button>
+    <button class="nav-item" data-open-view="workspace"><svg class="ic"><use href="#ic-activity"/></svg><span>Workspace</span></button>
     <button class="nav-item" data-open-view="meer"><svg class="ic"><use href="#ic-more"/></svg><span>Meer</span><i class="nav-badge" id="nav-badge" hidden></i></button>
   </nav>
 
@@ -453,6 +467,6 @@
     </article>
   </template>
 
-  <script src="/static/app.js?v=136a"></script>
+  <script src="/static/app.js?v=137a"></script>
 </body>
 </html>

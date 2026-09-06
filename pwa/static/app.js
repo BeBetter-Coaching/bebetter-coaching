@@ -26,6 +26,21 @@ const haptic = ms => navigator.vibrate?.(ms);
 const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const ic = n => `<svg class="ic"><use href="#ic-${n}"/></svg>`;
 
+// ── A3 — gedeelde coach-copy-primitieven ─────────────────────────────────────
+// De app had vier datumweergaven voor DEZELFDE trainingsdatum: `09-03` (Home,
+// Profiel — ambigu), `3 sep` (Workspace, Dossier), `wo 3 sep`/`Vandaag`
+// (Feedback) en de rauwe ISO `2026-09-03` (Teampuls). Eén formatter voor de
+// gewone coachkaarten: `3 sep`. Feedback houdt bewust zijn eigen
+// `Vandaag`/`Gisteren`-labels (fbDateLabel) — dat is daar betekenisvol.
+const _NL_MND = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
+function nlDatum(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  return m ? `${+m[3]} ${_NL_MND[+m[2] - 1]}` : String(iso || "");
+}
+// Nederlandse meervouden zijn niet '+s'; beide vormen expliciet meegeven.
+// (De app schreef eerder o.a. "1 runs in dit venster" en "1 atleten".)
+function nlAantal(n, enkel, meerv) { return `${n} ${Number(n) === 1 ? enkel : meerv}`; }
+
 // ── Inlog (kies Jip/Remco → wachtwoord of biometrie; blijvende sessie-cookie) ─
 let loginWie = null;        // gekozen coach op het inlogscherm
 let ingelogdeCoach = "";    // wie is er ingelogd (voor toeschrijven van acties)
@@ -669,16 +684,26 @@ async function renderHome() {
       <div class="skel skel-line w60" style="margin:10px 0 2px"></div>
     </button>
 
-    <div class="sec-head"><p class="sec-label">Prioriteit vandaag</p><span class="sec-note" id="prio-note"></span><span class="sec-updated" id="home-updated" aria-live="polite"></span></div>
-    <div id="home-prio">
-      ${[0, 0, 0].map(() => `<div class="prio-skel"><span class="skel prio-skel-av"></span><span class="prio-skel-body"><span class="skel skel-line w40"></span><span class="skel skel-line w60"></span></span></div>`).join("")}
+    <div class="home-seg" id="home-seg" role="tablist" aria-label="Vandaag">
+      <button type="button" class="hseg on" data-seg="actie" role="tab" aria-selected="true">Actie</button>
+      <button type="button" class="hseg" data-seg="monitoring" role="tab" aria-selected="false">Monitoring</button>
     </div>
+    <div id="home-actie" role="tabpanel" aria-labelledby="home-seg">
+      <div class="sec-head"><p class="sec-label">Prioriteit vandaag</p><span class="sec-note" id="prio-note"></span><span class="sec-updated" id="home-updated" aria-live="polite"></span></div>
+      <div id="home-prio">
+        ${[0, 0, 0].map(() => `<div class="prio-skel"><span class="skel prio-skel-av"></span><span class="prio-skel-body"><span class="skel skel-line w40"></span><span class="skel skel-line w60"></span></span></div>`).join("")}
+      </div>
+    </div>
+    <div id="home-mon" role="tabpanel" aria-labelledby="home-seg" hidden></div>
 
+    <div id="home-brief"></div>
     <div id="home-info"></div>
     <div id="home-ook"></div>`;
   box.dataset.done = "1";
   $$("[data-open-view]", box).forEach(b => b.addEventListener("click", () => openModuleFromNav(b.dataset.openView)));
+  $$(".hseg", box).forEach(b => b.addEventListener("click", () => homeZetSegment(b.dataset.seg)));
   laadHeroFoto();
+  homeVulBriefing();                    // B3: weekbriefing is een eigen blok op Vandaag
 
   // 2) Cockpit-snapshot (direct) → hero-telling/status, feedback, prioriteit.
   //    Verouderd? Dan op de achtergrond verversen (stale-while-revalidate).
@@ -716,6 +741,113 @@ async function renderHome() {
       $$("[data-open-view]", ook).forEach(b => b.addEventListener("click", () => openModuleFromNav(b.dataset.openView)));
     }
     bronStatus(kaarten.cloud);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// B2/B3 — VANDAAG: segmenten (Actie | Monitoring) + weekbriefing
+// ════════════════════════════════════════════════════════════════════════════
+// Waarom: Teampuls is Home's belasting-signaal ZONDER suppressie (beide lezen
+// `belasting.zichtbare_resultaten` van dezelfde dagstand) en Schema-verloop is Home's
+// schema-signaal met een breder venster (beide lezen `FS.get_schema_end_dates`). Dat
+// zijn geen aparte beslissingen maar dezelfde beslissing op een andere filterstand —
+// verspreid over drie pagina's en twee dagelijkse scans.
+//
+// ACTIE      = de bestaande, GELOCKTE Home-werklijst. Ongewijzigd: zelfde render,
+//              zelfde suppressie, zelfde Gezien/Later, zelfde snapshot.
+// MONITORING = de ongefilterde stand, lazy, uit precies dezelfde endpoints als de
+//              standalone pagina's (`/api/teampuls/signalen` fast-read zonder force en
+//              `/api/schema-verloop`), gerenderd met precies dezelfde kaartbouwers
+//              (`pulsItem`, `svItem`) — inclusief `duiding`, onderbouwing en
+//              'Gezien (7 dagen)'. Geen tweede berekening, geen tweede waarheid.
+// De standalone routes #teampuls en #schema-verloop blijven ongewijzigd bestaan.
+let homeSeg = "actie";
+let homeMonGeladen = false;
+
+function homeZetSegment(seg) {
+  seg = seg === "monitoring" ? "monitoring" : "actie";
+  homeSeg = seg;
+  $$(".hseg").forEach(b => {
+    const on = b.dataset.seg === seg;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  const a = $("#home-actie"), m = $("#home-mon");
+  if (a) a.hidden = seg !== "actie";
+  if (m) m.hidden = seg !== "monitoring";
+  haptic(6);
+  if (seg === "monitoring") homeVulMonitoring();
+}
+
+// Lazy: pas laden als de coach het segment écht opent (page-open blijft goedkoop).
+async function homeVulMonitoring(force = false) {
+  const box = $("#home-mon"); if (!box) return;
+  if (homeMonGeladen && !force) return;
+  homeMonGeladen = true;
+  box.innerHTML = `<p class="sec-label">Belasting — hele team</p>
+    <p class="hint" id="hmon-bel-info">Belasting-stand laden…</p><div id="hmon-bel"></div>
+    <p class="sec-label" style="margin-top:20px">Schema loopt af</p>
+    <p class="hint" id="hmon-sv-info">Schema's laden…</p><div id="hmon-sv"></div>`;
+  skeleton($("#hmon-bel"), 2); skeleton($("#hmon-sv"), 2);
+  const [bel, sv] = await Promise.all([
+    api("/api/teampuls/signalen").catch(() => null),          // FAST READ (geen force → geen recompute)
+    api("/api/schema-verloop").catch(() => null),
+  ]);
+  if (homeSeg !== "monitoring" && !force) { /* segment intussen gewisseld: render toch, blijft klaar */ }
+  homeMonBelasting(bel);
+  homeMonSchema(sv);
+}
+
+function homeMonBelasting(r) {
+  const box = $("#hmon-bel"), info = $("#hmon-bel-info");
+  if (!box || !info) return;
+  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
+  if (r.pending) { info.textContent = "Belasting-signalen worden voor het eerst berekend — open Teampuls om te herberekenen."; box.innerHTML = ""; return; }
+  const items = r.items || [];
+  // Zelfde productcontract als de Teampuls-pagina: dit is OBSERVATIE (toont ook wat je
+  // al afvinkte), niet je actielijst. Daarom staat het naast 'Actie', niet erin.
+  const versLabel = (!r.vers && r.datum) ? ` · stand ${esc(nlDatum(r.datum))} · verversen…` : "";
+  info.innerHTML = items.length
+    ? `Teambrede observatie uit volume, gevoel, RPE en notities — ook wat je al afvinkte. <b>${r.hoog || 0}</b> hoge belasting · <b>${items.length}</b> in beeld${versLabel}`
+    : `Alles binnen de marge${versLabel}`;
+  box.innerHTML = "";
+  if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen belasting-signalen — iedereen binnen de marge.</p></div>`; return; }
+  items.forEach(it => box.appendChild(pulsItem(it)));        // exact dezelfde kaart als Teampuls
+}
+
+function homeMonSchema(r) {
+  const box = $("#hmon-sv"), info = $("#hmon-sv-info");
+  if (!box || !info) return;
+  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
+  const alle = r.items || [];
+  // Monitoring toont wat aandacht vraagt (verlopen / bijna klaar / geen schema); de
+  // volledige 60-dagenlijst blijft op de standalone pagina staan.
+  const items = alle.filter(i => i.status === "verlopen" || i.status === "bijna" || i.status === "geen");
+  info.textContent = alle.length
+    ? `${nlAantal(items.length, "atleet", "atleten")} met aandacht (verlopen, bijna klaar of geen schema) · ${alle.length} in beeld.`
+    : "";
+  box.innerHTML = "";
+  if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen schema dat aandacht vraagt.</p></div>`; return; }
+  items.forEach(it => box.appendChild(svItem(it)));          // exact dezelfde kaart als Schema-verloop
+}
+
+// B3 — de weekbriefing stond onderaan Teampuls, ónder een lijst die Home al toonde.
+// Hier is hij een eigen blok op Vandaag. Zelfde endpoint, zelfde tekst, zelfde
+// populatie-semantiek en dezelfde datering; één gedeelde memo zorgt dat Home én de
+// Teampuls-pagina samen niet twee keer dezelfde briefing ophalen.
+async function homeVulBriefing() {
+  const box = $("#home-brief"); if (!box) return;
+  box.innerHTML = `<p class="sec-label">Weekbriefing</p><div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w80"></div></div>`;
+  const r = await briefingGet(false);
+  if (!box.isConnected) return;
+  box.innerHTML = `<p class="sec-label">Weekbriefing</p>${briefKaartHtml(r)}`;
+  $("#home-brief [data-brief-refresh]")?.addEventListener("click", async () => {
+    box.innerHTML = `<p class="sec-label">Weekbriefing</p><div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w80"></div></div>`;
+    const vers = await briefingGet(true);
+    box.innerHTML = `<p class="sec-label">Weekbriefing</p>${briefKaartHtml(vers)}`;
+    $("#home-brief [data-brief-refresh]")?.addEventListener("click", () => homeVulBriefing());
   });
 }
 
@@ -1012,12 +1144,16 @@ $("#scroller")?.addEventListener("scroll", () => {
 const SOORT_IC = { belasting: "pulse", schema: "clock", compliance: "activity" };
 
 function prioContext(it) {
-  const dossier = { act: "dossier", label: "Dossier", icon: "user-plus" };
-  // Eén signaal → toon ook de type-context op de swipe; meerdere → alleen Dossier
+  // A1 — het label vertelt wat de knop OPENT. `act: "dossier"` is de bestaande, gelockte
+  // ACTIE-sleutel (prioDoe routeert die naar #atleten/<key>; zie test_coach_workflow_cohesion);
+  // de ROUTE blijft dus exact gelijk. Alleen de tekst volgt nu de canonieke naamgeving van
+  // athleteNav: de #atleten-module heet 'Profiel', de #dossier-module heet 'Dossier'.
+  const profiel = { act: "dossier", label: "Profiel", icon: "user-plus" };
+  // Eén signaal → toon ook de type-context op de swipe; meerdere → alleen Profiel
   // op de swipe, de per-signaal-contexten staan in het uitgeklapte detail (#9).
   const s0 = (it.signalen || [])[0];
-  if (it.n_signalen === 1 && s0 && s0.context && s0.context[0]) return [s0.context[0], dossier];
-  return [dossier];
+  if (it.n_signalen === 1 && s0 && s0.context && s0.context[0]) return [s0.context[0], profiel];
+  return [profiel];
 }
 function swBtn(a, cls) {
   return `<button class="pa-btn${cls ? " " + cls : ""}" data-act="${a.act}"${a.dagen ? ` data-dagen="${a.dagen}"` : ""} type="button">
@@ -1180,7 +1316,7 @@ function prioDetailHtml(it) {
   }).join("") + `</div>`;
 
   // Volgende stap: door naar de athlete-context (zelfde gedeelde routes).
-  h += `<div class="pd-acts pb-acts">${swBtn({ act: "workspace", label: "Open workspace", icon: "brain" })}${swBtn({ act: "dossier", label: "Dossier", icon: "user-plus" })}</div>`;
+  h += `<div class="pd-acts pb-acts">${swBtn({ act: "workspace", label: "Open workspace", icon: "activity" })}${swBtn({ act: "dossier", label: "Profiel", icon: "user-plus" })}</div>`;
   h += `</div>`;
   return h;
 }
@@ -1201,7 +1337,7 @@ function prioSignaalBody(s) {
       chips.push(`<div class="pd-chip"><b>Gevoel / RPE</b>
         <span>gevoel ${d.gevoel_recent ?? "—"} vs ${d.gevoel_basis ?? "—"} · RPE ${d.rpe_recent ?? "—"} vs ${d.rpe_basis ?? "—"}</span></div>`);
     const meer = (d.signalen || []).slice(1).map(x => `<li>${esc(x)}</li>`).join("");
-    const runs = (d.runs || []).map(r => `<li>${esc((r.datum || "").slice(5))} · ${r.km ?? "?"} km${r.naam ? " · " + esc(r.naam) : ""}</li>`).join("");
+    const runs = (d.runs || []).map(r => `<li>${esc(nlDatum(r.datum))} · ${r.km != null ? esc(nlNum(r.km)) : "?"} km${r.naam ? " · " + esc(r.naam) : ""}</li>`).join("");
     return `${chips.length ? `<div class="pd-metrics">${chips.join("")}</div>` : ""}
       ${meer ? `<ul class="pd-sig">${meer}</ul>` : ""}
       ${runs ? `<p class="pd-sub">Recente trainingen</p><ul class="pd-runs">${runs}</ul>` : ""}`;
@@ -1234,7 +1370,7 @@ function prioSessiesHtml(rows) {
   // uitvoering is geen gemiste training (afwezige data ≠ nul).
   const pill = { gemist: "gemist", half: "half", gedaan: "gedaan", gepland: "gepland", rust: "rust" };
   return `<ul class="pd-sessies-lijst">${rows.map(t => `<li>
-    <span class="pd-s-d">${esc((t.datum || "").slice(5))}</span>
+    <span class="pd-s-d">${esc(nlDatum(t.datum))}</span>
     <span class="pd-s-t">${esc(t.type || "Training")}</span>
     ${t.km_planned != null ? `<span class="pd-s-km">${t.km_actual ?? 0}/${t.km_planned} km</span>` : ""}
     <span class="pd-s-st ${t.status}">${pill[t.status] || t.status}</span></li>`).join("")}</ul>`;
@@ -2138,7 +2274,7 @@ function tekenAtleet(d) {
         const meta = t.afstand_km != null
           ? `${nlNum(t.afstand_km)} km${t.duur_min ? " · " + t.duur_min + " min" : ""}`
           : (t.duur_min ? `${t.duur_min} min` : "");
-        return `<div class="tr-row"><span class="tr-d">${esc((t.datum || "").slice(5))}</span>
+        return `<div class="tr-row"><span class="tr-d">${esc(nlDatum(t.datum))}</span>
         <span class="tr-t">${esc(t.type || "Training")}</span>
         ${meta ? `<span class="tr-m">${esc(meta)}</span>` : ""}</div>`;
       }).join("")
@@ -3091,7 +3227,7 @@ function fbDockHtml(id) {
       <button class="btn primary fb-cta-primary" id="fb-send" type="button"${(fbDraftGet(id) || "").trim() ? "" : ' disabled aria-disabled="true"'}>${ic("message")} Feedback sturen</button>
       <div class="fb-cta-sec">
         <button class="btn ghost" id="fb-goschema" type="button">${ic("file")} Naar schema</button>
-        <button class="btn ghost" id="fb-godossier" type="button">${ic("brain")} Open dossier</button>
+        <button class="btn ghost" id="fb-godossier" type="button">${ic("note")} Open dossier</button>
         <button class="btn ghost" id="fb-skip" type="button">${ic("check")} Afgehandeld</button>
       </div>
     </div>
@@ -3524,7 +3660,7 @@ function fbCtxColHtml(vm) {
     : "";
   const link = key ? `<button type="button" class="ws-cta quiet" onclick="openAthleteModule('dossier','${esc(key)}')">Open dossier voor de volledige context</button>` : "";
   const body = (doelCard + klCard) || `<div class="fb-card is-calm"><p class="fb-cq">Geen extra context nodig — beoordeel op de uitvoering.</p></div>`;
-  return `<div class="fb-ctx-h">Context</div>${body}${link}`;
+  return `<div class="fb-ctx-h">Relevante context</div>${body}${link}`;
 }
 function fbRing(pct, tone) {
   const col = { "is-critical": "#F4744C", "is-attention": "#F0A62B", "is-calm": "#5EE6EB", "is-success": "#37D9A2", "is-stale": "#8098BC" }[tone] || "#5EE6EB";
@@ -4250,7 +4386,7 @@ function sbDagenNaarString() { return [...$("#cfg-dagen").querySelectorAll(".sb-
 function sbAfspraken(c) {
   const dagen = sbDagenUitString(c.trainingsdagen || ""), out = [];
   if (c.doel) out.push("Doel: " + c.doel);
-  if (c.weken) out.push(`Periode: ${c.weken} weken · ${c.startdatum || "?"}${c.schema_einddatum ? " → " + c.schema_einddatum : ""}`);
+  if (c.weken) out.push(`Periode: ${nlAantal(c.weken, "week", "weken")} · ${c.startdatum || "?"}${c.schema_einddatum ? " → " + c.schema_einddatum : ""}`);
   if (c.wedstrijddatum) out.push("Hoofddoel: " + c.wedstrijddatum);
   out.push(dagen.length ? `Trainingsdagen (${dagen.length}/week): ${dagen.map(i => SB_DAG_NL[i]).join(", ")}`
                         : "Trainingsdagen: nog niet gekozen — de AI kiest ze zelf");
@@ -4683,7 +4819,7 @@ function sbRenderPublish() {
   } else if (p.state === "writing") {
     cta = `<button class="btn primary block" id="sb-pub-go" disabled>${p.progress || "Publiceren…"}</button>`;
   } else if (p.state === "success") {
-    banner = `<div class="sb-pub-banner ok">${ic("check")} ${p.counts.success} trainingen gepubliceerd naar FinalSurge` +
+    banner = `<div class="sb-pub-banner ok">${ic("check")} ${nlAantal(p.counts.success, "training", "trainingen")} gepubliceerd naar FinalSurge` +
       `${dr ? ` (${esc(dr.van)} – ${esc(dr.tot)})` : ""}.` +
       `${p.counts.builder_failed ? ` ${p.counts.builder_failed}× WorkoutBuilder-detail mislukt (trainingen staan er wel).` : ""}</div>`;
     cta = `<div class="sb-tools"><button class="btn ghost" id="sb-pub-workbench">${ic("back")} Terug naar schema</button>
@@ -4700,9 +4836,9 @@ function sbRenderPublish() {
       ? `<label class="sb-pub-ack"><input type="checkbox" id="sb-pub-ack"> Ik heb de ${conflicts} aandachtspunten (bestaande/duplicaat) gecontroleerd en wil toch publiceren.</label>`
       : "";
     banner = conflicts
-      ? `<div class="sb-pub-banner warn">Let op: ${conflicts} van de ${c.included} trainingen vallen op een datum met een bestaande FinalSurge-training. Bestaande trainingen worden NIET overschreven of verwijderd — je voegt toe.</div>`
-      : `<div class="sb-pub-banner ok">${c.included} trainingen klaar om toe te voegen. Geen conflicten met bestaande planning gevonden.</div>`;
-    cta = ackHtml + `<button class="btn primary block" id="sb-pub-go"${conflicts ? " disabled" : ""}>${ic("check")} Publiceer ${c.included} trainingen naar FinalSurge</button>`;
+      ? `<div class="sb-pub-banner warn">Let op: ${conflicts} van de ${nlAantal(c.included, "training", "trainingen")} ${conflicts === 1 ? "valt" : "vallen"} op een datum met een bestaande FinalSurge-training. Bestaande trainingen worden NIET overschreven of verwijderd — je voegt toe.</div>`
+      : `<div class="sb-pub-banner ok">${nlAantal(c.included, "training", "trainingen")} klaar om toe te voegen. Geen conflicten met bestaande planning gevonden.</div>`;
+    cta = ackHtml + `<button class="btn primary block" id="sb-pub-go"${conflicts ? " disabled" : ""}>${ic("check")} Publiceer ${nlAantal(c.included, "training", "trainingen")} naar FinalSurge</button>`;
   }
 
   $("#sb-werk").innerHTML = `
@@ -4798,7 +4934,7 @@ function sbRenderWorkbench() {
         ${athleteNav("schema", sbState.key)}</div>
       <div class="sb-chips">
         <span class="sb-chip">🆕 nieuw</span>
-        ${ctx.weken ? `<span class="sb-chip">${esc(String(ctx.weken))} weken</span>` : ""}
+        ${ctx.weken ? `<span class="sb-chip">${esc(nlAantal(ctx.weken, "week", "weken"))}</span>` : ""}
         ${ctx.trainingsdagen ? `<span class="sb-chip">${esc(ctx.trainingsdagen)}</span>` : ""}
         <span class="sb-chip">zones · ${esc((sbState.config && sbState.config.zone_type) || ctx.zone_bron || "tempo")}</span>
         <span class="sb-chip sb-chip-sel"></span>
@@ -5097,7 +5233,7 @@ async function laadSchemaVerloop() {
   const items = r.items || [];
   const aandacht = items.filter(i => i.status === "verlopen" || i.status === "bijna" || i.status === "geen").length;
   info.textContent = items.length
-    ? `${items.length} atleten · ${aandacht} met aandacht (verlopen, bijna klaar of geen schema).`
+    ? `${nlAantal(items.length, "atleet", "atleten")} · ${aandacht} met aandacht (verlopen, bijna klaar of geen schema).`
     : "";
   if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen schema-data.</p></div>`; return; }
   box.innerHTML = "";
@@ -5187,7 +5323,7 @@ function pulsItem(it) {
   el.className = "rij-kaart puls-kaart " + (it.ernst === "hoog" ? "ernst-hoog" : "ernst-let");
   el.dataset.uk = it.user_key || "";                 // doel voor Home-deeplink (flash)
   const m = it.metrics || {};
-  const runs = (m.runs || []).map(r => `<li>${esc(r.datum)}: ${r.km} km${r.naam ? " · " + esc(r.naam) : ""}</li>`).join("");
+  const runs = (m.runs || []).map(r => `<li>${esc(nlDatum(r.datum))} · ${r.km != null ? esc(nlNum(r.km)) : "?"} km${r.naam ? " · " + esc(r.naam) : ""}</li>`).join("");
   const sig = (it.signalen || []).map(s => `<li>${esc(s)}</li>`).join("");
   el.innerHTML = `
     <div class="d-head">
@@ -5235,25 +5371,39 @@ function briefGemaaktLabel(iso, vandaag) {
   return `Gemaakt ${wanneer} · ${dagen} dagen oud`;
 }
 
-async function laadBriefing(force = false) {
-  const brief = $("#tp-briefing");
-  brief.innerHTML = `<div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w80"></div></div>`;
+// B3 — ÉÉN ophaal- en ÉÉN renderpad voor de weekbriefing, gedeeld door de Teampuls-
+// pagina en het Vandaag-blok. De memo zorgt dat beide plekken samen niet twee keer
+// dezelfde briefing ophalen; alleen een expliciete 'Vernieuw' (force) haalt opnieuw op.
+let _briefMemo = null;
+async function briefingGet(force = false) {
+  if (!force && _briefMemo) return _briefMemo;
   const r = await api(`/api/teampuls/briefing${force ? "?force=true" : ""}`).catch(() => null);
-  if (!r || !r.fs) { brief.innerHTML = `<p class="muted klein">Weekbriefing niet beschikbaar.</p>`; return; }
-  if (r.err) { brief.innerHTML = `<p class="muted klein">${esc(r.err)}</p>`; return; }
+  if (r) _briefMemo = r;
+  return r;
+}
+// Zelfde kaart, zelfde tekst, zelfde populatie-semantiek en dezelfde datering als altijd.
+function briefKaartHtml(r) {
+  if (!r || !r.fs) return `<p class="muted klein">Weekbriefing niet beschikbaar.</p>`;
+  if (r.err) return `<p class="muted klein">${esc(r.err)}</p>`;
   const s = r.stats || {};
   // De noemer is NIET de Home-roster: labelen wat er precies geteld wordt, met de volledige
   // definitie in de tooltip. Home (volledige FinalSurge-roster) en de briefing (atleten in
   // actieve coaching) mogen verschillen — ze mogen alleen niet als tegenspraak lezen.
   const popLabel = r.populatie_label || "gecoachte atleten actief";
   const popUitleg = r.populatie_uitleg || "";
-  brief.innerHTML = `
+  return `
     <article class="brief-kaart">
       <p class="muted klein">${esc(briefGemaaktLabel(r.gemaakt))} · gedeeld met beide coaches · ${s.n_trainingen ?? "?"} trainingen · ±${s.km_totaal ?? "?"} km · <span${popUitleg ? ` title="${esc(popUitleg)}"` : ""}>${s.n_actief ?? "?"}/${s.n_atleten ?? "?"} ${esc(popLabel)}</span></p>
       <div class="brief-tekst">${briefHtml(r.tekst || "")}</div>
-      <button class="btn ghost small" id="tp-brief-refresh">${ic("refresh")} Vernieuw briefing</button>
+      <button class="btn ghost small" data-brief-refresh>${ic("refresh")} Vernieuw briefing</button>
     </article>`;
-  $("#tp-brief-refresh")?.addEventListener("click", () => laadBriefing(true));
+}
+async function laadBriefing(force = false) {
+  const brief = $("#tp-briefing");
+  brief.innerHTML = `<div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w80"></div></div>`;
+  const r = await briefingGet(force);
+  brief.innerHTML = briefKaartHtml(r);
+  brief.querySelector("[data-brief-refresh]")?.addEventListener("click", () => laadBriefing(true));
 }
 // Lichte markdown → HTML voor de briefing (kop/bullet/vet)
 function briefHtml(t) {
@@ -5784,14 +5934,33 @@ function dcBuildEvents(x) {
         bronnen: [whyTxt, c.prov ? dcProvText(c.prov) : ""].filter(Boolean),
         prov: c.prov ? [c.prov.truth_type && (_DC_TRUTH[c.prov.truth_type] || c.prov.truth_type), c.prov.source, c.prov.observed_at, c.prov.status && String(c.prov.status).toLowerCase()].filter(Boolean) : [], vervolg: "" } });
   });
+  // A4b — de 'nu'-kolom filtert klachten er BEWUST uit (die staan gedateerd bij het
+  // verleden). Is een klacht het ENIGE aandachtspunt, dan bleef `now` leeg en vuurde de
+  // kalme fallback met de titel 'Geen open klacht of signaal' — terwijl die klacht een
+  // paar centimeter verderop op hetzelfde scherm staat. De fallback mag alleen 'geen
+  // klacht' claimen als `attn` ECHT leeg is. Staan er wél klachten, dan spiegelt het
+  // nu-anker exact wat de canonieke lijst als eerste noemt (dezelfde bron als `domIssue`
+  // in de stack-weergave) — geen nieuwe evidence, geen herclassificatie.
   if (!now.length) {
     const good = st.overall === "GOOD", insuf = st.overall === "INSUFFICIENT_DATA";
-    now.push({ id: "now-calm", when: "Vandaag", cls: "now", tone: good ? "is-success" : insuf ? "is-unknown" : "is-calm",
-      icon: insuf ? "alert" : "check", type: "Actuele staat",
-      title: insuf ? "Te weinig data voor een oordeel" : "Geen open klacht of signaal", sub: rel.level === "green" ? "bronnen vers" : "", ev: null,
-      detail: { quote: insuf ? "Nog te weinig data voor een betrouwbaar oordeel." : "Geen actieve klacht of signaal — bronnen vers.",
-        changed: "", why: "", bronnen: [insuf ? "Onvoldoende brondata" : `Overall: ${(_DC_OVERALL[st.overall] || "goed").toLowerCase()}`, rel.level === "green" ? "Alle bronnen vers" : relTxt].filter(Boolean),
-        prov: ["afgeleid", "state", "vandaag", rel.level === "green" ? "vers" : "let op"], vervolg: nowSub } });
+    const openKlacht = (attn || []).find(c => c.kind === "complaint") || null;
+    if (openKlacht && !insuf) {
+      const dt = openKlacht.prov && openKlacht.prov.observed_at ? openKlacht.prov.observed_at : "";
+      now.push({ id: "now-complaint", when: "Vandaag", cls: "now", tone: "is-attention", icon: "alert",
+        type: "Actuele staat", title: openKlacht.title, sub: "in beeld", ev: openKlacht.id || null,
+        detail: { quote: openKlacht.why || "", changed: "Staat nu in beeld.", why: "",
+          bronnen: [openKlacht.why || "", dt ? `Waargenomen: ${dcShort(dt)}` : ""].filter(Boolean),
+          prov: openKlacht.prov ? [openKlacht.prov.truth_type && (_DC_TRUTH[openKlacht.prov.truth_type] || openKlacht.prov.truth_type),
+            openKlacht.prov.source, openKlacht.prov.observed_at,
+            openKlacht.prov.status && String(openKlacht.prov.status).toLowerCase()].filter(Boolean) : [], vervolg: nowSub } });
+    } else {
+      now.push({ id: "now-calm", when: "Vandaag", cls: "now", tone: good ? "is-success" : insuf ? "is-unknown" : "is-calm",
+        icon: insuf ? "alert" : "check", type: "Actuele staat",
+        title: insuf ? "Te weinig data voor een oordeel" : "Geen open klacht of signaal", sub: rel.level === "green" ? "bronnen vers" : "", ev: null,
+        detail: { quote: insuf ? "Nog te weinig data voor een betrouwbaar oordeel." : "Geen actieve klacht of signaal — bronnen vers.",
+          changed: "", why: "", bronnen: [insuf ? "Onvoldoende brondata" : `Overall: ${(_DC_OVERALL[st.overall] || "goed").toLowerCase()}`, rel.level === "green" ? "Alle bronnen vers" : relTxt].filter(Boolean),
+          prov: ["afgeleid", "state", "vandaag", rel.level === "green" ? "vers" : "let op"], vervolg: nowSub } });
+    }
   }
 
   const future = dcFutureNodes(plan).map((n, i) => ({
@@ -5862,7 +6031,7 @@ function dcScene(d) {
 
   const bar = `<div class="dc-actionbar">
     <button type="button" class="dc-act" onclick="openAthleteModule('schema','${esc(vm.key)}')"><span class="ai">${ic("calendar")}</span><span class="at"><b>Naar schema</b><small>pas plan aan</small></span></button>
-    <button type="button" class="dc-act" onclick="openWorkspace('${esc(vm.key)}')"><span class="ai">${ic("brain")}</span><span class="at"><b>Workspace</b><small>dagelijkse werkplek</small></span></button></div>`;
+    <button type="button" class="dc-act" onclick="openWorkspace('${esc(vm.key)}')"><span class="ai">${ic("activity")}</span><span class="at"><b>Workspace</b><small>dagelijkse werkplek</small></span></button></div>`;
 
   return `<div class="dc-memory dc-cockpit ${sel.tone}">
     <div class="dc-env" aria-hidden="true"><div class="dc-haze"></div>${wsOrbits()}<div class="dc-vig"></div></div>
@@ -6207,7 +6376,7 @@ function wsNextHtml(topAttn, key, bel, sc, tone, belTone, staat, alle) {
   // Geen signalen én geen stand → geen groen licht geven. De coach krijgt een eerlijke
   // 'te weinig om op te oordelen'-stand plus de bestaande route naar het dossier.
   return `<p class="ws-unknown" id="ws-next-unknown">Te weinig om op te oordelen — geen belastingstand en geen open signaal.</p>
-    <button type="button" class="ws-next-btn is-unknown" onclick="openAthleteModule('dossier','${esc(key)}')">${ic("brain")} Bekijk in dossier</button>`;
+    <button type="button" class="ws-next-btn is-unknown" onclick="openAthleteModule('dossier','${esc(key)}')">${ic("note")} Bekijk in dossier</button>`;
 }
 
 // Bij meerdere signalen blijft ÉÉN actie primair, maar het eerstvolgende signaal van een
@@ -6574,7 +6743,13 @@ function wsRender(wrap, vm) {
   let h = genBanner(vm.generation);
   // V-17: Workspace krijgt een zichtbare paginatitel (consistent met de andere modules), zodat
   // het niet met Dossier verward wordt. De atleetnaam staat al in de switcher → hier niet herhalen.
-  h += `<div class="ws-pagehead"><h1 class="ws-pagetitle">Workspace</h1><p class="ws-pagesub">Wat vraagt deze atleet nu?</p></div>`;
+  // B1 — Workspace was de ENIGE atleetpagina zonder de gedeelde athleteNav; de
+  // `workspace`-tak in athleteNav bestond al (en de .ws-anchor-styling in het design
+  // system ook) maar werd nooit aangeroepen. Daardoor was Profiel vanuit Workspace niet
+  // in één tik bereikbaar. Zelfde component, zelfde relatieve volgorde (Workspace ·
+  // Profiel · Dossier · Schema, actieve valt weg), zelfde positie: direct onder de
+  // paginakop. Geen routewijziging, geen nieuwe state — activeAthleteKey blijft leidend.
+  h += `<div class="ws-pagehead ws-anchor"><h1 class="ws-pagetitle">Workspace</h1><p class="ws-pagesub">Wat vraagt deze atleet nu?</p>${athleteNav("workspace", key)}</div>`;
   const attnCls = attn.length ? `ds-tone ${tone}` : "";
   const loadCls = bel.actief ? `ds-tone ${belTone}` : "";
   const nextCls = (bel.actief || attn.length) ? `ds-tone ${tone}` : "";
@@ -6585,7 +6760,7 @@ function wsRender(wrap, vm) {
       ${attnBody}
     </section>
     <section class="ds-panel ws-panel ws-load-panel ${loadCls}" style="grid-area:load">
-      <div class="ds-sechead"><h3 class="ds-label">Belasting — laatste 7 dagen</h3>${nRuns ? `<span class="ds-sechead-note">${nRuns} runs in dit venster</span>` : ""}</div>
+      <div class="ds-sechead"><h3 class="ds-label">Belasting — laatste 7 dagen</h3>${nRuns ? `<span class="ds-sechead-note">${nlAantal(nRuns, "training", "trainingen")} in dit venster</span>` : ""}</div>
       ${loadBody}
     </section>
     <section class="ds-panel ws-panel ws-plan-panel" style="grid-area:plan">

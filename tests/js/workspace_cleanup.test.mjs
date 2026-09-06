@@ -63,6 +63,10 @@ const $$ = () => [];
 const esc = s => String(s == null ? "" : s);
 const ic = n => `<i:${n}>`;
 const nlNum = x => String(x).replace(".", ",");
+const _NL_MND = ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
+const nlDatum = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${+m[3]} ${_NL_MND[+m[2]-1]}` : String(iso || ""); };
+const nlAantal = (n, e, mv) => `${n} ${Number(n) === 1 ? e : mv}`;
+const athleteNav = (v, k) => `<div class="anav" data-anav="${v}:${k}"></div>`;
 const documentShim = { querySelector: () => byId._chip || null, createElement: t => new El(t) };
 
 // ── Gedeelde slices ──────────────────────────────────────────────────────────
@@ -85,12 +89,12 @@ const HELPERS = [
   sliceFrom("function prioSessiesHtml("),
 ].join("\n\n");
 
-const app = new Function("$", "$$", "esc", "ic", "nlNum", "document",
+const app = new Function("$", "$$", "esc", "ic", "nlNum", "nlDatum", "nlAantal", "athleteNav", "document",
   HELPERS + "\nreturn { wsActieLead, wsSchemaVerloopt, wsActieBtn, wsVulLoadContext," +
   " wsContextSignalen, wsDeepContext, wsMagRustig, wsZetBadge, wsSignalenHtml, wsNextHtml," +
   " wsUniekeSignalen, wsTweedeActie," +
   " prioSessiesHtml };"
-)($, $$, esc, ic, nlNum, documentShim);
+)($, $$, esc, ic, nlNum, nlDatum, nlAantal, athleteNav, documentShim);
 
 // ══ T1 — bekende belasting mag niet als UNKNOWN eindigen ═════════════════════
 {

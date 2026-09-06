@@ -156,6 +156,7 @@ def _attention(st) -> list:
     nieuwe afleiding. Elke kaart draagt het domein dat hij (eventueel) opent.
     Kernbron-gap = betrouwbaarheidskaart die GÉÉN domein opent (§12-C)."""
     cards = []
+    _recovery_neg: list = []                      # A4a: verzamelen, ná de loop één kaart
 
     for e in st.evidence:
         k = e.key
@@ -208,8 +209,22 @@ def _attention(st) -> list:
                                        f"laatste {_dg} dagen" if _dg else "recent", e, rank=2))
         elif (k == "recovery.rpe_trend" and e.value == "zwaarder") or \
              (k == "recovery.feeling_trend" and e.value == "slechter"):
-            cards.append(_card_obj("recovery_neg", "recovery", "herstel",
-                                   "Herstel onder druk", f"{_label(k)}: {e.value}", e, rank=2))
+            # A4a — deze tak is één OR over TWEE verschillende evidence-keys. Draagt een
+            # atleet beide (RPE zwaarder én gevoel slechter), dan vuurde hij twee keer en
+            # verscheen 'Herstel onder druk' TWEE KEER met dezelfde titel (alleen de
+            # ondertitel verschilde). We verzamelen ze hier en maken er ná de loop ÉÉN
+            # kaart van met beide bronregels. Geen evidence-herclassificatie: beide
+            # waarnemingen bestaan echt en blijven allebei zichtbaar.
+            _recovery_neg.append(e)
+
+    # A4a — ÉÉN 'Herstel onder druk'-kaart, met elke onderbouwende bronregel erin.
+    # Deterministisch: sorteren op key, zodat de kaart-id (en dus de deep-link) stabiel
+    # is ongeacht de volgorde waarin de evidence binnenkomt.
+    if _recovery_neg:
+        _rn = sorted(_recovery_neg, key=lambda ev: ev.key)
+        _why = " · ".join(f"{_label(ev.key)}: {ev.value}" for ev in _rn)
+        cards.append(_card_obj("recovery_neg", "recovery", "herstel",
+                               "Herstel onder druk", _why, _rn[0], rank=2))
 
     for cid in getattr(st, "conflicts", []) or []:
         e = st.get(cid)
