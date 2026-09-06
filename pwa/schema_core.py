@@ -1138,6 +1138,23 @@ def publish_preview(key: str, config: dict, rows: list) -> dict:
 # zijn (dubbelklik/retry/timeout → nooit dubbel schrijven). In-memory volstaat voor
 # de sessie; de read-before-write preview vangt reeds bestaande duplicaten los daarvan.
 _WRITE_RECEIPTS: dict = {}
+# De sleutelruimte (`write_id`) is onbegrensd en er stond geen enkele opruiming op, dus
+# elke publish liet permanent een receipt achter. Klein per stuk, maar het is een echte
+# onbegrensde map. Idempotency hoeft alleen de recente writes te dekken (dubbelklik /
+# retry / timeout binnen dezelfde sessie); de read-before-write preview vangt oudere
+# duplicaten sowieso apart af.
+_RECEIPTS_MAX = 50
+
+
+def _receipt(write_id: str) -> dict:
+    """Receipt voor deze write_id, met een begrensde historie (oudste eruit)."""
+    r = _WRITE_RECEIPTS.setdefault(write_id or "anon", {"success": set()})
+    while len(_WRITE_RECEIPTS) > _RECEIPTS_MAX:
+        oudste = next(iter(_WRITE_RECEIPTS))
+        if oudste == (write_id or "anon"):               # nooit de actieve write weggooien
+            break
+        _WRITE_RECEIPTS.pop(oudste, None)
+    return r
 
 
 def _row_sig(r: dict) -> str:
@@ -1170,7 +1187,7 @@ def publish(key: str, config: dict, rows: list, write_id: str = "") -> dict:
     zone_type = "heart_rate" if _zt in ("hartslag", "heart_rate") else "pace"
     op_tijd = bool(intake.get("op_tijd"))
     import schema_builder as SB
-    receipt = _WRITE_RECEIPTS.setdefault(write_id or "anon", {"success": set()})
+    receipt = _receipt(write_id)
     done = receipt["success"]
 
     results, ok, fail, builderfail, skipped = [], 0, 0, 0, 0

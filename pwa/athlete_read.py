@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
 import time
 from datetime import date
@@ -61,7 +62,7 @@ class AthleteRead:
 
 class _Entry:
     __slots__ = ("state", "raw", "gen", "schema_version", "source_health",
-                 "degraded", "built_at", "created_wall", "created_mono")
+                 "degraded", "built_at", "created_wall", "created_mono", "used_mono")
 
     def __init__(self, state, raw, gen, schema_version, source_health, degraded, built_at):
         self.state = state
@@ -73,12 +74,37 @@ class _Entry:
         self.built_at = built_at
         self.created_wall = time.time()
         self.created_mono = time.monotonic()
+        self.used_mono = self.created_mono       # LRU-stempel (laatste serve)
 
 
 # ── in-process state ─────────────────────────────────────────────────────────
-_MEM: dict = {}                        # user_key -> _Entry (hot read)
+_MEM: dict = {}                        # user_key -> _Entry (hot read, LRU-begrensd)
 _LOCK = threading.Lock()               # guards _MEM + _INFLIGHT
 _INFLIGHT: dict = {}                   # user_key -> threading.Event (fg OF bg build in flight)
+
+# ── LRU-grens op de hot cache ────────────────────────────────────────────────
+# Elke entry houdt niet alleen de AthleteState vast maar ook de VOLLEDIGE `raw` gather:
+# 4 maanden trainingslog (met laps) + ~97 dagen kalenderlabels + zones/intake/notities.
+# Gemeten met de benchmark: ~1,3 MB per atleet (synthetische, eerder conservatieve
+# fixtures). Er zat geen enkele eviction op: `_STATE_TTL_SEC` markeert een entry alleen
+# als STALE en laat 'm daarna vervangen — nooit vrijgeven. Een coach die zijn hele roster
+# langsloopt, zette dus permanent roster × ~1,3 MB vast. Dat is de tweede helft van de
+# geheugenopbouw die Render op ~512 MB liet herstarten.
+#
+# We houden bewust de INHOUD compleet (`raw` wordt echt gebruikt door de cockpit —
+# planning + belasting-observatie) en begrenzen alleen het AANTAL warme atleten. Wie uit
+# de cache valt, wordt bij het volgende bezoek gewoon opnieuw gebouwd: één build voor één
+# atleet, on-demand, exact zoals het eerste bezoek — geen fan-out, geen storm. De LKG-
+# snapshot blijft de waarheidsbron, dus er gaat geen kennis verloren.
+_MAX_ENTRIES = max(1, int(os.getenv("BEBETTER_STATE_CACHE_MAX", "24")))
+
+
+def _evict_locked() -> None:
+    """Houd `_MEM` onder de grens. Aanroeper houdt `_LOCK`. Verwijdert de langst niet
+    gebruikte entries; een build die NU in flight is blijft staan (die wordt zo gevuld)."""
+    while len(_MEM) > _MAX_ENTRIES:
+        oud = min(_MEM, key=lambda k: _MEM[k].used_mono)
+        _MEM.pop(oud, None)
 
 
 def _run_bg(fn) -> None:
@@ -157,6 +183,7 @@ def _do_build(user_key: str, today, gather_fn) -> AthleteRead:
                  degraded=degraded, built_at=getattr(state, "built_at", ""))
     with _LOCK:
         _MEM[user_key] = ent
+        _evict_locked()                    # begrensde hot cache (zie _MAX_ENTRIES)
     return _serve(ent, "fresh", False)
 
 
@@ -220,6 +247,8 @@ def get_state(user_key: str, today: date | None = None, refresh: bool = False,
     if not refresh:
         with _LOCK:
             ent = _MEM.get(user_key)
+            if ent is not None:
+                ent.used_mono = time.monotonic()          # LRU: dit bezoek telt als gebruik
         if ent is not None:
             age_mono = time.monotonic() - ent.created_mono
             if age_mono <= _STATE_TTL_SEC:

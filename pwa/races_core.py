@@ -15,7 +15,14 @@ if _ROOT not in sys.path:
 
 import fs_client as FS
 
-_cache: dict[str, dict] = {}                        # workout_key -> race-dict
+_cache: dict[str, dict] = {}                        # workout_key -> race-dict (begrensd)
+_CACHE_MAX = 400                                    # ruim boven elke realistische raceslijst
+
+
+def _prune_cache() -> None:
+    """Houd de wens-lookup begrensd; dicts bewaren invoegvolgorde, dus de oudste gaat eruit."""
+    while len(_cache) > _CACHE_MAX:
+        _cache.pop(next(iter(_cache)), None)
 
 
 def heeft_token() -> bool:
@@ -86,6 +93,13 @@ def komende(days_ahead: int = 42, alleen_zonder_wens: bool = False) -> dict:
             "wens_gegeven": bool(r.get("wish_given")),
             "wens": _wens(r),
         })
+    # `_cache` is de lookup voor `plaats_wens`. Hij werd alleen maar aangevuld en nooit
+    # opgeschoond: elke race die ooit is getoond bleef (mét comments) hangen zolang het
+    # proces leefde. We legen hem NIET per listing — twee coaches delen dit proces en een
+    # gefilterde weergave mag de wens-lookup van de ander niet wegnemen — maar begrenzen
+    # hem op de oudst-ingevoegde entries. Een gepruned item levert exact het bestaande
+    # gedrag op: "Race niet meer in beeld — ververs de lijst."
+    _prune_cache()
     return {"items": items, "fs": True,
             "dagen": days_ahead, "alleen_zonder_wens": bool(alleen_zonder_wens)}
 
