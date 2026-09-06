@@ -265,7 +265,8 @@ class TestClientWiring:
         assert "openModuleFromNav('feedback'" in body      # Cowork B8: Feedback-kaart → generieke queue
         # De belasting-1-tap wordt gebouwd door de gedeelde actie-helper: de PRIMAIRE actie
         # hoort bij het PRIMAIRE signaal, dus één plek kiest knop + doel.
-        assert "wsActieBtn(topAttn" in body
+        assert "wsNextHtml(topAttn" in body
+        assert "wsActieBtn(topAttn, key, bel, sc, tone, belTone)" in _fn("wsNextHtml")
         assert "wsMarkeerGezien(" in _fn("wsActieBtn")
 
 

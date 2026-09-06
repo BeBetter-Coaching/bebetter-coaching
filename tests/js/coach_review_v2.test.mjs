@@ -131,8 +131,15 @@ const ok = (c, n, extra) => { if (!c) failures.push(n + (extra ? "  [" + extra +
      "A2: 'belasting vers' gated on an actual stand (km_recent != null)");
   ok(/const fresh = \(heeftStand && bel\.datum\)/.test(ws),
      "A2: no freshness chip without a stand");
-  ok(ws.includes("topAttn") && /Bekijk in dossier/.test(ws),
-     "A2: attention present → next-action names the reason + routes (never 'alles bij')");
+  // De actie wordt door de gedeelde builder gemaakt (zodat de deep-read signaal + actie
+  // samen kan herbouwen); het coherentiecontract blijft identiek.
+  const nxt = sliceFrom("function wsNextHtml(");
+  ok(ws.includes("wsNextHtml(topAttn") && nxt.includes("wsActieLead(topAttn, bel)"),
+     "A2: attention present → next-action names the reason");
+  ok(/Bekijk in dossier/.test(sliceFrom("function wsActieBtn(")),
+     "A2: … and routes to the matching context (never 'alles bij')");
+  ok(nxt.includes('if (staat === "rustig") return `<p class="ws-calm">Geen directe actie'),
+     "A2: 'alles bij' only in the calm branch");
   ok(/nextCls = \(bel\.actief \|\| attn\.length\)/.test(ws),
      "A2: next-action card gets the tone when there is any attention");
 }

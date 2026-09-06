@@ -97,16 +97,16 @@ class TestUnknownIsGeenRust:
         assert 'attn.length ? "aandacht" : (belStand ? "rustig" : "onbekend")' in body[:6000]
 
     def test_geruststelling_hangt_niet_aan_afwezige_data(self):
-        i = _APP.index("const nextBody = topAttn")
-        blok = _APP[i:i + 900]
+        blok = _APP[_APP.index("function wsNextHtml("):]
+        blok = blok[:blok.index("\n}")]
         assert "Geen directe actie — alles bij." in blok
-        assert 'wsStaat === "rustig"' in blok
+        assert 'if (staat === "rustig")' in blok
         assert "Te weinig om op te oordelen" in blok
 
     def test_opwaardering_vereist_autoritatieve_bron(self):
-        i = _APP.index("function wsHefOnbekendOp(")
-        blok = _APP[i:i + 700]
-        assert "if (st.insufficient) return;" in blok
+        blok = _APP[_APP.index("function wsMagRustig("):]
+        blok = blok[:blok.index("\n}")]
+        assert "!!lc.known" in blok and "!st.insufficient" in blok
 
 
 # ══ T5 — trainingsblok: recent + komend, Home byte-identiek ══════════════════

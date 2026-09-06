@@ -56,8 +56,9 @@ const REAL = [
   // signaal ⇄ primaire actie), en de deep-read vult load-context/dossier-event.
   sliceFrom("function wsActieLead("), sliceFrom("function wsSchemaVerloopt("),
   sliceFrom("function wsActieBtn("), sliceFrom("function wsVulLoadContext("),
-  sliceFrom("function wsVulContext("), sliceFrom("function wsHefOnbekendOp("),
-  sliceFrom("function wsKoppelEvent("), sliceFrom("async function wsTrainingen("),
+  sliceFrom("function wsContextSignalen("), sliceFrom("function wsDeepContext("),
+  sliceFrom("function wsMagRustig("), sliceFrom("function wsZetBadge("),
+  sliceFrom("function wsSignalenHtml("), sliceFrom("function wsNextHtml("), sliceFrom("async function wsTrainingen("),
   sliceFrom("function prioSessiesHtml("),
   sliceFrom("function wsRender("), sliceFrom("async function wsLoadDeep("),
   sliceFrom("function wsSwitchVul("), sliceFrom("async function laadWorkspace("), sliceFrom("async function wsShow("),

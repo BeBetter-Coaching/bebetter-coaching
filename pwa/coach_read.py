@@ -298,6 +298,9 @@ def _athlete_belasting(user_key: str, stand: dict | None = None) -> dict:
     return {"actief": True, "ernst": lm["ernst"], "pct": lm["pct"],
             "km_recent": lm["km_recent"], "km_basis_week": lm["km_basis_week"],
             "signalen": lm["signalen"], "reden": lm["reden"],
+            # Canonieke hoofdreden (zelfde bron als de ingeklapte Home-regel). `reden` blijft
+            # de eerste BRONZIN als onderbouwing; `primair` is wat de coach als kop leest.
+            "primair": lm["primair"], "kort": lm["kort"],
             "runs": runs,
             "datum": stand.get("datum")}
 
@@ -347,7 +350,11 @@ def _attention(row: dict | None, bel: dict, fb: dict) -> list:
     out = []
     if bel.get("actief"):
         pct = bel.get("pct")
-        kort = bel.get("reden") or "belasting-signaal"
+        # De HOOFDREDEN, niet de eerste losse bronzin. Die bronzin kan een notitie-signaal
+        # zijn ("Noemt in notities: last van · 31-08"), waardoor 'Aandacht nu' als een
+        # KLACHT las terwijl de bijbehorende actie 'Belasting gezien' was — signaal en actie
+        # spraken elkaar dan schijnbaar tegen terwijl het één en hetzelfde signaal is.
+        kort = bel.get("primair") or bel.get("reden") or "belasting-signaal"
         out.append({"soort": "belasting",
                     "tier": "actie" if bel.get("ernst") == "hoog" else "aandacht",
                     "kort": kort, "pct": pct})
