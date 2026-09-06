@@ -282,15 +282,36 @@ class TestP2Coherentie:
 # ══ Non-goals: Feedback en de waarheidslagen blijven ongemoeid ═══════════════
 class TestNonGoals:
     def test_feedback_generatiepad_onaangeraakt(self):
+        """De Feedback-COACHINGLAAG blijft gesloten sinds `8786210` (v-coachability).
+
+        `pwa/feedback_core.py` staat bewust NIET in deze lijst: die module draagt naast de
+        generatie ook de queue-/cache-huishouding, en die mág wijzigen (de memory-fix
+        begrenst er `_cache`). Wat niet mag wijzigen is het generatiepad zelf — dat wordt
+        hieronder afzonderlijk vastgehouden op de generatie-functies."""
         import subprocess
         diff = subprocess.run(
             ["git", "diff", "--name-only", "8786210", "--"],
             cwd=_ROOT, capture_output=True, text=True).stdout.split()
         verboden = {"ai_feedback.py", "feedback_atoms.py", "feedback_copy.py",
                     "feedback_facts.py", "feedback_obligations.py", "metric_authority.py",
-                    "pwa/feedback_core.py", "pwa/feedback_week.py"}
+                    "pwa/feedback_week.py"}
         raakt = verboden.intersection(diff)
-        assert not raakt, f"Feedback buiten scope, toch aangeraakt: {sorted(raakt)}"
+        assert not raakt, f"Feedback-coachinglaag buiten scope, toch aangeraakt: {sorted(raakt)}"
+
+    def test_feedback_core_generatiefuncties_onaangeraakt(self):
+        """Elke wijziging in feedback_core sinds `8786210` valt buiten het generatiepad.
+        Git noemt bij elke hunk de omsluitende functie; geen daarvan mag een generatie-
+        of validatiefunctie zijn."""
+        import re
+        import subprocess
+        diff = subprocess.run(["git", "diff", "-U0", "8786210", "--", "pwa/feedback_core.py"],
+                              cwd=_ROOT, capture_output=True, text=True).stdout
+        contexten = re.findall(r"^@@[^@]*@@ *(.*)$", diff, re.M)
+        generatie = ("def genereer", "def _validate_or_block", "def _brein_context",
+                     "def _build_workout_context", "def feedback_mode", "def plaats",
+                     "def _session_context", "def last_generation_status")
+        raak = [c for c in contexten if any(c.strip().startswith(g) for g in generatie)]
+        assert not raak, f"generatiepad geraakt in feedback_core: {raak}"
 
     def test_geen_nieuwe_store_of_cache(self):
         hc = open(os.path.join(_ROOT, "pwa", "home_core.py")).read()

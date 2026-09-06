@@ -592,6 +592,7 @@ def _verwijder_uit_queue(wid: str) -> None:
     overschrijft `gepost` met het autoritatieve `posted_today` (geen drift over sweeps heen)."""
     global _QUEUE_MEM
     _cache.pop(wid, None)                                 # in-proces: niet opnieuw actionable
+    _GEN_STATUS.pop(wid, None)                            # geen verweesde generatie-status
     persist_snap = None
     try:
         with _QLOCK:
@@ -1160,10 +1161,29 @@ def _queue_valid(snap) -> bool:
 
 
 def _herstel_cache(snap: dict) -> None:
-    """Repopuleer _cache uit de (durabele) snapshot zodat detail/genereer/plaats na
-    een restart werken zonder een volledige sweep."""
-    for wid, w in (snap.get("_volle") or {}).items():
+    """Synchroniseer `_cache` MET de snapshot: repopuleer ontbrekende workouts (zodat
+    detail/genereer/plaats na een restart werken zonder volledige sweep) én laat alles
+    vallen wat niet meer in de snapshot staat.
+
+    MEMORY-CORRECTHEID: `_cache` groeide hiervoor alleen maar. `setdefault` voegde elke
+    sweep nieuwe workout_keys toe en verwijderde nooit de keys die uit het 7-daagse
+    venster waren gerold; alleen een geslaagde post haalde er één weg. Bij een proces dat
+    dagen doorloopt betekent dat een monotone opbouw van volle workout-dicts — inclusief
+    de lazy opgehaalde `details` (alle laps) van elke geopende training. De snapshot IS
+    de canonieke openstaande verzameling, dus die verzameling is ook precies de juiste
+    grens voor deze lookup-cache. Een gepruned item is niet verloren: `get_or_restore_workout`
+    herstelt op een miss uit dezelfde snapshot (geen FinalSurge-call).
+
+    `setdefault` blijft bewust staan voor de OVERLEVENDE keys: dat behoudt object-identiteit
+    (en dus de al geladen `details`) over een refresh heen."""
+    volle = snap.get("_volle") or {}
+    for wid, w in volle.items():
         _cache.setdefault(wid, w)
+    if volle:
+        for wid in [k for k in _cache if k not in volle]:
+            _cache.pop(wid, None)
+        for wid in [k for k in _GEN_STATUS if k not in volle]:
+            _GEN_STATUS.pop(wid, None)                   # generatie-status volgt dezelfde grens
 
 
 # ── Diagnostiek (fase 2.2 punt 1: alleen meten, geen structurele wijziging) ───
@@ -1318,13 +1338,36 @@ def feedback_open_truth() -> dict | None:
             "pct": truth["pct"], "open_ids": truth["open_ids"]}
 
 
+def _persist_payload(snap: dict) -> dict:
+    """De snapshot zoals hij DURABEL wordt weggeschreven: zonder de lazy opgehaalde
+    `details`.
+
+    `_ensure_details` schrijft de volledige FinalSurge-detailpayload (alle laps) rechtstreeks
+    op het gecachete workout-object, en dat object is bij een verse sweep hetzelfde object als
+    `snap["_volle"][wid]`. Daardoor groeide de durable snapshot mee met elke training die de
+    coach opende (gemeten: één geopende training verdubbelde de snapshot-JSON), werd elke
+    persist zwaarder, en laadde een restart die laps meteen terug in het geheugen. `details`
+    is per definitie herafleidbaar (dat is precies wat `_ensure_details` doet), dus de LKG
+    heeft ze niet nodig. In-memory identiteit blijft ongemoeid: alleen de payload die naar de
+    store gaat is uitgekleed."""
+    volle = snap.get("_volle")
+    if not isinstance(volle, dict) or not volle:
+        return snap
+    schoon = {}
+    for wid, w in volle.items():
+        if isinstance(w, dict) and w.get("details"):
+            w = {k: v for k, v in w.items() if k != "details"}
+        schoon[wid] = w
+    return {**snap, "_volle": schoon}
+
+
 def _queue_persist(snap: dict) -> tuple[bool, str]:
     """Persisteer de snapshot; geeft (ok, fout) terug zodat de aanroeper save-
     fouten zichtbaar kan maken in de diagnostiek. Retry/SHA-gedrag ONGEWIJZIGD."""
     global _QUEUE_MEM, _LAST_PERSIST
     _QUEUE_MEM = snap
     try:
-        ok, err = intake_store.save_feedback_queue(snap)
+        ok, err = intake_store.save_feedback_queue(_persist_payload(snap))
     except Exception as e:
         ok, err = False, type(e).__name__ + ": " + str(e)[:120]
     _LAST_PERSIST = {"ok": bool(ok), "error": (err or None) if not ok else None,
