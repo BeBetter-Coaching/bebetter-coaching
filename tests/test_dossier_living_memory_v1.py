@@ -125,8 +125,12 @@ class TestThreeZone:
         assert "Notitie toevoegen" not in scene and "Notitie bewerken" not in scene
 
     def test_11_smal_wordt_verticale_tijd_stack(self):
+        """De 1280-drempel staat sinds de polish-ronde in ÉÉN gedeelde helper (`dcIsNarrow`),
+        die JS en CSS nu allebei gebruiken — de literal stond eerst inline in dcRender."""
         rn = _fn("dcRender")
-        assert "isNarrow = window.innerWidth < 1280" in rn
+        assert "const isNarrow = dcIsNarrow();" in rn
+        assert "window.innerWidth < 1280" in _fn("dcIsNarrow")
+        assert "@media (max-width:1279px){ .dc-grid{grid-template-columns:1fr}" in _DS
         assert "dcStack(d)" in rn and "dcScene(d)" in rn
         stack = _fn("dcStack")
         assert "dcm-spine" in stack and "dcm-now" in stack

@@ -1304,7 +1304,10 @@
 .dc-quote:last-child{margin-bottom:0}.dc-quote.muted{color:var(--ds-text-3);font-style:normal}
 
 /* Veiligheids-fallback: als het 3-zone raster ooit te smal rendert, stapel het. */
-@media (max-width:1180px){ .dc-grid{grid-template-columns:1fr} .dc-conn{display:none} }
+/* Responsive-fix: deze grens stond op 1180px terwijl de JS het scene-tableau pas
+   vanaf 1280px rendert (`dcScene` vs `dcStack`) — de regel kon dus nooit vuren. Nu
+   gelijkgetrokken met die ene drempel, zodat CSS en JS hetzelfde omslagpunt kennen. */
+@media (max-width:1279px){ .dc-grid{grid-template-columns:1fr} .dc-conn{display:none} }
 
 /* ══ Mobiel: kalme verticale tijd-vertelling ══════════════════════════════ */
 .dc-stack{padding-bottom:var(--ds-6)}
@@ -1409,6 +1412,21 @@
   box-shadow:inset 0 1px 0 rgba(192,217,255,.06),0 24px 54px -38px rgba(2,8,20,.9)}
 .fb-cockpit .fb-grid{display:grid;gap:14px;align-items:start;
   grid-template-columns:minmax(254px,296px) minmax(0,1.94fr) minmax(258px,298px)}
+/* Responsive-fix (polish-ronde): de drie kolommen golden vanaf 1101px, maar de shell
+   kost daar 250px zijbalk + 80px padding. Rekenkundig hield de MIDDENkolom — het
+   case-detail, de belangrijkste zone van de module — dan nog ~231px over bij 1101px
+   en ~350px bij 1250px. Onder 1360px daarom een tussenstap: wachtrij + case naast
+   elkaar, context eronder over de volle breedte. Presentatie-only; dezelfde DOM. */
+@media (min-width:1101px) and (max-width:1359px){
+  .fb-cockpit .fb-grid{grid-template-columns:minmax(240px,282px) minmax(0,1fr)}
+  .fb-cockpit .fb-ctx-col{grid-column:1 / -1;order:3}
+}
+/* Net boven die grens stonden beide zijkolommen nog op hun MAXIMUM (296/298), waardoor
+   het case-detail op 1400px op 418px bleef steken. Laat ze daar iets krimpen ten gunste
+   van het midden; vanaf ~1500px is er ruimte genoeg en gelden de normale maten weer. */
+@media (min-width:1360px) and (max-width:1499px){
+  .fb-cockpit .fb-grid{grid-template-columns:minmax(238px,266px) minmax(0,2.2fr) minmax(242px,270px)}
+}
 
 /* ── LINKS — wachtrij ─────────────────────────────────────────────────────── */
 .fb-cockpit .fbq-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 16px 10px}

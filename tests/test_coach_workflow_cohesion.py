@@ -92,7 +92,9 @@ class TestAthleteNav:
 
     def test_css_aanwezig_en_mobiel_compact(self):
         assert ".anav-chip{" in _CSS
-        assert "@media(max-width:480px)" in _CSS and ".anav-chip" in _CSS.split("@media(max-width:480px)")[1][:120]
+        # Toets de compacte mobiele regel ZELF; de oude assertie hing aan de positie van de
+        # eerste `@media(max-width:480px)` in het bestand en brak op elke nieuwe 480-regel.
+        assert "@media(max-width:480px){.anav-chip{" in _CSS
 
 
 # ── 3. Teampuls → Dossier (bugfix) ───────────────────────────────────────────

@@ -145,6 +145,7 @@ console.log("== Consolidation R1: copy-primitieven, Dossier-coherentie, Vandaag-
 
   const REAL = [
     sliceLine("const _NL_MND = "), sliceFrom("function nlDatum("), sliceFrom("function nlAantal("),
+    sliceFrom("function leegState("), sliceLine("let _foutSeq = "), sliceFrom("function foutState("),
     sliceLine("let homeSeg = "), sliceLine("let homeMonGeladen = "),
     sliceFrom("function homeZetSegment("), sliceFrom("async function homeVulMonitoring("),
     sliceFrom("function homeMonBelasting("), sliceFrom("function homeMonSchema("),
@@ -207,9 +208,13 @@ console.log("== Consolidation R1: copy-primitieven, Dossier-coherentie, Vandaag-
     ok(els["#hmon-bel"].innerHTML.includes("Geen verbinding"), "B2: netwerkfout is geen 'alles goed'");
     reset(); const app2 = build();
     app2.homeMonBelasting({ fs: true, pending: true });
-    ok(els["#hmon-bel-info"].textContent.includes("voor het eerst berekend"),
-       "B2: pending is geen lege stand", els["#hmon-bel-info"].textContent);
-    ok(els["#hmon-bel"].innerHTML === "", "B2: pending toont geen 'binnen de marge'");
+    // Polish-ronde: de pending-uitleg staat nu in de gedeelde `leegState` IN het paneel
+    // (icoon + zin + wat je kunt doen) i.p.v. als losse infotekst erboven. Dezelfde eis:
+    // een nog-niet-berekende stand mag nooit als 'niets aan de hand' lezen.
+    ok(els["#hmon-bel"].innerHTML.includes("voor het eerst berekend"),
+       "B2: pending is geen lege stand", els["#hmon-bel"].innerHTML);
+    ok(!els["#hmon-bel"].innerHTML.includes("binnen de marge"),
+       "B2: pending toont geen 'binnen de marge'", els["#hmon-bel"].innerHTML);
     reset(); const app3 = build();
     app3.homeMonBelasting({ fs: true, vers: true, items: [], hoog: 0 });
     ok(els["#hmon-bel"].innerHTML.includes("binnen de marge"),

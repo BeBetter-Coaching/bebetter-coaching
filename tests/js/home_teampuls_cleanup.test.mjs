@@ -240,8 +240,13 @@ const esc = s => String(s == null ? "" : s);
   let gevraagd = "";
   const box = new El("div"), info = new El("div");
   byId = { "rc-lijst": box, "rc-info": info };
-  const laad = new Function("$", "$$", "api", "skeleton", "ic", "raceItem", "rcScope", "RC_CHIP_DAGEN",
-    sliceFrom("async function laadRaces(") + "\nreturn laadRaces;"
+  // `nlAantal`/`leegState`/`foutState` zijn gedeelde presentatie-primitieven; slice de
+  // ECHTE implementaties mee zodat het laadpad draait zoals in productie.
+  const RACE_DEPS = ["$", "$$", "api", "skeleton", "ic", "raceItem", "rcScope", "RC_CHIP_DAGEN"];
+  const RACE_REAL = [sliceFrom("function nlAantal("), sliceFrom("function leegState("),
+                     sliceLine("let _foutSeq = "), sliceFrom("function foutState("),
+                     sliceFrom("async function laadRaces(")].join("\n\n");
+  const laad = new Function(...RACE_DEPS, RACE_REAL + "\nreturn laadRaces;"
   )($, $$, u => { gevraagd = u; return Promise.resolve({ fs: true, items: [{ wens_gegeven: false }] }); },
     () => {}, () => "", () => new El("div"), "7d", 7);
   await laad();
@@ -250,8 +255,7 @@ const esc = s => String(s == null ? "" : s);
   ok(info.textContent.includes("zonder wens") && info.textContent.includes("7 dagen"),
      "T4.7 de bestemming benoemt exact wat de chip belooft", info.textContent);
 
-  const laad2 = new Function("$", "$$", "api", "skeleton", "ic", "raceItem", "rcScope", "RC_CHIP_DAGEN",
-    sliceFrom("async function laadRaces(") + "\nreturn laadRaces;"
+  const laad2 = new Function(...RACE_DEPS, RACE_REAL + "\nreturn laadRaces;"
   )($, $$, u => { gevraagd = u; return Promise.resolve({ fs: true, items: [] }); },
     () => {}, () => "", () => new El("div"), "alle", 7);
   await laad2();

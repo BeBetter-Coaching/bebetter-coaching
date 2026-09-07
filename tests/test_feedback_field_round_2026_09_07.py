@@ -590,7 +590,13 @@ class TestLocks:
                 f"fs_client-wijziging buiten get_fastest_activity_on_day: regels {eerste}-{eerste + n - 1}"
 
     def test_client_versie_gebumpt(self):
-        sw = open(os.path.join(_ROOT, "pwa", "static", "sw.js")).read()
-        idx = open(os.path.join(_ROOT, "pwa", "static", "index.html")).read()
+        """Historisch feit over DEZE build: hij bumpte de shell naar v134 / ?v=138a. Lees de
+        bestanden op `_TIP` in plaats van uit de werkmap — anders is dit een verbod op elke
+        latere client-bump in plaats van een assertie over deze ronde."""
+        def _op_tip(pad):
+            return subprocess.run(["git", "show", f"{_TIP}:{pad}"],
+                                  cwd=_ROOT, capture_output=True, text=True).stdout
+        sw = _op_tip("pwa/static/sw.js")
+        idx = _op_tip("pwa/static/index.html")
         assert "bebetter-shell-v134" in sw
         assert idx.count("?v=138a") == 3 and "?v=137a" not in idx
