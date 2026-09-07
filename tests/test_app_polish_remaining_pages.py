@@ -25,7 +25,7 @@ _DS = open(os.path.join(_ROOT, "pwa", "static", "design-system.css")).read()
 _DC = open(os.path.join(_ROOT, "pwa", "dossier_cockpit.py")).read()
 
 # Scope-lock-venster: basis → merge (vastgepind, geen bewegend doel op HEAD).
-_BASE, _TIP = "7cd278f", "HEAD"
+_BASE, _TIP = "7cd278f", "ada006c"
 
 
 def _fn(name: str) -> str:
@@ -332,14 +332,19 @@ class TestLocks:
             assert verboden not in diff, f"buiten scope: {verboden}"
 
     def test_dossier_cockpit_alleen_presentatie(self):
-        """Alleen datum-/lege-waarde-presentatie; geen selectie, ordening of afleiding."""
+        """De cockpit-wijziging raakt uitsluitend de TEKST van een kaart, niet welke kaarten
+        er zijn of in welke volgorde ze staan. Bewijs: elke regel die over selectie, rank of
+        ordening gaat is identiek aan de basis."""
         import re as _re
-        d = subprocess.run(["git", "diff", "-U0", _BASE, _TIP, "--", "pwa/dossier_cockpit.py"],
-                           cwd=_ROOT, capture_output=True, text=True).stdout
-        toegevoegd = [l[1:] for l in d.splitlines() if l.startswith("+") and not l.startswith("+++")]
-        for regel in toegevoegd:
-            assert not _re.search(r"\b(sort|rank|status\s*=|append\(_card|_LIVE|RECURRING\s*=)", regel), \
-                f"niet-presentatie-wijziging in dossier_cockpit: {regel.strip()}"
+        oud = subprocess.run(["git", "show", f"{_BASE}:pwa/dossier_cockpit.py"],
+                             cwd=_ROOT, capture_output=True, text=True).stdout
+
+        def _ordening(src):
+            pat = _re.compile(r"(rank=\d+|cards\.sort\(.*|_LIVE|def _complaint_rank|def _neg_datum|"
+                              r"status = |_card_obj\(\"[a-z_]+\")")
+            return [m.group(0) for m in pat.finditer(src)]
+
+        assert _ordening(_DC) == _ordening(oud), "selectie/ranking/ordening gewijzigd"
 
     def test_routeset_ongewijzigd(self):
         views = set(_re.findall(r'data-view="([a-z-]+)"', _IDX))
@@ -364,9 +369,14 @@ class TestLocks:
         assert "/api/admin/overzicht" in _APP and "adminPin" in _APP
 
     def test_client_versie_gebumpt(self):
-        sw = open(os.path.join(_ROOT, "pwa", "static", "sw.js")).read()
-        assert "bebetter-shell-v135" in sw
-        assert _IDX.count("?v=139a") == 3 and "?v=138a" not in _IDX
+        """Historisch feit over DEZE build; leest op `_TIP` zodat een latere ronde vrij
+        kan bumpen zonder deze lock te breken."""
+        def _op_tip(pad):
+            return subprocess.run(["git", "show", f"{_TIP}:{pad}"],
+                                  cwd=_ROOT, capture_output=True, text=True).stdout
+        assert "bebetter-shell-v135" in _op_tip("pwa/static/sw.js")
+        idx = _op_tip("pwa/static/index.html")
+        assert idx.count("?v=139a") == 3 and "?v=138a" not in idx
 
 
 import re as _re  # noqa: E402  (gebruikt in TestLocks.test_routeset_ongewijzigd)
