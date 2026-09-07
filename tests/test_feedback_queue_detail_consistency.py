@@ -24,7 +24,10 @@ sys.path.insert(0, os.path.join(_ROOT, "pwa"))
 import feedback_core as FC
 import fs_client as FS
 
-_BASE = "3f12f53"                                        # productie waarop deze fix is gebouwd
+# Scope-lock-venster van DEZE fix: basis → de merge die productie werd. Vastgepind i.p.v.
+# open op HEAD, zodat de lock een historisch feit over deze build blijft en een volgende,
+# eigen gescopede ronde hem niet laat omvallen.
+_BASE, _TIP = "3f12f53", "4e513f9"
 
 WID = "W-MICHAEL"
 BERICHT = "Voelde mij goed. Nuchter gelopen en het liep soepel."
@@ -270,7 +273,7 @@ class TestGeenNevenschade:
 # ══════════════════════════════════════════════════════════════════════════════
 class TestLocks:
     def _diff(self):
-        return subprocess.run(["git", "diff", "--name-only", _BASE, "--"],
+        return subprocess.run(["git", "diff", "--name-only", _BASE, _TIP, "--"],
                               cwd=_ROOT, capture_output=True, text=True).stdout.split()
 
     def test_alleen_feedback_core_en_de_notitie_gewijzigd(self):
@@ -283,7 +286,7 @@ class TestLocks:
         """Elke gewijzigde regel in feedback_core valt binnen `_herstel_cache`."""
         import re
         src = open(os.path.join(_ROOT, "pwa", "feedback_core.py")).read()
-        d = subprocess.run(["git", "diff", "-U0", _BASE, "--", "pwa/feedback_core.py"],
+        d = subprocess.run(["git", "diff", "-U0", _BASE, _TIP, "--", "pwa/feedback_core.py"],
                            cwd=_ROOT, capture_output=True, text=True).stdout
         regels = src.splitlines()
         start = next(i for i, r in enumerate(regels, 1) if r.startswith("def _herstel_cache("))

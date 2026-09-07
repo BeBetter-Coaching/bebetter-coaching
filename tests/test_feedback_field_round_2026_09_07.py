@@ -35,8 +35,10 @@ from brain.models import SourceHealth
 
 _APP = open(os.path.join(_ROOT, "pwa", "static", "app.js")).read()
 
-# productiebaseline waarop deze ronde is gebouwd
-_BASE = "9a506cd"
+# Scope-lock-venster van DEZE ronde: van de basis waarop hij gebouwd is tot de merge die
+# productie werd. Vastgepind (niet open op HEAD), zodat het een historisch feit over deze
+# build blijft en niet omvalt zodra een latere, eigen gescopede ronde iets aanraakt.
+_BASE, _TIP = "9a506cd", "3f12f53"
 
 HR = [{"num": i, "naam": "z", "low": lo, "high": hi} for i, (lo, hi) in
       enumerate([(110, 130), (130, 145), (145, 169), (169, 179), (179, 200)], 1)]
@@ -465,7 +467,7 @@ class TestF5CrossSport:
         """De run-metriekbepaling is niet aangeraakt."""
         assert MA.derive(fs_client._planned_blocks([_hrblok(2)]), "", "run")["primary"] == MA.HR
         assert MA.derive([], "", "run")["primary"] == MA.UNKNOWN
-        diff = subprocess.run(["git", "diff", "--name-only", _BASE, "--"],
+        diff = subprocess.run(["git", "diff", "--name-only", _BASE, _TIP, "--"],
                               cwd=_ROOT, capture_output=True, text=True).stdout.split()
         assert "metric_authority.py" not in diff
 
@@ -514,7 +516,7 @@ class TestF6Productbeslissing:
 # Locks — de Feedback-architectuur blijft intact, de scope blijft eindig
 # ══════════════════════════════════════════════════════════════════════════════
 def _diff():
-    return subprocess.run(["git", "diff", "--name-only", _BASE, "--"],
+    return subprocess.run(["git", "diff", "--name-only", _BASE, _TIP, "--"],
                           cwd=_ROOT, capture_output=True, text=True).stdout.split()
 
 
@@ -573,7 +575,7 @@ class TestLocks:
         # (De hunk-context van git noemt bij de eerste hunk de VOORGAANDE functie, dus we
         # toetsen op regelnummers in het nieuwe bestand, niet op die label-regel.)
         import re
-        d = subprocess.run(["git", "diff", "-U0", _BASE, "--", "fs_client.py"],
+        d = subprocess.run(["git", "diff", "-U0", _BASE, _TIP, "--", "fs_client.py"],
                            cwd=_ROOT, capture_output=True, text=True).stdout
         regels = fsc.splitlines()
         start = next(i for i, r in enumerate(regels, 1)
