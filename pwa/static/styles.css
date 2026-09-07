@@ -24,6 +24,12 @@ body{display:flex;flex-direction:column;max-width:640px;margin:0 auto;overflow:h
   padding:calc(14px + env(safe-area-inset-top)) 2px 8px;position:sticky;top:0;z-index:4;
   background:var(--bg)}
 .appbar h1{margin:0;font-size:22px;font-weight:650}
+/* Polish-ronde: elke module opent nu met dezelfde kop als Home/Feedback/Workspace/
+   Dossier — titel + één regel die zegt waar de pagina voor is. De legacy-pagina's
+   hadden alleen een kale <h1>; dat was de luidste 'oude pagina'-aanwijzing. */
+.pagehead{display:block;min-width:0}
+.pagesub{margin:3px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
+@media(max-width:480px){.pagesub{font-size:12.5px}}
 .iconbtn{background:var(--card);border:1px solid var(--border);color:var(--text);
   width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;
   cursor:pointer;font-size:19px}
@@ -283,12 +289,16 @@ textarea{resize:vertical}
 .wa-msg{font-size:13px;color:var(--text);background:var(--card2);border-radius:10px;padding:10px 12px;margin:0;line-height:1.5}
 
 /* ── Atleet-detail ────────────────────────────────────────────────────────── */
-.d-head{display:flex;align-items:center;gap:12px;margin:10px 0 8px}
+.d-head{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:10px 0 8px}
 .d-naam{font-size:20px;margin:0}
 /* Coach Workflow Cohesion — gedeelde athlete-context navigatie (§5). Compact,
    wrapt op smalle schermen, hergebruikt de bestaande chip-tokens. */
 .anav{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}
-.d-head>.anav,.sb-ctx-head>.anav,.dc-actions>.anav{margin:0 0 0 auto}
+/* Polish-ronde: de chips stonden op Schema RECHTS in de kopregel en op Profiel/
+   Workspace/Dossier LINKS onder de identiteit — hetzelfde element met twee ritmes.
+   Eén ritme: altijd op een eigen regel onder de naam, links uitgelijnd. `flex-basis`
+   laat ze binnen de bestaande flex-kop netjes doorbreken (geen HTML-herschikking). */
+.d-head>.anav,.sb-ctx-head>.anav,.dc-actions>.anav{margin:8px 0 0;flex:1 0 100%;order:99}
 .anav-chip{font-size:12px;padding:5px 11px;border-radius:999px;border:1px solid var(--border);
   color:var(--muted);background:transparent;cursor:pointer;display:inline-flex;align-items:center;gap:5px;
   white-space:nowrap;transition:border-color .15s,color .15s,background .15s}
@@ -476,6 +486,13 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
   .view{max-width:960px}
 }
 
+/* ── Races: wanneer-blok + statusregel (zelfde kaartfamilie als de rest) ───── */
+.rc-when{margin-left:auto;text-align:right;font-size:13.5px;font-weight:650;color:var(--text);
+  display:flex;flex-direction:column;gap:2px;flex:0 0 auto}
+.rc-tot{font-size:11.5px;font-weight:600;color:var(--muted)}
+.rc-status{margin:10px 0 2px}
+.rc-status .mrow-tag{display:inline-flex}
+
 /* ── Teampuls: belasting-signalen ─────────────────────────────────────────── */
 .puls-kaart{position:relative;overflow:hidden}
 .puls-kaart::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
@@ -552,6 +569,18 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .ad-chips{display:flex;flex-wrap:wrap;gap:7px}
 .ad-chip{font-size:12px;background:rgba(239,159,39,.12);border:1px solid rgba(239,159,39,.3);color:var(--warn);
   padding:4px 11px;border-radius:20px}
+/* Meer/Praktijk is een bewuste directory, geen restbak: de account-acties staan
+   achter een zichtbare scheiding, los van de praktijkmodules erboven. */
+/* Documenten: generatie-uitkomst leest als een staat, niet als losse statustekst. */
+.docs-ok,.docs-err{display:inline-flex;align-items:center;gap:7px;font-weight:600}
+.docs-ok{color:var(--ok,#5db98b)}
+.docs-err{color:var(--danger,#e0645a)}
+.docs-ok .ic,.docs-err .ic{width:16px;height:16px}
+.meer-scheiding{margin-top:26px;padding-top:20px;border-top:1px solid var(--border)}
+.meer-account{background:transparent;border-style:dashed}
+.leeg-sub{margin:6px 0 0;font-size:12.5px;line-height:1.5;opacity:.8}
+.leeg .btn{margin-top:14px}
+.leeg.fout .ic{color:var(--warn,#e0a23a);opacity:.9}
 .leeg.small{padding:18px}
 .leeg.small .ic{width:28px;height:28px}
 .iconbtn[hidden]{display:none!important}
@@ -1072,7 +1101,7 @@ body.fb-focus-open .fb-queue-col{pointer-events:none}
    Mobiel = één week per scherm + full-screen focus-edit. Desktop = master-detail. */
 .sb-context{background:var(--card);border:1px solid var(--border);border-radius:16px;
   padding:14px 15px;margin:8px 0 14px}
-.sb-ctx-head{display:flex;align-items:center;gap:12px}
+.sb-ctx-head{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
 .sb-ctx-head .d-naam{font-size:19px}
 .sb-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
 .sb-chip{background:var(--card2);border:1px solid var(--border);color:var(--muted);

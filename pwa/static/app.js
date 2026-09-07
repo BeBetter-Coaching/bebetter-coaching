@@ -41,6 +41,38 @@ function nlDatum(iso) {
 // (De app schreef eerder o.a. "1 runs in dit venster" en "1 atleten".)
 function nlAantal(n, enkel, meerv) { return `${n} ${Number(n) === 1 ? enkel : meerv}`; }
 
+// ── Polish-ronde: de rest van de app sprak nog rauw backend-Nederlands ───────
+// Aanvullingen op `nlDatum`, zodat GEEN coach-facing kaart meer een ISO-string of
+// een kaal streepje toont. Alle drie zijn puur presentatie; ze lezen bestaande
+// velden en veranderen geen enkele waarheid.
+
+// `2026-09-01T11:53` → `1 sep · 11:53` (Intake-inzendingen). Zonder tijd → `1 sep`.
+function nlDatumTijd(iso) {
+  const s = String(iso || "");
+  const t = /^\d{4}-\d{2}-\d{2}[T ](\d{2}:\d{2})/.exec(s);
+  return t ? `${nlDatum(s)} · ${t[1]}` : nlDatum(s);
+}
+// Relatieve afstand tot een DATUM (races, schema-einde). Presentatie-only: puur
+// kalenderdagen t.o.v. vandaag, geen nieuwe waarheid over de gebeurtenis zelf.
+function nlDagenTot(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  if (!m) return "";
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  const nu = new Date(); nu.setHours(0, 0, 0, 0);
+  const n = Math.round((d - nu) / 864e5);
+  if (n === 0) return "vandaag";
+  if (n === 1) return "morgen";
+  if (n === -1) return "gisteren";
+  return n > 0 ? `over ${n} dagen` : `${-n} dagen geleden`;
+}
+// Coach-facing waarde of niets: een kaal `-`/`—`/`?` uit een leeg bronveld is ruis,
+// geen informatie (regel 10: geen rauwe backend-strings in de UI).
+const _LEEG_WAARDEN = new Set(["", "-", "--", "—", "–", "?", "n.v.t.", "nvt", "null", "none", "unknown", "onbekend"]);
+function nlWaarde(v) {
+  const s = String(v == null ? "" : v).trim();
+  return _LEEG_WAARDEN.has(s.toLowerCase()) ? "" : s;
+}
+
 // ── Inlog (kies Jip/Remco → wachtwoord of biometrie; blijvende sessie-cookie) ─
 let loginWie = null;        // gekozen coach op het inlogscherm
 let ingelogdeCoach = "";    // wie is er ingelogd (voor toeschrijven van acties)
@@ -441,7 +473,7 @@ function dsStream(items) {
   const it = (items || []).filter(Boolean);
   if (!it.length) return "";
   return `<ul class="ds-stream">` + it.map(x =>
-    `<li class="${x.tone || "is-calm"}">${x.date ? `<span class="ds-stream-d">${esc(x.date)}</span>` : ""}
+    `<li class="${x.tone || "is-calm"}">${x.date ? `<span class="ds-stream-d">${esc(nlDatum(x.date))}</span>` : ""}
       <span class="ds-stream-t">${esc(x.text)}</span></li>`).join("") + `</ul>`;
 }
 
@@ -635,6 +667,29 @@ function skeleton(box, rijen = 3) {
     () => '<div class="skel-card"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div>').join("");
 }
 
+// ── Gedeelde lege/fout-staten ────────────────────────────────────────────────
+// De app had twee families: de rustige `.leeg` (icoon + zin, 12 plekken) en een
+// kale `<p class="muted center">Geen verbinding.</p>` (14 plekken) — zonder icoon,
+// zonder uitleg en zonder weg terug. Dat laatste leest als een doodlopende pagina.
+// Eén familie: dezelfde vorm, en bij een fout altijd een expliciete retry.
+function leegState(icon, tekst, sub) {
+  return `<div class="leeg">${ic(icon)}<p>${esc(tekst)}</p>`
+    + (sub ? `<p class="leeg-sub">${esc(sub)}</p>` : "") + `</div>`;
+}
+let _foutSeq = 0;
+// `opnieuw` = functie die de laadactie herhaalt. Zonder functie: alleen de melding
+// (nooit een dode knop). De tekst blijft eerlijk: dit is een verbindingsprobleem,
+// geen 'niets gevonden'.
+function foutState(box, opnieuw, tekst = "Geen verbinding met de server.") {
+  if (!box) return;
+  const id = `fout-retry-${++_foutSeq}`;
+  box.innerHTML = `<div class="leeg fout">${ic("alert")}<p>${esc(tekst)}</p>`
+    + `<p class="leeg-sub">De gegevens zijn niet opgehaald — er is niets gewijzigd.</p>`
+    + (opnieuw ? `<button class="btn small" id="${id}" type="button">${ic("refresh")} Opnieuw proberen</button>` : "")
+    + `</div>`;
+  if (opnieuw) { const b = box.querySelector("#" + id); if (b) b.onclick = opnieuw; }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // HOME — dashboard: glanceable overzicht van wat er speelt
 // ════════════════════════════════════════════════════════════════════════════
@@ -801,9 +856,9 @@ async function homeVulMonitoring(force = false) {
 function homeMonBelasting(r) {
   const box = $("#hmon-bel"), info = $("#hmon-bel-info");
   if (!box || !info) return;
-  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
-  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
-  if (r.pending) { info.textContent = "Belasting-signalen worden voor het eerst berekend — open Teampuls om te herberekenen."; box.innerHTML = ""; return; }
+  if (!r) { info.textContent = ""; foutState(box, () => homeVulMonitoring(true)); return; }
+  if (!r.fs) { info.textContent = ""; box.innerHTML = leegState("alert", "FinalSurge nog niet gekoppeld."); return; }
+  if (r.pending) { info.textContent = ""; box.innerHTML = leegState("clock", "Belasting-signalen worden voor het eerst berekend.", "Open Teampuls om nu te herberekenen."); return; }
   const items = r.items || [];
   // Zelfde productcontract als de Teampuls-pagina: dit is OBSERVATIE (toont ook wat je
   // al afvinkte), niet je actielijst. Daarom staat het naast 'Actie', niet erin.
@@ -819,8 +874,8 @@ function homeMonBelasting(r) {
 function homeMonSchema(r) {
   const box = $("#hmon-sv"), info = $("#hmon-sv-info");
   if (!box || !info) return;
-  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
-  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
+  if (!r) { info.textContent = ""; foutState(box, () => homeVulMonitoring(true)); return; }
+  if (!r.fs) { info.textContent = ""; box.innerHTML = leegState("alert", "FinalSurge nog niet gekoppeld."); return; }
   const alle = r.items || [];
   // Monitoring toont wat aandacht vraagt (verlopen / bijna klaar / geen schema); de
   // volledige 60-dagenlijst blijft op de standalone pagina staan.
@@ -1335,7 +1390,8 @@ function prioSignaalBody(s) {
     }
     if (d.gevoel_recent != null || d.rpe_recent != null)
       chips.push(`<div class="pd-chip"><b>Gevoel / RPE</b>
-        <span>gevoel ${d.gevoel_recent ?? "—"} vs ${d.gevoel_basis ?? "—"} · RPE ${d.rpe_recent ?? "—"} vs ${d.rpe_basis ?? "—"}</span></div>`);
+        <span>${esc(pulsMaten({ gevoel_recent: d.gevoel_recent, gevoel_basis: d.gevoel_basis,
+                               rpe_recent: d.rpe_recent, rpe_basis: d.rpe_basis }).replace(/\.$/, ""))}</span></div>`);
     const meer = (d.signalen || []).slice(1).map(x => `<li>${esc(x)}</li>`).join("");
     const runs = (d.runs || []).map(r => `<li>${esc(nlDatum(r.datum))} · ${r.km != null ? esc(nlNum(r.km)) : "?"} km${r.naam ? " · " + esc(r.naam) : ""}</li>`).join("");
     return `${chips.length ? `<div class="pd-metrics">${chips.join("")}</div>` : ""}
@@ -1347,9 +1403,9 @@ function prioSignaalBody(s) {
       <div class="pd-sessies"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div>`;
   }
   if (s.soort === "schema") {
-    const eind = d.einddatum ? ` · einddatum ${esc(d.einddatum)}` : "";
+    const eind = d.einddatum ? ` · einddatum ${esc(nlDatum(d.einddatum))}` : "";
     return `<p class="pd-line">${esc(s.reden)}${eind}${d.groep ? " · " + esc(d.groep) : ""}</p>
-      ${d.verborgen ? `<p class="pd-sub">${d.verborgen} training(en) nog verborgen voor de atleet${d.zichtbaar_tot ? " · zichtbaar t/m " + esc(d.zichtbaar_tot) : ""}</p>` : ""}`;
+      ${d.verborgen ? `<p class="pd-sub">${esc(nlAantal(d.verborgen, "training", "trainingen"))} nog verborgen voor de atleet${d.zichtbaar_tot ? " · zichtbaar t/m " + esc(nlDatum(d.zichtbaar_tot)) : ""}</p>` : ""}`;
   }
   return "";
 }
@@ -1810,8 +1866,8 @@ function toonOffline() {
   if (!off && !q) { el.hidden = true; return; }
   el.hidden = false;
   el.textContent = off
-    ? `Offline — je ziet de laatste stand. ${q ? q + " afboeking(en) wachten; ze gaan mee zodra je online bent." : "Wijzigingen worden verzonden zodra je weer online bent."}`
-    : `Verbinding terug — ${q} afboeking(en) worden verstuurd…`;
+    ? `Offline — je ziet de laatste stand. ${q ? nlAantal(q, "afboeking wacht", "afboekingen wachten") + "; ze gaan mee zodra je online bent." : "Wijzigingen worden verzonden zodra je weer online bent."}`
+    : `Verbinding terug — ${nlAantal(q, "afboeking wordt", "afboekingen worden")} verstuurd…`;
 }
 window.addEventListener("online", () => { toonOffline(); flush(); });
 window.addEventListener("offline", toonOffline);
@@ -1846,7 +1902,7 @@ async function laad() {
   if (!lijst.children.length) skeleton(lijst, 3);
   let data;
   try { data = await api("/api/kaarten"); }
-  catch { lijst.innerHTML = '<p class="muted center">Offline — laatste bekende stand.</p>'; return; }
+  catch { lijst.innerHTML = leegState("clock", "Offline — je ziet de laatst bekende stand.", "Afboekingen gaan mee zodra je weer online bent."); return; }
   bronStatus(data.cloud);
   lijst.innerHTML = "";
   if (!data.kaarten.length) {
@@ -1881,7 +1937,7 @@ function kaartEl(k) {
   el.classList.toggle("bijna", k.rest > 0 && k.rest <= 1);
   el.classList.toggle("op", k.rest <= 0);
   setRing(el, k.gebruikt, k.totaal);
-  $(".k-laatst", el).textContent = k.laatst ? "Laatst afgeboekt: " + k.laatst : "";
+  $(".k-laatst", el).textContent = k.laatst ? "Laatst afgeboekt: " + nlDatum(k.laatst) : "";
 
   const afBtn = $(".k-af", el);
   afBtn.disabled = k.rest <= 0;
@@ -2211,7 +2267,7 @@ async function laadDossierLijst() {
   if (!dossierPicker) skeleton(box, 6);
   let data;
   try { data = await api("/api/atleten"); }
-  catch { if (!dossierPicker) box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  catch { if (!dossierPicker) foutState(box, () => laadAtleten()); return; }
   dossierCache = data.atleten || [];
   dossierGroepVolgorde = data.groep_volgorde || [];
   fsActief = !!data.fs;
@@ -2259,7 +2315,7 @@ async function openDossier(ident) {
   wrap.hidden = false;
   wrap.innerHTML = '<p class="muted center">Laden…</p>';
   const d = await api(`/api/atleten/${encodeURIComponent(ident)}`).catch(() => null);
-  if (!d || !d.naam) { wrap.innerHTML = '<p class="muted center">Kon atleet niet laden.</p>'; return; }
+  if (!d || !d.naam) { foutState(wrap, null, "Kon deze atleet niet laden."); return; }
   tekenAtleet(d);
 }
 
@@ -2285,12 +2341,12 @@ function tekenAtleet(d) {
     `<p class="veld"><b>${esc(v.label)}:</b> ${esc(v.waarde)}</p>`).join("")) : "";
   const notities = (dos && dos.notities.length) ? dos.notities.map((n, i) => `
     <div class="note">
-      <div class="note-h"><span>${esc(n.coach || "?")} · ${esc(n.datum || "")}</span>
+      <div class="note-h"><span>${esc(nlWaarde(n.coach) || "coach")} · ${esc(nlDatum(n.datum || ""))}</span>
         <button class="btn danger-ghost mini" data-del-note="${i}" aria-label="Verwijderen">${ic("trash")}</button></div>
       <p>${esc(n.tekst || "")}</p>
     </div>`).join("") : '<p class="muted klein">Nog geen notities.</p>';
   const docs = (dos && dos.documenten.length) ? dos.documenten.map(x => `
-    <div class="doc"><span class="doc-d">${esc(x.datum || "")}</span>
+    <div class="doc"><span class="doc-d">${esc(nlDatum(x.datum || ""))}</span>
       <span>${esc(x.type || "")}${x.onderwerp ? " — " + esc(x.onderwerp) : ""}</span></div>`).join("")
     : '<p class="muted klein">Nog geen documenten.</p>';
   const prof = dos ? dos.profiel : { tekst: "", bijgewerkt: "" };
@@ -2449,10 +2505,10 @@ async function laadInbox() {
   const box = $("#i-inbox");
   skeleton(box, 2);
   const r = await api("/api/intake/inbox").catch(() => null);
-  if (!r) { box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  if (!r) { foutState(box, laadInbox); return; }
   const inbox = r.inbox || [];
   setBadge(inbox.length);
-  if (!inbox.length) { box.innerHTML = `<div class="leeg">${ic("mail")}<p>Nog geen nieuwe inzendingen.</p></div>`; return; }
+  if (!inbox.length) { box.innerHTML = leegState("mail", "Nog geen nieuwe inzendingen.", "Nieuwe aanmeldingen via de intakelink verschijnen hier."); return; }
   box.innerHTML = "";
   inbox.forEach(sub => {
     const rijen = sub.rijen.map(x => `<tr><td>${esc(x.vraag)}</td><td>${esc(x.antwoord)}</td></tr>`).join("");
@@ -2461,7 +2517,8 @@ async function laadInbox() {
     el.innerHTML = `
       <div class="d-head"><span class="avatar">${initialen(sub.naam)}</span>
         <div><h3>${esc(sub.naam)}</h3>
-          <p class="muted klein">ingezonden ${esc(sub.ingezonden)}${sub.email ? " · " + esc(sub.email) : ""}</p></div></div>
+          <p class="muted klein">${sub.ingezonden ? "ingezonden " + esc(nlDatumTijd(sub.ingezonden)) : "inzenddatum onbekend"}${sub.email ? " · " + esc(sub.email) : ""}</p></div>
+        <span class="mrow-tag soon-tag">nieuw</span></div>
       <button class="acc-toggle sub" data-open>Bekijk antwoorden</button>
       <div class="collapse"><table class="pv-tbl">${rijen}</table></div>
       <div class="row">
@@ -2511,7 +2568,8 @@ async function laadOrphanIntakes() {
             // (bestaande, naam-gebaseerde) suggestie werkelijk is: een kandidaat om te
             // bevestigen — geen automatische identiteits-koppeling.
             ? `bestaat al als atleet: ${esc(a.suggestie.naam)}${a.suggestie.groep ? " · " + esc(a.suggestie.groep) : ""} — bevestig zelf`
-            : "losse intake · koppelen"}</span></span>${ic("chevron")}</button>`).join("")}</section>`;
+            : "losse intake · koppelen"}</span></span>
+        <span class="mrow-tag">${a.suggestie ? "kandidaat" : "niet gekoppeld"}</span>${ic("chevron")}</button>`).join("")}</section>`;
   box.querySelectorAll("[data-orphan]").forEach(b =>
     b.addEventListener("click", () => openAthleteModule("atleten", b.dataset.orphan)));
 }
@@ -2529,7 +2587,7 @@ async function laadDocs() {
     api("/api/docs/templates").catch(() => null),
     api("/api/dossier/athletes").catch(() => ({ athletes: [] })),
   ]);
-  if (!r) { keuze.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  if (!r) { info.textContent = ""; foutState(keuze, laadDocs); return; }
   docsTpls = r.templates || [];
   docsAthletes = a.athletes || [];
   info.textContent = r.ai
@@ -2586,24 +2644,24 @@ async function genereerDoc(t) {
   if (voornaam) answers.voornaam = voornaam;
   $$("#docs-form [data-veld]").forEach(el => { if (el.value) answers[el.dataset.veld] = el.value; });
   const status = $("#docs-status");
-  status.textContent = "Genereren…";
+  status.innerHTML = `<span class="muted">${ic("clock")} Genereren…</span>`;
   try {
     const res = await fetch("/api/docs/generate", {
       method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ slug: t.slug, user_key, answers }),
     });
-    if (!res.ok) { status.textContent = "Mislukt: " + (await res.text()); return; }
+    if (!res.ok) { status.innerHTML = `<span class="docs-err">${ic("alert")} Genereren mislukt — er is niets opgeslagen.</span>`; return; }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = `${t.label}${voornaam ? " - " + voornaam : ""}.pdf`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
-    status.textContent = "Klaar — PDF gedownload." + (voornaam ? " Gelogd in het dossier." : "");
+    status.innerHTML = `<span class="docs-ok">${ic("check")} Klaar — PDF gedownload.${voornaam ? " Gelogd in het dossier." : ""}</span>`;
     haptic(15);
     if (voornaam) vervalDossierLijst();      // dossier toont het nieuwe document na verversen
   } catch {
-    status.textContent = "Geen verbinding — probeer opnieuw.";
+    status.innerHTML = `<span class="docs-err">${ic("alert")} Geen verbinding — probeer het opnieuw.</span>`;
   }
 }
 
@@ -3904,7 +3962,7 @@ async function laadSchema() {
   $("#sb-werk").hidden = true; box.hidden = false;
   skeleton(box, 4);
   const r = await api("/api/schema/atleten").catch(() => null);
-  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  if (!r) { info.textContent = ""; foutState(box, laadSchema); return; }
   schemaAtleten = r.atleten || [];
   info.textContent = r.ai
     ? "Kies een atleet. De AI maakt een conceptplan waar je over spart; een bestaande intake wordt slim voorgevuld."
@@ -5175,14 +5233,14 @@ async function laadRaces() {
   const url = zeven ? `/api/races?dagen=${RC_CHIP_DAGEN}&zonder_wens=true` : "/api/races";
   const r = await api(url).catch(() => null);
   if (mijn !== rcScope) return;                            // filter intussen gewisseld
-  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
-  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
+  if (!r) { info.textContent = ""; foutState(box, laadRaces); return; }
+  if (!r.fs) { info.textContent = ""; box.innerHTML = leegState("alert", "FinalSurge nog niet gekoppeld.", "Koppel FinalSurge om races te zien."); return; }
   const items = r.items || [];
   const open = items.filter(i => !i.wens_gegeven).length;
   info.textContent = items.length
     ? (zeven
-        ? `${items.length} race${items.length === 1 ? "" : "s"} zonder wens in de komende ${RC_CHIP_DAGEN} dagen.`
-        : `${items.length} aankomende race${items.length === 1 ? "" : "s"}${open ? ` · ${open} zonder wens` : " · alle wensen gegeven"}.`)
+        ? `${nlAantal(items.length, "race", "races")} zonder wens in de komende ${RC_CHIP_DAGEN} dagen.`
+        : `${nlAantal(items.length, "aankomende race", "aankomende races")}${open ? ` · ${open} zonder wens` : " · alle wensen gegeven"}.`)
     : "";
   if (!items.length) {
     box.innerHTML = `<div class="leeg">${ic("check")}<p>${zeven
@@ -5201,15 +5259,20 @@ function raceItem(it) {
   const badge = it.wens_gegeven
     ? '<span class="mrow-tag" style="background:var(--ok-bg,#123);color:var(--ok,#5db98b)">wens gegeven</span>'
     : '<span class="mrow-tag soon-tag">nog geen wens</span>';
+  // Datum leesbaar (`20 sep`) + hoe ver weg het is — de coach leest een race op
+  // afstand-in-dagen, niet op ISO. Beide uit hetzelfde `datum`-veld; geen nieuwe bron.
+  const wanneer = nlDatum(it.datum), tot = nlDagenTot(it.datum);
   el.innerHTML = `
     <div class="d-head"><span class="avatar">${initialen(it.naam)}</span>
       <div><h3>${esc(it.naam)}</h3>
-        <p class="muted klein">${esc(it.datum)} · ${esc(it.race)}${it.type ? " · " + esc(it.type) : ""}</p></div>
-      <span style="margin-left:auto">${badge}</span></div>
+        <p class="muted klein">${esc(it.race)}${it.type ? " · " + esc(it.type) : ""}</p></div>
+      <span class="rc-when">${esc(wanneer)}${tot ? `<span class="rc-tot">${esc(tot)}</span>` : ""}</span></div>
+    <div class="rc-status">${badge}</div>
     ${it.wens ? `<div class="fb-thread"><div class="fb-bub coach"><span class="fb-wie">Jij</span>${esc(it.wens)}</div></div>` : ""}
-    <textarea class="fb-tekst" rows="4" placeholder="Race-wens / strategie voor ${esc(it.voornaam)}…">${esc(it.wens || "")}</textarea>
+    <label class="lbl" for="rc-w-${esc(it.id)}">${it.wens ? "Wens bijwerken" : "Race-wens"}</label>
+    <textarea class="fb-tekst" id="rc-w-${esc(it.id)}" rows="4" placeholder="Strategie en verwachting voor ${esc(it.voornaam)}…">${esc(it.wens || "")}</textarea>
     <div class="fb-acts">
-      <button class="btn primary" data-post>${ic("message")} Plaats wens</button>
+      <button class="btn primary" data-post>${ic("message")} ${it.wens ? "Wens bijwerken" : "Plaats wens"}</button>
     </div>
     <p class="hint" data-poststatus></p>`;
   const tekstEl = el.querySelector(".fb-tekst");
@@ -5237,8 +5300,8 @@ async function laadSchemaVerloop() {
   info.textContent = "Schema's ophalen uit FinalSurge…";
   skeleton(box, 5);
   const r = await api("/api/schema-verloop").catch(() => null);
-  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
-  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return; }
+  if (!r) { info.textContent = ""; foutState(box, laadSchemaVerloop); return; }
+  if (!r.fs) { info.textContent = ""; box.innerHTML = leegState("alert", "FinalSurge nog niet gekoppeld.", "Koppel FinalSurge om schema's te volgen."); return; }
   const items = r.items || [];
   const aandacht = items.filter(i => i.status === "verlopen" || i.status === "bijna" || i.status === "geen").length;
   info.textContent = items.length
@@ -5261,12 +5324,12 @@ function svItem(it) {
   el.innerHTML = `
     <div class="d-head"><span class="avatar">${initialen(it.naam)}</span>
       <div><h3>${esc(it.naam)}</h3>
-        <p class="muted klein">${esc(it.groep || "")}${it.laatste ? " · laatste " + esc(it.laatste) : ""}</p></div>
+        <p class="muted klein">${esc(it.groep || "")}${it.laatste ? " · laatste training " + esc(nlDatum(it.laatste)) : ""}</p></div>
       <span style="margin-left:auto;text-align:right">
         <b style="color:${kleur}">${dagtxt}</b>
         <span class="muted klein" style="display:block">${SV_LABEL[it.status] || ""}</span></span></div>
-    ${it.verborgen ? `<p class="muted klein">${it.verborgen} training(en) nog verborgen voor de atleet${it.zichtbaar_tot ? " · zichtbaar t/m " + esc(it.zichtbaar_tot) : ""}</p>` : ""}
-    ${it.user_key ? `<div class="sv-acts"><button class="btn ghost small" data-open-schema>${ic("clock")} Schema openen</button></div>` : ""}`;
+    ${it.verborgen ? `<p class="muted klein">${esc(nlAantal(it.verborgen, "training", "trainingen"))} nog verborgen voor de atleet${it.zichtbaar_tot ? " · zichtbaar t/m " + esc(nlDatum(it.zichtbaar_tot)) : ""}</p>` : ""}
+    ${it.user_key ? `<div class="sv-acts"><button class="btn ghost small" data-open-schema>${ic("calendar")} Schema openen</button></div>` : ""}`;
   // Cohesion (§8): vanuit schema-verloop direct naar de Schema-workbench van DEZE
   // atleet — geen algemene picker, dezelfde canonical user_key via het contract.
   if (it.user_key) el.querySelector("[data-open-schema]").addEventListener("click",
@@ -5302,8 +5365,8 @@ async function laadTeampuls(force = false) {
 function tpRenderSignalen(r, isFresh) {
   const box = $("#tp-signalen"), info = $("#tp-info");
   if (!box || !info) return false;
-  if (!r) { info.textContent = ""; box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return false; }
-  if (!r.fs) { info.textContent = "FinalSurge nog niet gekoppeld."; box.innerHTML = ""; return false; }
+  if (!r) { info.textContent = ""; foutState(box, laadTeampuls); return false; }
+  if (!r.fs) { info.textContent = ""; box.innerHTML = leegState("alert", "FinalSurge nog niet gekoppeld."); return false; }
   genMount("#tp-genbar", r.generation);                    // v2: gedeelde generation-coherentie
   if (r.pending && !isFresh) {
     // Nog geen opgeslagen stand → laat de skeletons staan; de force-reconcile vult ze.
@@ -5318,15 +5381,34 @@ function tpRenderSignalen(r, isFresh) {
   // (gezien/later). Daarom kan een atleet met hoge belasting hier staan zonder op Home te
   // staan: óf het is geen Home-actiebron (bv. losse klacht), óf je handelde het al af.
   // De brug van observatie → actie is de 'Dossier →'-knop per kaart (zelfde atleet).
-  const versLabel = (!r.vers && r.datum) ? ` · <span class="muted klein">stand ${esc(r.datum)} · verversen…</span>` : "";
+  const versLabel = (!r.vers && r.datum) ? ` · <span class="muted klein">stand ${esc(nlDatum(r.datum))} · verversen…</span>` : "";
   info.innerHTML = `Belasting-monitoring — teambrede observatie uit volume, gevoel, RPE en notities. Dit is niet je Home-actielijst: een atleet kan hier staan zonder een openstaande Home-actie (al afgehandeld, of geen actiebron). Handel af via <b>Dossier →</b>. `
-    + (items.length ? `<b>${r.hoog || 0}</b> hoge belasting · <b>${items.length}</b> in beeld · ${esc(r.datum || "")}${versLabel}` : `alles binnen de marge · ${esc(r.datum || "")}${versLabel}`);
+    + (items.length ? `<b>${r.hoog || 0}</b> hoge belasting · <b>${items.length}</b> in beeld · ${esc(nlDatum(r.datum || ""))}${versLabel}` : `alles binnen de marge · ${esc(nlDatum(r.datum || ""))}${versLabel}`);
   box.innerHTML = "";
   if (!items.length) { box.innerHTML = `<div class="leeg">${ic("check")}<p>Geen belasting-signalen — iedereen binnen de marge.</p></div>`; }
   else items.forEach(it => box.appendChild(pulsItem(it)));
   return true;
 }
 
+// Polish-ronde: de onderbouwing schreef ontbrekende maten uit als `? km` en `— vs —`.
+// Dat leest als data terwijl het er niet is (regel 7/8: leeg is geen nul, onbekend is
+// geen kalme stand). Toon alleen wat we WETEN, en benoem de rest als onbekend.
+function pulsMaten(m) {
+  const d = m || {};
+  const num = v => (v === null || v === undefined || v === "") ? null : v;
+  const stukken = [];
+  if (num(d.km_recent) !== null || num(d.km_basis) !== null) {
+    const r = num(d.km_recent), b = num(d.km_basis);
+    stukken.push(r !== null && b !== null ? `Recente week ${esc(r)} km · basis ${esc(b)} km/wk`
+      : r !== null ? `Recente week ${esc(r)} km` : `Basis ${esc(b)} km/wk`);
+  }
+  if (num(d.gevoel_recent) !== null && num(d.gevoel_basis) !== null)
+    stukken.push(`gevoel ${esc(d.gevoel_recent)} vs ${esc(d.gevoel_basis)}`);
+  if (num(d.rpe_recent) !== null && num(d.rpe_basis) !== null)
+    stukken.push(`RPE ${esc(d.rpe_recent)} vs ${esc(d.rpe_basis)}`);
+  return stukken.length ? stukken.join(" · ") + "."
+    : "Volume en gevoel zijn voor deze periode niet bekend.";
+}
 function pulsItem(it) {
   const el = document.createElement("article");
   el.className = "rij-kaart puls-kaart " + (it.ernst === "hoog" ? "ernst-hoog" : "ernst-let");
@@ -5344,7 +5426,7 @@ function pulsItem(it) {
     ${it.duiding ? `<p class="puls-duiding">${ic("message")} ${esc(it.duiding)}</p>` : ""}
     <details class="puls-ond"><summary>Onderbouwing (welke trainingen zijn geteld)</summary>
       <ul class="puls-runs">${runs || "<li class='muted'>Geen losse runs geregistreerd.</li>"}</ul>
-      <p class="muted klein">Recente week ${m.km_recent ?? "?"} km · basis ${m.km_basis ?? "?"} km/wk · gevoel ${m.gevoel_recent ?? "—"} vs ${m.gevoel_basis ?? "—"} · RPE ${m.rpe_recent ?? "—"} vs ${m.rpe_basis ?? "—"}.</p>
+      <p class="muted klein">${pulsMaten(m)}</p>
     </details>
     <div class="fb-acts">
       <button class="btn ghost small" data-gezien>${ic("check")} Gezien (7 dagen)</button>
@@ -5499,7 +5581,7 @@ function tekenAdmin(d) {
         <p class="ad-badge ${modusBtw ? "btw" : "kor"}">${modusBtw ? "BTW-modus" : "KOR-modus"} · ${d.jaar}</p>
         <h2>${eur(k.huidig)}<span class="muted"> / ${eur(k.grens)} KOR</span></h2>
         <p class="muted klein">${k.gepasseerd ? "⚠️ KOR-grens gepasseerd" :
-          (k.datum_grens ? `Bij dit tempo grens rond ${esc(k.datum_grens)}` : "Ruim binnen de grens")}${k.per_week ? ` · ~${eur(k.per_week)}/wk` : ""}</p>
+          (k.datum_grens ? `Bij dit tempo grens rond ${esc(nlDatum(k.datum_grens))}` : "Ruim binnen de grens")}${k.per_week ? ` · ~${eur(k.per_week)}/wk` : ""}</p>
       </div>
     </div>
 
@@ -5587,7 +5669,7 @@ async function laadDossierCockpit() {
   if (!dcPicker) skeleton(box, 6);
   let data;
   try { data = await api("/api/atleten"); }
-  catch { if (!dcPicker) box.innerHTML = '<p class="muted center">Geen verbinding.</p>'; return; }
+  catch { if (!dcPicker) foutState(box, () => laadDossierLijst()); return; }
   dcCache = data.atleten || [];
   dcGroepVolgorde = data.groep_volgorde || [];
   const items = dcCache.map(a => ({ ...a, key: a.id }));
@@ -5751,6 +5833,8 @@ function dcFutureNodes(plan) {
 // Gate 3): reist mee naar 'Waarom?' zodat de uitleg exact deze generatie verklaart.
 let dcEvents = [], dcVMkey = "", dcSelId = "", dcDomsCache = [], dcVMgen = "";
 
+// Eén gedeelde drempel voor JS én CSS (zie design-system.css `@media (max-width:1279px)`).
+function dcIsNarrow() { return window.innerWidth < 1280; }
 function dcRender(wrap, vm) {
   const st = vm.status || {}, rel = st.reliability || {};
   const relTxt = rel.level === "green" ? "bronnen vers"
@@ -5837,8 +5921,10 @@ function dcRender(wrap, vm) {
 
   const diag = vm.build_diagnostic || [];
   // Het 3-zone tableau heeft breedte nodig; met de 280px-sidebar erbij vraagt dat een
-  // venster ≥1280 (content ≥~920). Smaller → de kalme verticale tijd-stack.
-  const isNarrow = window.innerWidth < 1280;
+  // venster ≥1280 (content ≥~920). Smaller → de kalme verticale tijd-stack. Dezelfde
+  // drempel staat in de CSS (`@media (max-width:1279px)`) — één omslagpunt.
+  const isNarrow = dcIsNarrow();
+  _dcActiveVm = vm; _dcNarrow = isNarrow;
 
   const d = { vm, st, rel, relTxt, relTone, attn, chg, plan, lo, coreTone, past, future, emptyHistory,
     events, sigRows: loRow + sigRows, chgRows, planRows, coachBody, domIssue, nowSub, diag, canonPct };
@@ -5847,6 +5933,7 @@ function dcRender(wrap, vm) {
 
   if (isNarrow) {
     wrap.querySelectorAll(".dc-why").forEach(b => b.addEventListener("click", () => dcWaarom(b)));
+    dcBindResize(wrap);                                  // ook vanuit de stack terug kunnen schakelen
   } else {
     dcWireDesktop(wrap, vm);
     requestAnimationFrame(() => dcDrawConnectors(wrap));
@@ -5855,7 +5942,7 @@ function dcRender(wrap, vm) {
 }
 
 // Herbind de connector-teken bij resize (desktop). Eén luisteraar per sessie.
-let _dcResizeBound = false, _dcActiveWrap = null;
+let _dcResizeBound = false, _dcActiveWrap = null, _dcActiveVm = null, _dcNarrow = null;
 function dcBindResize(wrap) {
   _dcActiveWrap = wrap;
   if (_dcResizeBound) return;
@@ -5863,7 +5950,15 @@ function dcBindResize(wrap) {
   let t;
   window.addEventListener("resize", () => {
     clearTimeout(t);
-    t = setTimeout(() => { if (_dcActiveWrap && _dcActiveWrap.querySelector(".dc-grid")) dcDrawConnectors(_dcActiveWrap); }, 140);
+    t = setTimeout(() => {
+      if (!_dcActiveWrap || !_dcActiveWrap.isConnected) return;
+      // Polish-ronde: de resize-handler tekende alleen de connectoren opnieuw. Sleepte je
+      // het venster over de 1280-drempel, dan bleef het scene-tableau in een te smal
+      // canvas staan (of andersom). Slaat de drempel om, dan her-renderen we met exact
+      // dezelfde `dcRender` — geen tweede layout-pad, geen nieuwe fetch.
+      if (_dcActiveVm && dcIsNarrow() !== _dcNarrow) { dcRender(_dcActiveWrap, _dcActiveVm); return; }
+      if (_dcActiveWrap.querySelector(".dc-grid")) dcDrawConnectors(_dcActiveWrap);
+    }, 140);
   });
 }
 

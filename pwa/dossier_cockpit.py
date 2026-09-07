@@ -108,6 +108,32 @@ def _label(key: str) -> str:
     return key.split(".", 1)[-1].replace("_", " ").capitalize()
 
 
+# ── Polish-ronde: coach-facing presentatie van datum en lege bronwaarden ──────
+# De cockpit gaf de ruwe ISO-datum door in de kaart-tekst (`Klacht: onbekend — actief
+# — - · 2026-08-18`) en liet een leeg bronveld als kaal streepje staan. Beide zijn
+# presentatie: de evidence, de ordening en de ranking blijven exact zoals ze waren.
+_NL_MND = ("jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec")
+# Waarden die niets zeggen: die tonen we niet als 'reden' (regel 10 — geen rauwe
+# backend-strings in de coach-UI). De evidence zelf blijft ongemoeid.
+_LEGE_WAARDEN = {"", "-", "--", "—", "–", "?", "n.v.t.", "nvt", "null", "none", "unknown", "onbekend"}
+
+
+def _nl_datum(iso) -> str:
+    """`2026-08-18` → `18 aug`. Onparseerbaar → onveranderd terug (nooit informatie kwijt)."""
+    s = str(iso or "")[:10]
+    try:
+        j, m, d = s.split("-")
+        return f"{int(d)} {_NL_MND[int(m) - 1]}"
+    except (ValueError, IndexError):
+        return str(iso or "")
+
+
+def _zeg_iets(v) -> str:
+    """De tekst als die iets zegt, anders leeg."""
+    t = str(v if v is not None else "").strip()
+    return "" if t.lower() in _LEGE_WAARDEN else t
+
+
 def _prov_light(e: dict) -> dict:
     """Lichte provenance-chip per claim (§12-E): truth-type + bron + datum/status/strength."""
     return {"truth_type": e.get("truth_type"), "source": e.get("source"),
@@ -119,7 +145,7 @@ def _run_dev_text(e: dict) -> str:
     """Menselijke regel voor één run-planafwijking: datum + wat er gepland/gedaan is.
     Puur de al vastgelegde detailvelden — geen nieuwe afleiding."""
     d = e.get("detail") or {}
-    datum = str(d.get("datum") or e.get("observed_at") or "")
+    datum = _nl_datum(d.get("datum") or e.get("observed_at") or "")
     naam = str(d.get("naam") or "").strip()
     if d.get("soort") == "missed":
         maat = (f"{d['planned_km']} km" if d.get("planned_km")
@@ -164,12 +190,16 @@ def _attention(st) -> list:
                 and not k.startswith("complaint.mention.") and e.status in _LIVE:
             area = (e.detail or {}).get("area") or e.value
             ms = _mentions_for(st, str(area))
-            why = (ms[0].value if ms else str(area))
+            why = _zeg_iets(ms[0].value if ms else area)
             datum = (ms[0].observed_at if ms else e.observed_at) or ""
             st_txt = "terugkerend" if e.status == RECURRING else "actief"
+            # Meldde de atleet niets bruikbaars (leeg intakeveld, enkel een streepje), dan
+            # zeggen we dát — een kaal `-` als toelichting is ruis, geen informatie.
+            _why = " · ".join(x for x in (why or "geen omschrijving vastgelegd",
+                                          _nl_datum(datum) if datum else "") if x)
             _c = _card_obj("complaint", "health", "gezondheid",
                            f"Klacht: {area} — {st_txt}",
-                           f"{why}" + (f" · {datum}" if datum else ""), e, rank=0)
+                           _why, e, rank=0)
             # Status + laatste datum expliciet mee: hierop ordenen we hieronder, en de
             # Workspace kan er zonder tekst-parsing mee tonen wat het is.
             _c["status"] = e.status
@@ -309,7 +339,7 @@ def _changes(state_obj, today: date) -> list:
             out.append(_change("Trainingsonderbreking", today.isoformat(), ev,
                                {"to": "INTERRUPTED"}, "training"))
         elif ev.status == STALE and d.get("last_known_good"):
-            out.append(_change(f"Bron verouderd: {_label(ev.key)}", ev.observed_at or "", ev,
+            out.append(_change(f"Bron verouderd: {_label(ev.key)}", _nl_datum(ev.observed_at or ""), ev,
                                {"to": "STALE"}, ev.key))
     # conflicten als verschuiving
     for cid in getattr(state_obj, "conflicts", []) or []:

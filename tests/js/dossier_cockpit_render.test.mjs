@@ -37,6 +37,7 @@ function sliceFrom(header) {
 const sliceLine = (p) => { const i = SRC.indexOf(p); if (i < 0) throw new Error("not found: " + p); return SRC.slice(i, SRC.indexOf("\n", i)); };
 
 const REAL = [
+  sliceFrom("function dcIsNarrow("),
   // Design System v1 primitives
   sliceFrom("const _DS_TONE = {"), sliceLine("const _DS_RANK = "),
   sliceFrom("function dsTone("), sliceFrom("function dsWorstTone("), sliceFrom("function dsChip("),
