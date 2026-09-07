@@ -235,11 +235,27 @@ class TestOverigeMapsBegrensd:
 # ══ 5. Structuurcontract — geen onbegrensde accumulatie meer in de code ══════
 class TestStructuurcontract:
     def test_herstel_cache_prunet_expliciet(self):
+        """De grens uit deze ronde: `_cache` volgt de snapshot en groeit niet mee.
+
+        De identiteits-eis stond hier als `_cache.setdefault`-string. Die is vervangen door de
+        eis zelf: overlevende keys houden hun object (nu via in-place `clear()`+`update()`, zodat
+        de INHOUD wél meeloopt met de snapshot — zie de queue/detail-consistentiefix). Beide
+        eigenschappen worden hieronder ook gedragsmatig bewezen."""
         src = open(os.path.join(_ROOT, "pwa", "feedback_core.py")).read()
         i = src.index("def _herstel_cache(")
-        blok = src[i:i + 1800]
-        assert "_cache.setdefault" in blok                    # identiteit behouden
-        assert "_cache.pop(wid, None)" in blok                # én prunen
+        blok = src[i:src.index("# ── Diagnostiek", i)]
+        assert "_cache.pop(wid, None)" in blok                # prunen
+        assert "oud.clear()" in blok and "oud.update(w)" in blok   # identiteit behouden
+        # gedragsbewijs: identiteit blijft, details blijven, en de inhoud loopt mee
+        FC._herstel_cache(_snap(["w1"]))
+        obj = FC._cache["w1"]
+        obj["details"] = {"Activities": [{"laps": []}]}
+        vers = _snap(["w1"])
+        vers["_volle"]["w1"]["post_notes"] = "nieuw bericht"
+        FC._herstel_cache(vers)
+        assert FC._cache["w1"] is obj                         # identiteit
+        assert FC._cache["w1"]["details"]                     # geen refetch
+        assert FC._cache["w1"]["post_notes"] == "nieuw bericht"   # inhoud volgt de snapshot
 
     def test_state_cache_heeft_een_grens(self):
         src = open(os.path.join(_ROOT, "pwa", "athlete_read.py")).read()
