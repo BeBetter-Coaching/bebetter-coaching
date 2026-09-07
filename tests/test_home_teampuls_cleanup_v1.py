@@ -290,7 +290,7 @@ class TestNonGoals:
         hieronder afzonderlijk vastgehouden op de generatie-functies."""
         import subprocess
         diff = subprocess.run(
-            ["git", "diff", "--name-only", "8786210", "--"],
+            ["git", "diff", "--name-only", "8786210", "9a506cd", "--"],
             cwd=_ROOT, capture_output=True, text=True).stdout.split()
         verboden = {"ai_feedback.py", "feedback_atoms.py", "feedback_copy.py",
                     "feedback_facts.py", "feedback_obligations.py", "metric_authority.py",
@@ -299,12 +299,13 @@ class TestNonGoals:
         assert not raakt, f"Feedback-coachinglaag buiten scope, toch aangeraakt: {sorted(raakt)}"
 
     def test_feedback_core_generatiefuncties_onaangeraakt(self):
-        """Elke wijziging in feedback_core sinds `8786210` valt buiten het generatiepad.
-        Git noemt bij elke hunk de omsluitende functie; geen daarvan mag een generatie-
-        of validatiefunctie zijn."""
+        """Elke wijziging in feedback_core in DEZE ronde (`8786210` → productie `9a506cd`) valt
+        buiten het generatiepad. Git noemt bij elke hunk de omsluitende functie; geen daarvan mag
+        een generatie- of validatiefunctie zijn. Vastgepind op dat venster: open op HEAD zou het
+        een permanent verbod op Feedback-werk maken i.p.v. een scope-lock op deze build."""
         import re
         import subprocess
-        diff = subprocess.run(["git", "diff", "-U0", "8786210", "--", "pwa/feedback_core.py"],
+        diff = subprocess.run(["git", "diff", "-U0", "8786210", "9a506cd", "--", "pwa/feedback_core.py"],
                               cwd=_ROOT, capture_output=True, text=True).stdout
         contexten = re.findall(r"^@@[^@]*@@ *(.*)$", diff, re.M)
         generatie = ("def genereer", "def _validate_or_block", "def _brein_context",

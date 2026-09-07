@@ -87,7 +87,7 @@ def fs(monkeypatch):
     store = {"zones": HR_ZONES, "steps": _steps_interval()}
     monkeypatch.setattr(fs_client, "get_athlete_zones", lambda ak: store["zones"])
     monkeypatch.setattr(fs_client, "get_workout_builder", lambda wk, ak: store["steps"])
-    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda ak, d: None)
+    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda *a, **k: None)
     return store
 
 

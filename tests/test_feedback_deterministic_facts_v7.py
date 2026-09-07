@@ -238,7 +238,7 @@ def fs_both(monkeypatch):
         "zone_type": "hartslag", "zones_text": "Z1..", "zones": HR_ZONES,
         "secondary_zone_type": "tempo", "secondary_zones": PACE})
     monkeypatch.setattr(fs_client, "get_workout_builder", lambda wk, ak: [])
-    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda ak, d: None)
+    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda *a, **k: None)
 
 
 def test_integration_divergence_fact_in_context(fs_both):

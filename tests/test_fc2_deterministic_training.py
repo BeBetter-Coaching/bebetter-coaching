@@ -251,7 +251,7 @@ class TestAIContract:
 def _patch_common(monkeypatch, zones_result):
     import intake_store
     monkeypatch.setattr(fs_client, "get_athlete_zones", lambda ak: zones_result)
-    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda ak, d: None, raising=False)
+    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda *a, **k: None, raising=False)
     monkeypatch.setattr(intake_store, "garmin_context_text", lambda ak: "", raising=False)
 
 

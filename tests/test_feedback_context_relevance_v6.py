@@ -115,7 +115,7 @@ def fs(monkeypatch):
                         "distUnit": "km", "target": [{"targetType": "hr zone", "zone": 4}]} for _ in range(5)]}
     monkeypatch.setattr(fs_client, "get_athlete_zones", lambda ak: store["zones"])
     monkeypatch.setattr(fs_client, "get_workout_builder", lambda wk, ak: store["steps"])
-    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda ak, d: None)
+    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda *a, **k: None)
     return store
 
 

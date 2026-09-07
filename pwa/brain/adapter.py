@@ -29,6 +29,7 @@ from datetime import date
 import intake_store
 
 from . import projections
+from . import recency
 from . import snapshot as _snapshot
 from . import sources as _sources
 from . import state as _state
@@ -317,6 +318,27 @@ _TREND_NL = {"opbouwend": "opbouwend", "afbouwend/minder": "afbouwend",
              "stabiel": "stabiel", "hervat": "net hervat"}
 
 
+def _complaint_is_current(ev) -> bool:
+    """Veldronde 7 sep 2026 (F2) — RECENCY-poort op de Feedback-klachtcontext.
+
+    `complaints.build` bepaalt RECURRING op FREQUENTIE (>= 2 meldingen binnen 90 dagen) en zet
+    die status VOOR elke leeftijdstoets. Een klacht met twee meldingen in augustus blijft
+    daardoor tot 90 dagen na de eerste melding RECURRING — en werd zo als levende context aan de
+    generatie aangeboden (veld: klacht 11-08 nog aangehaald op 07-09, 27 dagen later), inclusief
+    de ACTUEEL-signaal-instructie. ACTIVE/RECENT zijn per definitie al binnen het recente venster;
+    voor RECURRING eisen we hier dat de LAATSTE melding daar ook binnen valt.
+
+    Bewust ALLEEN in de Feedback-projectie: Home, Teampuls, Workspace en Dossier moeten een
+    terugkerend patroon juist wél blijven tonen (`for_home` houdt ACTIVE/RECURRING), dus
+    `complaints.py` en de lifecycle zelf blijven ongewijzigd."""
+    if ev.get("status") != RECURRING:
+        return True
+    last = (ev.get("detail") or {}).get("last_seen_days")
+    if not isinstance(last, int):
+        return True                                       # geen betrouwbare leeftijd → niet stil wegfilteren
+    return last <= recency.COMPLAINT_RECENT.days
+
+
 def _klacht_coachregel(area, status, count, last_seen) -> str:
     """FC-3 — één compacte klachtregel met lifecycle-onderscheid + coachrelevant
     handelingsperspectief (COACHACTIES, geen diagnose). 'Goed is goed': een recente
@@ -369,7 +391,8 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
     feel = _ev(evs, "recovery.feeling_trend")
     complaints = [e for e in evs if e.get("key", "").startswith("complaint.")
                   and not e.get("key", "").startswith("complaint.mention.")
-                  and e.get("status") in (ACTIVE, RECENT, RECURRING)]
+                  and e.get("status") in (ACTIVE, RECENT, RECURRING)
+                  and _complaint_is_current(e)]
 
     regels: list[str] = []
     if tl_gap:

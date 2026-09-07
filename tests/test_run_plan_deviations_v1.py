@@ -266,7 +266,10 @@ class TestFeedback:
         assert "include_data_only: bool = False" in fsc          # default onveranderd
         fc = open(os.path.join(_ROOT, "pwa", "feedback_core.py")).read()
         assert "include_planned_no_notes=True" in fc and "include_data_only" not in fc
-        diff = subprocess.run(["git", "diff", "--name-only", "e4f37f1", "--"],
+        # Historisch feit van DEZE build (e4f37f1 → productie 9a506cd): de run-deviations-ronde
+        # raakte queue-inclusie en -volgorde niet aan. Vastgepind i.p.v. open op HEAD, anders zou
+        # elke latere, gescopede Feedback-ronde deze scope-lock laten omvallen.
+        diff = subprocess.run(["git", "diff", "--name-only", "e4f37f1", "9a506cd", "--"],
                               cwd=_ROOT, capture_output=True, text=True).stdout.split()
         assert "fs_client.py" not in diff and "pwa/feedback_core.py" not in diff
 

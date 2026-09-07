@@ -238,7 +238,7 @@ class TestLocks:
         assert _tp._norm(r)["pct"] == _cr.load_metric(r)["pct"] == 60
 
     def test_feedback_onaangeraakt(self):
-        diff = subprocess.run(["git", "diff", "--name-only", "b7f4749", "--"],
+        diff = subprocess.run(["git", "diff", "--name-only", "b7f4749", "9a506cd", "--"],
                               cwd=_ROOT, capture_output=True, text=True).stdout.split()
         verboden = {"ai_feedback.py", "feedback_atoms.py", "feedback_copy.py",
                     "feedback_facts.py", "feedback_obligations.py", "metric_authority.py",

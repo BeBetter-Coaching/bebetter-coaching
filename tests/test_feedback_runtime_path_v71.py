@@ -54,7 +54,7 @@ def _run_genereer(monkeypatch, w, zones, builder, llm_out):
     monkeypatch.setattr(feedback_core, "_ensure_details", lambda wid: None)
     monkeypatch.setattr(fs_client, "get_athlete_zones", lambda ak: zones)
     monkeypatch.setattr(fs_client, "get_workout_builder", lambda wk, ak: builder)
-    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda ak, d: None)
+    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda *a, **k: None)
     monkeypatch.setattr(ai_feedback, "_generate_text", lambda **kw: llm_out)
     try:
         return "SENDABLE", feedback_core.genereer(w["workout_key"])

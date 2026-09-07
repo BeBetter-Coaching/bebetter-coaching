@@ -277,7 +277,7 @@ def _pace_ctx(monkeypatch, pace_display, *, effort=None, felt=None, laps=None,
     """Bouw een CONTINUE run-context (geen builder-structuur) met echte Class-2 classificatie."""
     monkeypatch.setattr(ai_feedback.intake_store, "garmin_context_text",
                         lambda *a, **k: "", raising=False)
-    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda ak, d: None)
+    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda *a, **k: None)
     monkeypatch.setattr(fs_client, "get_athlete_zones",
                         lambda ak: zones if zones is not None else _tempo_zones())
     wd = {
