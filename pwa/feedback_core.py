@@ -1188,11 +1188,31 @@ def _herstel_cache(snap: dict) -> None:
     grens voor deze lookup-cache. Een gepruned item is niet verloren: `get_or_restore_workout`
     herstelt op een miss uit dezelfde snapshot (geen FinalSurge-call).
 
-    `setdefault` blijft bewust staan voor de OVERLEVENDE keys: dat behoudt object-identiteit
-    (en dus de al geladen `details`) over een refresh heen."""
+    QUEUE/DETAIL-CONSISTENTIE (Michael-case): `setdefault` liet `_cache` de snapshot alleen in
+    LIDMAATSCHAP volgen, niet in INHOUD. Bestond de key al, dan bleef het object van de EERSTE
+    sweep die deze workout zag staan — terwijl de queue-ITEMS elke sweep vers worden gebouwd.
+    Kwam er atleet-input binnen NADAT de workout al in de queue stond (een uitgevoerde geplande
+    training waar de atleet later een notitie bij schreef), dan zei de rij `Reactie` met een
+    citaat terwijl `detail()` uit het bevroren object las en "Geen bericht van de atleet" toonde.
+    Eén sessie-identiteit moet overal dezelfde waarheid geven, dus de cache volgt nu ook de
+    inhoud.
+
+    De twee redenen waarom `setdefault` er stond blijven expliciet overeind:
+      • OBJECT-IDENTITEIT voor overlevende keys → in-place `clear()`+`update()`, niet vervangen,
+        zodat een reeds uitgedeelde referentie de verse inhoud ziet;
+      • de LAZY GELADEN `details` (geheugen-argument hierboven) → expliciet overgezet wanneer het
+        verse record ze niet heeft, dus nog steeds geen her-fetch per sweep."""
     volle = snap.get("_volle") or {}
     for wid, w in volle.items():
-        _cache.setdefault(wid, w)
+        oud = _cache.get(wid)
+        if oud is None:
+            _cache[wid] = w
+        elif oud is not w:
+            details = oud.get("details")
+            oud.clear()
+            oud.update(w)
+            if details and not oud.get("details"):
+                oud["details"] = details
     if volle:
         for wid in [k for k in _cache if k not in volle]:
             _cache.pop(wid, None)
