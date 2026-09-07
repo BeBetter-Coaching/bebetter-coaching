@@ -666,10 +666,18 @@ def get_training_log(user_key: str, months: int = 4, detail_weeks: int = 6) -> l
     return sorted(result, key=lambda x: x["date"])
 
 
-def get_fastest_activity_on_day(user_key: str, race_date_str: str) -> dict:
+def get_fastest_activity_on_day(user_key: str, race_date_str: str, sport: str = "") -> dict:
     """
     Geeft de activity-data van de snelste voltooide activiteit op een specifieke dag.
     Gebruikt in de feedback module om de echte race te identificeren (niet de warming-up).
+
+    `sport` (bv. "run") begrenst de vergelijking tot workouts van DAT type volgens de
+    canonieke `classify_workout_type`. Zonder die begrenzing wint een zwem- of fietsactiviteit
+    de tempo-vergelijking structureel: zwemtempo staat in min/100 m en fietstempo ligt per km
+    ver onder looptempo, dus die worden altijd als "sneller" gelezen en zouden de uitvoering
+    van een hardloopsessie vervangen (veldbevinding 7 sep 2026: 140 m zwemmen naast een
+    herstelloop van 4,7 km). Cross-sport data is nooit de uitvoering van deze sessie.
+    Default "" = ongewijzigd gedrag voor elke aanroeper die geen sport meegeeft.
     """
     try:
         race_dt = date.fromisoformat(race_date_str[:10])
@@ -683,6 +691,8 @@ def get_fastest_activity_on_day(user_key: str, race_date_str: str) -> dict:
         return {}
 
     completed = [w for w in day_workouts if w.get("has_actual_data")]
+    if sport:
+        completed = [w for w in completed if classify_workout_type(w) == sport]
     if not completed:
         return {}
 

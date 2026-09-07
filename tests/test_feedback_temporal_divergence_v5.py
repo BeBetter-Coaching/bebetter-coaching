@@ -142,7 +142,7 @@ def fs_both(monkeypatch):
         "zone_type": "hartslag", "zones_text": "Z1..", "zones": HR_ZONES,
         "secondary_zone_type": "tempo", "secondary_zones": PACE_ZONES})
     monkeypatch.setattr(fs_client, "get_workout_builder", lambda wk, ak: [])
-    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda ak, d: None)
+    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda *a, **k: None)
 
 
 def _wd_recovery(laps, comments=None, name="Herstelloop", desc="herstel na cruise intervals"):

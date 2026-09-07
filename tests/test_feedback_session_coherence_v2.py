@@ -171,7 +171,7 @@ def test_g16_categorical_feel_word_not_number():
     _orig_z, _orig_b, _orig_f = _fs.get_athlete_zones, _fs.get_workout_builder, _fs.get_fastest_activity_on_day
     _fs.get_athlete_zones = lambda ak: {}
     _fs.get_workout_builder = lambda wk, ak: []
-    _fs.get_fastest_activity_on_day = lambda ak, d: None
+    _fs.get_fastest_activity_on_day = lambda *a, **k: None
     try:
         ctx, _ = ai_feedback._build_workout_context(wd)
     finally:

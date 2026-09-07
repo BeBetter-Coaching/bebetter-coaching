@@ -463,8 +463,13 @@ def _session_context(w: dict) -> str:
         reg = [f"- registratie {km:g} km" if km is not None else "- registratie (afstand onbekend)"
                for km in (_exec_km(m) for m in members)]
         blok = ["━━━ ZELFDE-DAG SESSIE-CONTEXT (deterministisch — meerdere registraties op dezelfde dag) ━━━",
-                "Deze atleet heeft vandaag meerdere hardloop-registraties die WAARSCHIJNLIJK dezelfde "
-                "sessie zijn (mogelijk gesplitst door bijv. een verbindings-/horloge-onderbreking):"] + reg
+                # F4 (veldronde 7 sep 2026): dit blok gaat over de TRAININGSDAG (`day`), niet over de
+                # generatiedag. Met "vandaag" kreeg het model op maandag het woord 'vandaag' aangereikt
+                # over een zondagsessie. Datum-neutraal formuleren; v6 verwijst athlete-facing sowieso
+                # via de betekenis en niet met een relatief dagwoord.
+                "Deze atleet heeft op de dag van deze training meerdere hardloop-registraties die "
+                "WAARSCHIJNLIJK dezelfde sessie zijn (mogelijk gesplitst door bijv. een "
+                "verbindings-/horloge-onderbreking):"] + reg
         tot = f"Samen ~{summed:.1f} km"
         if planned:
             tot += f", gepland ~{planned:g} km"
@@ -707,8 +712,17 @@ def _validate_or_block(w: dict, tekst: str, mode: str) -> None:
     forbidden = (pack.get("forbidden_claims") or []) if initial else []
     athlete_msg = "\n".join([str(w.get("post_notes") or "")]
                             + [str(c) for c in (w.get("athlete_comments") or []) if str(c or "").strip()])
+    # F4 — 'vandaag' mag alleen als de beoordeelde training ECHT van de generatiedag is. De
+    # generatiedag komt uit dezelfde tijdzone-bewuste bron als de rest van de generatie
+    # (`_generation_date`); een onparseerbare datum telt als "onbekend" en blokkeert niet.
+    wd = str(w.get("workout_date") or "")[:10]
+    try:
+        workout_is_today = (date.fromisoformat(wd) == _generation_date()) if wd else True
+    except ValueError:
+        workout_is_today = True
     res = _ff.validate_draft(tekst, is_running=is_running, mandatory=mandatory,
-                             forbidden_claims=forbidden, athlete_message=athlete_msg)
+                             forbidden_claims=forbidden, athlete_message=athlete_msg,
+                             workout_is_today=workout_is_today)
     if not res.get("ok"):
         raise ValueError(_ff.block_message(res.get("kind")))
 

@@ -505,11 +505,26 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     # Voor race-workouts: controleer of er een snellere activiteit op dezelfde dag is.
     # Atleten doen vaak wu → race → cd als losse activiteiten; de wu wordt soms
     # ten onrechte gezien als de race-uitvoering (eerste activiteit van de dag).
+    #
+    # SPORT-BEGRENSD (veldronde 7 sep 2026): de vergelijking gaat over `pace_display`, en
+    # zwemtempo (min/100 m) of fietstempo staat numeriek altijd onder looptempo. Zonder
+    # sportfilter won een 140 m zwemsessie de vergelijking van een herstelloop en werd de
+    # ZWEMactiviteit — inclusief haar laps — de "uitvoering" van de hardloopsessie. De
+    # sport komt uit dezelfde canonieke bron als queue/detail/AI (`classify_workout_type`
+    # → workout_data["workout_type"]); cross-sport data is nooit sessie-uitvoering.
     workout_date = workout_data.get("workout_date", "")
     is_race = workout_data.get("details", {}).get("is_race") or False
+    _sport = workout_data.get("workout_type") or ""
     if athlete_key and workout_date and activities:
         try:
-            fastest_act = _fs.get_fastest_activity_on_day(athlete_key, workout_date)
+            fastest_act = _fs.get_fastest_activity_on_day(athlete_key, workout_date, _sport)
+            # Defense in depth: verwerp ook een activiteit die ZELF een ander type draagt
+            # (activity_type_key/-name zitten op activiteitniveau). Onbekend type = geen
+            # tegenbewijs, dan blijft de sportfilter hierboven de poort.
+            if fastest_act and _sport:
+                _atype = _fs.classify_workout_type({"Activities": [fastest_act]})
+                if _atype not in ("unknown", _sport):
+                    fastest_act = None
             if fastest_act:
                 current_pace = _fs._pace_to_float(activities[0].get("pace_display") or "")
                 fastest_pace = _fs._pace_to_float(fastest_act.get("pace_display") or "")
@@ -956,7 +971,16 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     # Datum-context: de atleet schreef rond de trainingsdatum, jij reageert
     # vandaag. Voorkomt dat 'morgen'/'vandaag' uit de notitie verkeerd wordt
     # overgenomen en dat de AI een vooruitblik verzint.
-    _today = date.today()
+    # F4 (veldronde 7 sep 2026): `date.today()` is de NAIEVE serverdatum. Render draait UTC, dus
+    # tussen 00:00 en 02:00 Amsterdamse tijd loopt die een dag achter — dan werd `_gap` nul voor een
+    # zondagtraining en schreef de prompt "je reageert op de dag van de training zelf". Gebruik de
+    # bestaande tijdzone-bewuste generatiedatum (P1, v2) als ENIGE tijdwaarheid; val terug op de
+    # oude waarde als die niet importeerbaar is.
+    try:
+        from feedback_core import _generation_date as _gen_date
+        _today = _gen_date()
+    except Exception:
+        _today = date.today()
     _maanden = ["januari", "februari", "maart", "april", "mei", "juni", "juli",
                 "augustus", "september", "oktober", "november", "december"]
     _weekdagen = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]

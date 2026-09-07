@@ -87,6 +87,8 @@ function mockFetch(url, opt) {
     });
     if (plan.mode === "resolve") { done = true; resolve(mkRes(plan.body)); }
     else if (plan.mode === "delay") setTimeout(() => { if (!done) { done = true; resolve(mkRes(plan.body)); } }, plan.delay);
+    // 'reject': echte netwerk-/transportfout (geen abort) — direct, niet via de deadline.
+    else if (plan.mode === "reject") { done = true; reject(new TypeError("Failed to fetch")); }
     // 'hang': never resolves on its own
   });
 }
@@ -125,9 +127,29 @@ async function s1_never_resolves() {
   reset({ nonrefresh: { mode: "hang" }, refresh: { mode: "hang" } });
   const api = build(120, 200);
   await api.fbEnter();                                   // must terminate (deadline), not hang
+  // F1 (veldronde 7 sep 2026): een hot-deadline is GEEN serverfout — de server werkt door en warmt
+  // zijn snapshot. Direct daarna dus GEEN foutkaart maar de wacht-shell, en de achtergrond-refresh
+  // moet zijn gestart. Het P0-contract (nooit oneindig skeleton) blijft: na de refresh-deadline
+  // slaat het alsnog terminaal om.
+  const q0 = els["#fb-queue"].innerHTML;
+  ok(!/fb-retry|Opnieuw/.test(q0), "S1: hot timeout toont GEEN valse foutkaart");
+  ok(/SKELETON/.test(q0), "S1: hot timeout toont de wacht-shell");
+  ok(logs.some(([e]) => e === "queue_hot_timeout_soft"), "S1: hot timeout gelogd als soft");
+  ok(logs.some(([e]) => e === "queue_refresh_start"), "S1: achtergrond-refresh alsnog gestart");
+  await sleep(260);                                      // refresh-deadline verloopt
   const q = els["#fb-queue"].innerHTML;
   ok(/fb-retry|Opnieuw/.test(q), "S1: terminal retry state shown");
   ok(!/SKELETON/.test(q), "S1: not stuck on skeleton");
+}
+// F1 — een ECHTE netwerk-/transportfout op het hot pad is wél meteen terminaal (fail-closed):
+// daar heeft doorwachten geen zin, want er kwam geen request bij de server aan.
+async function s1b_network_error_is_terminal() {
+  reset({ nonrefresh: { mode: "reject" }, refresh: { mode: "hang" } });
+  const api = build(120, 200);
+  await api.fbEnter();
+  const q = els["#fb-queue"].innerHTML;
+  ok(/fb-retry|Opnieuw/.test(q), "S1b: netwerkfout direct terminaal");
+  ok(!logs.some(([e]) => e === "queue_refresh_start"), "S1b: geen achtergrond-refresh na netwerkfout");
 }
 async function s2_warm_then_refresh_hangs() {
   reset({ nonrefresh: { mode: "resolve", body: { fs: true, items: [{ id: "a" }, { id: "b" }] } },
@@ -173,8 +195,8 @@ async function s5_stale_after_leave() {
   ok(FB.selId === null, "S5: no auto-open from a stale request");
 }
 
-const scenarios = [s1_never_resolves, s2_warm_then_refresh_hangs, s3_cold_pending_then_refresh,
-  s4_refresh_timeout_no_blank, s5_stale_after_leave];
+const scenarios = [s1_never_resolves, s1b_network_error_is_terminal, s2_warm_then_refresh_hangs,
+  s3_cold_pending_then_refresh, s4_refresh_timeout_no_blank, s5_stale_after_leave];
 
 for (const s of scenarios) {
   try { await s(); } catch (e) { failures.push(s.name + " threw: " + (e && e.message)); }

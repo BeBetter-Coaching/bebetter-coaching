@@ -2898,8 +2898,17 @@ async function fbEnter() {                            // eerste keer openen van 
   if (!r) {
     // Geen bruikbare respons (deadline of netwerk). Nooit oneindig laden: met een
     // bestaande queue laten we die staan; zonder items → terminale, herstelbare staat.
-    if (!FB.items.length) { fbRenderError(q.timedOut ? "timeout" : "network"); return; }
-    fbMarkStale(q.timedOut ? "timeout" : "network");
+    // F1 (veldronde 7 sep 2026): een DEADLINE-abort op het hot pad is GEEN serverfout. Alleen de
+    // client brak af; de server werkte door en warmde zijn snapshot (`_queue_current_diag` zet
+    // `_QUEUE_MEM`), waardoor het resultaat na een handmatige browser-refresh meteen klaarstond.
+    // Zo'n timeout is dus niet terminaal: toon de bestaande wacht-shell en laat de achtergrond-
+    // refresh (ruimere deadline) hem alsnog leveren. Faalt die óók, dan slaat `fbRefresh` alsnog
+    // terminaal om. Een ECHTE netwerk-/HTTP-fout blijft direct terminaal (fail-closed).
+    if (!FB.items.length) {
+      if (!q.timedOut) { fbRenderError("network"); return; }
+      FB.pendingInitial = true; fbRenderColdWaiting();
+      fbLog("queue_hot_timeout_soft", { hot_ms: q.ms });
+    } else fbMarkStale(q.timedOut ? "timeout" : "network");
   }
   else if (!r.fs) { $("#fb-info").textContent = "FinalSurge nog niet gekoppeld."; $("#fb-queue").innerHTML = ""; FB.loaded = true; }
   else if (r.pending && !(r.items && r.items.length)) {

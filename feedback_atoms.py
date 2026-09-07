@@ -375,6 +375,20 @@ def _build_decision(w: dict) -> dict:
         atoms.append(_atom("attendance", "Jammer dat je er niet bij kunt zijn.", "logistics", 20,
                            "ANY", ["athlete_message"]))
 
+    # G. KORTE POSITIEVE AFSLUITER (veldronde 7 sep 2026, F3) — hooguit ÉÉN korte slotzin, en
+    # alleen bij AANTOONBAAR goede uitvoering. Het enige deterministische bewijs daarvoor is
+    # ExecutionFit ON_TARGET op de autoritaire metriek: de sessie is uitgevoerd zoals gepland.
+    # MOSTLY_ON_TARGET / MIXED / CLEARLY_ABOVE krijgen expliciet GEEN lof (geen automatische lof
+    # bij matige of onduidelijke uitvoering), en een correctie, klacht, afwezigheidsmelding of een
+    # nog onbeantwoorde vraag sluit hem ook uit — dan is 'goed gedaan' niet de juiste afsluiting.
+    # Gestructureerde trainingen krijgen hem niet: daar is `fit` per constructie None en bewijst de
+    # blok-observatie alleen dat de blokken schoon IN een zone vielen, niet dat ze de BEDOELDE
+    # zone haalden. Categorie `close` sorteert als laatste en telt NIET als `content`, dus deze zin
+    # kan nooit zelf een REVIEW_REQUIRED-case naar AUTO_SAFE tillen.
+    if fit and fit.get("category") == ON_TARGET and not rec and not has_question \
+            and not any(a["category"] in ("correction", "complaint", "logistics") for a in atoms):
+        atoms.append(_atom("positive_close", "Goed gedaan.", "close", 10, "ANY", ["execution_fit"]))
+
     # ── beslissing ────────────────────────────────────────────────────────────
     content = [a for a in atoms if a["category"] in
                ("correction", "observation", "plan_execution", "answer")]
@@ -411,7 +425,9 @@ def _rpe_high(w) -> bool:
 
 # ── deterministische assemblage ───────────────────────────────────────────────
 _ORDER = {"answer": 0, "correction": 1, "observation": 2, "plan_execution": 3,
-          "complaint": 4, "context": 5, "logistics": 6, "ack": 7}
+          "complaint": 4, "context": 5, "logistics": 6, "ack": 7,
+          # F3 — de positieve afsluiter staat altijd als laatste zin.
+          "close": 8}
 
 
 def assemble(atoms) -> str:

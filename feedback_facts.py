@@ -33,6 +33,11 @@ _INTERNAL_VOCAB = (
 _CYCLING_CTX = re.compile(r"\b(fiets|fietsen|gefietst|wieler|wielren|bike|mtb|gravel|spinning|zwift)\w*", re.I)
 
 _REL_DAY = re.compile(r"\b(gisteren|eergisteren|morgen|overmorgen)\b", re.I)
+# F4 (veldronde 7 sep 2026) — 'vandaag' stond NIET in de dagguard en glipte er dus altijd door,
+# ook over een training van een andere dag ("zondag" beoordeeld op maandag). Same-day feedback mag
+# 'vandaag' wél zeggen, dus dit woord is voorwaardelijk: alleen geblokkeerd als de beoordeelde
+# training niet van de generatiedag is (`workout_is_today=False`).
+_TODAY_WORD = re.compile(r"\bvandaag\b", re.I)
 _RIT = re.compile(r"\brit\b|\britje\b", re.I)
 _FIETSRIT = re.compile(r"\bfietsrit\w*", re.I)
 # zone-gebonden percentage (athlete-facing verboden); losse '100% hersteld' blijft toegestaan.
@@ -230,7 +235,8 @@ def _norm(s: str) -> str:
 
 
 def validate_draft(text: str, *, is_running: bool = False, mandatory=None,
-                   forbidden_claims=None, athlete_message: str = "") -> dict:
+                   forbidden_claims=None, athlete_message: str = "",
+                   workout_is_today: bool = True) -> dict:
     """Fail-closed VALIDATOR (geen fixer, geen rewrite) over EXACT de tekst die persistent wordt.
     Geeft {ok, kind, detail}:
       kind == 'sport'   → 'Concept geblokkeerd — onjuiste sporttaal.'
@@ -267,6 +273,10 @@ def validate_draft(text: str, *, is_running: bool = False, mandatory=None,
     # 5. stale relatieve dag (v6)
     if _REL_DAY.search(low):
         return {"ok": False, "kind": "content", "detail": "relative_day"}
+    # 5b. F4 — 'vandaag' over een training van een ANDERE dag (zondag beoordeeld op maandag).
+    #     Same-day feedback (`workout_is_today`, default True) mag het woord gewoon gebruiken.
+    if not workout_is_today and _TODAY_WORD.search(low):
+        return {"ok": False, "kind": "content", "detail": "relative_day:vandaag"}
     # 6. sporttaal: een RUN mag nooit een 'rit'/'ritje'/'fietsrit' heten (harde productregel)
     if is_running:
         if _RIT.search(t):

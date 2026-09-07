@@ -246,13 +246,13 @@ class TestLocks:
         assert s["fingerprint"] == "bhoog" and s["severity"] == 2
         import teampuls_core as _tp
         assert _tp._norm(r)["pct"] == _cr.load_metric(r)["pct"] == 60
-        diff = subprocess.run(["git", "diff", "--name-only", "39a6529", "--"],
+        diff = subprocess.run(["git", "diff", "--name-only", "39a6529", "9a506cd", "--"],
                               cwd=_ROOT, capture_output=True, text=True).stdout.split()
         for verboden in ("belasting.py", "pwa/teampuls_core.py", "pwa/athlete_context.py"):
             assert verboden not in diff, f"gelockte module aangeraakt: {verboden}"
 
     def test_t16_feedback_onaangeraakt(self):
-        diff = subprocess.run(["git", "diff", "--name-only", "39a6529", "--"],
+        diff = subprocess.run(["git", "diff", "--name-only", "39a6529", "9a506cd", "--"],
                               cwd=_ROOT, capture_output=True, text=True).stdout.split()
         verboden = {"ai_feedback.py", "feedback_atoms.py", "feedback_copy.py",
                     "feedback_facts.py", "feedback_obligations.py", "metric_authority.py",

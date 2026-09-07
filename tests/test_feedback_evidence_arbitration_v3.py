@@ -211,7 +211,7 @@ def fs_pace(monkeypatch):
     monkeypatch.setattr(fs_client, "get_athlete_zones",
                         lambda ak: {"zone_type": "tempo", "zones_text": "Z1..", "zones": PACE_ZONES})
     monkeypatch.setattr(fs_client, "get_workout_builder", lambda wk, ak: [])
-    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda ak, d: None)
+    monkeypatch.setattr(fs_client, "get_fastest_activity_on_day", lambda *a, **k: None)
 
 
 def test_g17_integration_pace_run(fs_pace):

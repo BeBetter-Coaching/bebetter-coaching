@@ -44,7 +44,11 @@ _CSS = open(os.path.join(_ROOT, "pwa", "static", "styles.css")).read()
 _DS = open(os.path.join(_ROOT, "pwa", "static", "design-system.css")).read()
 _DC_SRC = open(os.path.join(_ROOT, "pwa", "dossier_cockpit.py")).read()
 
+# Scope-lock-venster van DEZE ronde: van de basis waarop R1 gebouwd is tot de merge die
+# productie werd. Vastgepind (niet open op HEAD), zodat het een historisch feit over de
+# R1-build blijft en niet omvalt zodra een latere, eigen gescopede ronde iets aanraakt.
 _BASE = "4959360"
+_TIP = "9a506cd"
 
 
 def _fn(name: str) -> str:
@@ -63,7 +67,7 @@ def _fn(name: str) -> str:
 
 
 def _diff():
-    return subprocess.run(["git", "diff", "--name-only", _BASE, "--"],
+    return subprocess.run(["git", "diff", "--name-only", _BASE, _TIP, "--"],
                           cwd=_ROOT, capture_output=True, text=True).stdout.split()
 
 
