@@ -19,6 +19,7 @@ te testen is; `_gather()` doet de best-effort fetch.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from datetime import date, datetime, timedelta
 
@@ -149,6 +150,46 @@ def _note_klachten(notes: list, today: date) -> dict:
     return {"recent": recent[:4], "recurring": recurring}
 
 
+def _log_klachten(training_log: list, today: date) -> list:
+    """Klachten die de ATLEET zelf meldde in de post-notes van een training.
+
+    Deze laag las alleen coach-notities en het intakeveld. Een atleet die na een
+    training 'knie doet zeer' schrijft, was daardoor wél zichtbaar in Dossier,
+    Workspace en Feedback (die lezen post_notes via brain/complaints) maar NIET in
+    Schema — dus ook niet in de herijking bij Verlengen en niet in de context die
+    naar de plangeneratie gaat.
+
+    Detectie via `belasting._vind_klachten`: dezelfde negatie-bewuste herkenning die
+    het belasting-signaal en brain/complaints gebruiken ('geen pijn' / 'pijn is weg'
+    tellen niet). Zo levert dezelfde post-note hier hetzelfde oordeel op.
+    """
+    try:
+        import belasting as _bel
+        vind = _bel._vind_klachten
+    except Exception:
+        return []
+    uit = []
+    for e in training_log or []:
+        pn = (e.get("post_notes") or "").strip()
+        if not pn:
+            continue
+        d = _parse_d(str(e.get("date") or "")[:10])
+        if not d:
+            continue
+        dagen = (today - d).days
+        if dagen < 0 or dagen > _KLACHT_RECENT_DAGEN:
+            continue
+        try:
+            kernen = vind(pn)
+        except Exception:
+            kernen = []
+        if not kernen:
+            continue
+        uit.append({"datum": _iso(d), "tekst": pn[:160], "kernen": sorted(set(kernen))})
+    uit.sort(key=lambda x: x["datum"], reverse=True)
+    return uit
+
+
 def assemble(user_key: str, naam: str, raw: dict, today: date | None = None) -> dict:
     """PUUR: bouw de gestructureerde context uit al-verzamelde ruwe data (`raw`).
     `raw` keys: intake, intake_ts, notes, profiel, belasting, garmin, on_hold,
@@ -205,6 +246,20 @@ def assemble(user_key: str, naam: str, raw: dict, today: date | None = None) -> 
     actuele = []
     for r in kl["recent"]:
         actuele.append({"tekst": r["tekst"], "bron": "coach-notitie", "datum": r["datum"], "status": "recent"})
+    # Door de ATLEET gemeld in de post-notes van een training. Nieuwste eerst, en vóór
+    # de intakeklacht: dat is de meest actuele melding en hoort dus bovenaan in de
+    # herijking én in de gegenereerde context.
+    for r in _log_klachten(raw.get("training_log") or [], today):
+        # Meldde de coach dezelfde dag hetzelfde, dan is dat één klacht, geen twee.
+        # `_vind_klachten` levert samengestelde labels ("pijn (knie)"); vergelijk op de
+        # losse woorden daaruit, want de notitie van de coach is vrije tekst.
+        woorden = {w for k in r["kernen"] for w in re.findall(r"[a-zà-ÿ]+", k.lower())}
+        if any(a["datum"] == r["datum"] and a["bron"] == "coach-notitie"
+               and any(w in a["tekst"].lower() for w in woorden) for a in actuele):
+            continue
+        actuele.append({"tekst": r["tekst"], "bron": "atleet (trainingslog)",
+                        "datum": r["datum"], "status": "recent"})
+    actuele.sort(key=lambda a: a["datum"] or "", reverse=True)
     if intake_klacht:
         actuele.append({"tekst": intake_klacht, "bron": "intake", "datum": _iso(intake_ts),
                         "status": "mogelijk verouderd" if intake_verouderd else "gemeld bij intake"})
