@@ -29,7 +29,7 @@ function sliceFrom(header) {
 const sliceLine = (p) => { const i = SRC.indexOf(p); if (i < 0) throw new Error("not found: " + p); return SRC.slice(i, SRC.indexOf("\n", i)); };
 
 // Prepend test-controlled module-state (the real file declares these later; here we own them).
-const STATE = 'let huidigeView = "", wsSel = "", dcSel = "", sbState = null, dossierSel = null;';
+const STATE = 'let huidigeView = "", wsSel = "", dcSel = "", sbState = null, dossierSel = null, FB = { sel: null };';
 const REAL = [
   STATE,
   sliceLine("const _ATHLETE_VIEWS = "),
@@ -46,7 +46,7 @@ const toonView = (v) => calls.push(["toonView", v]);
 const locationShim = { get hash() { return hash; } };
 
 const app = new Function("openWorkspace", "openAthleteModule", "toonView", "location",
-  REAL + "\nreturn { activeAthleteKey, openModuleFromNav, _set: (o) => { if ('huidigeView' in o) huidigeView = o.huidigeView; if ('wsSel' in o) wsSel = o.wsSel; if ('dcSel' in o) dcSel = o.dcSel; } };"
+  REAL + "\nreturn { activeAthleteKey, _shownAthleteKey, openModuleFromNav, _set: (o) => { if ('huidigeView' in o) huidigeView = o.huidigeView; if ('wsSel' in o) wsSel = o.wsSel; if ('dcSel' in o) dcSel = o.dcSel; if ('dossierSel' in o) dossierSel = o.dossierSel; if ('sbState' in o) sbState = o.sbState; if ('fbSel' in o) FB.sel = o.fbSel; } };"
 )(openWorkspace, openAthleteModule, toonView, locationShim);
 
 const failures = [];
@@ -94,9 +94,61 @@ ok(JSON.stringify(calls) === JSON.stringify([["toonView", "dossier"]]),
    "6: 'nieuw:' never carried cross-module", JSON.stringify(calls));
 
 console.log("== Athlete-context continuity (executable, incl. B1 divergence repro) ==");
+
+// ── Feedback → atleetgerichte modules (atleetcontext-coherentie) ─────────────
+// Feedback blijft een GLOBALE route (`#feedback`, geen ident) maar heeft wél een geopende
+// case. Die atleet leefde alleen in runtime state, waardoor de zijbalk vanuit Feedback een
+// KALE doelroute schreef: op het scherm klopte het (de doelview toont zijn onthouden
+// atleet), maar een refresh las de route en was de atleet kwijt.
+const CASE = (k) => ({ it: { athlete_key: k } });
+
+// 7. Feedback met een geopende case → elke atleetroute krijgt het id mee.
+for (const [view, verwacht] of [
+  ["workspace", ["openWorkspace", "douwe"]],
+  ["dossier", ["openAthleteModule", "dossier", "douwe"]],
+  ["schema", ["openAthleteModule", "schema", "douwe"]],
+  ["atleten", ["openAthleteModule", "atleten", "douwe"]],
+]) {
+  scene("#feedback", { huidigeView: "feedback", fbSel: CASE("douwe"), wsSel: "", dcSel: "" });
+  app.openModuleFromNav(view);
+  ok(JSON.stringify(calls) === JSON.stringify([verwacht]),
+     `7: Feedback → ${view} draagt de atleet mee`, JSON.stringify(calls));
+}
+
+// 8. De terugval leest de geopende case.
+scene("#feedback", { huidigeView: "feedback", fbSel: CASE("douwe") });
+ok(app._shownAthleteKey("feedback") === "douwe", "8: _shownAthleteKey('feedback') = de case-atleet",
+   app._shownAthleteKey("feedback"));
+
+// 9. Geen case open (queue-overzicht) → gewone module-entry, geen verzonnen atleet.
+scene("#feedback", { huidigeView: "feedback", fbSel: null, wsSel: "", dcSel: "" });
+ok(app._shownAthleteKey("feedback") === "", "9: geen case = geen context");
+app.openModuleFromNav("workspace");
+ok(JSON.stringify(calls) === JSON.stringify([["toonView", "workspace"]]),
+   "9: zonder case gewone entry", JSON.stringify(calls));
+
+// 10. Case zonder gekoppelde atleet (athlete_key null) → geen context.
+scene("#feedback", { huidigeView: "feedback", fbSel: { it: { athlete_key: null } }, wsSel: "", dcSel: "" });
+ok(app._shownAthleteKey("feedback") === "", "10: ongekoppelde case draagt geen atleet");
+app.openModuleFromNav("dossier");
+ok(JSON.stringify(calls) === JSON.stringify([["toonView", "dossier"]]),
+   "10: ongekoppelde case → gewone entry", JSON.stringify(calls));
+
+// 11. Identity-guard blijft: een `nieuw:`-key mag nooit app-breed context worden.
+scene("#feedback", { huidigeView: "feedback", fbSel: CASE("nieuw:jan"), wsSel: "", dcSel: "" });
+app.openModuleFromNav("workspace");
+ok(JSON.stringify(calls) === JSON.stringify([["toonView", "workspace"]]),
+   "11: 'nieuw:' uit een case wordt niet meegedragen", JSON.stringify(calls));
+
+// 12. Feedback blijft zelf een globale route: navigeren NAAR Feedback opent geen atleet.
+scene("#workspace/douwe", { huidigeView: "workspace", wsSel: "douwe" });
+app.openModuleFromNav("feedback");
+ok(JSON.stringify(calls) === JSON.stringify([["toonView", "feedback"]]),
+   "12: Feedback zelf blijft queue-first", JSON.stringify(calls));
+
 if (failures.length) {
   console.error("FAIL (" + failures.length + "):\n - " + failures.join("\n - "));
   process.exit(1);
 } else {
-  console.log("PASS: Workspace ↔ Dossier carry the selected/shown athlete (route or bare-hash); generic Feedback queue-first; nieuw:-guard holds (6 scenarios).");
+  console.log("PASS: Workspace ↔ Dossier carry the selected/shown athlete (route or bare-hash); generic Feedback queue-first; nieuw:-guard holds; Feedback carries its open case to the athlete routes (12 scenarios).");
 }

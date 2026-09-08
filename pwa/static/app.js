@@ -330,6 +330,16 @@ function _shownAthleteKey(view) {
     // stond de route even zonder ident (terug via een globale view), dan raakte de
     // zijbalk de zichtbaar geopende atleet kwijt.
     if (view === "atleten") return (typeof dossierSel === "string" && dossierSel) ? dossierSel : "";
+    // Feedback is bewust een GLOBALE route (`#feedback`, geen ident) maar heeft wél een
+    // geopende case, en dus een atleet. Die leefde alleen in runtime state: navigeerde de
+    // coach vanuit Feedback naar Workspace/Dossier/Schema/Atleten, dan viel de context hier
+    // weg en schreef `openModuleFromNav` een kale route. Op het scherm klopte het nog
+    // (de doelview toont zijn eigen onthouden atleet), maar een refresh las de route en
+    // was de atleet kwijt. De route blijft ongewijzigd — dit is puur de terugval.
+    if (view === "feedback") {
+      const it = (typeof FB !== "undefined" && FB && FB.sel) ? FB.sel.it : null;
+      return (it && typeof it.athlete_key === "string") ? it.athlete_key : "";
+    }
   } catch {}
   return "";
 }
