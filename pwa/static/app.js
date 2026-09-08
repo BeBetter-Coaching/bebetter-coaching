@@ -2555,17 +2555,7 @@ function tekenAtleet(d) {
   $("#scroller").scrollTo({ top: 0 });
   $("#d-terug").addEventListener("click", () => { dossierSel = null; pushRoute("atleten"); dossierPicker && dossierPicker.setSelected(""); toonDossierLijstView(); });
 
-  const doeKoppel = async (userKey) => {
-    if (!userKey) return melding("Kies eerst een atleet.", true);
-    const r = await jpost("/api/intake/koppel", { nieuw_key: nieuwKey, user_key: userKey }).catch(() => null);
-    if (!r || !r.ok) return melding(r?.err || "Koppelen mislukt.", true);
-    melding(`Intake gekoppeld aan ${r.naam || "atleet"} — bouw nu het schema.`);
-    vervalDossierLijst();
-    // Cohesion (§10): primaire next-action voor een nieuw gekoppelde coaching-atleet
-    // is 'Bouw schema' → open Schema direct op de canonieke user_key (geen re-search).
-    // Het Dossier blijft één tik weg via de athlete-nav in de Schema-kop (secundair).
-    openAthleteModule("schema", userKey);
-  };
+  const doeKoppel = userKey => koppelIntake(nieuwKey, userKey);
   $("#kp-direct")?.addEventListener("click", () => doeKoppel(d.user_key));
   $("#kp-suggest")?.addEventListener("click", () => suggestie && doeKoppel(suggestie.user_key));  // confirm = klik; geen auto-link
   $("#kp-open")?.addEventListener("click", () => openAthletePickerOverlay({
@@ -2602,6 +2592,23 @@ function vervalDossierLijst() { geladen.atleten = false; laders.atleten = laadDo
 // ════════════════════════════════════════════════════════════════════════════
 // INTAKE — deelbare link + inbox met binnengekomen klant-inzendingen
 // ════════════════════════════════════════════════════════════════════════════
+
+// Koppel een losse intake aan een FinalSurge-account. ÉÉN implementatie voor beide
+// ingangen (het Atleten-detail en de Intake-module): zelfde write, zelfde melding,
+// zelfde vervolgstap. De write gebeurt altijd pas na een expliciete coach-actie —
+// nooit automatisch op een naam-match. Geeft de gekoppelde user_key terug, of "".
+async function koppelIntake(nieuwKey, userKey) {
+  if (!userKey) { melding("Kies eerst een atleet.", true); return ""; }
+  const r = await jpost("/api/intake/koppel", { nieuw_key: nieuwKey, user_key: userKey }).catch(() => null);
+  if (!r || !r.ok) { melding(r?.err || "Koppelen mislukt.", true); return ""; }
+  melding(`Intake gekoppeld aan ${r.naam || "atleet"} — bouw nu het schema.`);
+  vervalDossierLijst();
+  // Cohesion (§10): primaire next-action voor een nieuw gekoppelde coaching-atleet
+  // is 'Bouw schema' → open Schema direct op de canonieke user_key (geen re-search).
+  // Het Dossier blijft één tik weg via de athlete-nav in de Schema-kop (secundair).
+  openAthleteModule("schema", userKey);
+  return userKey;
+}
 async function laadIntakeLink() {
   const box = $("#i-link");
   const r = await api("/api/intake/link").catch(() => null);
@@ -2623,7 +2630,10 @@ async function laadIntakeLink() {
 async function laadInbox() {
   const box = $("#i-inbox");
   skeleton(box, 2);
-  const r = await api("/api/intake/inbox").catch(() => null);
+  // `match=1`: de coach ziet hier al of deze aanmelder AL als atleet bestaat, zodat
+  // overnemen + koppelen één handeling is i.p.v. een zoektocht via de losse intakes.
+  // Home vraagt dezelfde lijst ZONDER match op (store-only praktijksignaal).
+  const r = await api("/api/intake/inbox?match=1").catch(() => null);
   if (!r) { foutState(box, laadInbox); return; }
   const inbox = r.inbox || [];
   setBadge(inbox.length);
@@ -2631,6 +2641,10 @@ async function laadInbox() {
   box.innerHTML = "";
   inbox.forEach(sub => {
     const rijen = sub.rijen.map(x => `<tr><td>${esc(x.vraag)}</td><td>${esc(x.antwoord)}</td></tr>`).join("");
+    // Eenduidige naam-match = KANDIDAAT, geen identiteit. De koppel-write gebeurt pas
+    // op de knop; zonder match blijft de flow exact als voorheen (overnemen als losse
+    // intake, daarna koppelen zodra het FinalSurge-account bestaat).
+    const sg = sub.suggestie || null;
     const el = document.createElement("article");
     el.className = "rij-kaart";
     el.innerHTML = `
@@ -2638,19 +2652,35 @@ async function laadInbox() {
         <div><h3>${esc(sub.naam)}</h3>
           <p class="muted klein">${sub.ingezonden ? "ingezonden " + esc(nlDatumTijd(sub.ingezonden)) : "inzenddatum onbekend"}${sub.email ? " · " + esc(sub.email) : ""}</p></div>
         <span class="mrow-tag soon-tag">nieuw</span></div>
+      ${sg ? `<p class="hint">Bestaat al als atleet: <b>${esc(sg.naam)}</b>${sg.groep ? " · " + esc(sg.groep) : ""} — bevestig zelf.
+         <button type="button" class="anav-chip" data-ws>Bekijk atleet</button></p>` : ""}
       <button class="acc-toggle sub" data-open>Bekijk antwoorden</button>
       <div class="collapse"><table class="pv-tbl">${rijen}</table></div>
       <div class="row">
-        <button class="btn primary" data-take>${ic("check")} Overnemen als intake</button>
+        ${sg ? `<button class="btn primary" data-take="${esc(sg.user_key)}">${ic("check")} Overnemen en koppelen aan ${esc(sg.naam)}</button>
+                <button class="btn ghost" data-take="">Alleen overnemen</button>`
+             : `<button class="btn primary" data-take="">${ic("check")} Overnemen als intake</button>`}
         <button class="btn danger-ghost" data-del aria-label="Verwijderen">${ic("trash")}</button>
       </div>`;
     el.querySelector("[data-open]").addEventListener("click", e => e.target.nextElementSibling.classList.toggle("open"));
-    el.querySelector("[data-take]").addEventListener("click", async () => {
+    // Atleetcontext vanuit Intake: de route draagt de canonieke user_key mee
+    // (`#workspace/<key>`), dus een refresh op de doelroute houdt dezelfde atleet.
+    el.querySelector("[data-ws]")?.addEventListener("click", () => sg && openWorkspace(sg.user_key));
+    el.querySelectorAll("[data-take]").forEach(b => b.addEventListener("click", async () => {
+      const koppelAan = b.dataset.take || "";
       const r2 = await api(`/api/intake/inbox/${encodeURIComponent(sub.id)}/take`, { method: "POST" }).catch(() => null);
       if (!r2 || !r2.ok) return melding(r2?.err || "Overnemen mislukt.", true);
-      melding(`'${r2.naam}' overgenomen — staat nu bij Atleten.`);
-      vervalDossierLijst(); laadInbox();
-    });
+      if (koppelAan) {
+        // Twee bestaande, elk op zichzelf non-destructieve stappen. Mislukt de tweede,
+        // dan is de intake WEL overgenomen — dat zeggen we, en hij staat klaar bij de
+        // losse intakes om alsnog te koppelen. Geen stille half-toestand.
+        if (await koppelIntake(r2.key, koppelAan)) return;      // koppelIntake navigeert
+        melding("Wel overgenomen — hij staat nu bij de losse intakes.", true);
+      } else {
+        melding(`'${r2.naam}' overgenomen — staat hieronder bij de losse intakes.`);
+      }
+      vervalDossierLijst(); laadInbox(); laadOrphanIntakes();
+    }));
     el.querySelector("[data-del]").addEventListener("click", async () => {
       if (!confirm(`Inzending van ${sub.naam} verwijderen?`)) return;
       const r2 = await api(`/api/intake/inbox/${encodeURIComponent(sub.id)}`, { method: "DELETE" }).catch(() => null);

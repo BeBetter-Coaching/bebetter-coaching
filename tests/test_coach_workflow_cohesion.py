@@ -135,9 +135,15 @@ class TestDossierSchema:
 # ── 6. Intake → Schema (§10) ─────────────────────────────────────────────────
 class TestIntakeNaarSchema:
     def test_na_koppel_primaire_next_action_is_schema(self):
-        block = _APP[_APP.index("const doeKoppel"):_APP.index("const doeKoppel") + 900]
+        # De koppel-write + vervolgstap leven in ÉÉN gedeelde functie (`koppelIntake`),
+        # gebruikt door zowel het Atleten-detail als de Intake-module. Lees daarom de
+        # echte functiebody, niet een vast bytevenster achter de aanroeper.
+        block = _fn("koppelIntake")
         assert 'openAthleteModule("schema", userKey)' in block   # primair: Bouw schema
         assert "bouw nu het schema" in block                     # expliciete next-action-tekst
+        # beide ingangen delen 'm — geen tweede vervolgstap die kan afwijken
+        assert "const doeKoppel = userKey => koppelIntake(nieuwKey, userKey);" in _APP
+        assert _APP.count('jpost("/api/intake/koppel"') == 1
 
     def test_nieuw_prefix_blijft_pre_link_identity(self):
         # De koppel-guard weigert nog steeds een niet-canonieke (nieuw:) target.
