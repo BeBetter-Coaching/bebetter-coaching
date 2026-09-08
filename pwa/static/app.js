@@ -253,7 +253,9 @@ function applyRoute() {
     if (view && document.querySelector(`.view[data-view="${view}"]`)) toonView(view);
     else toonView("home");
     if (view === "atleten" && ident) openDossier(ident);   // synchrone prefix draait nog binnen de guard
-    else if (view === "schema") { if (ident) openSchemaAthlete(ident); else { schemaOpenPending = ""; sbToonLijst(); } }
+    // Een kale `#schema` is de GENERIEKE ingang: een modus die nog van een eerdere,
+    // niet-geconsumeerde entry openstond is daar stale en mag niet stil meeliften.
+    else if (view === "schema") { if (ident) openSchemaAthlete(ident); else { schemaOpenPending = ""; schemaOpenMode = ""; sbToonLijst(); } }
     else if (view === "dossier") { if (ident) openDossierCockpit(ident); else { dcOpenPending = ""; dcToonLijst(); } }
     else if (view === "workspace") { if (ident) openWorkspace(ident); else { wsOpenPending = ""; wsLeegRoute(); } }
     // Races draagt geen atleet maar wél een filter-scope (#races/7d) — zo blijft de
@@ -5698,13 +5700,21 @@ function svItem(it) {
         <b style="color:${kleur}">${dagtxt}</b>
         <span class="muted klein" style="display:block">${SV_LABEL[it.status] || ""}</span></span></div>
     ${it.verborgen ? `<p class="muted klein">${esc(nlAantal(it.verborgen, "training", "trainingen"))} nog verborgen voor de atleet${it.zichtbaar_tot ? " · zichtbaar t/m " + esc(nlDatum(it.zichtbaar_tot)) : ""}</p>` : ""}
-    ${it.user_key ? `<div class="sv-acts"><button class="btn ghost small" data-open-schema>${ic("calendar")} Schema openen</button></div>` : ""}`;
+    ${it.user_key ? `<div class="sv-acts"><button class="btn ghost small" data-open-schema>${ic("calendar")} ${svActieLabel(it)}</button></div>` : ""}`;
   // Cohesion (§8): vanuit schema-verloop direct naar de Schema-workbench van DEZE
   // atleet — geen algemene picker, dezelfde canonical user_key via het contract.
+  // De MODUS volgt de stand: deze lijst gaat per definitie over bestaande schema's die
+  // aflopen, dus 'Verlengen' is daar de passende ingang. Alleen bij 'geen schema' is
+  // Nieuw juist. Voorheen opende elke rij de Nieuw-flow, ook bij een lopend blok —
+  // dan bouwt de coach naast het bestaande schema in plaats van erop verder.
   if (it.user_key) el.querySelector("[data-open-schema]").addEventListener("click",
-    () => openAthleteModule("schema", it.user_key));
+    () => openSchemaMode(it.user_key, svModus(it)));
   return el;
 }
+// 'geen' = er is niets om op verder te bouwen → Nieuw. Verlopen/bijna/loopt hebben een
+// bestaand blok → Verlengen (herijking + start ná de laatste geplande training).
+function svModus(it) { return it.status === "geen" ? "nieuw" : "verlengen"; }
+function svActieLabel(it) { return svModus(it) === "nieuw" ? "Schema opzetten" : "Schema verlengen"; }
 bindRefresh("sv-refresh", () => { geladen["schema-verloop"] = true; return laadSchemaVerloop(); });
 
 // ════════════════════════════════════════════════════════════════════════════
