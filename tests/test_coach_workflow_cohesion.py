@@ -110,9 +110,14 @@ class TestTeampulsDossier:
 # ── 4. Schema-verloop → Schema (nieuw) ───────────────────────────────────────
 class TestSchemaVerloop:
     def test_kaart_krijgt_schema_actie_naar_dezelfde_atleet(self):
-        block = _APP[_APP.index("function svItem"):_APP.index("function svItem") + 1800]
+        # Op de ECHTE functiebody (een vast byte-venster brak zodra er commentaar bij kwam).
+        block = _fn("svItem")
         assert "data-open-schema" in block
-        assert 'openAthleteModule("schema", it.user_key)' in block
+        # De garantie is ongewijzigd: dezelfde canonieke user_key, geen algemene picker.
+        # De MODUS gaat nu mee (verlengen bij een bestaand blok) via openSchemaMode, dat
+        # zelf openAthleteModule("schema", key) aanroept.
+        assert "openSchemaMode(it.user_key," in block
+        assert "svModus(it)" in block
 
 
 # ── 5. Dossier ↔ Schema ──────────────────────────────────────────────────────
@@ -159,7 +164,7 @@ class TestHomeDirect:
 class TestPickerGating:
     def test_deeplink_routes_short_circuiten_de_picker(self):
         # applyRoute opent bij een ident direct de atleet; picker/lijst alleen zonder ident.
-        block = _APP[_APP.index("function applyRoute"):_APP.index("function applyRoute") + 700]
+        block = _fn("applyRoute")
         assert "if (ident) openSchemaAthlete(ident)" in block
         assert "if (view === \"atleten\" && ident) openDossier(ident)" in block
         assert "openDossierCockpit(ident)" in block

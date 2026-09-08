@@ -101,7 +101,17 @@ class TestFrontendCoherentieGuards:
         assert "openSchemaAthlete" in self._APP
         assert "schemaOpenPending" in self._APP              # heropenen zodra roster geladen is
         # applyRoute (bestaande primitive) opent de schema-athlete uit de URL
-        ar = self._APP[self._APP.index("function applyRoute"):self._APP.index("function applyRoute") + 600]
+        # ECHTE functiebody: een vast byte-venster verschuift zodra er commentaar bij komt.
+        _i = self._APP.index("function applyRoute")
+        _d, _st, ar = 0, False, ""
+        for _j in range(_i, len(self._APP)):
+            _c = self._APP[_j]
+            if _c == "{":
+                _d += 1; _st = True
+            elif _c == "}":
+                _d -= 1
+                if _st and _d == 0:
+                    ar = self._APP[_i:_j + 1]; break
         assert 'view === "schema"' in ar and "openSchemaAthlete(ident)" in ar
 
     def test_config_draft_draagt_stamp(self):
