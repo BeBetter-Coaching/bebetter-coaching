@@ -880,6 +880,57 @@ console.log("== Races-afhandeling: bevestiging, afhandeling, telling ==\n");
   }
 }
 
+// ══ R11 — verse client (na refresh): serverwaarheid alleen houdt 'm afgehandeld ══
+// De actiewachtrij mag een geplaatste wens niet opnieuw als open actie tonen. Binnen
+// een sessie doet de overlay dat; na een refresh is die leeg en moet de SERVER het
+// dragen. Hier dus expliciet zonder overlay.
+{
+  const races = () => ([
+    { id: "r1", naam: "A", voornaam: "A", datum: isoOver(3), race: "10 km", type: "", wens_gegeven: true, wens: "Al geplaatst." },
+    { id: "r2", naam: "B", voornaam: "B", datum: isoOver(5), race: "5 km", type: "", wens_gegeven: false, wens: "" },
+  ]);
+  const server = u => ({ fs: true, items: u.includes("zonder_wens")
+    ? races().filter(x => !x.wens_gegeven) : races() });
+
+  // 7d = de actiewachtrij.
+  {
+    const lijst = new El("section"), info = new El("p");
+    byId = { "rc-lijst": lijst, "rc-info": info };
+    const R = maakRaces({ scope: "7d", items: [], haal: server });
+    await R.laadRaces();
+    ok(R.geplaatst().size === 0, "R11.1 verse client heeft geen overlay");
+    const ids = lijst.querySelectorAll("rij-kaart").map(k => k.dataset.id);
+    ok(ids.join() === "r2", "R11.2 afgehandelde race staat NIET in de actiewachtrij", ids);
+    ok(/1 race zonder wens/.test(info.textContent), "R11.3 telling telt alleen open acties", info.textContent);
+  }
+  // Alle aankomende: de race bestaat nog, maar niet als OPEN succeswensactie.
+  {
+    const lijst = new El("section"), info = new El("p");
+    byId = { "rc-lijst": lijst, "rc-info": info };
+    const R = maakRaces({ scope: "alle", items: [], haal: server });
+    await R.laadRaces();
+    const kaarten = lijst.querySelectorAll("rij-kaart");
+    ok(kaarten.length === 2, "R11.4 racedata blijft bestaan in het volledige overzicht", kaarten.length);
+    const af = kaarten.find(k => k.dataset.id === "r1");
+    ok(/wens gegeven/.test(af.innerHTML), "R11.5 en leest als afgehandeld");
+    ok(/Wens bijwerken/.test(af.innerHTML) && !/>\s*Plaats wens/.test(af.innerHTML),
+       "R11.6 de actie is bijwerken, niet 'plaats wens'");
+    ok(/1 zonder wens/.test(info.textContent), "R11.7 alleen de open race telt als open", info.textContent);
+  }
+  // Alles afgehandeld binnen het venster → rustige lege staat, geen composer.
+  {
+    const lijst = new El("section"), info = new El("p");
+    byId = { "rc-lijst": lijst, "rc-info": info };
+    const R = maakRaces({ scope: "7d", items: [],
+      haal: () => ({ fs: true, items: [] }) });      // server: niets meer open
+    await R.laadRaces();
+    ok(lijst.querySelectorAll("rij-kaart").length === 0, "R11.8 geen actiekaarten meer");
+    ok(/Geen races zonder wens/.test(lijst.innerHTML), "R11.9 rustige lege staat", lijst.innerHTML);
+    ok(!/fb-tekst/.test(lijst.innerHTML), "R11.10 en geen lege composer");
+    ok(info.textContent === "", "R11.11 geen telling bij een lege wachtrij");
+  }
+}
+
 if (failures.length) {
   console.error("races_afhandeling: " + failures.length + " CHECK(S) FAILED\n");
   failures.forEach(f => console.error("  ✗ " + f));
