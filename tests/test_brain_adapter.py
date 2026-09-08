@@ -294,14 +294,24 @@ class TestGating:
         assert "_brain" in ctx
 
     def test_v2_failure_raises_no_silent_fallback(self, monkeypatch):
+        """v2 kent TWEE ingangen sinds Schema de canonieke read-laag deelt: eerst
+        `athlete_read.get_state` (dezelfde state als Workspace/Dossier/Home), anders de
+        eigen `adapter.build_context`. Faalt de v2-build ECHT, dan moet dat zichtbaar
+        blijven — nooit stil terugvallen op v1."""
         monkeypatch.setenv("BEBETTER_SCHEMA_BRAIN", "v2")
 
-        def _boom(user_key, naam="", today=None):
+        def _boom(*a, **k):
             raise RuntimeError("v2 kapot")
-        monkeypatch.setattr(adapter, "build_context", _boom)
+        import athlete_read as _ar
+        monkeypatch.setattr(_ar, "get_state", _boom)          # gedeelde read kapot
+        monkeypatch.setattr(adapter, "build_context", _boom)  # eigen build kapot
+        gebruikt = {}
+        monkeypatch.setattr(AC, "_build_legacy",
+                            lambda *a, **k: gebruikt.setdefault("v1", True) or {})
         import pytest
         with pytest.raises(RuntimeError):
             AC.build_athlete_context("T", today=TODAY)
+        assert not gebruikt.get("v1"), "v2 mag NOOIT stil terugvallen op het v1-pad"
 
     def test_shadow_output_stays_v1(self, monkeypatch):
         monkeypatch.setenv("BEBETTER_SCHEMA_BRAIN", "shadow")

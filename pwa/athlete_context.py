@@ -531,6 +531,24 @@ def build_athlete_context(user_key: str, naam: str = "", today: date | None = No
         # zichtbaar (caller levert lege context — nooit de oude sportmix-waarde).
         try:
             from brain import adapter as _adapter
+            # Schema las de AthleteState via een EIGEN build, terwijl Workspace, Dossier,
+            # Teampuls, Home en de Feedback-context hem via de canonieke read-laag delen.
+            # Twee builds van dezelfde waarheid lopen uiteen zodra één ervan een bron mist:
+            # de gedeelde read serveert dan MEM/LKG (klacht blijft staan), Schema bouwde vers
+            # en degradeerde — en een klacht die niemand anders kwijt was, ontbrak in
+            # Verlengen. Dezelfde read = dezelfde klachtwaarheid.
+            # `raw` is nodig voor de passthrough-velden; levert de leeslaag die niet (pure
+            # LKG), dan valt dit terug op de eigen build i.p.v. een half gevulde context.
+            try:
+                import athlete_read as _ar
+                lees = _ar.get_state(user_key, today)
+                if lees.state is not None and lees.raw is not None:
+                    ctx = _adapter.to_legacy_context(lees.state, lees.raw, today)
+                    if naam:
+                        ctx["naam"] = naam
+                    return ctx
+            except Exception:
+                pass                          # gedeelde read niet bruikbaar → eigen build
             return _adapter.build_context(user_key, naam, today)
         except Exception as e:
             import traceback
