@@ -26,8 +26,11 @@ _CSS = (_ROOT / "pwa" / "static" / "styles.css").read_text(encoding="utf-8")
 _API = (_ROOT / "pwa" / "api.py").read_text(encoding="utf-8")
 _CORE = (_ROOT / "pwa" / "races_core.py").read_text(encoding="utf-8")
 
-# Productiestand waar deze batch op is gebaseerd.
+# Het VENSTER van deze batch: van de productiestand waarop hij is gebaseerd tot de
+# commit waarin hij landde. Zo blijft de lock over precies deze wijziging gaan en niet
+# over alles wat er daarna nog bij komt.
 _BASIS = "becc3a4"
+_MERGE = "3798b33"
 
 # De scope- en byte-identiteitscontroles vergelijken de HUIDIGE werkboom met `_BASIS`.
 # Dat is precies wat je wilt tijdens de review van DEZE batch, en precies wat je niet
@@ -318,14 +321,14 @@ class TestSchrijfkantOngemoeid:
 
     @_review_only
     def test_races_core_is_byte_identiek_aan_de_basis(self):
-        basis = subprocess.run(["git", "show", f"{_BASIS}:pwa/races_core.py"],
-                               cwd=_ROOT, capture_output=True, text=True)
-        assert basis.returncode == 0, basis.stderr
-        assert _CORE == basis.stdout, "races_core.py is gewijzigd — dit is een client-batch"
+        r = subprocess.run(["git", "diff", "--name-only", f"{_BASIS}..{_MERGE}", "--", "pwa/races_core.py"],
+                           cwd=_ROOT, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        assert r.stdout.strip() == "", "races_core.py is gewijzigd — dit is een client-batch"
 
     @_review_only
     def test_geen_serverwijziging_in_deze_batch(self):
-        gewijzigd = subprocess.run(["git", "diff", "--name-only", _BASIS, "--"],
+        gewijzigd = subprocess.run(["git", "diff", "--name-only", f"{_BASIS}..{_MERGE}", "--"],
                                    cwd=_ROOT, capture_output=True, text=True).stdout.split()
         py = [f for f in gewijzigd if f.endswith(".py") and not f.startswith("tests/")]
         assert py == [], f"onverwachte serverwijziging: {py}"
@@ -352,9 +355,9 @@ class TestVersies:
 class TestScope:
     @_review_only
     def test_alleen_verwachte_bestanden_gewijzigd(self):
-        """Pin dit bij een merge op `<basis>..<merge>`; een open vergelijking met de
-        werkboom wordt bij de VOLGENDE ronde een permanente rem."""
-        gewijzigd = set(subprocess.run(["git", "diff", "--name-only", _BASIS, "--"],
+        """Gepind op `_BASIS.._MERGE`: het venster van DEZE batch. Een open vergelijking
+        met de werkboom wordt bij de volgende ronde een permanente rem."""
+        gewijzigd = set(subprocess.run(["git", "diff", "--name-only", f"{_BASIS}..{_MERGE}", "--"],
                                        cwd=_ROOT, capture_output=True, text=True).stdout.split())
         verwacht = {
             "pwa/static/app.js", "pwa/static/styles.css",
