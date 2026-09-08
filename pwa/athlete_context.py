@@ -150,6 +150,16 @@ def _note_klachten(notes: list, today: date) -> dict:
     return {"recent": recent[:4], "recurring": recurring}
 
 
+def _zelfde_melding(a: str, b: str) -> bool:
+    """Twee klachtmeldingen zijn dezelfde als hun TEKST hetzelfde is — hoofdletters,
+    witruimte en leestekens daargelaten. Bewust geen woord-overlap of gelijkenis-score:
+    zodra de formuleringen verschillen kan er informatie in zitten die de ander niet
+    heeft, en dan is twee regels tonen beter dan er één weglaten."""
+    norm = lambda s: re.sub(r"[^a-z0-9à-ÿ]+", " ", str(s or "").lower()).strip()
+    n = norm(a)
+    return bool(n) and n == norm(b)
+
+
 def _log_klachten(training_log: list, today: date) -> list:
     """Klachten die de ATLEET zelf meldde in de post-notes van een training.
 
@@ -250,12 +260,13 @@ def assemble(user_key: str, naam: str, raw: dict, today: date | None = None) -> 
     # de intakeklacht: dat is de meest actuele melding en hoort dus bovenaan in de
     # herijking én in de gegenereerde context.
     for r in _log_klachten(raw.get("training_log") or [], today):
-        # Meldde de coach dezelfde dag hetzelfde, dan is dat één klacht, geen twee.
-        # `_vind_klachten` levert samengestelde labels ("pijn (knie)"); vergelijk op de
-        # losse woorden daaruit, want de notitie van de coach is vrije tekst.
-        woorden = {w for k in r["kernen"] for w in re.findall(r"[a-zà-ÿ]+", k.lower())}
+        # Alleen overslaan als het aantoonbaar DEZELFDE melding is. De vorige regel
+        # vergeleek op losse woorden uit het klachtlabel; één gedeeld woord als 'pijn'
+        # onderdrukte dan een volledige atleetmelding — 'pijn aan schouder' (coach) liet
+        # 'pijn aan achilles' (atleet) verdwijnen. Een ander lichaamsdeel of extra
+        # informatie van de atleet is nieuwe inhoud en hoort te blijven staan.
         if any(a["datum"] == r["datum"] and a["bron"] == "coach-notitie"
-               and any(w in a["tekst"].lower() for w in woorden) for a in actuele):
+               and _zelfde_melding(a["tekst"], r["tekst"]) for a in actuele):
             continue
         actuele.append({"tekst": r["tekst"], "bron": "atleet (trainingslog)",
                         "datum": r["datum"], "status": "recent"})

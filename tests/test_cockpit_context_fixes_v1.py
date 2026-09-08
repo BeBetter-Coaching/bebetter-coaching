@@ -155,12 +155,80 @@ class TestSchemaKlacht:
         assert len(kl) == 2
         assert "Knie" in kl[0]["tekst"], "de meest recente melding hoort bovenaan"
 
-    def test_coachnotitie_van_dezelfde_dag_telt_niet_dubbel(self):
+    def test_alleen_een_identieke_melding_telt_niet_dubbel(self):
+        """Productbesluit: behoud beide bronmeldingen TENZIJ ze aantoonbaar dezelfde
+        inhoud hebben. Alleen dezelfde tekst (op hoofdletters/leestekens na) wordt
+        samengevoegd — een andere formulering kan informatie dragen die de ander mist."""
         d = (self.vandaag - timedelta(days=2)).isoformat()
-        raw = _raw(log=[{"date": d, "post_notes": "Knie doet pijn na de intervallen.", "workout_key": "b"}],
-                   notes=[{"datum": d, "tekst": "Knie pijn gemeld na intervaltraining."}])
+        zelfde = _raw(log=[{"date": d, "post_notes": "Knie doet pijn.", "workout_key": "b"}],
+                      notes=[{"datum": d, "tekst": "  knie doet pijn!  "}])
+        assert len(self._klachten(AC.assemble("u1", "T", zelfde, today=self.vandaag))) == 1
+
+        anders = _raw(log=[{"date": d, "post_notes": "Knie doet pijn na de intervallen.", "workout_key": "b"}],
+                      notes=[{"datum": d, "tekst": "Knie pijn gemeld na intervaltraining."}])
+        kl = self._klachten(AC.assemble("u1", "T", anders, today=self.vandaag))
+        assert len(kl) == 2, "een andere formulering kan extra informatie dragen"
+
+    def test_gedeeld_woord_onderdrukt_geen_andere_klacht(self):
+        """De regressie: de dedup vergeleek op losse woorden uit het klachtlabel, dus
+        het gedeelde woord 'pijn' liet een volledige atleetmelding over een ANDER
+        lichaamsdeel verdwijnen."""
+        d = (self.vandaag - timedelta(days=2)).isoformat()
+        raw = _raw(log=[{"date": d, "post_notes": "pijn aan achilles", "workout_key": "b"}],
+                   notes=[{"datum": d, "tekst": "pijn aan schouder"}])
+        ctx = AC.assemble("u1", "T", raw, today=self.vandaag)
+        kl = self._klachten(ctx)
+        teksten = " | ".join(k["tekst"].lower() for k in kl)
+        assert len(kl) == 2, f"melding onderdrukt: {kl}"
+        assert "achilles" in teksten and "schouder" in teksten, teksten
+        bronnen = {k["bron"] for k in kl}
+        assert "coach-notitie" in bronnen and any(b.startswith("atleet") for b in bronnen)
+        # ... en beide bereiken ook de plangeneratie.
+        tekst = AC.to_prompt_text(AC.schema_projection(ctx))
+        assert "achilles" in tekst.lower() and "schouder" in tekst.lower(), tekst
+
+    def test_gedeeld_woord_onderdrukt_geen_andere_klacht_in_de_herijking(self):
+        """Zelfde geval, maar op de weergave die Verlengen toont."""
+        import schema_core as SC
+        d = (self.vandaag - timedelta(days=2)).isoformat()
+        raw = _raw(log=[{"date": d, "post_notes": "pijn aan achilles", "workout_key": "b"}],
+                   notes=[{"datum": d, "tekst": "pijn aan schouder"}])
+        ctx = AC.assemble("u1", "T", raw, today=self.vandaag)
+        origineel = AC.build_athlete_context
+        AC.build_athlete_context = lambda k, n="", **kw: ctx
+        try:
+            items, _ = SC._herijking("u1", {"athlete_name": "T"}, {})
+        finally:
+            AC.build_athlete_context = origineel
+        klacht = " | ".join(i["actueel"].lower() for i in items if i["sleutel"] == "klacht")
+        assert "achilles" in klacht and "schouder" in klacht, klacht
+
+    def test_zelfde_melding_vergelijkt_alleen_de_tekst(self):
+        """De vergelijking zelf: gelijk op hoofdletters/witruimte/leestekens na, en
+        verder niets. Geen woord-overlap, geen gelijkenis — anders onderdrukt één
+        gedeeld woord weer een hele melding."""
+        z = AC._zelfde_melding
+        assert z("Knie doet pijn.", "  knie doet PIJN!  ") is True
+        assert z("pijn aan achilles", "pijn aan schouder") is False
+        assert z("pijn aan knie", "pijn aan knie na de intervallen") is False   # extra info
+        assert z("pijn", "pijn aan achilles") is False
+        # Leeg is nooit bewijs van gelijkheid (anders matcht alles wat leegloopt).
+        assert z("", "") is False
+        assert z("", "pijn aan knie") is False
+        assert z("   ", "!!") is False
+
+    def test_geen_pijn_in_post_notes_blijft_geen_klacht(self):
+        """De ruimere dedup mag de negatie-bewuste herkenning niet omzeilen."""
+        d = (self.vandaag - timedelta(days=1)).isoformat()
+        for zin in ("geen pijn", "Lekker gelopen, geen pijn.", "De pijn is weg."):
+            raw = _raw(log=[{"date": d, "post_notes": zin, "workout_key": "b"}])
+            kl = self._klachten(AC.assemble("u1", "T", raw, today=self.vandaag))
+            assert not kl, f"{zin!r} werd als klacht geteld: {kl}"
+        # ook niet als de coach die dag wél iets noteerde (geen 'meelift' via de dedup)
+        raw = _raw(log=[{"date": d, "post_notes": "geen pijn", "workout_key": "b"}],
+                   notes=[{"datum": d, "tekst": "pijn aan schouder"}])
         kl = self._klachten(AC.assemble("u1", "T", raw, today=self.vandaag))
-        assert len(kl) == 1, f"dubbeltelling: {kl}"
+        assert len(kl) == 1 and kl[0]["bron"] == "coach-notitie", kl
 
     def test_bestaande_bronnen_blijven_werken(self):
         """Coach-notitie en intakeklacht blijven ongewijzigd meelopen."""
