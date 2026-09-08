@@ -1139,7 +1139,11 @@ function renderFeedbackStrip(fbs, fresh) {
   // wachten==null) toont 'bijwerken…'. Een STALE-maar-geldige open-set draagt de gereconcilieerde
   // count (skip/post al verwerkt) en wordt DIRECT getoond; de aanroeper ververst dan enkel
   // niet-blokkerend op de achtergrond (Round-2 regressie A: geen 12–20s wachten na skip/post).
-  if (fbs.stale && fbs.wachten == null) {
+  // GEEN telling = UNKNOWN, punt. Dat gold al voor een stale open-set, maar niet voor
+  // een payload die de tegel helemaal niet draagt (koud proces / onvolledige sweep:
+  // `pending`). Die viel door naar de rekenpad hieronder en werd 0 wachten + 0 gepost
+  // → 'Alles beoordeeld · 100%', terwijl er niets berekend wás. Unknown ≠ afgerond.
+  if (fbs.wachten == null) {
     fb.classList.remove("skel-strip", "done");
     fb.innerHTML = `
       <div class="fb-strip-top">
