@@ -498,7 +498,16 @@ def _cockpit(refresh: bool = False) -> dict:
         oud = _current()
         if oud:
             return {**_reconcile(oud), "cached": True, "refresh_mislukt": True}
-        return {**data, "cached": False}
+        # Geen oude snapshot én de sweep is niet compleet (FS gaf transiënte nullen,
+        # atleten=0, prioriteit niet berekend). Dit payload ONGEWIJZIGD teruggeven las
+        # als een echte, lege uitkomst: team 0/0/0 → 'iedereen bij', prioriteit [] →
+        # 'niks urgents', feedback leeg → 'alles beoordeeld 100%'. Een niet-berekende
+        # stand is geen rustige stand: presenteer 'm als nog-bezig, net als de
+        # eerste-ooit-situatie, zodat de client skeletons houdt en opnieuw ophaalt.
+        if data.get("fs"):
+            return {"fs": True, "prioriteit": None, "pending": True, "cached": False,
+                    "onvolledig": True, "datum": date.today().isoformat(), "berekend": None}
+        return {**data, "cached": False}          # geen FS-koppeling = een echte stand
     finally:
         with _FLAG_LOCK:
             _REFRESHING = False
