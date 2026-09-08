@@ -323,7 +323,11 @@ function _shownAthleteKey(view) {
     if (view === "workspace") return wsSel || "";
     if (view === "dossier") return dcSel || "";
     if (view === "schema") return (typeof sbState !== "undefined" && sbState && sbState.key) ? sbState.key : "";
-    if (view === "atleten") return (typeof dossierSel !== "undefined" && dossierSel && dossierSel.key) ? dossierSel.key : "";
+    // `dossierSel` IS de atleet-id (een string, zie openDossier), geen object. De oude
+    // `.key`-lezing gaf dus altijd "" en daarmee was juist voor Atleten de fallback dood:
+    // stond de route even zonder ident (terug via een globale view), dan raakte de
+    // zijbalk de zichtbaar geopende atleet kwijt.
+    if (view === "atleten") return (typeof dossierSel === "string" && dossierSel) ? dossierSel : "";
   } catch {}
   return "";
 }
