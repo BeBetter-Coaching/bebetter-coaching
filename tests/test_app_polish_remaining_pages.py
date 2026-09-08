@@ -178,9 +178,13 @@ class TestPaginas:
         assert '.rc-when{' in _CSS and ".rc-status{" in _CSS
 
     def test_races_meervoud_is_nederlands(self):
-        f = _fn("async function laadRaces(")
-        assert 'nlAantal(items.length, "race", "races")' in f
-        assert 'race${items.length === 1 ? "" : "s"}' not in f
+        # De inforegel is verhuisd van `laadRaces` naar `rcInfoTeken` (één afgeleide van
+        # `rcItems`, zodat de telling ook ná een geplaatste wens klopt). De GARANTIE is
+        # ongewijzigd: meervoud via nlAantal, nergens een handmatige `s`-ternary.
+        f = _fn("function rcInfoTeken(")
+        assert 'nlAantal(rcItems.length, "race", "races")' in f
+        assert 'race${rcItems.length === 1 ? "" : "s"}' not in f
+        assert "nlAantal" not in _fn("async function laadRaces(")   # niet op twee plekken
 
     def test_intake_onderscheidt_nieuw_en_los(self):
         assert '<span class="mrow-tag soon-tag">nieuw</span>' in _fn("async function laadInbox(")

@@ -242,13 +242,18 @@ const esc = s => String(s == null ? "" : s);
   byId = { "rc-lijst": box, "rc-info": info };
   // `nlAantal`/`leegState`/`foutState` zijn gedeelde presentatie-primitieven; slice de
   // ECHTE implementaties mee zodat het laadpad draait zoals in productie.
-  const RACE_DEPS = ["$", "$$", "api", "skeleton", "ic", "raceItem", "rcScope", "RC_CHIP_DAGEN"];
+  const RACE_DEPS = ["$", "$$", "api", "skeleton", "ic", "raceItem", "rcScope", "RC_CHIP_DAGEN", "rcItems", "esc"];
+  // `rcInfoTeken`/`rcLeegHtml` zijn de gedeelde afgeleiden van `rcItems` (inforegel +
+  // lege staat). Slice ook die ECHT mee: het laadpad draait zo exact als in productie.
   const RACE_REAL = [sliceFrom("function nlAantal("), sliceFrom("function leegState("),
                      sliceLine("let _foutSeq = "), sliceFrom("function foutState("),
+                     sliceLine("let rcLaadSeq = "), sliceLine("const rcGeplaatst = "),
+                     sliceFrom("function rcInfoTeken("), sliceFrom("function rcLeegHtml("),
+                     sliceFrom("function rcPasGeplaatstToe("),
                      sliceFrom("async function laadRaces(")].join("\n\n");
   const laad = new Function(...RACE_DEPS, RACE_REAL + "\nreturn laadRaces;"
   )($, $$, u => { gevraagd = u; return Promise.resolve({ fs: true, items: [{ wens_gegeven: false }] }); },
-    () => {}, () => "", () => new El("div"), "7d", 7);
+    () => {}, () => "", () => new El("div"), "7d", 7, [], esc);
   await laad();
   ok(gevraagd === "/api/races?dagen=7&zonder_wens=true",
      "T4.6 gefilterd laadpad = 7 dagen + zonder wens (zelfde logica als de chip-telling)", gevraagd);
@@ -257,7 +262,7 @@ const esc = s => String(s == null ? "" : s);
 
   const laad2 = new Function(...RACE_DEPS, RACE_REAL + "\nreturn laadRaces;"
   )($, $$, u => { gevraagd = u; return Promise.resolve({ fs: true, items: [] }); },
-    () => {}, () => "", () => new El("div"), "alle", 7);
+    () => {}, () => "", () => new El("div"), "alle", 7, [], esc);
   await laad2();
   ok(gevraagd === "/api/races", "T4.8 ongefilterd pad blijft het bestaande verzoek", gevraagd);
 }

@@ -177,6 +177,13 @@ body{display:flex;flex-direction:column;max-width:640px;margin:0 auto;overflow:h
 .pk-modal-foot{display:flex;gap:10px;padding:12px 14px;border-top:1px solid var(--border)}
 .pk-modal-foot .btn{flex:1}
 .pk-confirm[disabled]{opacity:.45;cursor:not-allowed}
+/* Bevestiging van een onomkeerbare actie — zelfde chrome, tekst i.p.v. een lijst. */
+.pk-bevestig{max-width:420px}
+.pk-bevestig .pk-modal-body{padding:0 16px 6px}
+.pk-tekst{margin:2px 0 0;font-size:14px;line-height:1.55;color:var(--text)}
+.pk-detail{margin:10px 0 4px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;
+  background:var(--card2);color:var(--muted);font-size:13px;line-height:1.5;
+  white-space:pre-wrap;max-height:34vh;overflow-y:auto}
 @media(max-width:560px){
   .pk-overlay{align-items:flex-end;padding:0}
   .pk-modal{max-width:none;max-height:86vh;border-radius:18px 18px 0 0;border-bottom:0;padding-bottom:env(safe-area-inset-bottom)}

@@ -52,14 +52,21 @@ function nlDatumTijd(iso) {
   const t = /^\d{4}-\d{2}-\d{2}[T ](\d{2}:\d{2})/.exec(s);
   return t ? `${nlDatum(s)} · ${t[1]}` : nlDatum(s);
 }
+// Kale dagafstand (negatief = verleden, null = geen datum). Eén datumrekening voor
+// zowel het LABEL (`nlDagenTot`) als vensterlogica die op hetzelfde getal moet staan
+// — bv. of een race binnen het Home-chipvenster van 7 dagen valt.
+function dagenTot(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  const nu = new Date(); nu.setHours(0, 0, 0, 0);
+  return Math.round((d - nu) / 864e5);
+}
 // Relatieve afstand tot een DATUM (races, schema-einde). Presentatie-only: puur
 // kalenderdagen t.o.v. vandaag, geen nieuwe waarheid over de gebeurtenis zelf.
 function nlDagenTot(iso) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
-  if (!m) return "";
-  const d = new Date(+m[1], +m[2] - 1, +m[3]);
-  const nu = new Date(); nu.setHours(0, 0, 0, 0);
-  const n = Math.round((d - nu) / 864e5);
+  const n = dagenTot(iso);
+  if (n === null) return "";
   if (n === 0) return "vandaag";
   if (n === 1) return "morgen";
   if (n === -1) return "gisteren";
@@ -690,6 +697,95 @@ function foutState(box, opnieuw, tekst = "Geen verbinding met de server.") {
   if (opnieuw) { const b = box.querySelector("#" + id); if (b) b.onclick = opnieuw; }
 }
 
+// ── Gedeelde bevestiging voor een onomkeerbare actie ─────────────────────────
+// Onomkeerbare acties (een wens/reactie die de atleet DIRECT in FinalSurge ziet)
+// werden bevestigd met het NATIVE `confirm()`: een OS-dialoog buiten de huisstijl,
+// die op iOS-PWA anders oogt, geen context kan tonen (wélke tekst ga je plaatsen)
+// en de JS-thread blokkeert. Dit is dezelfde chrome als de bestaande athlete-picker
+// (`.pk-overlay`/`.pk-modal`): één overlay-taal in de app.
+// Belofte: resolve(true) = de coach heeft bewust bevestigd; ELKE andere uitgang
+// (Escape, backdrop, ✕, Annuleren) is false en laat de aanroeper niets doen.
+let _bevestigSeq = 0;
+// Wat de dialoog aan focus mag bereiken. Vandaag zijn dat drie knoppen, maar de
+// selector is generiek zodat een latere dialoog met een invoerveld gewoon werkt.
+const _FOCUS_SEL = 'button:not([disabled]), [href], input:not([disabled]), '
+  + 'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+function bevestigActie(opts) {
+  return new Promise(resolve => {
+    const id = `bev-t-${++_bevestigSeq}`;
+    // Waar de focus na afloop heen moet. `opts.focusTerug` is er voor aanroepers die hun
+    // eigen knop UITZETTEN vóór ze bevestigen: `disabled = true` blurt die knop meteen,
+    // dus `document.activeElement` is dan al de body en er valt niets te herstellen.
+    const vorigeFocus = opts.focusTerug || document.activeElement;
+    const ov = document.createElement("div");
+    ov.className = "pk-overlay";
+    ov.innerHTML = `<div class="pk-modal pk-bevestig" role="dialog" aria-modal="true" aria-labelledby="${id}">
+        <div class="pk-modal-h"><b id="${id}">${esc(opts.titel || "Weet je het zeker?")}</b>
+          <button class="pk-x" type="button" aria-label="Sluiten">✕</button></div>
+        <div class="pk-modal-body">
+          <p class="pk-tekst">${esc(opts.tekst || "")}</p>
+          ${opts.detail ? `<div class="pk-detail">${esc(opts.detail)}</div>` : ""}
+        </div>
+        <div class="pk-modal-foot">
+          <button class="btn ghost pk-cancel" type="button">${esc(opts.annuleer || "Annuleren")}</button>
+          <button class="btn primary pk-confirm" type="button">${esc(opts.bevestig || "Bevestigen")}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    // De achtergrond is tijdens een bevestiging NIET bedienbaar. De overlay dekt de
+    // pointer al af, maar zonder `inert` blijft de app onder de dialoog gewoon
+    // tabbaar — dan kun je op een knop drukken die je niet ziet.
+    const inertGezet = [];
+    for (const n of [...document.body.children]) {
+      if (n === ov || n.hasAttribute("inert")) continue;
+      n.setAttribute("inert", "");
+      inertGezet.push(n);
+    }
+    // Precies één uitgang: klaar() haalt de listener weg en resolvet één keer, zodat een
+    // dubbele Escape/klik nooit twee antwoorden geeft op één vraag.
+    let af = false;
+    const klaar = akkoord => {
+      if (af) return;
+      af = true;
+      document.removeEventListener("keydown", onKey);
+      inertGezet.forEach(n => n.removeAttribute("inert"));
+      ov.remove();
+      // Focus TERUG naar waar de coach vandaan kwam — maar pas nadat de aanroeper
+      // zijn afhandeling heeft gedaan (die zet de plaatsknop weer aan; focus op een
+      // uitgeschakelde knop doet niets). Vandaar een macrotask. Is het element
+      // intussen weg of nog steeds uit (succespad herbouwt de kaart), dan laten we
+      // de focus met rust: de aanroeper heeft 'm dan zelf al ergens zinnigs gezet.
+      setTimeout(() => {
+        try {
+          if (vorigeFocus && vorigeFocus.isConnected && !vorigeFocus.disabled) vorigeFocus.focus();
+        } catch {}
+      }, 0);
+      resolve(akkoord);
+    };
+    const onKey = e => {
+      if (e.key === "Escape") { e.preventDefault(); klaar(false); return; }
+      if (e.key !== "Tab") return;
+      // Focus blijft binnen de dialoog: van de laatste knop terug naar de eerste (en
+      // met Shift andersom). Zonder deze val loopt Tab de inerte app achter de
+      // dialoog in en raak je de bevestiging kwijt.
+      const f = [...ov.querySelectorAll(_FOCUS_SEL)];
+      if (!f.length) return;
+      const eerste = f[0], laatste = f[f.length - 1], nu = document.activeElement;
+      const buiten = !ov.contains(nu);
+      if (e.shiftKey && (nu === eerste || buiten)) { e.preventDefault(); laatste.focus(); }
+      else if (!e.shiftKey && (nu === laatste || buiten)) { e.preventDefault(); eerste.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    ov.addEventListener("click", e => { if (e.target === ov) klaar(false); });   // backdrop = annuleren
+    ov.querySelector(".pk-x").onclick = () => klaar(false);
+    ov.querySelector(".pk-cancel").onclick = () => klaar(false);
+    ov.querySelector(".pk-confirm").onclick = () => klaar(true);
+    // Focus op de bevestigknop: Enter bevestigt, Tab bereikt Annuleren. Bewust GEEN
+    // globale Enter-handler — Enter terwijl Annuleren focus heeft moet annuleren.
+    try { ov.querySelector(".pk-confirm").focus(); } catch {}
+  });
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // HOME — dashboard: glanceable overzicht van wat er speelt
 // ════════════════════════════════════════════════════════════════════════════
@@ -1122,8 +1218,11 @@ function vulCockpit(s, fresh) {
   if (inf) {
     // De chip telt races ZONDER WENS in het 7-dagenvenster (races_core.chip_count) en
     // opent Races met exact dat filter — label en bestemming beloven nu hetzelfde.
+    // `data-races` = de telling die de chip TOONT. Plaatst de coach een wens in Races,
+    // dan werkt `rcHomeChipBij` diezelfde chip bij zonder de trage Home-sweep; de
+    // volgende autoritatieve snapshot overschrijft 'm gewoon weer.
     inf.innerHTML = info.races
-      ? `<div class="info-strip"><button class="info-chip" id="home-race-chip">${ic("flag")} ${info.races} race${info.races === 1 ? "" : "s"} zonder wens · komende ${RC_CHIP_DAGEN} dgn</button></div>`
+      ? `<div class="info-strip"><button class="info-chip" id="home-race-chip" data-races="${info.races}">${rcChipHtml(info.races)}</button></div>`
       : "";
     $("#home-race-chip")?.addEventListener("click", () => openRaces("7d"));
   }
@@ -5203,6 +5302,33 @@ bindRefresh("sb-refresh", async () => {
 // telling op de server (races_core.CHIP_DAGEN + zonder_wens).
 const RC_CHIP_DAGEN = 7;
 let rcScope = "alle";
+// Client-spiegel van de laatst geladen serverlijst. Nodig omdat het plaatsen van een
+// wens de STAND van één race verandert: de telling in de inforegel en (in het 7-dagen-
+// filter) het wegvallen van de rij moeten dan meebewegen zonder de hele lijst opnieuw
+// te tekenen — dat zou getypte, nog niet geplaatste wensen in ANDERE kaarten wissen.
+// Geen truth-store: de server blijft de waarheid, dit is de weergave ervan.
+let rcItems = [];
+// Race-ids met een lopende plaatsing. Het NATIVE confirm() blokkeerde de thread, dus
+// een tweede klik was onmogelijk; een app-eigen bevestiging is async en laat de knop
+// bereikbaar. Zonder deze guard levert dubbelklikken twee comments in FinalSurge op.
+const rcBezig = new Set();
+// Volgnummer per laadactie. Een respons die onderweg was toen de coach wisselde of
+// ververste, mag de lijst NIET meer vullen: hij is ouder dan wat er nu hoort te staan.
+// (De bestaande scope-check dekt alleen een filterwissel, niet twee verversingen.)
+let rcLaadSeq = 0;
+// Races die deze sessie BEVESTIGD zijn geplaatst: id → tekst. FinalSurge's
+// CommentCount loopt soms achter, dus een verse listing kan een zojuist geplaatste
+// wens nog als 'open' teruggeven. Deze overlay houdt de bevestigde plaatsing staan
+// tot de server bijgetrokken is — anders zou een refresh de wens laten 'verdwijnen'.
+const rcGeplaatst = new Map();
+// Races waarvan de verzenduitkomst ONBEKEND is (respons verloren). Niet hetzelfde
+// als mislukt: mogelijk staat de wens er al. Blokkeert een blinde herhaalplaatsing.
+const rcOnzeker = new Set();
+// Chip-label op één plek: Home tekent 'm bij de sweep, Races werkt 'm bij na een
+// plaatsing. Twee formuleringen van dezelfde telling gaan onvermijdelijk uiteenlopen.
+function rcChipHtml(n) {
+  return `${ic("flag")} ${nlAantal(n, "race", "races")} zonder wens · komende ${RC_CHIP_DAGEN} dgn`;
+}
 // Entry point (chip, filterknop, deep-link). Route eerst, dán de view — anders schrijft
 // toonView zelf nog een bare `#races` over `#races/7d` heen (zelfde patroon als Workspace).
 function openRaces(scope) {
@@ -5228,34 +5354,86 @@ async function laadRaces() {
   const box = $("#rc-lijst"), info = $("#rc-info");
   const zeven = rcScope === "7d";
   const mijn = rcScope;
+  const seq = ++rcLaadSeq;
   info.textContent = "Races ophalen uit FinalSurge…";
   skeleton(box, 4);
   const url = zeven ? `/api/races?dagen=${RC_CHIP_DAGEN}&zonder_wens=true` : "/api/races";
   const r = await api(url).catch(() => null);
-  if (mijn !== rcScope) return;                            // filter intussen gewisseld
+  // Alleen de NIEUWSTE laadactie mag tekenen. Een trage respons van vóór een wissel,
+  // verversing of plaatsing zou anders een bevestigde wens weer als 'open' tonen.
+  if (seq !== rcLaadSeq || mijn !== rcScope) return;
   if (!r) { info.textContent = ""; foutState(box, laadRaces); return; }
   if (!r.fs) { info.textContent = ""; box.innerHTML = leegState("alert", "FinalSurge nog niet gekoppeld.", "Koppel FinalSurge om races te zien."); return; }
-  const items = r.items || [];
-  const open = items.filter(i => !i.wens_gegeven).length;
-  info.textContent = items.length
-    ? (zeven
-        ? `${nlAantal(items.length, "race", "races")} zonder wens in de komende ${RC_CHIP_DAGEN} dagen.`
-        : `${nlAantal(items.length, "aankomende race", "aankomende races")}${open ? ` · ${open} zonder wens` : " · alle wensen gegeven"}.`)
-    : "";
-  if (!items.length) {
-    box.innerHTML = `<div class="leeg">${ic("check")}<p>${zeven
-      ? `Geen races zonder wens in de komende ${RC_CHIP_DAGEN} dagen.`
-      : "Geen races in de komende weken."}</p></div>`;
-    return;
-  }
+  rcItems = rcPasGeplaatstToe(r.items || [], zeven);       // betekenis van DEZE respons
+  rcInfoTeken();
+  if (!rcItems.length) { box.innerHTML = rcLeegHtml(); return; }
   box.innerHTML = "";
-  items.forEach(it => box.appendChild(raceItem(it)));
+  rcItems.forEach(it => box.appendChild(raceItem(it)));
+}
+// De inforegel is een AFGELEIDE van `rcItems`, niet van het laadmoment: hij klopt dus
+// ook nadat een wens een race uit het filter heeft gehaald of de open telling verlaagd.
+function rcInfoTeken() {
+  const info = $("#rc-info"); if (!info) return;
+  const open = rcItems.filter(i => !i.wens_gegeven).length;
+  info.textContent = rcItems.length
+    ? (rcScope === "7d"
+        ? `${nlAantal(rcItems.length, "race", "races")} zonder wens in de komende ${RC_CHIP_DAGEN} dagen.`
+        : `${nlAantal(rcItems.length, "aankomende race", "aankomende races")}${open ? ` · ${open} zonder wens` : " · alle wensen gegeven"}.`)
+    : "";
+}
+function rcLeegHtml() {
+  return leegState("check", rcScope === "7d"
+    ? `Geen races zonder wens in de komende ${RC_CHIP_DAGEN} dagen.`
+    : "Geen races in de komende weken.");
+}
+// Legt de bevestigde plaatsingen van deze sessie over een verse serverlijst heen.
+// Zodra de server ze zelf meldt (of de race niet meer teruggeeft) is de overlay
+// overbodig en laten we 'm los — hij mag nooit een latere serverwaarheid maskeren.
+// `gefilterd` = deze respons is het 7-dagen/'zonder wens'-verzoek. Dat is bepalend
+// voor wat afwezigheid betekent: zo'n lijst bevat per definitie geen races buiten het
+// venster en geen races die al een wens hebben, dus afwezigheid bewijst daar niets.
+function rcPasGeplaatstToe(items, gefilterd) {
+  if (!rcGeplaatst.size) return items;
+  const gezien = new Set();
+  const uit = [];
+  for (const it of items) {
+    gezien.add(it.id);
+    const tekst = rcGeplaatst.get(it.id);
+    if (tekst === undefined) { uit.push(it); continue; }
+    // Alleen loslaten als de server ONZE tekst teruggeeft. Bij bijwerken staat de
+    // VORIGE wens er al; die bewijst niet dat de nieuwste plaatsing verwerkt is.
+    if (it.wens_gegeven && rcZelfdeWens(it.wens, tekst)) {
+      rcGeplaatst.delete(it.id);
+      uit.push(it);
+      continue;
+    }
+    uit.push({ ...it, wens_gegeven: true, wens: tekst });
+  }
+  // Opruimen op afwezigheid mag ALLEEN op een ongefilterde lijst — die dekt alle
+  // aankomende races, dus daar betekent 'ontbreekt' echt 'niet meer aan de orde'.
+  if (!gefilterd) {
+    for (const id of [...rcGeplaatst.keys()]) {
+      if (!gezien.has(id)) rcGeplaatst.delete(id);
+    }
+  }
+  // In het 'zonder wens'-filter hoort een geplaatste race niet thuis, ook niet als de
+  // server 'm nog als open teruggeeft.
+  return gefilterd ? uit.filter(x => !x.wens_gegeven) : uit;
+}
+// De ZICHTBARE kaart van deze race, op id. Tijdens een lopend verzoek kan de lijst
+// herbouwd zijn; het element van het klikmoment is dan losgekoppeld en bijwerken
+// daarvan zou onzichtbaar blijven.
+function rcKaart(id) {
+  const box = $("#rc-lijst");
+  if (!box) return null;
+  return [...box.querySelectorAll(".rij-kaart")].find(k => k.dataset.id === id) || null;
 }
 $$("#rc-filters .rc-fchip").forEach(b => b.addEventListener("click", () => openRaces(b.dataset.scope)));
 
 function raceItem(it) {
   const el = document.createElement("article");
   el.className = "rij-kaart";
+  el.dataset.id = it.id;                    // identiteit: laat de kaart terugvindbaar zijn
   const badge = it.wens_gegeven
     ? '<span class="mrow-tag" style="background:var(--ok-bg,#123);color:var(--ok,#5db98b)">wens gegeven</span>'
     : '<span class="mrow-tag soon-tag">nog geen wens</span>';
@@ -5275,19 +5453,202 @@ function raceItem(it) {
       <button class="btn primary" data-post>${ic("message")} ${it.wens ? "Wens bijwerken" : "Plaats wens"}</button>
     </div>
     <p class="hint" data-poststatus></p>`;
-  const tekstEl = el.querySelector(".fb-tekst");
-  const status = el.querySelector("[data-poststatus]");
-  el.querySelector("[data-post]").addEventListener("click", async () => {
-    const tekst = tekstEl.value.trim();
-    if (!tekst) return melding("Schrijf eerst een race-wens.", true);
-    if (!confirm(`Deze race-wens bij ${it.voornaam} plaatsen? ${it.voornaam} ziet dit in FinalSurge.`)) return;
-    const btn = el.querySelector("[data-post]"); btn.disabled = true; btn.textContent = "Plaatsen…";
-    const r = await jpost("/api/races/wens", { id: it.id, tekst }).catch(() => null);
-    btn.disabled = false; btn.innerHTML = `${ic("message")} Plaats wens`;
-    if (!r || !r.ok) return melding(r?.err || "Posten mislukt.", true);
-    status.textContent = "Wens geplaatst in FinalSurge ✓"; haptic(15);
-  });
+  el.querySelector("[data-post]").addEventListener("click", () => rcPlaats(el, it));
   return el;
+}
+
+// Plaatsen van één race-wens: bevestigen → posten → de stand van DEZE race bijwerken.
+// De race geldt pas als afgehandeld na een bevestigd `ok` van de server; elke andere
+// uitkomst laat de getypte tekst én de open stand ongemoeid, zodat de coach het
+// gewoon opnieuw kan proberen.
+async function rcPlaats(el, it) {
+  const id = it.id;
+  if (rcBezig.has(id)) return;                               // al een plaatsing onderweg
+  const btn = el.querySelector("[data-post]");
+  const status = el.querySelector("[data-poststatus]");
+  const tekst = el.querySelector(".fb-tekst").value.trim();
+  if (!tekst) return melding("Schrijf eerst een race-wens.", true);
+
+  // Vastleggen zoals het NU is: na een traag verzoek kan `it` een verouderd object
+  // zijn (lijst herbouwd). Alleen deze onveranderlijke feiten dragen we mee.
+  const meta = { voornaam: it.voornaam, datum: it.datum, wasOpen: !it.wens_gegeven };
+  const onzeker = rcOnzeker.has(id);
+
+  rcBezig.add(id);
+  const labelHtml = btn.innerHTML;
+  btn.disabled = true;                                       // ook TIJDENS de bevestiging
+  try {
+    const akkoord = await bevestigActie(onzeker ? {
+      // Na een onbekende uitkomst is 'nog een keer' geen neutrale herhaling: de vorige
+      // poging kan al aangekomen zijn. Dat moet de coach expliciet accepteren.
+      focusTerug: btn,
+      titel: "Toch opnieuw plaatsen?",
+      tekst: `Van de vorige poging bij ${it.voornaam} is niet bevestigd of hij is aangekomen. `
+        + "Mogelijk staat de wens al in FinalSurge — opnieuw plaatsen kan een tweede bericht geven.",
+      detail: tekst,
+      bevestig: "Toch opnieuw plaatsen",
+    } : {
+      focusTerug: btn,
+      titel: it.wens ? "Race-wens bijwerken?" : "Race-wens plaatsen?",
+      tekst: `${it.voornaam} ziet dit meteen in FinalSurge bij ${it.race}.`,
+      detail: tekst,
+      bevestig: it.wens ? "Wens bijwerken" : "Plaats wens",
+    });
+    if (!akkoord) return;                                    // geannuleerd: niets gepost
+    status.textContent = "";
+    btn.textContent = "Plaatsen…";
+    let uit = await rcVerstuur(id, tekst);
+    if (uit.status === "onbekend") {
+      // Respons kwijt ≠ niet aangekomen. Eén gerichte controle: staat de wens er al?
+      btn.textContent = "Controleren…";
+      if (await rcControleer(id, tekst) === "geplaatst") uit = { status: "ok" };
+    }
+    if (uit.status === "ok") { rcOnzeker.delete(id); rcNaPlaatsing(id, meta, tekst); return; }
+    rcNaMislukking(id, el, tekst, labelHtml, uit);
+  } finally {
+    rcBezig.delete(id);
+    const kaart = rcKaart(id) || (el.isConnected ? el : null);
+    const knop = kaart && kaart.querySelector("[data-post]");
+    if (knop) knop.disabled = false;                         // ook na een herbouw van de lijst
+  }
+}
+
+// Drie uitkomsten, niet twee. 'afgewezen' = de server heeft de plaatsing GEWEIGERD
+// (dan is 'niet geplaatst' een feit). 'onbekend' = we hebben geen antwoord gezien:
+// het verzoek kan de server wél bereikt en verwerkt hebben.
+async function rcVerstuur(id, tekst) {
+  try {
+    const r = await jpost("/api/races/wens", { id, tekst });
+    if (r && r.ok) return { status: "ok" };
+    return { status: "afgewezen", err: (r && r.err) || "De wens is niet geplaatst." };
+  } catch (e) {
+    // 401 wordt door `api` afgevangen (inlogscherm) en is een echte afwijzing: het
+    // verzoek is nooit uitgevoerd. Al het overige is netwerk/parse → geen uitspraak.
+    if (e && e.message === "auth") return { status: "afgewezen", err: "Sessie verlopen — opnieuw inloggen." };
+    return { status: "onbekend" };
+  }
+}
+
+// Is de gelezen wens aantoonbaar DEZE tekst? Genormaliseerd vergeleken, want de
+// server kan witruimte en regeleindes anders teruggeven dan wij verstuurden. Alles
+// wat niet aantoonbaar gelijk is, telt als 'niet de onze' — inclusief leeg.
+function rcZelfdeWens(gelezen, verstuurd) {
+  const norm = s => String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+  const g = norm(gelezen);
+  return !!g && g === norm(verstuurd);
+}
+
+// Best-effort controle NA een onbekende uitkomst. Kan succes BEVESTIGEN, maar nooit
+// mislukking bewijzen: FinalSurge's CommentCount loopt achter, dus 'nog geen wens'
+// betekent hier 'nog niet zichtbaar', niet 'niet aangekomen'.
+// Het BESTAAN van een wens is geen bewijs: bij bijwerken staat de VORIGE wens er al.
+// Alleen de wens die we net verstuurden bevestigt de plaatsing.
+async function rcControleer(id, tekst) {
+  try {
+    const r = await api("/api/races");                       // volledige lijst: 7d filtert 'm juist weg
+    if (!r || !r.fs) return "onbekend";
+    const it = (r.items || []).find(x => x.id === id);
+    if (!it || !it.wens_gegeven) return "onbekend";
+    return rcZelfdeWens(it.wens, tekst) ? "geplaatst" : "onbekend";
+  } catch {
+    return "onbekend";
+  }
+}
+
+// Niet afgehandeld. In beide gevallen: tekst behouden, race blijft open, knop weer
+// bruikbaar. Het VERSCHIL zit in wat we beweren — en of we opnieuw plaatsen als een
+// gewone herhaling aanbieden of als een bewuste keuze.
+function rcNaMislukking(id, el, tekst, labelHtml, uit) {
+  const kaart = rcKaart(id) || (el.isConnected ? el : null);
+  if (!kaart) {                                              // race niet meer in beeld
+    melding(uit.status === "afgewezen" ? uit.err
+      : "Onbekend of de wens is aangekomen — controleer in FinalSurge.", true);
+    return;
+  }
+  // Herbouwde kaart: het veld draagt de serverstand, niet wat de coach net typte.
+  if (kaart !== el) { const v = kaart.querySelector(".fb-tekst"); if (v) v.value = tekst; }
+  const btn = kaart.querySelector("[data-post]");
+  const status = kaart.querySelector("[data-poststatus]");
+  if (uit.status === "afgewezen") {
+    rcOnzeker.delete(id);
+    if (btn) btn.innerHTML = labelHtml;                      // eigen actie terug
+    if (status) status.textContent = "";
+    melding(uit.err, true);
+    return;
+  }
+  rcOnzeker.add(id);
+  if (btn) btn.innerHTML = `${ic("refresh")} Opnieuw proberen`;
+  if (status) status.textContent = "Onbekend of deze wens is aangekomen — controleer FinalSurge voordat je opnieuw plaatst.";
+  melding("Geen antwoord van de server. Mogelijk is de wens wél geplaatst.", true);
+}
+
+// Bevestigde plaatsing = de race is afgehandeld. Wat er dan moet kloppen:
+//   * de kaart toont de geplaatste wens en biedt 'Wens bijwerken' aan;
+//   * in het 7-dagenfilter ('zonder wens') hoort de race er niet meer thuis;
+//   * de inforegel en de Home-chip tellen deze race niet langer als open.
+function rcNaPlaatsing(id, meta, tekst) {
+  // Eerst vastleggen dat DEZE race geplaatst is: die waarheid moet een herbouw van de
+  // lijst overleven, ook als het filter intussen is gewisseld of een oudere respons
+  // nog binnenkomt.
+  rcGeplaatst.set(id, tekst);
+  const i = rcItems.findIndex(x => x.id === id);       // ACTUELE stand, niet het oude object
+  const it = i >= 0 ? rcItems[i] : null;
+  if (it) { it.wens_gegeven = true; it.wens = tekst; } // `raceItem` leidt badge/label/knop hieruit af
+  haptic(15);
+  if (meta.wasOpen) rcHomeChipBij(meta.datum, -1);
+
+  const kaart = rcKaart(id);                           // ACTUELE kaart, niet het oude element
+  if (rcScope === "7d") {
+    if (i >= 0) rcItems.splice(i, 1);                  // in-place: `rcItems` houdt zijn identiteit
+    if (kaart) kaart.remove();
+    const box = $("#rc-lijst");
+    if (box && !rcItems.length) box.innerHTML = rcLeegHtml();
+    melding(`Wens geplaatst bij ${meta.voornaam}.`);
+    rcFocusNa(null);
+  } else if (kaart && it) {
+    // Herbouw de kaart met dezelfde bouwer i.p.v. losse DOM-patches: één plek bepaalt
+    // hoe een race met wens eruitziet. Alleen DEZE kaart, zodat getypte wensen in
+    // andere kaarten blijven staan.
+    const vers = raceItem(it);
+    kaart.replaceWith(vers);
+    const st = vers.querySelector("[data-poststatus]");
+    if (st) st.textContent = "Wens geplaatst in FinalSurge ✓";
+    rcFocusNa(vers);
+  } else {
+    // De race staat niet meer in beeld (ander filter, of uit de lijst gelopen). De
+    // plaatsing is wél gelukt, dus zeg dat — de overlay hierboven houdt 'm correct.
+    melding(`Wens geplaatst bij ${meta.voornaam}.`);
+    rcFocusNa(null);
+  }
+  rcInfoTeken();
+}
+
+// Focus na een geslaagde plaatsing. De knop waar de coach vandaan kwam bestaat niet
+// meer (kaart herbouwd of verwijderd), dus zetten we 'm op iets dat er wél is:
+// de bijgewerkte kaart, anders de eerstvolgende race, anders de lijst zelf.
+function rcFocusNa(kaart) {
+  const box = $("#rc-lijst");
+  let doel = kaart && kaart.querySelector("[data-post]");
+  if (!doel && box) {
+    const eerste = box.querySelector(".rij-kaart [data-post]");
+    doel = eerste || box;
+    if (doel === box) box.tabIndex = -1;                // lege lijst: anker op de sectie
+  }
+  try { if (doel && doel.focus) doel.focus(); } catch {}
+}
+
+// Home telt races ZONDER wens binnen CHIP_DAGEN. Een net geplaatste wens haalt er dus
+// één af — maar alleen als deze race überhaupt in dat venster viel (in het volledige
+// overzicht staan ook races van over een maand, die de chip nooit meetelde).
+function rcHomeChipBij(datum, delta) {
+  const n = dagenTot(datum);
+  if (n === null || n < 0 || n > RC_CHIP_DAGEN) return;
+  const chip = $("#home-race-chip"), strip = $("#home-info");
+  if (!chip || !strip) return;                               // Home nog niet opgebouwd
+  const nieuw = Math.max(0, (+chip.dataset.races || 0) + delta);
+  if (!nieuw) { strip.innerHTML = ""; return; }              // niets open meer → geen chip
+  chip.dataset.races = nieuw;
+  chip.innerHTML = rcChipHtml(nieuw);
 }
 bindRefresh("rc-refresh", () => { geladen.races = true; return laadRaces(); });
 
