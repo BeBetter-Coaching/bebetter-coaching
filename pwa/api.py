@@ -886,8 +886,12 @@ def intake_new_link():
 
 
 @app.get("/api/intake/inbox")
-def intake_inbox():
-    return {"inbox": intake.inbox_list()}
+def intake_inbox(match: int = 0):
+    """Wachtende inzendingen. `match=1` verrijkt elke rij met een eventuele eenduidige
+    FinalSurge-naam-match, zodat de Intake-module toont dat de aanmelder al als atleet
+    bestaat. Home vraagt die match BEWUST niet op: daar is deze lijst een goedkoop,
+    store-only praktijksignaal en een roster-read hoort niet in dat pad."""
+    return {"inbox": intake.inbox_list(match=bool(match))}
 
 
 @app.get("/api/intake/orphans")
@@ -901,7 +905,11 @@ def intake_orphans():
 @app.post("/api/intake/inbox/{iid}/take")
 def intake_inbox_take(iid: str):
     ok, err, naam = intake.inbox_take(iid)
-    return {"ok": ok, "err": err, "naam": naam}
+    # `key` = de losse-intake sleutel die zojuist is weggeschreven (één derivatie, in
+    # intake_core). Daarmee kan de voorkant direct de bestaande koppelstap aanroepen
+    # zonder die sleutel zelf na te bouwen.
+    return {"ok": ok, "err": err, "naam": naam,
+            "key": intake.intake_key(naam) if ok else ""}
 
 
 @app.delete("/api/intake/inbox/{iid}")

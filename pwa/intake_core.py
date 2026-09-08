@@ -134,8 +134,24 @@ def public_submit(raw: dict, resume_id: str = "") -> tuple[bool, str]:
 
 
 # ── Coach-inbox ─────────────────────────────────────────────────────────────
-def inbox_list() -> list[dict]:
-    """Wachtende inzendingen (status 'nieuw'), nieuwste eerst, met nette rijen."""
+def intake_key(naam: str) -> str:
+    """De losse-intake sleutel voor een naam ('nieuw:voor_achter').
+
+    ÉÉN derivatie: `inbox_take` schrijft hem en de API rapporteert hem terug, zodat
+    de voorkant de vervolgstap (koppelen) kan doen zonder de sleutel zelf na te
+    bouwen — een tweede afleiding zou stil uiteen kunnen lopen met deze.
+    """
+    return "nieuw:" + (naam or "Nieuwe klant").strip().lower().replace(" ", "_")
+
+
+def inbox_list(match: bool = False) -> list[dict]:
+    """Wachtende inzendingen (status 'nieuw'), nieuwste eerst, met nette rijen.
+
+    `match=True` voegt per inzending een eventuele eenduidige FinalSurge-naam-match
+    toe (`suggestie`), zodat de coach in de inbox al ziet dat deze aanmelder AL als
+    atleet bestaat. Dat is een FS-roster-read en dus BEWUST opt-in: Home leest deze
+    lijst als goedkoop, store-only praktijksignaal en vraagt de match niet op.
+    """
     try:
         inbox = intake_store.load_intake_inbox()
     except Exception:
@@ -151,14 +167,20 @@ def inbox_list() -> list[dict]:
                 v = ", ".join(v)
             if v and str(v).strip():
                 rijen.append({"vraag": lbl, "antwoord": str(v)})
-        out.append({
+        rij = {
             "id": iid,
             "naam": sub.get("naam", "?"),
             "doel": (sub.get("doel", "") or "")[:90],
             "email": sub.get("email", ""),
             "ingezonden": sub.get("ingezonden", ""),
             "rijen": rijen,
-        })
+        }
+        if match:
+            # Zelfde regel als bij de losse intakes: alleen een EENDUIDIGE naam-match
+            # telt, en die is een KANDIDAAT — de koppel-write gebeurt pas op een knop.
+            import atleten_core            # lui: vermijdt circulaire import op moduleniveau
+            rij["suggestie"] = atleten_core._fs_suggestie(rij["naam"])
+        out.append(rij)
     return out
 
 
@@ -172,7 +194,7 @@ def inbox_take(iid: str) -> tuple[bool, str, str]:
     if not sub:
         return False, "Inzending niet gevonden.", ""
     naam = (sub.get("naam") or "Nieuwe klant").strip()
-    key = "nieuw:" + naam.lower().replace(" ", "_")
+    key = intake_key(naam)
     velden = {k: v for k, v in sub.items() if k not in ("status", "ingezonden")}
     intakes = intake_store.load_intakes()
     # Bestond er al een losse intake onder deze naam? Niet stil overschrijven.
