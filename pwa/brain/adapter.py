@@ -339,6 +339,39 @@ def _complaint_is_current(ev) -> bool:
     return last <= recency.COMPLAINT_RECENT.days
 
 
+def _klachtgroepen(evs) -> list:
+    """KlachtGROEPEN uit een projectie-evidencelijst (geen losse meldingen)."""
+    return [e for e in evs if e.get("key", "").startswith("complaint.")
+            and not e.get("key", "").startswith("complaint.mention.")]
+
+
+def actuele_klachten(evs) -> list[dict]:
+    """DE canoniek ACTUELE klachten (lifecycle ACTIVE/RECENT) uit een projectie-evidencelijst.
+
+    Dit is de ENIGE set die AUTOMATISCH mag terugkomen zonder dat de atleet er zelf over
+    begint. Een puur TERUGKEREND patroon zonder recente melding dooft uit: dat is
+    achtergrond, geen aanleiding. Eén implementatie voor élke consument (Feedback
+    `complaint_new`, Races-coachhulp) — in Correctness Round 2 bleek een tweede,
+    ruimere definitie van 'actueel' aantoonbaar uit de pas te lopen en een klacht van
+    weken terug opnieuw naar binnen te dragen.
+
+    Compact en presentatie-klaar; verzint niets bij en trekt geen medische conclusie.
+    """
+    uit = []
+    for e in _klachtgroepen(evs):
+        if e.get("status") not in (ACTIVE, RECENT):
+            continue
+        det = e.get("detail") or {}
+        uit.append({"area": det.get("area") or e.get("value"),
+                    "status": e.get("status"),
+                    "laatst_dagen": det.get("last_seen_days"),
+                    "aantal": det.get("count")})
+    # actief vóór recent, daarbinnen het meest recent gemeld eerst
+    uit.sort(key=lambda c: (0 if c["status"] == ACTIVE else 1,
+                            c["laatst_dagen"] if isinstance(c["laatst_dagen"], int) else 10 ** 6))
+    return uit
+
+
 def _klacht_coachregel(area, status, count, last_seen) -> str:
     """FC-3 — één compacte klachtregel met lifecycle-onderscheid + coachrelevant
     handelingsperspectief (COACHACTIES, geen diagnose). 'Goed is goed': een recente
@@ -525,10 +558,10 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
         "load_active": _load_active,
         "complaint_areas": [(c.get("detail") or {}).get("area") or c.get("value") for c in complaints],
         # v-coachability — RECENCY: alleen ACTUEEL/recent actieve klachten (ACTIVE/RECENT) mogen
-        # automatisch terugkomen; een puur TERUGKEREND (RECURRING) patroon zonder recente melding dooft
-        # uit (komt niet standaard bij elke training terug).
-        "complaint_new": [(c.get("detail") or {}).get("area") or c.get("value") for c in complaints
-                          if c.get("status") in (ACTIVE, RECENT)],
+        # automatisch terugkomen; een puur TERUGKEREND (RECURRING) patroon zonder recente melding
+        # dooft uit. Sinds Races Coachhulp v2 loopt dat via de GEDEELDE selector, zodat er maar
+        # één definitie van 'actueel' bestaat (zie `actuele_klachten`).
+        "complaint_new": [c["area"] for c in actuele_klachten(complaints)],
         "event": {"status": event["status"], "days": event["days"], "date": event["date"]},
         "prompt_block": tekst,
     }

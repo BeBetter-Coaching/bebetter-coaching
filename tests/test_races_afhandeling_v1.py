@@ -23,6 +23,7 @@ import pytest
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _APP = (_ROOT / "pwa" / "static" / "app.js").read_text(encoding="utf-8")
 _CSS = (_ROOT / "pwa" / "static" / "styles.css").read_text(encoding="utf-8")
+_RACES = (_ROOT / "pwa" / "races_core.py").read_text(encoding="utf-8")
 _API = (_ROOT / "pwa" / "api.py").read_text(encoding="utf-8")
 _CORE = (_ROOT / "pwa" / "races_core.py").read_text(encoding="utf-8")
 
@@ -369,8 +370,20 @@ class TestScope:
         }
         assert gewijzigd <= verwacht, f"buiten scope: {sorted(gewijzigd - verwacht)}"
 
-    def test_geen_nieuwe_module_of_route(self):
-        """Deze batch voegt geen navigatie of endpoint toe — alleen afhandeling."""
+    def test_races_houdt_precies_een_write(self):
+        """Wat deze lock beschermt is de WRITE, niet het aantal endpoints.
+
+        In v1 stonden hier ook vaste endpoint-tellingen ('deze batch voegt niets toe').
+        Races Coachhulp v2 voegt bewust twee LEZENDE endpoints toe (context + voorstel),
+        dus die telling zei niets meer over de garantie. Wat wél moet blijven gelden:
+        er is precies ÉÉN pad dat een race-wens naar FinalSurge stuurt, en Races krijgt
+        geen tweede navigatie-ingang."""
         assert _APP.count('else if (view === "races")') == 2   # applyRoute + openModuleFromNav
-        assert _API.count('@app.post("/api/races') == 1
-        assert _API.count('@app.get("/api/races') == 1
+        # exact één race-endpoint dat post_comment kan bereiken
+        assert _API.count('races.plaats_wens(') == 1
+        assert _RACES.count("FS.post_comment(") == 1
+        # de coachhulp-kant is aantoonbaar lezend
+        for fn in ("def coachhulp(", "def voorstel(", "def _atleetcontext("):
+            body = _RACES[_RACES.index(fn):]
+            body = body[:body.index("\ndef ", 1)] if "\ndef " in body[1:] else body
+            assert "post_comment" not in body and "plaats_wens" not in body, fn

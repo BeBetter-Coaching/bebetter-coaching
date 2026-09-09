@@ -548,6 +548,30 @@ def races_lijst(dagen: int = 42, zonder_wens: bool = False):
     return races.komende(days_ahead=dagen, alleen_zonder_wens=zonder_wens)
 
 
+@app.get("/api/races/coachhulp")          # READ-ONLY: compacte coachcontext bij één race
+def races_coachhulp(id: str = ""):
+    """Race + canonieke atleetcontext (doel, actuele klachten, recente belasting) voor de
+    Coachhulp-strook. Leest de GEDEELDE AthleteState; post nooit iets."""
+    try:
+        return {"ok": True, **races.coachhulp(id)}
+    except ValueError as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Context laden mislukt: {e}"}, status_code=500)
+
+
+@app.post("/api/races/voorstel")         # GEEN write: levert alleen een concepttekst terug
+def races_voorstel(body: RaceWens):
+    """Eén kort wens-VOORSTEL. Uitsluitend op expliciete coachactie; de tekst gaat naar de
+    composer, niet naar FinalSurge. Versturen blijft de aparte, bevestigde write."""
+    try:
+        return {"ok": True, **races.voorstel(body.id)}
+    except ValueError as e:
+        return JSONResponse({"ok": False, "err": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "err": f"Voorstel maken mislukt: {e}"}, status_code=500)
+
+
 @app.post("/api/races/wens")             # WRITE: plaats race-wens als coach-comment
 def races_wens(body: RaceWens):
     try:

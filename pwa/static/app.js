@@ -5497,6 +5497,8 @@ function raceItem(it) {
       <span class="rc-when">${esc(wanneer)}${tot ? `<span class="rc-tot">${esc(tot)}</span>` : ""}</span></div>
     <div class="rc-status">${badge}</div>
     ${it.wens ? `<div class="fb-thread"><div class="fb-bub coach"><span class="fb-wie">Jij</span>${esc(it.wens)}</div></div>` : ""}
+    <button class="acc-toggle sub" data-hulp>${ic("brain")} Coachhulp</button>
+    <div class="collapse" data-hulpbox></div>
     <label class="lbl" for="rc-w-${esc(it.id)}">${it.wens ? "Wens bijwerken" : "Race-wens"}</label>
     <textarea class="fb-tekst" id="rc-w-${esc(it.id)}" rows="4" placeholder="Strategie en verwachting voor ${esc(it.voornaam)}…">${esc(it.wens || "")}</textarea>
     <div class="fb-acts">
@@ -5504,7 +5506,132 @@ function raceItem(it) {
     </div>
     <p class="hint" data-poststatus></p>`;
   el.querySelector("[data-post]").addEventListener("click", () => rcPlaats(el, it));
+  // Coachhulp is een APARTE strook binnen de kaart: openen/sluiten en het maken van een
+  // voorstel raken de composer niet, dus getypte tekst kan er nooit door verdwijnen.
+  el.querySelector("[data-hulp]").addEventListener("click", () => rcHulpToggle(el, it));
   return el;
+}
+
+// ── COACHHULP ───────────────────────────────────────────────────────────────
+// Compacte context bij ÉÉN race: genoeg om zelf een persoonlijke wens te schrijven,
+// geen tweede Workspace in Races. Alles komt van /api/races/coachhulp, dat de GEDEELDE
+// AthleteState leest — dezelfde bron als Workspace/Dossier/Feedback. De strook toont
+// FEITEN; een voorstel is een aparte, expliciete coachactie en de composer blijft de
+// eindtekst. Er wordt hier nooit iets naar FinalSurge gestuurd.
+const rcHulp = new Map();                                    // race-id → geladen context
+
+function rcHulpToggle(el, it) {
+  const box = el.querySelector("[data-hulpbox]");
+  if (!box) return;
+  const open = box.classList.toggle("open");
+  if (!open || box.dataset.geladen === "1") return;          // sluiten of al geladen: niets doen
+  rcHulpLaad(el, it);
+}
+
+async function rcHulpLaad(el, it) {
+  const box = el.querySelector("[data-hulpbox]");
+  if (!box) return;
+  box.innerHTML = '<p class="muted klein">Context laden…</p>';
+  const r = await api(`/api/races/coachhulp?id=${encodeURIComponent(it.id)}`).catch(() => null);
+  const nu = rcKaart(it.id);                                 // de lijst kan herbouwd zijn
+  const doel = (nu && nu.querySelector("[data-hulpbox]")) || box;
+  if (!r || !r.ok) {
+    doel.innerHTML = '<p class="hint">Context is nu niet beschikbaar. Schrijf de wens zelf, of probeer het zo opnieuw.</p>';
+    return;
+  }
+  rcHulp.set(it.id, r);
+  doel.dataset.geladen = "1";
+  doel.innerHTML = rcHulpHtml(r);
+  rcHulpBind(nu || el, it);
+}
+
+function rcHulpHtml(h) {
+  // Alleen tonen wat de bron echt levert. Een ontbrekend veld levert GEEN regel op —
+  // een leeg kopje leest als 'niets aan de hand' en dat weten we niet.
+  const feit = (label, waarde) => waarde
+    ? `<p class="veld"><b>${esc(label)}:</b> ${esc(waarde)}</p>` : "";
+  const wanneer = nlDatum(h.datum), tot = nlDagenTot(h.datum);
+  const klachten = (h.klachten || []).slice(0, 2).map(k => {
+    const wanneerK = Number.isInteger(k.laatst_dagen)
+      ? ` · laatst ${nlDagenTot(new Date(Date.now() - k.laatst_dagen * 864e5).toISOString().slice(0, 10))}`
+      : "";
+    return `<span class="mrow-tag soon-tag">${esc(k.area)}${esc(wanneerK)}</span>`;
+  }).join(" ");
+  return `
+    <div class="rc-hulp">
+      ${feit("Race", `${h.race}${h.type ? " · " + h.type : ""}`)}
+      ${feit("Wanneer", `${wanneer}${tot ? " · " + tot : ""}`)}
+      ${feit("Doel", h.doel)}
+      ${feit("Bij de race genoteerd", h.beschrijving)}
+      ${feit("Recente belasting", h.belasting)}
+      ${klachten ? `<p class="veld"><b>Speelt nu:</b> ${klachten}</p>
+         <p class="hint">Alleen actuele klachten uit het atleetdossier. Verwijs er hooguit kort en bemoedigend naar; dit is geen medisch oordeel.</p>` : ""}
+      ${h.context_onzeker ? '<p class="hint">Achtergrondcontext van deze atleet is nu niet beschikbaar, dus hier staat niet het hele verhaal.</p>' : ""}
+      ${h.atleet_key ? athleteNav("races", h.atleet_key) : ""}
+      <div class="fb-acts">
+        <button class="btn ghost" data-voorstel>${ic("brain")} Stel een wens voor</button>
+      </div>
+      <div data-voorstelbox></div>
+    </div>`;
+}
+
+function rcHulpBind(el, it) {
+  const knop = el.querySelector("[data-voorstel]");
+  if (knop) knop.addEventListener("click", () => rcVoorstel(el, it));
+}
+
+// Eén kort voorstel, ALLEEN op deze expliciete klik. Het voorstel komt in een eigen blok
+// te staan, nooit rechtstreeks in de composer: zo blijft zichtbaar wat een suggestie is en
+// wat de coachtekst is, en kan getypte tekst niet stilletjes worden overschreven.
+async function rcVoorstel(el, it) {
+  const knop = el.querySelector("[data-voorstel]");
+  const box = el.querySelector("[data-voorstelbox]");
+  if (!knop || !box || knop.disabled) return;
+  const terug = knop.innerHTML;
+  knop.disabled = true;
+  knop.innerHTML = "Voorstel maken…";
+  const r = await jpost("/api/races/voorstel", { id: it.id }).catch(() => null);
+  const nu = rcKaart(it.id) || el;
+  const kn = nu.querySelector("[data-voorstel]"), bx = nu.querySelector("[data-voorstelbox]");
+  if (kn) { kn.disabled = false; kn.innerHTML = terug; }
+  if (!bx) return;
+  if (!r || !r.ok || !r.tekst) {
+    bx.innerHTML = `<p class="hint">${esc((r && r.err) || "Voorstel maken lukte niet. Probeer het zo opnieuw of schrijf zelf.")}</p>`;
+    return;
+  }
+  bx.innerHTML = `
+    <div class="rc-voorstel">
+      <p class="sec-label">Voorstel</p>
+      <p class="rc-voorstel-t">${esc(r.tekst)}</p>
+      <div class="fb-acts">
+        <button class="btn small" data-neem>${ic("check")} Neem over in de wens</button>
+      </div>
+      ${r.context_onzeker ? '<p class="hint">Zonder achtergrondcontext gemaakt: neutraal gehouden.</p>'
+        : (!r.persoonlijk ? '<p class="hint">Er was weinig persoonlijke context bekend, dus dit is bewust algemeen.</p>' : "")}
+    </div>`;
+  const neem = bx.querySelector("[data-neem]");
+  if (neem) neem.addEventListener("click", () => rcNeemVoorstel(nu, r.tekst, neem));
+}
+
+// Overnemen is óók een expliciete stap. Staat er al tekst in de composer, dan vragen we
+// eerst — een suggestie mag het werk van de coach nooit ongevraagd wissen.
+async function rcNeemVoorstel(el, tekst, knop) {
+  const ta = el.querySelector(".fb-tekst");
+  if (!ta) return;
+  const huidig = ta.value.trim();
+  if (huidig && huidig !== tekst.trim()) {
+    const ok = await bevestigActie({
+      titel: "Wens vervangen?",
+      tekst: "Je hebt al tekst in de wens staan. Wil je die vervangen door het voorstel?",
+      detail: tekst,
+      bevestig: "Vervangen",
+      focusTerug: knop,
+    });
+    if (!ok) return;
+  }
+  ta.value = tekst;
+  ta.focus();
+  melding("Voorstel overgenomen — pas het gerust aan en plaats het zelf.");
 }
 
 // Plaatsen van één race-wens: bevestigen → posten → de stand van DEZE race bijwerken.
