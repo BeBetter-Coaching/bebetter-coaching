@@ -125,7 +125,11 @@ def test_block_zone_counts_unit():
 def test_r4_douwe_complaint_checkin(fs):
     laps = [{"amount": 1, "hr_avg": 172} for _ in range(5)]  # zwaar (Z4)
     wd = _wd(hr_avg=172, laps=laps, structured=True, notes="pittig",
-             diag={"complaint_areas": ["scheen"], "load_active": True}, effort=8)
+             # `complaint_new` = de canoniek ACTUELE klachten (AthleteState ACTIVE/RECENT). Die set
+             # stuurt sinds Correctness Round 2 de signaalverplichting; bij Douwe's ACTIEVE
+             # scheenklacht bevat productie 'm, dus de check-in-garantie blijft ongewijzigd.
+             diag={"complaint_areas": ["scheen"], "complaint_new": ["scheen"],
+                   "load_active": True}, effort=8)
     ctx = _ctx(wd)
     assert "SIGNAAL-VERPLICHTING" in ctx
     assert "scheen" in ctx and "check-in" in ctx

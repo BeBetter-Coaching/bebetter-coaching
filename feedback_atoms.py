@@ -392,6 +392,21 @@ def _build_decision(w: dict) -> dict:
     # ── beslissing ────────────────────────────────────────────────────────────
     content = [a for a in atoms if a["category"] in
                ("correction", "observation", "plan_execution", "answer")]
+    # ATHLETE-FIRST (Correctness Round 2): een AUTO_SAFE-bericht bestaat uitsluitend uit
+    # DATA-atomen over de training. Schreef de atleet zelf iets inhoudelijks, dan kan zo'n
+    # bericht per constructie niet aansluiten op wat zij/hij meldt — dan is 'veilig' feitelijk
+    # 'generiek' (gemeld: 'niet fit, hoofdpijn, toch gelopen' → 'je hartslag bleef netjes binnen
+    # het rustige bereik'). Alleen een RESPONSIEF atoom adresseert de atleet echt: een antwoord op
+    # de vraag, een correctie op de eigen claim, een klacht-check-in of het erkennen van een
+    # afwezigheidsmelding. Ontbreekt dat, dan gaat de case naar het REVIEW-pad, waar de
+    # atleettekst het onderwerp van de generatie is en de coach nog kijkt.
+    _RESPONSIVE = ("answer", "correction", "complaint", "logistics")
+    addressed = any(a["category"] in _RESPONSIVE for a in atoms)
+    try:
+        import feedback_copy as _fc
+        substantive = _fc.classify_intent(atext).get("substantive", False)
+    except Exception:
+        substantive = bool((atext or "").strip())            # bij twijfel: de atleet gaat voor
     if has_question and not answered:
         reasons.append("unanswerable_question")
         status = REVIEW_REQUIRED
@@ -399,6 +414,9 @@ def _build_decision(w: dict) -> dict:
         status = REVIEW_REQUIRED
     elif not content:
         reasons.append("no_supported_content")
+        status = REVIEW_REQUIRED
+    elif substantive and not addressed:
+        reasons.append("athlete_message_unaddressed")
         status = REVIEW_REQUIRED
     else:
         status = AUTO_SAFE
@@ -424,8 +442,11 @@ def _rpe_high(w) -> bool:
 
 
 # ── deterministische assemblage ───────────────────────────────────────────────
-_ORDER = {"answer": 0, "correction": 1, "observation": 2, "plan_execution": 3,
-          "complaint": 4, "context": 5, "logistics": 6, "ack": 7,
+# `ack` staat VOORAAN: het is de athlete-first opening van het veilige terugvalconcept, en die
+# hoort vóór de data te staan (niet als bijzin erachter). Geen enkel regulier atoom gebruikt deze
+# categorie, dus de bestaande volgorde verschuift hier niet door.
+_ORDER = {"ack": -1, "answer": 0, "correction": 1, "observation": 2, "plan_execution": 3,
+          "complaint": 4, "context": 5, "logistics": 6,
           # F3 — de positieve afsluiter staat altijd als laatste zin.
           "close": 8}
 
@@ -439,6 +460,40 @@ def assemble(atoms) -> str:
             seen.add(t)
             ordered.append(t)
     return " ".join(ordered[:5])
+
+
+# Athlete-first opening voor het terugvalconcept. Erkent DAT de atleet iets meldde zonder te
+# claimen wat er stond (geen interpretatie, geen invulling) — het alternatief was een lege
+# composer, en 'automatisch de hartslag prijzen' is precies wat hier niet mag.
+_ACK_TEXT = "Dank je voor je bericht, ik neem mee wat je over deze training schrijft."
+
+
+def _norm_sent(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "")).strip()
+
+
+def safe_fallback(atoms, athlete_text: str = "", mandatory=()) -> str:
+    """Deterministisch VEILIG terugvalconcept nadat de fail-closed validator een concept afkeurde.
+
+    Bouwt uitsluitend uit materiaal dat de app zelf bezit: de geregistreerde atomen van deze
+    workout en de verplichte feitzinnen uit de fact-pack. Verzint niets en herhaalt de atleet niet.
+    Schreef de atleet iets inhoudelijks, dan opent het concept met een erkenning en vervalt de
+    automatische lof: een blokkade mag nooit eindigen in 'je hartslag bleef netjes binnen het
+    rustige bereik. Goed gedaan.' terwijl de atleet iets anders meldde. Niets bruikbaar -> "".
+    """
+    try:
+        import feedback_copy as _fc
+        substantive = _fc.is_substantive(athlete_text)
+    except Exception:
+        substantive = bool((athlete_text or "").strip())
+    keuze = [a for a in (atoms or []) if not (substantive and a.get("category") == "close")]
+    if substantive:
+        keuze = [_atom("ack_message", _ACK_TEXT, "ack", 100, "ANY", ["athlete_message"])] + keuze
+    tekst = assemble(keuze)
+    for zin in [_norm_sent(m.get("sentence")) for m in (mandatory or [])]:
+        if zin and zin not in _norm_sent(tekst):
+            tekst = (tekst + " " + zin).strip() if tekst else zin
+    return tekst.strip()
 
 
 def _final_is_atoms_only(text: str, atoms) -> bool:

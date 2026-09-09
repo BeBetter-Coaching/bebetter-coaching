@@ -494,7 +494,13 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
         # sturen. Geen geforceerde vraag (respecteert de klacht-guard en de 'geen standaardvraag'-
         # regel); erkennen + voorwaardelijk advies richting de eerstvolgende zware/lange sessie is
         # de weg. Medisch terughoudend (geen diagnose/oorzaak/medicatiewerking).
-        if _load_active or complaints or _recovery_neg:
+        # Correctness Round 2 — de ACTUEEL-escalatie ('laat dit je reactie mee sturen') mag alleen
+        # vuren op canoniek ACTUELE klachten (ACTIVE/RECENT). Een puur TERUGKEREND patroon zonder
+        # recente melding blijft achtergrond: die stond hierboven al als regel én viel onder de
+        # klacht-guard ('vraag er niet uit jezelf naar'), maar de escalatie sprak die guard
+        # rechtstreeks tegen en droeg zo een klacht van weken terug opnieuw de reactie in.
+        _complaints_actueel = [c for c in complaints if c.get("status") in (ACTIVE, RECENT)]
+        if _load_active or _complaints_actueel or _recovery_neg:
             _slot += (" LET OP — er staat hierboven een ACTUEEL signaal. Laat dat je reactie MEE "
                       "sturen (niet als losse achtergrond wegschrijven): erken het kort en/of geef "
                       "een voorwaardelijk advies richting de eerstvolgende zware of lange sessie. "

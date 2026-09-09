@@ -285,7 +285,11 @@ class TestLocks:
     def test_alleen_herstel_cache_geraakt(self):
         """Elke gewijzigde regel in feedback_core valt binnen `_herstel_cache`."""
         import re
-        src = open(os.path.join(_ROOT, "pwa", "feedback_core.py")).read()
+        # De regelnummers in de diff horen bij `_TIP`, dus de functiegrenzen moeten ook UIT `_TIP`
+        # komen. Werden ze uit de werkboom gelezen, dan schoof een latere, ongerelateerde ronde de
+        # functie op en viel deze historische lock om zonder dat er iets aan deze build veranderde.
+        src = subprocess.run(["git", "show", f"{_TIP}:pwa/feedback_core.py"],
+                             cwd=_ROOT, capture_output=True, text=True).stdout
         d = subprocess.run(["git", "diff", "-U0", _BASE, _TIP, "--", "pwa/feedback_core.py"],
                            cwd=_ROOT, capture_output=True, text=True).stdout
         regels = src.splitlines()

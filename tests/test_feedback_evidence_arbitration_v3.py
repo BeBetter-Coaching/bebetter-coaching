@@ -170,10 +170,24 @@ def test_supported_claim_no_section():
 
 # ══ G22 — schone case → leeg blok (kort en coachend) ════════════════════════════
 def test_g22_clean_case_empty_block():
-    res = ob.build(modality="hartslag", shares={"Z1": 95, "Z2": 5},
-                   athlete_text="lekker gelopen, voelde goed")
+    """Niets te arbitreren én niets van de atleet om op te reageren → leeg blok (korte concepten).
+
+    Correctness Round 2: een INHOUDELIJK atleetbericht is wél iets om af te handelen en levert
+    daarom een bericht-verplichting op — zie `test_g22b_inhoudelijk_bericht_is_wel_een_verplichting`.
+    De 'schone case' hierboven is dus de case zonder zo'n bericht."""
+    res = ob.build(modality="hartslag", shares={"Z1": 95, "Z2": 5}, athlete_text="top")
     assert res["prompt_block"] == ""
     assert res["sections"] == []
+
+
+def test_g22b_inhoudelijk_bericht_is_wel_een_verplichting():
+    """Schrijft de atleet zelf hoe het ging, dan mag de reactie niet alleen over de data gaan."""
+    res = ob.build(modality="hartslag", shares={"Z1": 95, "Z2": 5},
+                   athlete_text="lekker gelopen, voelde een stuk soepeler dan vorige week")
+    assert "BERICHT-VERPLICHTINGEN" in res["prompt_block"]
+    assert "startpunt van je reactie" in res["prompt_block"]
+    # ZONE-arbitrage blijft leeg: dit blok gaat over de atleet, niet over de zoneverdeling.
+    assert "ZONE-EVIDENCE" not in res["prompt_block"]
 
 
 def test_single_material_zone_no_zone_section():
@@ -239,6 +253,7 @@ def test_integration_signal_from_brein_diag(fs_pace):
     laps = [{"amount": 1, "pace_display": "4:30"} for _ in range(6)]   # Z4 (drempel), zwaar
     wd = _wd_pace(laps, notes="pittig")
     wd["effort"] = 8
-    wd["_brein_diag"] = {"complaint_areas": ["scheenbeen"], "load_active": True}
+    wd["_brein_diag"] = {"complaint_areas": ["scheenbeen"], "complaint_new": ["scheenbeen"],
+                         "load_active": True}
     ctx = ai_feedback._build_workout_context(wd)[0]
     assert "SIGNAAL-VERPLICHTING" in ctx and "scheenbeen" in ctx

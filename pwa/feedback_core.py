@@ -644,6 +644,7 @@ def genereer(wid: str) -> str:
     thread = w.get("thread") or []
     mode = feedback_mode(thread)
     status = "REVIEW_REQUIRED"
+    decision = None
     if mode == FOLLOW_UP_REPLY:
         # Vervolg in een lopend gesprek: reageer op het laatste athlete-bericht (conversationeel;
         # geen feitelijke ruggengraat opnieuw invoegen). Sport-/interne-taal-guards gelden wél.
@@ -670,19 +671,45 @@ def genereer(wid: str) -> str:
     # zinnen en generieke 'kan-ik-niet-uit-de-data-halen'-disclaimers, ontdubbelt exact + semantisch
     # (max één klacht-/follow-up-zin per onderwerp). Geen extra LLM-reroll. Zo hoeft de coach minder te
     # schrappen; safety-status en copy-kwaliteit zijn aparte eisen.
+    _mandatory = ((w.get("_fact_pack") or {}).get("mandatory") or []) if mode != FOLLOW_UP_REPLY else []
     try:
         import feedback_copy as _fc
-        cleaned = _fc.clean_draft(tekst)
+        # De verplichte feitzinnen zijn APPLICATION-OWNED en worden verderop VERBATIM gevalideerd;
+        # de opschoning mag ze dus niet wegdedupliceren (zie feedback_copy.clean_draft).
+        cleaned = _fc.clean_draft(tekst, protected=[m.get("sentence", "") for m in _mandatory])
         if cleaned:                                          # nooit naar leeg opschonen
             tekst = cleaned
     except Exception:
         pass
     # Fail-closed VALIDATOR (defense in depth) op de UITEINDELIJKE tekst: geen rewrite, geen
-    # hergeneratie. Bij afkeuring gooien we ValueError → de API geeft {ok:false, err} → de composer
-    # blijft leeg en Send blijft uit; het concept wordt NIET als verstuurbaar bewaard.
-    _validate_or_block(w, tekst, mode)
+    # hergeneratie. Bij afkeuring is het concept NIET verstuurbaar — maar de coach met een lege
+    # composer achterlaten is óók geen uitkomst. Correctness Round 2: een terechte blokkade valt
+    # terug op een DETERMINISTISCH veilig concept uit materiaal dat de app zelf bezit (de atomen
+    # van deze workout + de verplichte feitzinnen), athlete-first en zonder automatische lof.
+    # Dat concept moet dezelfde validator halen; lukt dat niet, dan blokkeert het alsnog.
+    try:
+        _validate_or_block(w, tekst, mode)
+    except ValueError:
+        terugval = ""
+        if decision is not None:
+            try:
+                import feedback_atoms as _fa2
+                terugval = _fa2.safe_fallback(decision.get("atoms") or [],
+                                              _atleet_tekst(w), _mandatory)
+                _validate_or_block(w, terugval, mode)
+            except Exception:
+                terugval = ""
+        if not terugval:
+            raise                                            # werkelijk niets betrouwbaars → blokkeer
+        tekst, status = terugval, "REVIEW_REQUIRED"
     _GEN_STATUS[wid] = status
     return tekst
+
+
+def _atleet_tekst(w: dict) -> str:
+    """De volledige atleettekst bij deze training (post-notities + eigen comments)."""
+    return "\n".join([str(w.get("post_notes") or "")]
+                     + [str(c) for c in (w.get("athlete_comments") or []) if str(c or "").strip()]).strip()
 
 
 # v8 — laatste generatie-status per workout (AUTO_SAFE | REVIEW_REQUIRED), zodat de API dit kan

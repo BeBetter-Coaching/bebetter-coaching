@@ -40,8 +40,11 @@ _UNAVAIL_RE = re.compile(
     r"lukt\s+.{0,20}?\s+niet\s+om\s+te\s+komen", re.I)
 
 # Pijn/klacht die de atleet in DIT bericht zelf noemt.
+# 'pijn' zonder linker-woordgrens: het Nederlands plakt de klacht aan het lichaamsdeel
+# (hoofdpijn, spierpijn, buikpijn). Met `\bpijn\b` viel 'hoofdpijn' buiten élke herkenning en
+# kreeg het model dus GEEN verplichting om erop te reageren.
 _PAIN_RE = re.compile(
-    r"\bpijn\b|blessure|geblesseerd|zeer|ontsteking|scheenbeen|scheen|knie|hiel|kuit|achilles|"
+    r"pijn|blessure|geblesseerd|zeer|ontsteking|scheenbeen|scheen|knie|hiel|kuit|achilles|"
     r"hamstring|lies|voet|enkel|rug|last\s+van|stijf|stijfheid|\bziek\b|griep|koorts", re.I)
 
 # Verzoek om schema-/wedstrijdwijziging.
@@ -293,6 +296,23 @@ def _message_section(athlete_text: str) -> str:
         punten.append("De atleet stelt een directe vraag. Beantwoord die concreet; laat hem niet liggen.")
     elif "?" in t:
         punten.append("Beantwoord ook de directe vraag van de atleet.")
+    # ATHLETE-FIRST (Correctness Round 2): schrijft de atleet zelf iets inhoudelijks, dan is DAT het
+    # onderwerp van de reactie en is de trainingsdata ondersteunend bewijs — nooit andersom. Deze
+    # regel vuurt op de aanwezigheid van een inhoudelijk bericht, niet op een woordenlijst: elke
+    # opsomming van 'relevante' meldingen mist de volgende formulering.
+    try:
+        import feedback_copy as _fc
+        _subst = _fc.is_substantive(t)
+    except Exception:
+        _subst = False
+    if _subst:
+        punten.insert(0,
+            "De atleet beschrijft ZELF hoe deze training ging of voelde. Maak dat het startpunt van "
+            "je reactie en sluit aantoonbaar aan op het belangrijkste punt uit haar/zijn bericht "
+            "(je hoeft het niet letterlijk te herhalen). Trainingsdata (hartslag, tempo, zone, "
+            "afstand, plan versus uitvoering) is ONDERSTEUNEND bewijs, geen vervanging: een reactie "
+            "die alleen de data prijst terwijl de atleet iets anders meldt, is niet goed genoeg. "
+            "Verzin niets bij wat zij/hij niet schrijft.")
     if not punten:
         return ""
     return "BERICHT-VERPLICHTINGEN (niet negeren):\n" + "\n".join("- " + p for p in punten)
@@ -302,7 +322,12 @@ def _signal_section(complaint_areas, load_elevated, intensity_high, has_upcoming
     """Signaal-verplichting: een actieve klacht MOET bij relevante belasting (zware/afwijkende
     uitvoering OF zware/lange sessie op komst) een NEUTRALE check-in opleveren — deterministisch en
     testbaar (Douwe's scheenklacht werd 3× live genegeerd). Medisch terughoudend. Vuurt niet bij een
-    stale/achtergrond-klacht zonder relevante belasting."""
+    stale/achtergrond-klacht zonder relevante belasting.
+
+    `complaint_areas` MOET de canoniek ACTUELE klachtenset zijn (AthleteState ACTIVE/RECENT, in de
+    Feedback-context `complaint_new`). Kreeg deze laag de bredere set, dan noemde de instructie een
+    puur TERUGKEREND patroon letterlijk 'een ACTIEVE klacht' en dwong ze een check-in af over een
+    klacht die de atleet nu niet noemt en die de state niet als actueel markeert."""
     areas = [str(a) for a in (complaint_areas or []) if a]
     coachrelevant = bool(intensity_high or has_upcoming)
     regels = []

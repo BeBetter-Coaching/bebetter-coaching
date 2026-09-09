@@ -52,25 +52,55 @@ def _complaint_area(sentence: str):
     return "_algemeen"
 
 
-def clean_draft(text: str) -> str:
+def _norm_ws(sentence: str) -> str:
+    """Alleen witruimte normaliseren — identiek aan `feedback_facts._norm` (de verbatim-toets)."""
+    return re.sub(r"\s+", " ", (sentence or "")).strip()
+
+
+def _key(sentence: str) -> str:
+    """Losse sleutel voor ontdubbeling: hoofdletter- en interpunctie-ongevoelig."""
+    return re.sub(r"\s+", " ", (sentence or "").lower()).strip(" .!?")
+
+
+def clean_draft(text: str, protected=()) -> str:
     """Deterministische CopyQuality-opschoning. Schrapt systeemtaal/defensieve zinnen, ontdubbelt
-    exact + semantisch (klacht/follow-up per onderwerp één keer), houdt de rest in volgorde."""
+    exact + semantisch (klacht/follow-up per onderwerp één keer), houdt de rest in volgorde.
+
+    `protected` = de APPLICATION-OWNED zinnen uit de fact-pack (assemble_spine). Die zijn na de
+    generatie VERPLICHT en worden verbatim gevalideerd (`feedback_facts.validate_draft`), dus deze
+    opschoning mag ze NOOIT verwijderen. Zonder die bescherming botsten twee contracten: schreef het
+    model zelf een variant van de klacht-check-in, dan zag de dedupe de APP-zin als tweede zin over
+    hetzelfde onderwerp en gooide hem weg — waarna de validator de verplichte zin miste en het
+    concept blokkeerde ('inhoudelijke controle niet gehaald') terwijl er inhoudelijk niets mis was.
+    Botst een vrije zin met een beschermde, dan sneuvelt de VRIJE zin, ongeacht de volgorde."""
+    # Beschermd = VERBATIM (alleen witruimte genormaliseerd) gelijk aan een verplichte zin: precies
+    # de vergelijking die `validate_draft` straks doet. Een variant met andere hoofdletters of
+    # interpunctie is dus NIET de verplichte zin en telt hier als vrije tekst.
+    prot_exact = {_norm_ws(p) for p in (protected or []) if _norm_ws(p)}
+    prot_loose = {_key(p) for p in (protected or []) if _key(p)}
+    prot_areas = {a for a in (_complaint_area(p) for p in (protected or [])) if a is not None}
     out = []
     seen_norm = set()
     seen_complaint_area = set()
     for s in _sentences(text):
         low = s.lower()
-        if any(t in low for t in _SYSTEM_TERMS):
-            continue                                         # interne/technische zin → weg
-        if any(d in low for d in _DEFENSIVE):
-            continue                                         # generieke defensieve disclaimer → weg
-        norm = re.sub(r"\s+", " ", low).strip(" .!?")
+        norm = _key(s)
+        beschermd = _norm_ws(s) in prot_exact
         if norm in seen_norm:
-            continue                                         # exacte dubbel
+            continue                                         # exacte dubbel (ook een tweede app-zin)
+        if not beschermd:
+            if any(t in low for t in _SYSTEM_TERMS):
+                continue                                     # interne/technische zin → weg
+            if any(d in low for d in _DEFENSIVE):
+                continue                                     # generieke defensieve disclaimer → weg
+            if norm in prot_loose:
+                continue                                     # variant van een verplichte zin → wijkt
         area = _complaint_area(s)
         if area is not None:
-            if area in seen_complaint_area:
-                continue                                     # semantische dubbel: 2e klacht-zin zelfde onderwerp
+            # Een vrije zin over een onderwerp waarover ook een BESCHERMDE zin bestaat, wijkt: de
+            # app-eigen formulering is de waarheid en moet verbatim overleven.
+            if not beschermd and (area in seen_complaint_area or area in prot_areas):
+                continue
             seen_complaint_area.add(area)
         seen_norm.add(norm)
         out.append(s)
@@ -90,11 +120,28 @@ _Q = re.compile(r"\?")
 _DOUBT = re.compile(r"\b(twijfel|onzeker|weet niet zeker|bang dat|klopt dat wel|te (hard|langzaam|snel)\?|"
                     r"ging het wel|was dit goed|deed ik het)\b", re.I)
 _PLAN_WORDS = re.compile(r"\b(schema|aanpass|verzet|volgende week|planning|fysio|blessure|geblesseerd|"
-                         r"pijn|niet lopen|rust nemen)\b", re.I)
+                         r"niet lopen|rust nemen)\b|pijn", re.I)
 _DATA_ASK = re.compile(r"\b(hartslag|zone|tempo|pace|hoe hard|hoeveel|gemiddelde|zat ik|liep ik|data|cijfers)\b", re.I)
+# 'pijn' zonder linker-woordgrens: het Nederlands plakt de klacht aan het lichaamsdeel
+# (hoofdpijn, spierpijn, buikpijn). Met `\bpijn\b` viel precies de gemelde case ('hoofdpijn')
+# buiten élke klacht-herkenning. Een woordgrens die het echte vocabulaire uitsluit is een fout
+# in de grens, geen reden om woorden te gaan opsommen.
 _COMPLAINT_WORD = re.compile(
-    r"\bpijn\b|blessure|geblesseerd|zeer|ontsteking|scheen|knie|hiel|kuit|achilles|hamstring|lies|"
+    r"pijn|blessure|geblesseerd|zeer|ontsteking|scheen|knie|hiel|kuit|achilles|hamstring|lies|"
     r"\bvoet\b|enkel|\brug\b|last van|stijf", re.I)
+
+# Een bericht is INHOUDELIJK zodra het meer is dan een korte beleefdheid ('top', 'lekker gelopen').
+# Bewust een LENGTE-grens en géén woordenlijst: elke opsomming van 'relevante' woorden mist de
+# volgende formulering (precies hoe 'hoofdpijn' en 'niet fit' door alle filters glipten). Wat de
+# atleet inhoudelijk meldt hoeft de app niet te BEGRIJPEN om te weten dat er op gereageerd moet
+# worden — alleen dát er iets gemeld is.
+_SUBSTANTIVE_MIN_WORDS = 4
+_WORD = re.compile(r"\w+", re.UNICODE)
+
+
+def is_substantive(athlete_text: str) -> bool:
+    """Schreef de atleet meer dan een korte beleefdheid? Dan moet de coachreactie daarop aansluiten."""
+    return len(_WORD.findall(athlete_text or "")) >= _SUBSTANTIVE_MIN_WORDS
 
 
 def classify_intent(athlete_text: str) -> dict:
@@ -118,4 +165,5 @@ def classify_intent(athlete_text: str) -> dict:
     data_needed = bool(data_ask or question or primary in (PLAN_ADJUST, REVIEW_DATA))
     max_data_points = 2 if data_ask else (1 if data_needed else 0)
     return {"primary": primary, "athlete_message_present": present, "question_present": question,
-            "complaint_active": complaint, "data_needed": data_needed, "max_data_points": max_data_points}
+            "complaint_active": complaint, "data_needed": data_needed,
+            "substantive": is_substantive(t), "max_data_points": max_data_points}

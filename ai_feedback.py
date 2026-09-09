@@ -767,7 +767,12 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
                        if b.get("target_zone") and b.get("type") not in ("WARMUP", "REST", "COOLDOWN")}
         _ob_msg = "\n".join([post_notes or ""] + [c for c in athlete_comments if c and c.strip()]).strip()
         _ob_diag = workout_data.get("_brein_diag") or {}
-        _ob_complaints = _ob_diag.get("complaint_areas") or []
+        # Correctness Round 2 — automatisch terugkerende klachtcontext volgt de CANONIEKE
+        # actualiteit uit AthleteState (`complaint_new` = ACTIVE/RECENT), niet de bredere set
+        # die ook een puur terugkerend patroon bevat. Anders forceerde de signaalverplichting een
+        # check-in over een klacht die de state niet als actueel markeert en die de atleet nu niet
+        # noemt. Noemt de atleet hem wél zelf, dan pakt de BERICHT-verplichting dat op.
+        _ob_complaints = _ob_diag.get("complaint_new") or []
         _ob_load = bool(_ob_diag.get("load_active"))
         try:
             _ob_rpe_high = bool(effort) and float(str(effort).split()[0].replace(",", ".")) >= 7

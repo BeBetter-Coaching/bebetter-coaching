@@ -119,13 +119,34 @@ def test_douwe_correction_no_z1_confirmation(monkeypatch):
 
 
 # ══ Jordi — exact block atom only with authoritative metric + coupling ══════════
+def _jordi(monkeypatch, comments):
+    return _decision(monkeypatch, zones={"zone_type": "hartslag", "zones_text": "z", "zones": HR},
+                     builder=[_hr(4) for _ in range(5)],
+                     laps=[{"amount": 1, "hr_avg": v} for v in (167, 171, 160, 169, 172)],
+                     comments=comments, hr_avg=168)
+
+
 def test_jordi_block_atom_when_matched(monkeypatch):
-    d = _decision(monkeypatch, zones={"zone_type": "hartslag", "zones_text": "z", "zones": HR},
-                  builder=[_hr(4) for _ in range(5)],
-                  laps=[{"amount": 1, "hr_avg": v} for v in (167, 171, 160, 169, 172)],
-                  comments=["maagkramp in blok 3"], hr_avg=168)
+    """Het exacte blok-atoom vraagt een autoritaire metriek + MATCHED koppeling. Zonder
+    atleetbericht mag dat feit ook automatisch de deur uit."""
+    d = _jordi(monkeypatch, [])
     assert d["status"] == fa.AUTO_SAFE and d["authority"]["primary"] == MA.HR
     assert d["text"] == "Op hartslag kwamen je werkblokken uit op Z3, Z4, Z3, Z4 en Z4."
+
+
+def test_jordi_block_atom_maar_atleetmelding_gaat_naar_review(monkeypatch):
+    """Correctness Round 2 — dezelfde training, maar de atleet meldt maagkramp in blok 3.
+
+    Het blok-feit blijft exact hetzelfde (Jordi's garantie), maar een bericht dat ALLEEN de
+    zonevolgorde noemt is geen antwoord op een gemelde maagkramp. Daarom niet automatisch
+    verstuurbaar: de case gaat naar het REVIEW-pad, waar de atleettekst het onderwerp is.
+    Voorheen stond hier `AUTO_SAFE` — dat legde precies het gemelde symptoom vast."""
+    d = _jordi(monkeypatch, ["maagkramp in blok 3"])
+    assert d["status"] == fa.REVIEW_REQUIRED
+    assert "athlete_message_unaddressed" in d["reasons"]
+    ids = [a["id"] for a in d["atoms"]]
+    assert "block_sequence" in ids                            # het feit zelf blijft ongewijzigd
+    assert d["authority"]["primary"] == MA.HR
 
 
 def test_jordi_ambiguous_coupling_no_block_prose(monkeypatch):
