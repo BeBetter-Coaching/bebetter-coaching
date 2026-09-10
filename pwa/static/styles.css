@@ -349,9 +349,13 @@ textarea{resize:vertical}
 
 /* De balk hoort onderaan, óók als het filter maar één naam overhoudt: de view vult
    de scrollport en de balk wordt met `margin-top:auto` naar beneden geduwd. Zonder
-   dit staat een sticky element bij weinig inhoud midden op het scherm. */
-.view[data-view="strippen"]{display:flex;flex-direction:column;min-height:100%}
-.view[data-view="strippen"] .sk-bar{margin-top:auto}
+   dit staat een sticky element bij weinig inhoud midden op het scherm.
+   `.on` is hier VERPLICHT: `.view[data-view="…"]` heeft dezelfde specificiteit als
+   `.view.on` maar staat later in het bestand, dus zonder `.on` wint deze display-
+   waarde óók van `.view{display:none}` en blijft de sectie op élke route staan.
+   Zie de regressietest in tests/test_view_visibility_contract.py. */
+.view.on[data-view="strippen"]{display:flex;flex-direction:column;min-height:100%}
+.view.on[data-view="strippen"] .sk-bar{margin-top:auto}
 .sk-beheer{margin-top:14px}
 
 /* Desktop mag ruimer: twee kolommen zodat 30 namen in één blik passen. */
