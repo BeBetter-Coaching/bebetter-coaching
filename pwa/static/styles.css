@@ -2,6 +2,10 @@
   --bg:#0A1B33; --card:#0E2547; --card2:#0B2044; --border:#1E3A66;
   --text:#EAF2FF; --muted:#93A7C4; --acc:#5EE6EB; --blue:#2E86C1;
   --wa:#25D366; --danger:#E5674B; --warn:#EF9F27; --radius:14px;
+  /* De bodemruimte van de scroller staat hier ÉÉN keer: een sticky element dat tot
+     de onderrand moet reiken heft precies deze waarde op (zie .sk-bar). Twee losse
+     getallen die toevallig gelijk zijn, lopen bij de eerste wijziging uit elkaar. */
+  --scroll-pad-b:calc(20px + env(safe-area-inset-bottom));
 }
 *{box-sizing:border-box}
 /* Verborgen elementen ècht verbergen: een `hidden`-attribuut wint altijd, ook
@@ -13,7 +17,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
   -webkit-font-smoothing:antialiased}
 body{display:flex;flex-direction:column;max-width:640px;margin:0 auto;overflow:hidden}
 #scroller{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
-  padding:0 16px calc(20px + env(safe-area-inset-bottom))}
+  padding:0 16px var(--scroll-pad-b)}
 
 /* ── Iconen ───────────────────────────────────────────────────────────────── */
 .ic{width:1.35em;height:1.35em;display:inline-block;vertical-align:-0.28em;flex:0 0 auto;
@@ -247,53 +251,116 @@ textarea{resize:vertical}
 .msg.err{border-color:var(--danger)}
 .offline{background:#3a2a12;border:1px solid #7a5a1e;color:#ffdca6;border-radius:10px;
   padding:9px 13px;margin:10px 16px 0;font-size:13px}
-.swipe-hint{color:var(--muted);font-size:12px;text-align:center;margin:14px 0 -2px}
-
-/* ── Strippenkaarten ──────────────────────────────────────────────────────── */
-.lijst{display:flex;flex-direction:column;gap:12px;margin-top:12px}
-.kaart{position:relative;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-.kaart.bijna{border-color:#5a4a1e}
-.kaart.op{border-color:var(--danger)}
-.swipe-bg{position:absolute;inset:0;background:var(--blue);display:flex;align-items:center;
-  justify-content:flex-end;gap:6px;padding-right:22px;color:#fff;font-weight:700;font-size:14px}
-.swipe-fg{position:relative;background:linear-gradient(180deg,#0E2547,#0C2144);border-radius:var(--radius);
-  padding:15px;transition:transform .18s ease;touch-action:pan-y;cursor:grab}
-.swipe-fg.flash{animation:flash .55s ease}
-@keyframes flash{0%{background:#0E2547}28%{background:#153f66}100%{background:#0E2547}}
-.k-rest.bump,.ring-rest.bump{animation:bump .42s ease}
-@keyframes bump{0%,100%{transform:scale(1)}42%{transform:scale(1.2)}}
 .muted{color:var(--muted)}
 .center{text-align:center;margin-top:20px}
 .klein{font-size:12px}
-/* Signatuur-ring (gebruikt/totaal) — Whoop/Garmin-taal op echte data */
-.kaart-main{display:flex;align-items:center;gap:15px}
-.k-info{flex:1;min-width:0}
-.k-naam{margin:0;font-size:16.5px;font-weight:650}
-.k-tel{margin:2px 0 0;font-size:12.5px}
-.k-ring{position:relative;width:74px;height:74px;flex:0 0 auto}
-.ring-svg{width:74px;height:74px;display:block}
-.ring-track{fill:none;stroke:#0B2044;stroke-width:7}
-.ring-arc{fill:none;stroke:var(--acc);stroke-width:7;stroke-linecap:round;
-  transition:stroke-dashoffset .7s cubic-bezier(.2,.7,.3,1)}
-.kaart.bijna .ring-arc{stroke:var(--warn)}
-.kaart.op .ring-arc{stroke:var(--danger)}
-.ring-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.ring-rest{font-size:22px;font-weight:700;letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums}
-.kaart.bijna .ring-rest{color:var(--warn)}
-.kaart.op .ring-rest{color:var(--danger)}
-.ring-tot{font-size:9px;color:var(--muted);margin-top:1px}
-.k-status{display:inline-flex;align-items:center;gap:5px;margin-top:9px;font-size:11px;font-weight:600;
-  border-radius:20px;padding:3px 9px}
-.k-status .ic{width:13px;height:13px}
-.k-status.ok{color:var(--acc);background:rgba(94,230,235,.12);border:1px solid rgba(94,230,235,.30)}
-.k-status.warn{color:var(--warn);background:rgba(239,159,39,.12);border:1px solid rgba(239,159,39,.32)}
-.k-status.op{color:var(--danger);background:rgba(229,103,75,.12);border:1px solid rgba(229,103,75,.34)}
-.k-laatst{font-size:12px;margin:12px 0 10px;min-height:14px}
-.kaart-acts{display:flex;gap:8px;align-items:center}
-.kaart-acts .k-af{flex:1}
-.wa{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 .wa.hidden,.hidden{display:none}
-.wa-msg{font-size:13px;color:var(--text);background:var(--card2);border-radius:10px;padding:10px 12px;margin:0;line-height:1.5}
+
+/* ── Strippenkaart — mobiele afboeklijst ──────────────────────────────────
+   Eén rij = één deelnemer = één tikvlak. Geen horizontale scroll: de naam krimpt
+   met ellipsis, saldo en chevron houden een vaste breedte. Kleur is functioneel
+   (normaal / bijna leeg / leeg) via het gedeelde `is-*`-statusdialect. */
+.lijst{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+
+.sk-zoek{display:flex;align-items:center;gap:9px;margin:10px 0 0;padding:0 12px;
+  background:var(--card2);border:1px solid var(--border);border-radius:12px}
+.sk-zoek .ic{width:18px;height:18px;color:var(--muted);flex:0 0 auto}
+.sk-zoek input{flex:1;min-width:0;background:none;border:0;padding:12px 0;color:var(--text);
+  font-size:16px}                                   /* 16px: iOS zoomt niet in bij focus */
+.sk-zoek input:focus{outline:none}
+.sk-zoek:focus-within{border-color:var(--acc)}
+.sk-zoek input::-webkit-search-cancel-button{filter:grayscale(1) opacity(.6)}
+
+.sk-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 2px}
+.sk-telling{color:var(--muted);font-size:12.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.sk-toolbtns{display:flex;gap:6px;flex:0 0 auto}
+
+.sk-lijst{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.sk-rij{display:flex;flex-wrap:wrap;align-items:stretch;gap:0;border:1px solid var(--border);border-radius:14px;
+  background:linear-gradient(180deg,#0E2547,#0C2144);overflow:hidden;
+  transition:border-color .14s ease,background .14s ease}
+.sk-rij.sk-uit{display:none}
+.sk-rij.sk-leeg{opacity:.62;order:2}
+.sk-rij.sk-aan{border-color:var(--acc);background:linear-gradient(180deg,#123f5e,#0F3050)}
+
+/* Het grote tikvlak: vult de rij, min. 60px hoog — duimformaat, geen checkbox. */
+.sk-kies{flex:1;min-width:0;display:flex;align-items:center;gap:12px;min-height:54px;
+  padding:8px 4px 8px 12px;background:none;border:0;color:var(--text);cursor:pointer;
+  text-align:left;font:inherit}
+.sk-kies:disabled{cursor:default}
+.sk-kies:focus-visible{outline:2px solid var(--acc);outline-offset:-3px}
+
+.sk-vink{width:26px;height:26px;flex:0 0 auto;border-radius:50%;border:2px solid var(--border);
+  display:flex;align-items:center;justify-content:center;color:transparent;
+  transition:background .12s ease,border-color .12s ease,color .12s ease}
+.sk-vink .ic{width:16px;height:16px;stroke-width:2.6}
+.sk-aan .sk-vink{background:var(--acc);border-color:var(--acc);color:#04222b}
+.sk-leeg .sk-vink{opacity:.35}
+
+.sk-mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.sk-naam{font-size:15.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sk-sub{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.sk-saldo{flex:0 0 auto;font-size:12.5px;font-weight:700;letter-spacing:.02em;
+  padding:4px 10px;border-radius:999px;font-variant-numeric:tabular-nums;
+  color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
+
+.sk-meer{flex:0 0 auto;width:44px;background:none;border:0;border-left:1px solid var(--border);
+  color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.sk-meer .ic{width:18px;height:18px;transition:transform .16s ease}
+.sk-meer[aria-expanded="true"] .ic{transform:rotate(90deg)}
+.sk-meer:focus-visible{outline:2px solid var(--acc);outline-offset:-3px}
+
+.sk-detail{flex:1 0 100%;border-top:1px solid var(--border);padding:10px 12px 12px;
+  background:rgba(4,12,26,.35)}
+.sk-d-tel,.sk-d-h{margin:0 0 6px;font-size:12.5px;color:var(--muted)}
+.sk-d-acts{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Uitkomst + ongedaan maken — verschijnt direct onder de lijst, niet als popup. */
+.sk-uit{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  padding:11px 13px;border-radius:12px;
+  color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.sk-uit .btn{min-height:40px}
+.sk-uit-t{font-size:13.5px;font-weight:600;min-width:0}
+.sk-wa{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.sk-wa-btn{background:var(--wa);border-color:var(--wa);color:#04310f}
+
+/* Sticky actiebalk. Zit IN de scroller, die precies eindigt waar de onderbalk
+   begint → overlap met de PWA-navigatie is uitgesloten door de LAYOUT, niet door een
+   afgestelde hoogte (zie de fb-dock-les: vaste clearance loopt altijd mis).
+   Een sticky balk pint op de onderrand van de SCROLLPORT; daartussen en de echte
+   onderrand van de scroller zit nog diens bodempadding. Die afstand narekenen levert
+   een getal op dat bij de eerste layoutwijziging scheefloopt. In plaats daarvan
+   verlengt de balk zijn eigen bodempadding met exact diezelfde variabele en trekt hij
+   die met een negatieve marge weer van de layout af: de achtergrond loopt altijd door
+   tot de onderbalk, en het overschot knipt de scroller zelf weg. */
+.sk-bar{position:sticky;bottom:0;z-index:3;
+  margin:14px -16px calc(-1 * var(--scroll-pad-b));
+  padding:10px 16px calc(12px + var(--scroll-pad-b));
+  background:var(--card2);border-top:1px solid var(--border);
+  box-shadow:0 -10px 24px rgba(0,4,14,.45)}
+.sk-bar-let{margin:0 0 8px;font-size:12px;color:var(--warn)}
+/* Onder de duim staat precies ÉÉN actie. 'Selecteer alles' en 'Wissen' zitten
+   boven bij de lijst: het zijn hulpmiddelen bij het kiezen, geen afboekacties, en
+   ze horen niet naast de knop die wél schrijft. */
+.sk-af{width:100%;min-height:52px;font-size:16px}
+
+/* De balk hoort onderaan, óók als het filter maar één naam overhoudt: de view vult
+   de scrollport en de balk wordt met `margin-top:auto` naar beneden geduwd. Zonder
+   dit staat een sticky element bij weinig inhoud midden op het scherm. */
+.view[data-view="strippen"]{display:flex;flex-direction:column;min-height:100%}
+.view[data-view="strippen"] .sk-bar{margin-top:auto}
+.sk-beheer{margin-top:14px}
+
+/* Desktop mag ruimer: twee kolommen zodat 30 namen in één blik passen. */
+@media (min-width:900px){
+  .sk-lijst{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+}
+@media (prefers-reduced-motion:reduce){
+  .sk-rij,.sk-vink,.sk-meer .ic{transition:none}
+}
 
 /* ── Atleet-detail ────────────────────────────────────────────────────────── */
 .d-head{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:10px 0 8px}
@@ -386,12 +453,9 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .foot{text-align:center;color:var(--muted);font-size:11.5px;margin:26px 0 10px}
 
 /* ── Niveau 2: diepte + tactiele hover/animatie ──────────────────────────── */
-.metric,.listcard,.qtile,.panel,.kaart,.rij-kaart,.mrow{box-shadow:0 3px 12px rgba(0,4,14,.30)}
-.listcard,.qtile,.kaart,.hstat{transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
+.metric,.listcard,.qtile,.panel,.rij-kaart,.mrow{box-shadow:0 3px 12px rgba(0,4,14,.30)}
+.listcard,.qtile,.hstat{transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
 .listcard:active,.qtile:active{transform:scale(.985)}
-/* Strippenkaart: de teller kleurt mee met de status */
-.kaart.bijna .k-rest{color:var(--warn);border-color:#5a4a1e}
-.kaart.op .k-rest{color:var(--danger);border-color:var(--danger)}
 
 /* ── Premium hero op de home: radiale glow + tabulaire cijfers ────────────── */
 .hero{position:relative;
@@ -478,7 +542,7 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
   /* Meer ademruimte: dashboard/snelacties benutten de bredere kolom */
   .quick{grid-template-columns:repeat(3,1fr)}
   /* Tactiele hover: kaarten lichten iets op bij de muis */
-  .listcard:hover,.qtile:hover,.kaart:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.44)}
+  .listcard:hover,.qtile:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.44)}
   .hstat:hover{transform:translateY(-2px)}
   /* Atleten in master-detail: lijst links, dossier rechts, tegelijk zichtbaar */
   .view[data-view="atleten"]{max-width:1180px}
@@ -565,7 +629,7 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
 .ad-ring{position:relative;width:104px;height:104px;flex:0 0 auto}
 .ad-ring svg{width:104px;height:104px;transform:rotate(-90deg)}
 .ad-ring .ring-bg{fill:none;stroke:#0B2044;stroke-width:9}
-.ad-ring .ring-arc{stroke-width:9;transition:stroke-dashoffset 1s cubic-bezier(.2,.7,.3,1)}
+.ad-ring .ring-arc{fill:none;stroke-linecap:round;stroke-width:9;transition:stroke-dashoffset 1s cubic-bezier(.2,.7,.3,1)}
 .ad-ring-mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
 .ad-ring-mid b{font-size:17px;font-weight:750;letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums}
 .ad-ring-mid span{font-size:9.5px;color:var(--muted);margin-top:3px}

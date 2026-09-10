@@ -9,8 +9,8 @@
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-400.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-700.woff2">
-  <link rel="stylesheet" href="/static/styles.css?v=143a">
-  <link rel="stylesheet" href="/static/design-system.css?v=143a">
+  <link rel="stylesheet" href="/static/styles.css?v=144a">
+  <link rel="stylesheet" href="/static/design-system.css?v=144a">
 </head>
 <body>
   <!-- Iconen-sprite (lijn-iconen, werken offline) -->
@@ -172,9 +172,24 @@
     </section>
 
     <!-- ════════ STRIPPEN ════════ -->
+    <!-- Mobile-first: de coach staat naast de groep. De LIJST is het scherm; kaarten
+         aanmaken/importeren staat eronder in een lade. Aantikken → sticky balk → klaar. -->
     <section class="view" data-view="strippen">
-      <header class="appbar"><span class="pagehead"><h1>Strippenkaart</h1><p class="pagesub">Losse ritten bijhouden en afboeken.</p></span></header>
-      <section class="panel">
+      <header class="appbar"><span class="pagehead"><h1>Strippenkaart</h1><p class="pagesub">Tik de aanwezigen aan en boek in één keer af.</p></span></header>
+      <label class="sk-zoek">
+        <svg class="ic"><use href="#ic-search"/></svg>
+        <input id="sk-q" type="search" placeholder="Zoek op naam" autocomplete="off"
+               autocorrect="off" spellcheck="false" enterkeyhint="done" aria-label="Zoek op naam">
+      </label>
+      <div class="sk-tools">
+        <span class="sk-telling" id="sk-telling"></span>
+        <span class="sk-toolbtns">
+          <button class="btn small ghost" id="sk-alles" type="button">Selecteer alles</button>
+          <button class="btn small ghost" id="sk-wis" type="button" hidden>Wissen</button>
+        </span>
+      </div>
+      <section id="lijst" class="sk-lijst" aria-label="Deelnemers"></section>
+      <section class="panel sk-beheer">
         <button class="acc-toggle" data-target="nieuw"><svg class="ic"><use href="#ic-plus"/></svg> Nieuwe strippenkaart</button>
         <div id="nieuw" class="collapse">
           <div class="row">
@@ -190,7 +205,7 @@
           </div>
         </div>
       </section>
-      <section class="panel">
+      <section class="panel sk-beheer">
         <button class="acc-toggle" data-target="bulk"><svg class="ic"><use href="#ic-user-plus"/></svg> Meerdere tegelijk (uit je contacten)</button>
         <div id="bulk" class="collapse">
           <p class="hint">Plak "Naam, nummer" per regel, of kies een .vcf-bestand. Je ziet eerst een controle-overzicht.</p>
@@ -206,8 +221,19 @@
           <div id="b-preview"></div>
         </div>
       </section>
-      <p class="swipe-hint">Tip: sleep een kaart naar links om af te boeken.</p>
-      <section id="lijst" class="lijst"></section>
+      <!-- Sticky binnen de scroller: die eindigt precies waar de onderbalk begint, dus
+           overlap met de PWA-navigatie is uitgesloten door de LAYOUT, niet door een
+           afgestelde hoogte (zie de fb-dock-les: vaste clearance loopt altijd mis). -->
+      <div id="sk-bar" class="sk-bar" hidden>
+        <!-- Twee staten op dezelfde plek: wat je gaat doen, of wat je zojuist deed.
+             De uitkomst (met 'Ongedaan maken') verschijnt dus precies waar de duim
+             net tikte, niet onderaan een lijst van dertig namen. -->
+        <div id="sk-uitkomst" hidden></div>
+        <div id="sk-bar-actie">
+          <p class="sk-bar-let" id="sk-bar-let" hidden></p>
+          <button class="btn primary sk-af" id="sk-af" type="button"></button>
+        </div>
+      </div>
     </section>
 
     <!-- ════════ SCHEMA BOUWEN ════════ -->
@@ -435,38 +461,7 @@
     <button class="nav-item" data-open-view="meer"><svg class="ic"><use href="#ic-more"/></svg><span>Meer</span><i class="nav-badge" id="nav-badge" hidden></i></button>
   </nav>
 
-  <template id="kaart-tpl">
-    <article class="kaart">
-      <div class="swipe-bg"><svg class="ic"><use href="#ic-check"/></svg><span>afboeken</span></div>
-      <div class="swipe-fg">
-        <div class="kaart-main">
-          <div class="k-ring">
-            <svg class="ring-svg" viewBox="0 0 74 74">
-              <circle class="ring-track" cx="37" cy="37" r="31"/>
-              <circle class="ring-arc" cx="37" cy="37" r="31" transform="rotate(-90 37 37)"/>
-            </svg>
-            <div class="ring-c"><span class="ring-rest"></span><span class="ring-tot"></span></div>
-          </div>
-          <div class="k-info">
-            <h3 class="k-naam"></h3>
-            <p class="k-tel muted"></p>
-            <span class="k-status"></span>
-          </div>
-        </div>
-        <p class="k-laatst muted"></p>
-        <div class="kaart-acts">
-          <button class="btn primary k-af"><svg class="ic"><use href="#ic-check"/></svg> Strip afboeken</button>
-          <button class="btn ghost k-terug">Terug</button>
-          <button class="btn danger-ghost k-del" aria-label="Verwijderen"><svg class="ic"><use href="#ic-trash"/></svg></button>
-        </div>
-        <div class="wa hidden">
-          <p class="wa-msg"></p>
-          <a class="btn wa-btn" target="_blank" rel="noopener"><svg class="ic"><use href="#ic-message"/></svg> Stuur via WhatsApp</a>
-        </div>
-      </div>
-    </article>
-  </template>
 
-  <script src="/static/app.js?v=143a"></script>
+  <script src="/static/app.js?v=144a"></script>
 </body>
 </html>

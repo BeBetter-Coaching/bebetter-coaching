@@ -894,7 +894,7 @@ async function renderHome() {
     setBadge(nNieuw);
     const kn = kaarten.kaarten || [];
     const vol = kn.filter(k => k.rest <= 0);
-    const bijna = kn.filter(k => k.rest > 0 && k.rest <= 1);
+    const bijna = kn.filter(k => k.rest > 0 && k.rest <= KAART_BIJNA);   // één drempel, ook in de lijst
     const items = [];
     if (nNieuw) items.push(kaartItem("mail", `${nNieuw} nieuwe intake${nNieuw === 1 ? "" : "s"}`,
       "Bekijk en neem over als atleet", "intake", true));
@@ -1970,13 +1970,22 @@ function enqueue(item) { const q = getQ(); q.push(item); setQ(q); toonOffline();
 async function flush() {
   let q = getQ();
   if (!q.length) return;
-  const rest = [];
+  const rest = [], mislukt = [];
   for (const it of q) {
-    try { const r = await api(it.url, { method: "POST" }); if (!r.ok) rest.push(it); }
-    catch { rest.push(it); }
+    try {
+      // `body` is er sinds de groepsafboeking; oudere wachtrij-items (losse
+      // /{naam}/afboeken) hebben er geen en blijven gewoon werken.
+      const r = it.body ? await jpost(it.url, it.body) : await api(it.url, { method: "POST" });
+      // De server HEEFT geantwoord. Een afwijzing (kaart leeg, naam weg) verandert
+      // niet door hem nog eens te sturen: eruit halen en één keer eerlijk melden.
+      // Eerder bleef zo'n item eeuwig in de wachtrij staan en bleef de offline-balk hangen.
+      if (!r || !r.ok) mislukt.push((r && r.err) || "");
+    } catch { rest.push(it); }                    // geen verbinding → blijft staan
   }
   setQ(rest); toonOffline();
-  if (rest.length < q.length) { melding("Openstaande afboekingen verstuurd."); laad(); }
+  if (mislukt.length) melding(mislukt[0] || "Een wachtende afboeking is niet gelukt.", true);
+  else if (rest.length < q.length) melding("Openstaande afboekingen verstuurd.");
+  if (rest.length < q.length) laad();
 }
 
 function toonOffline() {
@@ -2014,135 +2023,370 @@ $("#install").addEventListener("click", async () => {
 if (!matchMedia("(display-mode: standalone)").matches) $("#install").hidden = false;
 
 // ════════════════════════════════════════════════════════════════════════════
-// STRIPPENKAART
+// STRIPPENKAART — mobile-first afboeken
+// ----------------------------------------------------------------------------
+// De coach gebruikt dit scherm met één hand, staand naast de groep. Daarom is de
+// pagina één lijst met grote tikvlakken en één actie onderaan:
+//   openen → aantikken → "1 strip afboeken bij X geselecteerd" → bevestigen → klaar.
+//
+// Drie dingen die de oude kaartweergave niet kon en die hier structureel zijn:
+//   • de selectie leeft in `skSel` (een Set met NAMEN), niet in de DOM — geen enkele
+//     hertekening kan hem kwijtraken, ook filteren niet;
+//   • saldo's veranderen pas op het SERVERANTWOORD (behalve offline, waar de
+//     wachtrij het herstelpad is) — er staat nooit een verzonnen stand op het scherm;
+//   • één groepsafboeking is één request en één write; dubbeltikken kan er geen twee
+//     van maken (`skBezig` + idempotentiesleutel + stand-controle op de server).
 // ════════════════════════════════════════════════════════════════════════════
+
+// "Bijna leeg" is één regel voor de hele app: Home ("nog 1 training") en deze lijst
+// mogen nooit een ander moment alarmerend vinden.
+const KAART_BIJNA = 1;
+
+let skKaarten = [];              // laatst bevestigde serverwaarheid
+const skSel = new Set();         // geselecteerde namen — overleeft elke hertekening
+const skRijen = new Map();       // naam -> rij-element (geen selector-quoting op namen)
+let skFilter = "";
+let skBezig = false;             // slot tegen dubbeltap/dubbelklik
+let skLaatsteBatch = null;       // {batch_id, aantal, deelnemers} zolang undo mag
+
+const skActief = k => k.rest > 0;
+const skZichtbaar = naam => !skFilter || naam.toLowerCase().includes(skFilter);
+
 async function laad() {
   const lijst = $("#lijst");
-  if (!lijst.children.length) skeleton(lijst, 3);
+  if (!lijst.children.length && !skKaarten.length) skeleton(lijst, 4);
   let data;
   try { data = await api("/api/kaarten"); }
-  catch { lijst.innerHTML = leegState("clock", "Offline — je ziet de laatst bekende stand.", "Afboekingen gaan mee zodra je weer online bent."); return; }
-  bronStatus(data.cloud);
-  lijst.innerHTML = "";
-  if (!data.kaarten.length) {
-    lijst.innerHTML = '<div class="leeg">' + ic("ticket") + '<p>Nog geen strippenkaarten.<br>Voeg er hierboven een toe.</p></div>';
+  catch {
+    // Een mislukte VERVERSING mag een werkende lijst niet wegvagen: dan verliest de
+    // coach midden in een training zijn selectie én zijn overzicht.
+    if (!skKaarten.length) foutState(lijst, laad, "Offline — nog geen stand opgehaald.");
+    else melding("Geen verbinding — je ziet de laatst bekende stand.", true);
     return;
   }
-  data.kaarten.forEach(k => lijst.appendChild(kaartEl(k)));
-}
-
-// Signatuur-ring: omtrek van r=31 → vullen op basis van gebruikt/totaal (echte data)
-const RING_C = 2 * Math.PI * 31;   // ≈ 194.8
-function setRing(el, gebruikt, totaal) {
-  const rest = Math.max(0, totaal - gebruikt);
-  const frac = totaal ? Math.min(1, gebruikt / totaal) : 0;
-  const arc = $(".ring-arc", el);
-  arc.style.strokeDasharray = RING_C;
-  if (!arc.style.strokeDashoffset) arc.style.strokeDashoffset = RING_C;   // leeg starten → loopt vol
-  requestAnimationFrame(() => { arc.style.strokeDashoffset = RING_C * (1 - frac); });
-  $(".ring-rest", el).textContent = rest;
-  $(".ring-tot", el).textContent = "van " + totaal;
-  const st = $(".k-status", el);
-  if (rest <= 0) { st.className = "k-status op"; st.innerHTML = `${ic("alert")} vol`; }
-  else if (rest <= 1) { st.className = "k-status warn"; st.innerHTML = `${ic("alert")} bijna vol`; }
-  else { st.className = "k-status ok"; st.innerHTML = `${ic("check")} op schema`; }
-}
-
-function kaartEl(k) {
-  const el = $("#kaart-tpl").content.firstElementChild.cloneNode(true);
-  el.dataset.naam = k.naam; el.dataset.totaal = k.totaal; el.dataset.gebruikt = k.gebruikt;
-  $(".k-naam", el).textContent = k.naam;
-  $(".k-tel", el).textContent = k.telefoon || "geen nummer";
-  el.classList.toggle("bijna", k.rest > 0 && k.rest <= 1);
-  el.classList.toggle("op", k.rest <= 0);
-  setRing(el, k.gebruikt, k.totaal);
-  $(".k-laatst", el).textContent = k.laatst ? "Laatst afgeboekt: " + nlDatum(k.laatst) : "";
-
-  const afBtn = $(".k-af", el);
-  afBtn.disabled = k.rest <= 0;
-  afBtn.addEventListener("click", () => afboek(k.naam, el));
-  const tBtn = $(".k-terug", el);
-  tBtn.disabled = k.gebruikt <= 0;
-  tBtn.addEventListener("click", () => actie(`/api/kaarten/${encodeURIComponent(k.naam)}/terug`, "POST"));
-  $(".k-del", el).addEventListener("click", () => {
-    if (confirm(`Strippenkaart van ${k.naam} verwijderen?`))
-      actie(`/api/kaarten/${encodeURIComponent(k.naam)}`, "DELETE");
+  bronStatus(data.cloud);
+  skKaarten = data.kaarten || [];
+  // Namen die niet meer bestaan of geen strippen meer hebben, kunnen niet geselecteerd blijven.
+  [...skSel].forEach(n => {
+    const k = skKaarten.find(x => x.naam === n);
+    if (!k || !skActief(k)) skSel.delete(n);
   });
-  addSwipe(el);
-  return el;
+  skTeken();
 }
 
-async function actie(url, method) {
+// ── Tekenen ─────────────────────────────────────────────────────────────────
+// Actieve kaarten bovenaan, lege eronder; binnen een groep alfabetisch (de server
+// levert al op naam gesorteerd, dit borgt alleen de tweedeling).
+function skSorteer(lijst) {
+  return [...lijst].sort((a, b) =>
+    (a.rest <= 0) - (b.rest <= 0) || a.naam.localeCompare(b.naam, "nl"));
+}
+
+function skRijBinnen(k) {
+  const leeg = k.rest <= 0;
+  const sub = `${k.gebruikt}/${k.totaal}` + (k.laatst ? " · laatst " + nlDatum(k.laatst) : "");
+  return `<button class="sk-kies" type="button" aria-pressed="false">
+      <span class="sk-vink" aria-hidden="true">${ic("check")}</span>
+      <span class="sk-mid"><span class="sk-naam">${esc(k.naam)}</span><span class="sk-sub">${esc(sub)}</span></span>
+      <span class="sk-saldo">${leeg ? "OP" : esc(k.rest + " over")}</span>
+    </button>
+    <button class="sk-meer" type="button" aria-expanded="false" aria-label="Details ${esc(k.naam)}">${ic("chevron")}</button>
+    <div class="sk-detail" hidden></div>`;
+}
+
+function skTeken() {
+  const lijst = $("#lijst");
+  lijst.innerHTML = "";
+  skRijen.clear();
+  if (!skKaarten.length) {
+    lijst.innerHTML = leegState("ticket", "Nog geen strippenkaarten.",
+      "Voeg er hieronder een toe, of importeer je contacten.");
+    skTelling(); skBalk();
+    return;
+  }
+  skSorteer(skKaarten).forEach(k => {
+    const rij = document.createElement("div");
+    rij.className = "sk-rij";
+    rij.dataset.naam = k.naam;
+    rij.innerHTML = skRijBinnen(k);
+    lijst.appendChild(rij);
+    skRijen.set(k.naam, rij);
+    skVerversRij(k);
+  });
+  skTelling(); skBalk();
+}
+
+// Eén rij bijwerken zonder de lijst opnieuw op te bouwen: dit is het pad na een
+// afboeking, na undo, bij selecteren en bij filteren.
+function skVerversRij(k) {
+  const rij = skRijen.get(k.naam);
+  if (!rij) return;
+  const leeg = k.rest <= 0, bijna = !leeg && k.rest <= KAART_BIJNA;
+  rij.classList.toggle("is-critical", leeg);
+  rij.classList.toggle("is-attention", bijna);
+  rij.classList.toggle("is-calm", !leeg && !bijna);
+  rij.classList.toggle("sk-leeg", leeg);
+  rij.classList.toggle("sk-aan", skSel.has(k.naam));
+  rij.classList.toggle("sk-uit", !skZichtbaar(k.naam));
+  const saldo = $(".sk-saldo", rij); if (saldo) saldo.textContent = leeg ? "OP" : k.rest + " over";
+  const sub = $(".sk-sub", rij);
+  if (sub) sub.textContent = `${k.gebruikt}/${k.totaal}` + (k.laatst ? " · laatst " + nlDatum(k.laatst) : "")
+    + (k.wacht ? " · ⏳ wordt verzonden" : "");
+  const kies = $(".sk-kies", rij);
+  if (kies) { kies.setAttribute("aria-pressed", skSel.has(k.naam) ? "true" : "false"); kies.disabled = leeg; }
+}
+
+function skVerversAlle() { skKaarten.forEach(skVerversRij); }
+
+function skTelling() {
+  const el = $("#sk-telling"); if (!el) return;
+  const actief = skKaarten.filter(skActief);
+  const zichtbaar = actief.filter(k => skZichtbaar(k.naam)).length;
+  const leeg = skKaarten.length - actief.length;
+  // Kort houden: naast twee knoppen is er op 375px geen ruimte voor een volzin.
+  el.textContent = skFilter
+    ? `${zichtbaar} van ${actief.length} actief`
+    : `${actief.length} actief` + (leeg ? ` · ${leeg} leeg` : "");
+  const alles = $("#sk-alles"); if (alles) alles.hidden = zichtbaar === 0;
+  const wis = $("#sk-wis"); if (wis) wis.hidden = skSel.size === 0;
+}
+
+// ── Selecteren ──────────────────────────────────────────────────────────────
+function skToggle(naam) {
+  const k = skKaarten.find(x => x.naam === naam);
+  if (!k || !skActief(k)) return;            // een lege kaart kan niet meedoen
+  if (skSel.has(naam)) skSel.delete(naam); else skSel.add(naam);
+  skVerversRij(k);
+  skTelling(); skBalk();
+  skVerbergUitkomst();
+  haptic(8);
+}
+
+function skAllesZichtbaar() {
+  skKaarten.filter(k => skActief(k) && skZichtbaar(k.naam)).forEach(k => skSel.add(k.naam));
+  skVerversAlle(); skTelling(); skBalk(); skVerbergUitkomst();
+}
+
+function skWis() {
+  skSel.clear();
+  skVerversAlle(); skTelling(); skBalk();
+}
+
+function skZoek(waarde) {
+  skFilter = String(waarde || "").trim().toLowerCase();
+  // Alleen de ZICHTBAARHEID verandert; wie geselecteerd was blijft geselecteerd, ook
+  // als het filter hem even wegneemt. De balk zegt er dan expliciet bij hoeveel.
+  skVerversAlle(); skTelling(); skBalk();
+}
+
+// ── Sticky actiebalk ────────────────────────────────────────────────────────
+function skBalk() {
+  const bar = $("#sk-bar"); if (!bar) return;
+  const n = skSel.size;
+  const box = $("#sk-uitkomst");
+  // De balk is er zodra er íets te tonen is: een voorgenomen actie of de uitkomst
+  // van de vorige. Beide nooit tegelijk — na een geslaagde afboeking is de selectie leeg.
+  bar.hidden = n === 0 && !(box && !box.hidden);
+  const actie = $("#sk-bar-actie"); if (actie) actie.hidden = n === 0;
+  if (!n) return;
+  // Alleen wanneer het filter iets uit het zicht houdt, zegt de balk dat er ook
+  // onzichtbare deelnemers meegaan — anders blijft hij één rustige regel.
+  const verborgen = [...skSel].filter(nm => !skZichtbaar(nm)).length;
+  const let_ = $("#sk-bar-let");
+  if (let_) {
+    let_.hidden = verborgen === 0;
+    let_.textContent = verborgen
+      ? `${nlAantal(verborgen, "geselecteerde staat", "geselecteerden staan")} buiten het filter — gaat wel mee.`
+      : "";
+  }
+  const af = $("#sk-af");
+  if (af) {
+    af.textContent = skBezig ? "Bezig met afboeken…" : `1 strip afboeken bij ${n} geselecteerd`;
+    af.disabled = skBezig;
+  }
+}
+
+function skZetBezig(aan) { skBezig = aan; skBalk(); }
+
+// ── Afboeken: één bevestiging, één batch, één write ─────────────────────────
+const skClientId = () =>
+  (self.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+async function skAfboeken() {
+  if (skBezig) return;                       // tweede tik van een dubbeltap valt hier stil
+  const namen = [...skSel];
+  if (!namen.length) return;
+  const akkoord = await bevestigActie({
+    titel: `1 strip afboeken bij ${nlAantal(namen.length, "deelnemer", "deelnemers")}`,
+    tekst: "Bij iedereen hieronder gaat er één strip af.",
+    detail: namen.join(" · "),
+    bevestig: "Afboeken",
+    focusTerug: $("#sk-af"),
+  });
+  if (!akkoord || skBezig) return;
+  // De stand zoals de COACH hem zag: wijkt de server af, dan is er iets tussendoor
+  // gekomen (tweede tabblad, andere coach) en boekt de server niets af.
+  const verwacht = {};
+  namen.forEach(n => { const k = skKaarten.find(x => x.naam === n); if (k) verwacht[n] = k.gebruikt; });
+  const cid = skClientId();
+
+  if (!navigator.onLine) return skOffline(namen, cid);
+
+  skZetBezig(true);
+  const r = await jpost("/api/kaarten/afboeken", { namen, verwacht, client_id: cid }).catch(() => null);
+  skZetBezig(false);
+  if (!r) {
+    // Onbekende uitkomst: niets bijwerken, selectie laten staan zodat opnieuw proberen
+    // één tik is. De stand-controle op de server maakt een dubbele boeking onmogelijk.
+    melding("Geen verbinding — mogelijk niets afgeboekt. Ververs en probeer opnieuw.", true);
+    return;
+  }
+  if (!r.ok) {
+    melding(r.err || "Afboeken mislukt.", true);
+    if (r.conflict) await laad();            // toon de ECHTE stand; selectie blijft bruikbaar
+    return;
+  }
+  skPasToe(r.deelnemers, r.datum);
+  skSel.clear();
+  skVerversAlle(); skTelling();
+  skLaatsteBatch = r;
+  skUitkomst(r);                             // zet de balk zelf op de uitkomst-staat
+  // Geen toast erbij: de balk zegt hetzelfde, staat op dezelfde plek als de knop die
+  // net is ingedrukt, en de toast zou er bovenop komen te liggen.
+  haptic(18);
+}
+
+// Serverantwoord → lokale stand. Nooit andersom.
+function skPasToe(rijen, datum) {
+  (rijen || []).forEach(d => {
+    const k = skKaarten.find(x => x.naam === d.naam);
+    if (!k) return;
+    k.rest = d.rest; k.totaal = d.totaal; k.gebruikt = d.gebruikt;
+    if (datum) k.laatst = datum;
+    else if (d.laatst !== undefined) k.laatst = d.laatst;
+    delete k.wacht;
+    if (!skActief(k)) skSel.delete(k.naam);
+    skVerversRij(k);
+  });
+}
+
+// Offline: de wachtrij IS het herstelpad (flush stuurt na en haalt daarna de echte
+// stand op). Daarom mag het saldo hier wél vooruitlopen — mét zichtbaar merkteken.
+function skOffline(namen, cid) {
+  enqueue({ url: "/api/kaarten/afboeken", body: { namen, client_id: cid } });
+  namen.forEach(n => {
+    const k = skKaarten.find(x => x.naam === n);
+    if (!k) return;
+    k.gebruikt += 1; k.rest = Math.max(0, k.totaal - k.gebruikt); k.wacht = true;
+    skVerversRij(k);
+  });
+  skSel.clear();
+  skVerversAlle(); skTelling(); skBalk();
+  melding(`Offline — ${nlAantal(namen.length, "afboeking wacht", "afboekingen wachten")} op verzending.`);
+}
+
+// ── Uitkomst + ongedaan maken ───────────────────────────────────────────────
+function skVerbergUitkomst() {
+  const box = $("#sk-uitkomst");
+  if (box && !box.hidden) { box.hidden = true; box.innerHTML = ""; skBalk(); }
+}
+
+function skUitkomst(r) {
+  const box = $("#sk-uitkomst"); if (!box) return;
+  const metNr = (r.deelnemers || []).filter(d => d.wa_link);
+  box.innerHTML = `<div class="sk-uit is-success">
+      <span class="sk-uit-t">1 strip afgeboekt bij ${esc(nlAantal(r.aantal, "deelnemer", "deelnemers"))}</span>
+      <button class="btn small ghost" data-undo type="button">Ongedaan maken</button>
+    </div>`
+    + (metNr.length ? `<div class="sk-wa">${metNr.map((d, i) =>
+      `<a class="btn small sk-wa-btn" href="${esc(d.wa_link)}" target="_blank" rel="noopener" data-wa="${i}">${ic("message")} ${esc(d.naam.split(" ")[0])}</a>`).join("")}</div>` : "");
+  box.hidden = false;
+  skBalk();                                  // balk blijft staan, nu met de uitkomst
+  const undo = $("[data-undo]", box);
+  if (undo) undo.addEventListener("click", skUndo);
+}
+
+async function skUndo() {
+  if (!skLaatsteBatch || skBezig) return;
+  const id = skLaatsteBatch.batch_id;
+  skLaatsteBatch = null;                     // tweede tik vindt niets meer (ook server-side niet)
+  const undo = $("[data-undo]", $("#sk-uitkomst"));
+  if (undo) undo.disabled = true;
+  const r = await jpost("/api/kaarten/terugdraaien", { batch_id: id }).catch(() => null);
+  if (!r) { melding("Geen verbinding — niets teruggedraaid.", true); await laad(); return; }
+  skVerbergUitkomst();
+  if (!r.ok) { melding(r.err || "Terugdraaien mislukt.", true); await laad(); return; }
+  skPasToe(r.kaarten);
+  skTelling(); skBalk();
+  melding(`Teruggedraaid bij ${nlAantal(r.aantal, "deelnemer", "deelnemers")}.`);
+}
+
+// ── Detail per persoon (secundair, standaard dicht) ─────────────────────────
+function skDetail(naam) {
+  const rij = skRijen.get(naam); if (!rij) return;
+  const box = $(".sk-detail", rij), knop = $(".sk-meer", rij);
+  if (!box) return;
+  const open = box.hidden === false;
+  if (open) { box.hidden = true; if (knop) knop.setAttribute("aria-expanded", "false"); return; }
+  const k = skKaarten.find(x => x.naam === naam) || {};
+  const hist = (k.historie || []).slice().reverse();
+  box.innerHTML = `<p class="sk-d-tel">${esc(k.telefoon || "geen telefoonnummer")}</p>`
+    + (hist.length
+      ? `<p class="sk-d-h">Laatste afboekingen: ${hist.map(h => esc(nlDatum(h))).join(" · ")}</p>`
+      : `<p class="sk-d-h">Nog niets afgeboekt.</p>`)
+    + `<div class="sk-d-acts">
+         <button class="btn small ghost" data-terug type="button">Strip terug</button>
+         <button class="btn small danger-ghost" data-del type="button">${ic("trash")} Kaart verwijderen</button>
+       </div>`;
+  box.hidden = false;
+  if (knop) knop.setAttribute("aria-expanded", "true");
+  const t = $("[data-terug]", box);
+  if (t) t.addEventListener("click", () => skKaartActie(naam, `/api/kaarten/${encodeURIComponent(naam)}/terug`, "POST"));
+  const d = $("[data-del]", box);
+  if (d) d.addEventListener("click", async () => {
+    const akkoord = await bevestigActie({
+      titel: "Strippenkaart verwijderen", tekst: `De kaart van ${naam} wordt verwijderd.`,
+      detail: "De historie van deze kaart verdwijnt mee.", bevestig: "Verwijderen",
+    });
+    if (akkoord) skKaartActie(naam, `/api/kaarten/${encodeURIComponent(naam)}`, "DELETE");
+  });
+}
+
+async function skKaartActie(naam, url, method) {
   const r = await api(url, { method }).catch(() => null);
   if (!r) return melding("Geen verbinding.", true);
   if (!r.ok) return melding(r.err || "Er ging iets mis.", true);
-  laad();
-}
-
-function optimistischAf(el) {
-  const tot = +el.dataset.totaal, geb = +el.dataset.gebruikt + 1;
-  el.dataset.gebruikt = geb;
-  const rest = Math.max(0, tot - geb);
-  el.classList.toggle("bijna", rest > 0 && rest <= 1);
-  el.classList.toggle("op", rest <= 0);
-  setRing(el, geb, tot);                       // ring loopt vol + status + getal
-  const restEl = $(".ring-rest", el);
-  restEl.classList.remove("bump"); void restEl.offsetWidth; restEl.classList.add("bump");
-  const fg = $(".swipe-fg", el);
-  fg.classList.remove("flash"); void fg.offsetWidth; fg.classList.add("flash");
-  $(".k-af", el).disabled = rest <= 0;
-  return rest;
-}
-
-async function afboek(naam, el) {
-  if (+el.dataset.totaal - +el.dataset.gebruikt <= 0) return;
-  haptic(15);
-  optimistischAf(el);
-  const url = `/api/kaarten/${encodeURIComponent(naam)}/afboeken`;
-  if (!navigator.onLine) {
-    enqueue({ url });
-    $(".k-laatst", el).textContent = "Zojuist afgeboekt · ⏳ wordt verzonden zodra je online bent";
-    return;
-  }
-  const r = await api(url, { method: "POST" }).catch(() => null);
-  if (!r) { enqueue({ url }); $(".k-laatst", el).textContent = "Zojuist afgeboekt · ⏳ wordt nog verzonden"; return; }
-  if (!r.ok) { melding(r.err || "Afboeken mislukt.", true); return laad(); }
+  skSel.delete(naam);
+  skLaatsteBatch = null; skVerbergUitkomst();
   await laad();
-  const kaart = [...document.querySelectorAll(".kaart")].find(c => c.dataset.naam === naam);
-  if (kaart) toonWA(kaart, r.info);
 }
 
-function toonWA(kaart, info) {
-  const wa = $(".wa", kaart);
-  const link = $(".wa-btn", wa);
-  if (info.wa_link) { link.href = info.wa_link; link.style.display = ""; $(".wa-msg", wa).textContent = info.bericht; }
-  else { link.style.display = "none"; $(".wa-msg", wa).textContent = info.bericht + "  (geen telefoonnummer — vul het bij de kaart in)"; }
-  wa.classList.remove("hidden");
-  kaart.scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-
-function addSwipe(el) {
-  const fg = $(".swipe-fg", el);
-  let x0 = 0, dx = 0, drag = false;
-  fg.addEventListener("pointerdown", e => {
-    if (e.target.closest("button,a")) return;
-    drag = true; x0 = e.clientX; dx = 0;
-    fg.style.transition = "none"; fg.setPointerCapture(e.pointerId);
+// ── Binden (één keer, gedelegeerd — 30 rijen kosten geen 30 listeners) ──────
+function skBind() {
+  const lijst = $("#lijst");
+  if (!lijst || lijst.dataset.gebonden) return;
+  lijst.dataset.gebonden = "1";
+  lijst.addEventListener("click", e => {
+    const rij = e.target.closest && e.target.closest(".sk-rij");
+    if (!rij) return;
+    if (e.target.closest(".sk-meer")) skDetail(rij.dataset.naam);
+    else if (e.target.closest(".sk-kies")) skToggle(rij.dataset.naam);
   });
-  fg.addEventListener("pointermove", e => {
-    if (!drag) return;
-    dx = Math.min(0, e.clientX - x0);
-    fg.style.transform = `translateX(${Math.max(dx, -150)}px)`;
+  const q = $("#sk-q"); if (q) q.addEventListener("input", () => skZoek(q.value));
+  const af = $("#sk-af"); if (af) af.addEventListener("click", skAfboeken);
+  const alles = $("#sk-alles"); if (alles) alles.addEventListener("click", skAllesZichtbaar);
+  // Terug in de app na een tussendoortje (WhatsApp, camera): de saldi kunnen intussen
+  // door de andere coach zijn gewijzigd. Alleen als deze pagina open staat, en alleen
+  // na een echte onderbreking — een korte app-switch hoeft geen extra read te kosten.
+  let sinds = Date.now();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    const weg = Date.now() - sinds; sinds = Date.now();
+    if (weg > 20000 && huidigeView === "strippen" && !skBezig) laad();
   });
-  const eind = () => {
-    if (!drag) return;
-    drag = false; fg.style.transition = ""; fg.style.transform = "";
-    const rest = +el.dataset.totaal - +el.dataset.gebruikt;
-    if (dx < -90 && rest > 0) afboek(el.dataset.naam, el);
-  };
-  fg.addEventListener("pointerup", eind);
-  fg.addEventListener("pointercancel", eind);
+  const wis = $("#sk-wis"); if (wis) wis.addEventListener("click", skWis);
 }
+skBind();
 
 $("#n-add").addEventListener("click", async () => {
   const naam = $("#n-naam").value.trim(), telefoon = $("#n-tel").value.trim();

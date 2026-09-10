@@ -105,7 +105,14 @@ class TestDatums:
         assert "esc(sub.ingezonden)" not in f
 
     def test_overige_coachkaarten_normaliseren_datums(self):
-        assert "nlDatum(k.laatst)" in _fn("function kaartEl(")              # strippenkaart
+        # Strippenkaart: de ring-kaart is vervangen door de mobiele afboeklijst. De BELOFTE
+        # blijft dezelfde — nergens een rauwe ISO-datum in coach-facing tekst — dus toetsen
+        # we de renderer die er nu is, plus de detailregel met de afboekhistorie.
+        assert "nlDatum(k.laatst)" in _fn("function skRijBinnen(")          # strippenkaart-rij
+        assert "nlDatum(k.laatst)" in _fn("function skVerversRij(")         # dezelfde rij na een write
+        assert "nlDatum(h)" in _fn("function skDetail(")                    # historie in het detail
+        for verboden in ("esc(k.laatst)", "esc(h)}"):
+            assert verboden not in _APP
         assert "nlDatum(k.datum_grens)" in _fn("function tekenAdmin(")      # administratie
         assert "nlDatum(r.datum)" in _fn("function tpRenderSignalen(")      # teampuls
         assert "nlDatum(x.date)" in _fn("function dsStream(")               # dossier-stream

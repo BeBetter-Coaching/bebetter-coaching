@@ -13,6 +13,8 @@ import os
 import re
 import sys
 import urllib.parse
+import uuid
+from collections import OrderedDict
 from datetime import date
 
 # repo-root op het pad zodat we het bestaande intake_store kunnen hergebruiken
@@ -118,6 +120,9 @@ def _view(naam: str, k: dict) -> dict:
         "rest": max(0, totaal - gebruikt),
         "telefoon": k.get("telefoon", ""),
         "laatst": hist[-1] if hist else None,
+        # Staart van de bestaande historie — puur lezen, geen tweede administratie.
+        # De lijst is per kaart klein (10/20 strips), dus dit maakt de payload niet zwaar.
+        "historie": [h for h in hist[-6:] if isinstance(h, str)],
     }
 
 
@@ -218,3 +223,156 @@ def import_commit(rows: list[dict], aantal: int) -> tuple[bool, str, dict]:
             toegevoegd += 1
     ok, err = intake_store.save_strippenkaarten(kaarten)
     return ok, err, {"toegevoegd": toegevoegd, "aangevuld": aangevuld}
+
+
+# ── Groepsafboeking: één validatie, één mutatie, één write ───────────────────
+# De coach staat met de telefoon in de hand naast de groep. Zes losse POSTs zijn
+# daar drie dingen tegelijk: traag (elke write is een GitHub GET+PUT), niet
+# atomair (deelnemer 4 kan falen terwijl 1-3 al geboekt zijn) en niet te
+# bevestigen (welke stand gold er toen de coach op de knop drukte?).
+# Daarom één contract: valideer ALLE deelnemers vóór er iets muteert, muteer in
+# geheugen, en schrijf de hele kaartenset in ÉÉN `save_strippenkaarten`. Die
+# opslag schrijft het volledige JSON-bestand, dus alles-of-niets komt hier
+# gratis — er bestaat geen half geschreven batch.
+
+_MAX_BATCH = 60                       # ruim boven de grootste groep; vangnet tegen onzin
+
+
+def _rest(k: dict) -> int:
+    return max(0, int(k.get("totaal", 10)) - int(k.get("gebruikt", 0)))
+
+
+# Idempotentie: dezelfde `client_id` twee keer (dubbeltik, retry na een trage
+# verbinding) levert het EERSTE resultaat terug in plaats van een tweede write.
+# Begrensd op 32 — een ongelimiteerde dict is precies de fout uit de OOM-ronde.
+_IDEMPOTENT: "OrderedDict[str, dict]" = OrderedDict()
+_IDEMPOTENT_MAX = 32
+
+
+def _onthoud(client_id: str, res: dict) -> None:
+    if not client_id:
+        return
+    _IDEMPOTENT[client_id] = res
+    while len(_IDEMPOTENT) > _IDEMPOTENT_MAX:
+        _IDEMPOTENT.popitem(last=False)
+
+
+def afboeken_batch(namen: list, verwacht: dict | None = None,
+                   client_id: str = "") -> tuple[bool, str, dict]:
+    """Boek bij ELKE genoemde deelnemer precies één strip af — of bij niemand.
+
+    `verwacht` = {naam: gebruikt} zoals de CLIENT het zag. Wijkt de server af,
+    dan keek de coach naar een verouderde stand (tweede tabblad, andere coach,
+    Streamlit) en weigeren we de hele batch: liever een eerlijke melding dan een
+    stilzwijgend andere uitkomst dan de bevestiging beloofde.
+    """
+    # Volgorde behouden, dubbelen eruit: twee keer dezelfde naam is één strip.
+    gezien, uniek = set(), []
+    for n in (namen or []):
+        n = (n or "").strip()
+        if n and n not in gezien:
+            gezien.add(n)
+            uniek.append(n)
+    if not uniek:
+        return False, "Geen deelnemers geselecteerd.", {}
+    if len(uniek) > _MAX_BATCH:
+        return False, f"Te veel deelnemers in één keer (max {_MAX_BATCH}).", {}
+
+    cid = (client_id or "").strip()[:64]
+    if cid and cid in _IDEMPOTENT:
+        # Zelfde tik, tweede request: geef exact hetzelfde antwoord, schrijf niets.
+        return True, "", dict(_IDEMPOTENT[cid], herhaald=True)
+
+    kaarten = intake_store.load_strippenkaarten()
+
+    # ── 1. Volledige validatie VÓÓR elke mutatie ────────────────────────────
+    onbekend = [n for n in uniek if n not in kaarten]
+    if onbekend:
+        return False, "Onbekende strippenkaart: " + ", ".join(onbekend), {
+            "conflict": "onbekend", "namen": onbekend}
+    leeg = [n for n in uniek if _rest(kaarten[n]) <= 0]
+    if leeg:
+        # Zonder deze grens telt `gebruikt` gewoon door en gaat het saldo stil naar -1.
+        return False, "Geen strippen meer over bij: " + ", ".join(leeg), {
+            "conflict": "leeg", "namen": leeg}
+    if verwacht:
+        stale = [n for n in uniek
+                 if str(verwacht.get(n, "")) != "" and
+                 int(verwacht[n]) != int(kaarten[n].get("gebruikt", 0))]
+        if stale:
+            return False, ("De stand is inmiddels gewijzigd bij: " + ", ".join(stale)
+                           + ". Niets afgeboekt — ververs en probeer opnieuw."), {
+                "conflict": "stale", "namen": stale}
+
+    # ── 2. Muteren in geheugen ──────────────────────────────────────────────
+    bid = uuid.uuid4().hex[:12]
+    vandaag = date.today().isoformat()
+    deelnemers = []
+    for n in uniek:
+        k = kaarten[n]
+        totaal = int(k.get("totaal", 10))
+        geb = int(k.get("gebruikt", 0)) + 1
+        k["gebruikt"] = geb
+        k.setdefault("historie", []).append(vandaag)
+        # Het transactiespoor voor 'ongedaan maken'. `gebruikt_na` is de bewijslast:
+        # is de kaart daarna nog een keer geraakt (app, Streamlit, offline-queue),
+        # dan klopt dit getal niet meer en weigert `batch_terug` de hele undo.
+        k["laatste_batch"] = {"id": bid, "gebruikt_na": geb, "datum": vandaag}
+        rest = max(0, totaal - geb)
+        voornaam = n.split()[0] if n else n
+        bericht = afboek_bericht(voornaam, rest, totaal)
+        deelnemers.append({
+            "naam": n, "rest": rest, "totaal": totaal, "gebruikt": geb,
+            "bericht": bericht, "wa_link": wa_link(k.get("telefoon", ""), bericht),
+            "telefoon": k.get("telefoon", ""),
+        })
+
+    # ── 3. Eén write ────────────────────────────────────────────────────────
+    ok, err = intake_store.save_strippenkaarten(kaarten)
+    if not ok:
+        # Niets opgeslagen = niets gebeurd: de mutatie zat alleen in dit dict.
+        return False, err or "Opslaan mislukt.", {}
+
+    res = {"batch_id": bid, "aantal": len(deelnemers), "deelnemers": deelnemers,
+           "datum": vandaag}
+    _onthoud(cid, res)
+    return True, "", res
+
+
+def batch_terug(batch_id: str) -> tuple[bool, str, dict]:
+    """Draai precies één groepsafboeking terug — of niets.
+
+    Terugdraaien mag alleen als de kaarten sindsdien onaangeroerd zijn: het
+    merkje `laatste_batch` moet nog van DEZE batch zijn én `gebruikt` moet nog
+    exact de stand van die batch hebben. Na afloop is het merkje weg, dus een
+    tweede undo van dezelfde batch vindt niets meer en doet niets.
+    """
+    bid = (batch_id or "").strip()
+    if not bid:
+        return False, "Geen afboeking om terug te draaien.", {}
+    kaarten = intake_store.load_strippenkaarten()
+    doel = [n for n, k in kaarten.items()
+            if ((k or {}).get("laatste_batch") or {}).get("id") == bid]
+    if not doel:
+        return False, "Deze afboeking is al teruggedraaid.", {"conflict": "weg"}
+
+    afwijkend = [n for n in doel
+                 if int(kaarten[n].get("gebruikt", 0))
+                 != int((kaarten[n]["laatste_batch"] or {}).get("gebruikt_na", -1))]
+    if afwijkend:
+        return False, ("Er is daarna al iets gewijzigd bij: " + ", ".join(afwijkend)
+                       + ". Niets teruggedraaid."), {"conflict": "gewijzigd", "namen": afwijkend}
+
+    for n in sorted(doel):
+        k = kaarten[n]
+        k["gebruikt"] = max(0, int(k.get("gebruikt", 0)) - 1)
+        if k.get("historie"):
+            k["historie"].pop()
+        k.pop("laatste_batch", None)          # merkje weg → tweede undo doet niets
+    ok, err = intake_store.save_strippenkaarten(kaarten)
+    if not ok:
+        return False, err or "Opslaan mislukt.", {}
+    return True, "", {
+        "aantal": len(doel),
+        "kaarten": [_view(n, kaarten[n]) for n in sorted(doel)],
+    }

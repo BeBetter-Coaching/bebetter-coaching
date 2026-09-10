@@ -158,6 +158,19 @@ class NieuweKaart(BaseModel):
     telefoon: str = ""
 
 
+class GroepAfboeken(BaseModel):
+    namen: list[str] = []
+    # {naam: gebruikt} zoals de CLIENT het zag — de stale-detectie.
+    verwacht: dict[str, int] = {}
+    # Idempotentiesleutel per tik: een tweede request met dezelfde sleutel geeft
+    # het eerste antwoord terug in plaats van nog een strip af te boeken.
+    client_id: str = ""
+
+
+class BatchTerug(BaseModel):
+    batch_id: str = ""
+
+
 class ImportText(BaseModel):
     text: str = ""
 
@@ -781,6 +794,23 @@ def kaarten():
 def nieuwe_kaart(body: NieuweKaart):
     ok, err = core.add_kaart(body.naam, body.aantal, body.telefoon)
     return {"ok": ok, "err": err}
+
+
+@app.post("/api/kaarten/afboeken")            # groepsafboeking — ÉÉN write voor de hele groep
+def afboeken_groep(body: GroepAfboeken):
+    """Boekt bij elke geselecteerde deelnemer één strip af, of bij niemand.
+
+    Eén deelnemer is gewoon een groep van één: de app kent maar één afboekpad.
+    De losse `/{naam}/afboeken` blijft bestaan voor de offline-wachtrij van
+    oudere clients en voor gelijkheid met de Streamlit-app."""
+    ok, err, res = core.afboeken_batch(body.namen, body.verwacht, body.client_id)
+    return {"ok": ok, "err": err, **(res or {})}
+
+
+@app.post("/api/kaarten/terugdraaien")        # ongedaan maken van precies één groepsafboeking
+def kaarten_terugdraaien(body: BatchTerug):
+    ok, err, res = core.batch_terug(body.batch_id)
+    return {"ok": ok, "err": err, **(res or {})}
 
 
 @app.post("/api/kaarten/{naam}/afboeken")
