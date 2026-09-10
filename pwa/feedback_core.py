@@ -152,7 +152,7 @@ def _brein_context(w: dict) -> str:
         block = _ad.feedback_context_block(ak, w.get("workout_key", ""), athlete_raised_race=raised)
         w["_brein_diag"] = {k: block.get(k) for k in
                             ("source_gaps", "has_load", "complaint_areas", "complaint_new",
-                             "overall", "load_active")}
+                             "overall", "load_active", "recovery_negative", "missed_runs")}
         return (block.get("prompt_block") or "") if mode == "v2" else ""
     except Exception:
         return ""
@@ -676,7 +676,8 @@ def genereer(wid: str) -> str:
         import feedback_copy as _fc
         # De verplichte feitzinnen zijn APPLICATION-OWNED en worden verderop VERBATIM gevalideerd;
         # de opschoning mag ze dus niet wegdedupliceren (zie feedback_copy.clean_draft).
-        cleaned = _fc.clean_draft(tekst, protected=[m.get("sentence", "") for m in _mandatory])
+        cleaned = _fc.clean_draft(tekst, protected=[m.get("sentence", "") for m in _mandatory],
+                                  athlete_text=_atleet_tekst(w))
         if cleaned:                                          # nooit naar leeg opschonen
             tekst = cleaned
     except Exception:

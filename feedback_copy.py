@@ -62,9 +62,12 @@ def _key(sentence: str) -> str:
     return re.sub(r"\s+", " ", (sentence or "").lower()).strip(" .!?")
 
 
-def clean_draft(text: str, protected=()) -> str:
+def clean_draft(text: str, protected=(), athlete_text: str = "") -> str:
     """Deterministische CopyQuality-opschoning. Schrapt systeemtaal/defensieve zinnen, ontdubbelt
     exact + semantisch (klacht/follow-up per onderwerp één keer), houdt de rest in volgorde.
+
+    `athlete_text` = het bericht van de atleet; dat bepaalt hoeveel ruimte het concept krijgt
+    en welke zinnen als eerste sneuvelen als het te lang wordt (zie `_focus`).
 
     `protected` = de APPLICATION-OWNED zinnen uit de fact-pack (assemble_spine). Die zijn na de
     generatie VERPLICHT en worden verbatim gevalideerd (`feedback_facts.validate_draft`), dus deze
@@ -108,37 +111,162 @@ def clean_draft(text: str, protected=()) -> str:
             seen_complaint_area.add(area)
         seen_norm.add(norm)
         out.append((s, beschermd))
-    return " ".join(_focus(out, len(prot_exact))).strip()
+    return " ".join(_focus(out, len(prot_exact), athlete_text)).strip()
 
 
-# Een coachreactie is geen analyseverslag. De LENGTE was tot nu toe uitsluitend een
-# promptinstructie, terwijl diezelfde prompt tientallen voorwaardelijke 'noem dit ook'-
-# regels bevat; het model loste dat op door over élk onderwerp een zin te schrijven
-# (live: negen zinnen over voeding, taper, herstel én een schemawijziging op één
-# rommelige duurloop). Dit is het deterministische vangnet daaronder, geen stijlregel:
-# vijf vrije zinnen, plus ruimte voor elke APPLICATION-OWNED feitzin die er sowieso in
-# moet. Complexere cases hebben per constructie meer verplichte zinnen en krijgen dus
-# vanzelf meer ruimte. Bewust GEEN tekenlimiet: die kapt een nuttig antwoord middenin af.
-_VRIJE_ZINNEN = 5
+# R3.1 — de lengte volgt de INPUT, niet een vast aantal zinnen. R3 zette hier een harde cap
+# van vijf vrije zinnen; die was te mechanisch: bij een uitgebreide atleetreactie met meerdere
+# observaties en vragen sneuvelde er inhoud die de coach juist nodig had. Nu bepaalt de
+# hoeveelheid RELEVANTE input de ruimte, en wat er sneuvelt is wat het minst met die input te
+# maken heeft (coverage vóór brevity).
+#
+# Basis voor de training zelf; daarbovenop een zin per inhoudelijke atleetzin, per vraag en per
+# verplichte feitzin. Weinig input -> kort. Veel relevante input -> ruimte om alles te behandelen.
+_BASIS_ZINNEN = 3
 
 
-def _focus(zinnen, aantal_beschermd: int) -> list:
-    """Snoei een uitgelopen concept terug tot zijn kern. De SLOTZIN blijft altijd staan:
-    daar zit de vervolgstap of de check-in, en een bericht dat abrupt ophoudt is erger dan
-    een lange. Er verdwijnt dus alleen middenmoot, precies waar de algemene uitweiding zit."""
-    budget = _VRIJE_ZINNEN + aantal_beschermd
+def _budget(athlete_text: str, aantal_beschermd: int) -> int:
+    kern = len(kernpunten(athlete_text))
+    vragen = (athlete_text or "").count("?")
+    return _BASIS_ZINNEN + kern + vragen + aantal_beschermd
+
+
+# Drie tekens: korte inhoudswoorden ("gel", "pas", "arm") zijn precies de dingen waar de
+# atleet het over heeft. Functiewoorden komen in élke zin voor en verschuiven de RANGORDE
+# daarom nauwelijks — en die rangorde is het enige waar deze maat voor dient.
+_INHOUDSWOORD = re.compile(r"[a-zà-ü]{3,}", re.I)
+
+
+def _overlap(zin: str, atleet_woorden: set) -> int:
+    """Hoeveel inhoudswoorden deelt deze zin met het bericht van de atleet? Dit is de
+    deterministische maat voor 'gaat dit ergens over': een zin die niets deelt met wat de
+    atleet schreef en geen app-eigen feit draagt, is de algemene uitweiding."""
+    if not atleet_woorden:
+        return 0
+    return len(set(w.lower() for w in _INHOUDSWOORD.findall(zin or "")) & atleet_woorden)
+
+
+def _focus(zinnen, aantal_beschermd: int, athlete_text: str = "") -> list:
+    """Snoei een uitgelopen concept terug. Beschermde (app-eigen) zinnen en de SLOTZIN blijven
+    altijd staan; van de rest sneuvelt eerst wat het minst met het atleetbericht deelt. Zo kan
+    een wezenlijke vraag of klacht niet verdwijnen omdat de tekst anders te lang wordt."""
+    budget = _budget(athlete_text, aantal_beschermd) + aantal_beschermd
     vrij = [i for i, (_, beschermd) in enumerate(zinnen) if not beschermd]
     over = len(vrij) - budget
     if over <= 0:
         return [z for z, _ in zinnen]
-    # Van achteren naar voren schrappen, maar de LAATSTE vrije zin overslaan.
-    weg = set()
-    for i in reversed(vrij[:-1]):
-        if over <= 0:
-            break
-        weg.add(i)
-        over -= 1
+    woorden = set(w.lower() for w in _INHOUDSWOORD.findall(athlete_text or ""))
+    # Kandidaten: alles behalve de laatste vrije zin. Minste overlap eerst; bij gelijke
+    # overlap de latere zin (daar zit de uitloop), zodat de opening blijft staan.
+    kandidaten = sorted(vrij[:-1], key=lambda i: (_overlap(zinnen[i][0], woorden), -i))
+    weg = set(kandidaten[:over])
     return [z for i, (z, _) in enumerate(zinnen) if i not in weg]
+
+
+# ── Negatie: 'geen last van knie' is GEEN klachtmelding ──────────────────────
+# De klacht-check-in vuurde op een kale substring-match van het lichaamsdeel, dus
+# "geen last van bovenbeen en knie" leverde "hou even in de gaten hoe je knie hierop
+# reageert" op — precies het tegenovergestelde van wat de atleet schreef.
+#
+# Twee grenzen samen, allebei uit bestaand vocabulaire; geen lijst met Nederlandse
+# negatiezinnen:
+#   1. het lichaamsdeel moet in dezelfde deelzin staan als een KLACHTWOORD (`_COMPLAINT_WORD`,
+#      dezelfde set die `classify_intent` al gebruikt) — "knie voelde goed" is geen melding;
+#   2. die deelzin mag niet ontkend zijn.
+# De ontkenners zijn de vier Nederlandse grammaticale negatiewoorden, niet een opsomming
+# van formuleringen. Een contrastwoord ná de ontkenning heft hem weer op
+# ("geen last van knie, wel pijn in mijn kuit").
+_NEGATIE = re.compile(r"\b(geen|niet|nergens|zonder)\b", re.I)
+_CONTRAST = re.compile(r"\b(wel|maar|alleen|echter|behalve)\b", re.I)
+# Deelzin-grenzen: leestekens en nevenschikkers. Bewust grof — een deelzin hoeft niet
+# grammaticaal correct afgebakend te zijn om te zien of er een ontkenning bij hoort.
+_DEELZIN = re.compile(r"[.!?;:,]|\b(maar|echter|alleen|hoewel|terwijl)\b", re.I)
+
+
+def _deelzinnen(tekst: str) -> list:
+    return [d for d in _DEELZIN.split(tekst or "") if d and len(d.strip()) > 1]
+
+
+def negatie_rond(tekst: str, woord: str) -> bool:
+    """Wordt `woord` in DEZE tekst ontkend? Waar zonder ontkenning ergens in dezelfde
+    deelzin, of met een contrastwoord tussen de ontkenning en het woord, is het geen
+    ontkenning meer."""
+    w = (woord or "").lower().strip()
+    if not w:
+        return False
+    for deel in _deelzinnen((tekst or "").lower()):
+        if w not in deel:
+            continue
+        m = _NEGATIE.search(deel)
+        if not m:
+            continue
+        na = deel[m.end():]
+        if _CONTRAST.search(na.split(w)[0] if w in na else na):
+            continue                                   # 'geen X, wel Y' → Y is niet ontkend
+        return True
+    return False
+
+
+# Kleine, gesloten klasse van positieve oordelen. Deze lijst mag onvolledig zijn: ontbreekt
+# een woord, dan valt het terug op het OUDE gedrag (check-in wél) — een gemiste verbetering,
+# geen gemiste klacht. Andersom (klachtwoorden opsommen) faalt juist onveilig: 'zeurde',
+# 'gevoelig' en 'stak' stonden er niet in en lieten een echte klacht stilvallen.
+_POSITIEF = re.compile(
+    r"\b(goed|prima|lekker|fijn|ok[eé]|top|prettig|soepel|uitstekend|nergens\s+last|"
+    r"probleemloos|klachtenvrij)\b", re.I)
+
+
+def klacht_ontkracht(tekst: str, gebied: str) -> bool:
+    """Zegt de atleet NU zelf dat dit lichaamsdeel géén probleem is?
+
+    Twee bewijsvormen, allebei uit een gesloten klasse: een grammaticale ONTKENNING
+    ("geen last van mijn knie") of een expliciet POSITIEF oordeel ("knie voelde goed").
+    Symptoom-bewijs wint altijd: staat er ergens in dezelfde tekst een deelzin waarin dit
+    lichaamsdeel mét een symptoom en zonder ontkenning voorkomt, dan is het wél een melding
+    ("knie is goed hersteld maar nog wel gevoelig").
+
+    Standaard is FALSE: bij twijfel blijft de check-in staan. Deze functie mag alleen
+    onderdrukken wat aantoonbaar ontkracht is."""
+    g = (gebied or "").lower().strip()
+    if not g or g not in (tekst or "").lower():
+        return False
+    delen = [d for d in _deelzinnen((tekst or "").lower()) if g in d]
+    if not delen:
+        return False
+    if any(_SYMPTOOM_WORD.search(d) and not _NEGATIE.search(d) for d in delen):
+        return False                                   # ergens tóch een klachtmelding
+    for deel in delen:
+        if negatie_rond(deel, g):
+            return True                                # ontkenning = het sterkste bewijs
+    # Een positief oordeel telt alleen als het NIET wordt genuanceerd: "knie is goed hersteld
+    # maar nog wel gevoelig" is geen vrijbrief. Een contrastwoord verderop in dezelfde zin
+    # haalt de positieve claim onderuit — ook als het woord erna niet in ons symptoomvocabulaire
+    # staat, want dat vocabulaire is per definitie onvolledig.
+    for zin in _sentences(tekst or ""):
+        low = zin.lower()
+        if g not in low:
+            continue
+        m = _POSITIEF.search(low)
+        if m and not _NEGATIE.search(low) and not _CONTRAST.search(low[m.end():]):
+            return True
+    return False
+
+
+# ── Aanspreekvorm: de tekst gaat RECHTSTREEKS naar de atleet ─────────────────
+# Live: "Leuk dat ze haar vriendin een eerste 7 km heeft laten lopen." Het model beschreef
+# de atleet in de derde persoon omdat de context over haar gaat; het bericht gaat echter
+# NAAR haar toe. Derde persoon over een ECHTE derde ("je vriendin") blijft gewoon goed:
+# vandaar de eis dat er geen met `je/jouw` geïntroduceerde derde in dezelfde zin staat.
+_DERDE_SUBJECT = re.compile(r"(?<![\w])(ze|zij|hij)\s+\w", re.I)
+_EIGEN_DERDE = re.compile(r"\b(je|jouw|jullie)\s+[a-zà-ü]+\b", re.I)
+
+
+def derde_persoon_atleet(text: str) -> bool:
+    """Spreekt deze tekst de geadresseerde aan als 'ze/zij/hij' in plaats van 'je'?"""
+    for zin in _sentences(text):
+        if _DERDE_SUBJECT.search(zin) and not _EIGEN_DERDE.search(zin):
+            return True
+    return False
 
 
 # ── Coachstem: de tekst gaat NAMENS de coach naar de atleet ──────────────────
@@ -254,9 +382,16 @@ _DATA_ASK = re.compile(r"\b(hartslag|zone|tempo|pace|hoe hard|hoeveel|gemiddelde
 # (hoofdpijn, spierpijn, buikpijn). Met `\bpijn\b` viel precies de gemelde case ('hoofdpijn')
 # buiten élke klacht-herkenning. Een woordgrens die het echte vocabulaire uitsluit is een fout
 # in de grens, geen reden om woorden te gaan opsommen.
+# Gesplitst in SYMPTOOM en LICHAAMSDEEL (samen exact het oude patroon, dus `classify_intent`
+# gedraagt zich identiek). De splitsing is nodig omdat een lichaamsdeel op zichzelf géén
+# klachtmelding is: "mijn knie voelde goed" bevat 'knie' maar meldt niets. Zie `klacht_gemeld`.
+# `stij[fv]\w*` vangt stijf/stijve/stijfheid (Nederlandse f→v-verbuiging) — dezelfde les als bij `hoofdpijn`: een
+# woordvorm die het echte vocabulaire uitsluit is een fout in de grens.
+_KLACHT_SYMPTOOM = r"pijn|blessure|geblesseerd|zeer|ontsteking|last van|stij[fv]\w*"
+_KLACHT_LICHAAMSDEEL = (r"scheen|knie|hiel|kuit|achilles|hamstring|lies|\bvoet\b|enkel|\brug\b")
+_SYMPTOOM_WORD = re.compile(_KLACHT_SYMPTOOM, re.I)
 _COMPLAINT_WORD = re.compile(
-    r"pijn|blessure|geblesseerd|zeer|ontsteking|scheen|knie|hiel|kuit|achilles|hamstring|lies|"
-    r"\bvoet\b|enkel|\brug\b|last van|stijf", re.I)
+    r"pijn|blessure|geblesseerd|zeer|ontsteking|" + _KLACHT_LICHAAMSDEEL + r"|last van|stij[fv]\w*", re.I)
 
 # Een bericht is INHOUDELIJK zodra het meer is dan een korte beleefdheid ('top', 'lekker gelopen').
 # Bewust een LENGTE-grens en géén woordenlijst: elke opsomming van 'relevante' woorden mist de

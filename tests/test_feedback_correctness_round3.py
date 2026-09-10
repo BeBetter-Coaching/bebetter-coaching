@@ -159,13 +159,14 @@ class TestBVraag:
         assert "Kan ik deze week nog een lange duurloop doen?" in uit
         assert "samen" in uit.lower()                       # voorwaardelijke stap, geen toezegging
 
-    def test_een_vraag_die_zelf_een_guard_raakt_kost_de_inhoud_niet(self, monkeypatch):
-        """'morgen' botst met de dagwoord-guard. Dan pakt de terugval de VOLGENDE zin uit
-        hetzelfde bericht — niet de generieke bedankzin."""
+    def test_een_vraag_met_een_dagwoord_blijft_behouden(self, monkeypatch):
+        """R3.1: een LETTERLIJK, toegeschreven citaat van de atleet is geen dagclaim van de
+        coach, dus de vraag verdwijnt niet meer uit het concept. De guard blijft wél gelden
+        voor coach-eigen tekst (zie `TestGDagwoord`)."""
         tekst, _ = _genereer(monkeypatch, _workout(CASE1, leeg=True), AFGEKEURD, builder=[])
-        assert "morgen" not in tekst.lower()                # guard blijft gelden
         assert not fc.is_generieke_erkenning(tekst)
-        assert "gel viel niet goed" in tekst.lower()
+        assert "kan ik morgen z1 doen?" in tekst.lower()    # de vraag zelf, letterlijk
+        assert "samen" in tekst.lower()                     # met een voorwaardelijke vervolgstap
 
     def test_de_generatie_krijgt_de_opdracht_de_vraag_te_beantwoorden(self):
         blok = ob.build(modality="hartslag", shares={"Z1": 95}, athlete_text=CASE1)
@@ -262,14 +263,14 @@ class TestDLengte:
         assert tekst.strip() == kort.strip()
 
     def test_verplichte_feitzinnen_verhogen_de_ruimte(self):
-        """Complexere cases hebben per constructie meer verplichte zinnen en krijgen dus meer
-        ruimte — geen vaste tekenlimiet die een nuttig antwoord afkapt."""
-        vrij = "Een. Twee. Drie. Vier. Vijf. Zes. Zeven."
-        assert len(_zinnen(fc.clean_draft(vrij))) == 5
-        met_feiten = "Een. Feit A. Twee. Drie. Vier. Vijf. Zes. Feit B. Zeven."
+        """Verplichte (app-eigen) zinnen worden nooit gesnoeid én verhogen de ruimte voor de
+        vrije tekst eromheen. R3.1: het budget is niet meer vast, maar deze belofte blijft."""
+        vrij = "Een. Twee. Drie. Vier. Vijf. Zes. Zeven. Acht."
+        zonder = len(_zinnen(fc.clean_draft(vrij)))
+        met_feiten = "Een. Feit A. Twee. Drie. Vier. Vijf. Zes. Feit B. Zeven. Acht."
         uit = fc.clean_draft(met_feiten, protected=["Feit A.", "Feit B."])
-        assert len(_zinnen(uit)) == 9                       # niets geschrapt
-        assert "Feit A." in uit and "Feit B." in uit
+        assert "Feit A." in uit and "Feit B." in uit        # nooit gesnoeid
+        assert len(_zinnen(uit)) > zonder                   # en ze maken ruimte
 
     def test_geen_tekenlimiet_in_de_opschoning(self):
         """Een harde cap zou een nuttig antwoord middenin afkappen; er wordt op ZINNEN gesneden."""

@@ -110,10 +110,13 @@ def test_douwe_correction_no_z1_confirmation(monkeypatch):
                   laps=[{"amount": 0.4, "hr_avg": v} for v in (148, 151, 153, 155)],
                   comments=["elk rustblok gelukt om weer in Z1 te komen"],
                   diag={"complaint_areas": ["scheen"], "complaint_new": ["scheen"]})
-    assert d["status"] == fa.AUTO_SAFE
+    # R3.1: een claimcorrectie + actieve klacht vraagt om een coachblik → REVIEW. De v8-
+    # garantie zit in de ATOMEN (die het terugvalconcept en de generatie voeden), niet in
+    # de AUTO_SAFE-status.
+    assert d["status"] == fa.REVIEW_REQUIRED and "health_signal" in d["reasons"]
     ids = [a["id"] for a in d["atoms"]]
     assert "recovery_blocks_z2_not_z1" in ids and "complaint_scheen" in ids
-    assert "niet in Z1" in d["text"]
+    assert any("niet in Z1" in a["text"] for a in d["atoms"])
     # geen enkel atoom kan bevestigen dat het herstel WEL naar Z1 ging (alleen de 'niet in Z1'-correctie)
     assert all("in z1" not in a["text"].lower() or "niet in z1" in a["text"].lower() for a in d["atoms"])
 
@@ -163,8 +166,11 @@ def test_matthijs_direct_answer(monkeypatch):
     d = _decision(monkeypatch, zones={"zone_type": "hartslag", "zones_text": "z", "zones": HR},
                   builder=[_hr(1)], laps=[{"amount": 1, "hr_avg": 125} for _ in range(5)],
                   comments=["welke zone is goed voor zo'n herstelloop? Z1?"], hr_avg=125)
-    assert d["status"] == fa.AUTO_SAFE
-    assert "op Z1 sturen" in d["text"]
+    # R3.1: een VRAAG van de atleet gaat altijd naar REVIEW — één generiek zone-antwoord mag
+    # een vraag niet 'beantwoord' verklaren. De garantie van v8 blijft: het antwoord-atoom
+    # bestaat, dus het terugvalconcept en de generatie hebben het beschikbaar.
+    assert d["status"] == fa.REVIEW_REQUIRED and "athlete_question" in d["reasons"]
+    assert any("op Z1 sturen" in a["text"] for a in d["atoms"])
 
 
 # ══ Metric authority tests A–D (end of build) ══════════════════════════════════
@@ -194,10 +200,13 @@ def test_D_unknown_authority_review(monkeypatch):
 
 # ══ E/F. AUTO_SAFE contains only registered atoms; unregistered prose rejected ══
 def test_auto_safe_is_atoms_only(monkeypatch):
-    d = _decision(monkeypatch, zones={"zone_type": "hartslag", "zones_text": "z", "zones": REC},
-                  builder=[_rest() for _ in range(4)],
-                  laps=[{"amount": 0.4, "hr_avg": v} for v in (148, 151, 153, 155)],
-                  comments=["elk rustblok gelukt om weer in Z1 te komen"])
+    """Op een SCHONE case (geen bericht, geen klacht, geen afwijking) blijft AUTO_SAFE bestaan
+    en bestaat de tekst uitsluitend uit geregistreerde atomen. De oude fixture (claimcorrectie)
+    gaat sinds R3.1 terecht naar REVIEW."""
+    d = _decision(monkeypatch, zones={"zone_type": "hartslag", "zones_text": "z", "zones": HR},
+                  builder=[_hr(2)], laps=[{"amount": 1, "hr_avg": 138} for _ in range(6)],
+                  comments=[], hr_avg=138)
+    assert d["status"] == fa.AUTO_SAFE
     assert fa._final_is_atoms_only(d["text"], d["atoms"]) is True
     # een niet-geregistreerde feitelijke zin toevoegen → niet meer atoms-only
     assert fa._final_is_atoms_only(d["text"] + " Je tempo was te hoog.", d["atoms"]) is False

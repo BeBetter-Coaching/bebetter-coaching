@@ -58,6 +58,9 @@ _PLAN_TOEZEGGING = re.compile(
     r"|\b(je|de)\s+taper\s+(moet|gaat)\b", re.I)
 _VOORWAARDELIJK = re.compile(r"\b(als|mocht|zou|zouden|misschien|eventueel|wellicht|indien|tenzij)\b", re.I)
 
+# Spans tussen dubbele aanhalingstekens = letterlijk toegeschreven atleettekst.
+_ZONDER_CITAAT = re.compile(r'"[^"]*"')
+
 
 def _zinnen(text: str) -> list:
     return [z for z in re.split(r"(?<=[.!?])\s+", (text or "").strip()) if z.strip()]
@@ -297,12 +300,19 @@ def validate_draft(text: str, *, is_running: bool = False, mandatory=None,
         pat = fc.get("pattern")
         if pat and re.search(pat, scan, re.I):
             return {"ok": False, "kind": "content", "detail": f"contradiction:{fc.get('id')}"}
-    # 5. stale relatieve dag (v6)
-    if _REL_DAY.search(low):
+    # 5. stale relatieve dag (v6). De regel bewaakt dat de COACH geen verouderde relatieve
+    #    dag claimt. R3.1: een LETTERLIJK, toegeschreven citaat van de atleet ("Je vraagt:
+    #    \"Kan ik morgen Z1 doen?\"") is geen claim van de coach — daar staat het woord in
+    #    haar/zijn mond. Zonder deze uitzondering verdween een hele atleetvraag uit het
+    #    concept zodra er een dagwoord in stond. Alleen de TEMPORELE regels kennen deze
+    #    uitzondering; sporttaal, interne taal, coachstem en planclaims gelden ook binnen
+    #    een citaat, want die zou de coach dan alsnog uitspreken.
+    buiten_citaat = _ZONDER_CITAAT.sub(" ", t).lower()
+    if _REL_DAY.search(buiten_citaat):
         return {"ok": False, "kind": "content", "detail": "relative_day"}
     # 5b. F4 — 'vandaag' over een training van een ANDERE dag (zondag beoordeeld op maandag).
     #     Same-day feedback (`workout_is_today`, default True) mag het woord gewoon gebruiken.
-    if not workout_is_today and _TODAY_WORD.search(low):
+    if not workout_is_today and _TODAY_WORD.search(buiten_citaat):
         return {"ok": False, "kind": "content", "detail": "relative_day:vandaag"}
     # 5c. R3 — coachstem: nooit over 'de coach' praten alsof dat iemand anders is.
     try:
@@ -314,6 +324,17 @@ def validate_draft(text: str, *, is_running: bool = False, mandatory=None,
     # 5d. R3 — geen stellige toezegging over het plan/schema (COACH-AGENCY, nu ook getoetst).
     if plan_toezegging(t):
         return {"ok": False, "kind": "content", "detail": "plan_toezegging"}
+    # 5e. R3.1 — de tekst gaat RECHTSTREEKS naar de atleet: nooit 'ze/zij/hij' over de
+    #     geadresseerde zelf ("Leuk dat ze haar vriendin ..."). Derde persoon over een ECHTE
+    #     derde ("je vriendin") blijft toegestaan. Anders dan bij de coachstem valt hier niets
+    #     te vervangen — de hele zin zou herschreven moeten worden — dus fail-closed; het
+    #     terugvalconcept vangt het op.
+    try:
+        import feedback_copy as _fcopy2
+        if _fcopy2.derde_persoon_atleet(t):
+            return {"ok": False, "kind": "content", "detail": "atleet_derde_persoon"}
+    except Exception:
+        pass
     # 6. sporttaal: een RUN mag nooit een 'rit'/'ritje'/'fietsrit' heten (harde productregel)
     if is_running:
         if _RIT.search(t):

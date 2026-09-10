@@ -358,10 +358,26 @@ def _build_decision(w: dict) -> dict:
     areas = [a for a in (diag.get("complaint_areas") or []) if a]
     _msg_low = atext.lower()
     _acute = set(str(a).lower().strip() for a in (diag.get("complaint_new") or []) if a)
+    # R3.1 — NEGATIE. De check-in vuurde op een kale substring-match van het lichaamsdeel:
+    # "geen last van bovenbeen en knie" leverde "hou even in de gaten hoe je knie hierop
+    # reageert" op. Een melding vraagt nu om het lichaamsdeel ÉN een symptoom in dezelfde
+    # deelzin, zonder ontkenning (`feedback_copy.klacht_gemeld`). En een expliciete ontkenning
+    # NU wint van de canonieke actuele set: voor DEZE training is de eigen uitspraak van de
+    # atleet de sterkste bron.
+    try:
+        import feedback_copy as _fcn
+        _ontkracht = _fcn.klacht_ontkracht
+    except Exception:
+        _ontkracht = lambda t, g: False                  # bij twijfel: check-in blijft staan
     for a in areas:
         key = str(a).lower().strip()
         area = _COMPLAINT_AREA_NL.get(key)
         if not area:
+            continue
+        if _ontkracht(atext, area) or _ontkracht(atext, key):
+            # De atleet zegt er NU zelf géén last van te hebben ('geen last van mijn knie',
+            # 'knie voelde goed'). Voor DEZE training is dat de sterkste bron — sterker dan
+            # de canonieke actuele set, die over eerdere dagen gaat.
             continue
         mentioned_now = area in _msg_low or key in _msg_low
         if mentioned_now or key in _acute:                   # nu genoemd óf actueel/verergerd → wél
@@ -389,6 +405,26 @@ def _build_decision(w: dict) -> dict:
             and not any(a["category"] in ("correction", "complaint", "logistics") for a in atoms):
         atoms.append(_atom("positive_close", "Goed gedaan.", "close", 10, "ANY", ["execution_fit"]))
 
+    # ── signalen die om een coachafweging vragen ──────────────────────────────
+    # MATERIËLE PLANAFWIJKING. `execution_fit` meet of de ZONES gehaald zijn, niet of de
+    # training is uitgevoerd zoals gepland: een halve duurloop op de juiste hartslag kwam er
+    # daardoor door als 'Goed gedaan'. De afstandsband komt uit de ENE centrale functie
+    # (`feedback_core.afwijking`, geünificeerd met `brain.derive.distance_deviation`), dus
+    # hier komt geen tweede drempel bij. `clear` (>=20%) vraagt altijd een coachblik;
+    # `notable` (10-20%) alleen samen met een ander signaal.
+    _dev_band = ""
+    try:
+        from feedback_core import afwijking as _afw
+        _a0 = (activities or [{}])[0] or {}
+        _dev_band = (_afw(_a0.get("planned_amount"), _a0.get("amount")) or {}).get("relevance") or ""
+    except Exception:
+        _dev_band = ""
+    _load_sig = bool(diag.get("load_active"))
+    _herstel_sig = bool(diag.get("recovery_negative"))
+    _gemist_sig = int(diag.get("missed_runs") or 0) > 0
+    _context_review = _load_sig or _herstel_sig or _gemist_sig
+    _dev_review = _dev_band == "clear" or (_dev_band == "notable" and _context_review)
+
     # ── beslissing ────────────────────────────────────────────────────────────
     content = [a for a in atoms if a["category"] in
                ("correction", "observation", "plan_execution", "answer")]
@@ -407,7 +443,29 @@ def _build_decision(w: dict) -> dict:
         substantive = _fc.classify_intent(atext).get("substantive", False)
     except Exception:
         substantive = bool((atext or "").strip())            # bij twijfel: de atleet gaat voor
-    if has_question and not answered:
+    # ── AUTO-VEILIG-contract (R3.1) ────────────────────────────────────────────
+    # AUTO_SAFE betekent: dit concept is eenvoudig en betrouwbaar genoeg om ZONDER extra
+    # coachcontrole te versturen. Dat is de uitzondering, niet de regel. Elk signaal dat om
+    # een coachafweging vraagt zet de case op REVIEW. Alles hieronder komt uit BESTAANDE
+    # bronnen (atomen, de canonieke Feedback-diag, de centrale afstandsband) — geen tweede
+    # decision-engine, geen nieuwe drempel.
+    blokkers = []
+    if has_question:
+        # Een vraag verdient altijd een coachblik. Vóór R3.1 kon één generiek zone-antwoord
+        # de vraag 'beantwoord' verklaren, waarna 'Was dit rustig genoeg?' bij een zwaar
+        # gevoel automatisch verstuurbaar werd.
+        blokkers.append("athlete_question")
+    if any(a["category"] in ("complaint", "correction") for a in atoms):
+        blokkers.append("health_signal")                     # klacht/check-in of claimcorrectie
+    if _dev_review:
+        blokkers.append("plan_deviation")
+    if _context_review:
+        blokkers.append("context_signal")
+
+    if blokkers:
+        reasons.extend(blokkers)
+        status = REVIEW_REQUIRED
+    elif has_question and not answered:
         reasons.append("unanswerable_question")
         status = REVIEW_REQUIRED
     elif "structured_block_coupling_insufficient" in reasons and not content:

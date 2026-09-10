@@ -379,6 +379,7 @@ def build(*, modality: str = "", shares: dict | None = None, planned_target_zone
     # één rommelige duurloop een verhandeling over voeding, taper én herstel opleverde.
     block = ("━━━ EVIDENCE-CONTRACT & VERPLICHTINGEN (deterministisch — bindend, ga hier niet "
              "tegenin) ━━━\n" + "\n\n".join(sections)
-             + "\n\nDit zijn GRENZEN, geen inhoudsopgave: verwerk ze in één kort, gefocust bericht "
-               "(meestal 2 tot 5 zinnen) en schrijf geen aparte alinea per punt.")
+             + "\n\nDit zijn GRENZEN, geen inhoudsopgave: verwerk ze in één gefocust bericht en "
+               "schrijf geen aparte alinea per punt. De lengte volgt de input — maar een vraag of "
+               "klacht van de atleet mag nooit wegvallen om het korter te maken.")
     return {"prompt_block": block, "sections": sections}

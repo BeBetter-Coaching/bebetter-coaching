@@ -562,6 +562,11 @@ def feedback_context(state, workout_key: str = "", today: date | None = None,
         # dooft uit. Sinds Races Coachhulp v2 loopt dat via de GEDEELDE selector, zodat er maar
         # één definitie van 'actueel' bestaat (zie `actuele_klachten`).
         "complaint_new": [c["area"] for c in actuele_klachten(complaints)],
+        # R3.1 — twee bestaande canonieke signalen die de Feedback-beslissing al hoorde te kunnen
+        # zien: een negatieve hersteltrend (RPE zwaarder / gevoel slechter) en recent gemiste
+        # geplande runs. Beide worden hierboven al afgeleid; ze werden alleen nooit doorgegeven.
+        "recovery_negative": _recovery_neg,
+        "missed_runs": int(((_ev(evs, "training.run_missed_recent") or {}).get("value") or 0) or 0),
         "event": {"status": event["status"], "days": event["days"], "date": event["date"]},
         "prompt_block": tekst,
     }

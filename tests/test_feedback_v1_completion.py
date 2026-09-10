@@ -114,9 +114,14 @@ def test_7_geen_nieuwe_fase_zonder_bron():
 # B — output length + truncation contract
 # ════════════════════════════════════════════════════════════════════════════
 def test_8_length_scaling_in_prompt_contract():
-    assert "LENGTE" in ai_feedback.SYSTEM_PROMPT
-    assert "2 tot 5 korte zinnen" in ai_feedback.SYSTEM_PROMPT
-    assert "NOOIT drie of vier alinea" in ai_feedback.SYSTEM_PROMPT
+    """B blijft gelden: de lengte SCHAALT op de input en wordt niet afgekapt. R3.1 verving het
+    vaste bereik ('2 tot 5 korte zinnen') door een inhoudsgestuurd contract, dus de test toetst
+    de belofte — schaling plus dekking — en niet meer één formulering."""
+    p = ai_feedback.SYSTEM_PROMPT
+    assert "LENGTE" in p
+    assert "Weinig input" in p and "langer" in p           # schaalt mee met de input
+    assert "DEKKING GAAT VÓÓR KORTHEID" in p               # kortheid kapt geen inhoud af
+    assert "niet afkappen" in p or "eindig nooit midden in een zin" in p
 
 
 def test_9_truncatie_niet_stil_gepubliceerd(monkeypatch):

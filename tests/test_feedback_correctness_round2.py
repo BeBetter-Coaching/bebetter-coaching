@@ -363,7 +363,10 @@ class TestGQualityGate:
         tekst, status = _genereer(monkeypatch, _workout(NIET_FIT, workout_type="ride"),
                                   "Prima herstel na gisteren.")
         assert status == "REVIEW_REQUIRED"
-        assert tekst == fa._ACK_TEXT
+        # R3 maakte deze reactie CONCREET (het kernpunt van de atleet) en R3.1 liet ook een
+        # citaat met een dagwoord toe. De R2-garantie blijft: geen lege composer, en niet
+        # automatisch de hartslag/zone prijzen.
+        assert tekst and not fc.is_generieke_erkenning(tekst) or tekst == fa._ACK_TEXT
         assert "hartslag" not in tekst.lower() and "zone" not in tekst.lower()
 
     def test_zonder_enig_materiaal_blokkeert_het_alsnog(self, monkeypatch):
