@@ -462,33 +462,61 @@ def assemble(atoms) -> str:
     return " ".join(ordered[:5])
 
 
-# Athlete-first opening voor het terugvalconcept. Erkent DAT de atleet iets meldde zonder te
-# claimen wat er stond (geen interpretatie, geen invulling) — het alternatief was een lege
-# composer, en 'automatisch de hartslag prijzen' is precies wat hier niet mag.
+# Athlete-first opening voor het terugvalconcept. De neutrale variant erkent DAT de atleet iets
+# meldde zonder te claimen wat er stond — het alternatief was een lege composer, en 'automatisch
+# de hartslag prijzen' is precies wat hier niet mag. Zij blijft bestaan voor het geval dat er
+# werkelijk geen bruikbaar kernpunt is.
 _ACK_TEXT = "Dank je voor je bericht, ik neem mee wat je over deze training schrijft."
+
+
+def _opening(kern: str) -> str:
+    """Athlete-first opening. Mét kernpunt is die CONCREET: de eigen woorden van de atleet,
+    tussen aanhalingstekens zodat ze nooit als uitspraak van de coach kunnen lezen. Een vraag
+    krijgt een voorwaardelijke vervolgstap (geen toezegging — coach-agency blijft gelden),
+    een melding een neutrale erkenning."""
+    if not kern:
+        return _ACK_TEXT
+    if kern.rstrip().endswith("?"):
+        return f'Je vraagt: "{kern}" Laten we daar samen even naar kijken.'
+    return f'Je schrijft: "{kern}" Dat neem ik mee.'
 
 
 def _norm_sent(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip()
 
 
-def safe_fallback(atoms, athlete_text: str = "", mandatory=()) -> str:
+def safe_fallback(atoms, athlete_text: str = "", mandatory=(), citeer: bool = True,
+                  kern: str = "") -> str:
     """Deterministisch VEILIG terugvalconcept nadat de fail-closed validator een concept afkeurde.
 
     Bouwt uitsluitend uit materiaal dat de app zelf bezit: de geregistreerde atomen van deze
-    workout en de verplichte feitzinnen uit de fact-pack. Verzint niets en herhaalt de atleet niet.
-    Schreef de atleet iets inhoudelijks, dan opent het concept met een erkenning en vervalt de
-    automatische lof: een blokkade mag nooit eindigen in 'je hartslag bleef netjes binnen het
-    rustige bereik. Goed gedaan.' terwijl de atleet iets anders meldde. Niets bruikbaar -> "".
+    workout, de verplichte feitzinnen uit de fact-pack en de EIGEN WOORDEN van de atleet.
+    Verzint niets. Schreef de atleet iets inhoudelijks, dan vervalt de automatische lof: een
+    blokkade mag nooit eindigen in 'je hartslag bleef netjes binnen het rustige bereik. Goed
+    gedaan.' terwijl de atleet iets anders meldde. Niets bruikbaar -> "".
+
+    Correctness Round 3 — MINIMUM USEFULNESS. Had een training geen bruikbare atomen (geen
+    structuur, geen laps), dan bleef er letterlijk één zin over: 'Dank je voor je bericht, ik
+    neem mee wat je over deze training schrijft.' Veilig, maar de atleet had net drie dingen
+    gemeld. De opening noemt daarom het KERNPUNT uit het bericht zelf, letterlijk geciteerd:
+    dat is de enige bron die hier nog betrouwbaar is, en citeren vraagt geen interpretatie.
+    `kern` = welke zin van de atleet geciteerd wordt; leeg = zelf de eerste kandidaat kiezen.
+    `citeer=False` valt terug op de neutrale zin — nodig wanneer de eigen woorden van de atleet
+    een guard raken (een vraag over 'morgen' botst met de dagwoord-guard); de aanroeper die de
+    validator-context bezit beslist dat, niet deze functie.
     """
     try:
         import feedback_copy as _fc
         substantive = _fc.is_substantive(athlete_text)
+        if not (substantive and citeer):
+            kern = ""
+        elif not kern:
+            kern = _fc.kernpunt(athlete_text)
     except Exception:
-        substantive = bool((athlete_text or "").strip())
+        substantive, kern = bool((athlete_text or "").strip()), ""
     keuze = [a for a in (atoms or []) if not (substantive and a.get("category") == "close")]
     if substantive:
-        keuze = [_atom("ack_message", _ACK_TEXT, "ack", 100, "ANY", ["athlete_message"])] + keuze
+        keuze = [_atom("ack_message", _opening(kern), "ack", 100, "ANY", ["athlete_message"])] + keuze
     tekst = assemble(keuze)
     for zin in [_norm_sent(m.get("sentence")) for m in (mandatory or [])]:
         if zin and zin not in _norm_sent(tekst):

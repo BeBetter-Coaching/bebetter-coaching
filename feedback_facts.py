@@ -43,6 +43,33 @@ _FIETSRIT = re.compile(r"\bfietsrit\w*", re.I)
 # zone-gebonden percentage (athlete-facing verboden); losse '100% hersteld' blijft toegestaan.
 _ZONE_PCT = re.compile(r"(zone|z[1-5]|tempo|hartslag).{0,15}\d+\s*%|\d+\s*%.{0,15}(zone|z[1-5]|tempo|hartslag)", re.I)
 
+# R3 — de tekst gaat NAMENS de coach naar de atleet en mag dus niet over hem praten alsof hij
+# iemand anders is. `feedback_copy.naar_coachstem` zet de bekende vormen al om vóór de validatie;
+# dit is het fail-closed vangnet daaronder, voor een pad dat die opschoning niet raakt.
+# R3 — TOEZEGGING OVER HET PLAN. De COACH-AGENCY-promptregel verbiedt al dat het concept doet
+# alsof er iets geregeld wordt ('we passen je lange duurloop aan zodat je fris aan de start
+# staat'), maar niets controleerde dat. Alleen STELLIGE aankondigingen tellen: een voorwaarde
+# ('als', 'mocht', 'zou', 'misschien') is gewoon coachtaal en blijft toegestaan.
+_PLAN_TOEZEGGING = re.compile(
+    r"\b(we|ik)\s+(?:gaan\s+|ga\s+|zullen\s+|zal\s+)?"
+    r"(?:pas|passen|verplaats|verplaatsen|schrap|schrappen|verander|veranderen|schuif|schuiven|"
+    r"vervang|vervangen|zet|zetten|haal|halen)\b[^.!?]{0,60}?"
+    r"\b(schema|programma|trainingsweek|duurloop|taper|plan|planning)\b"
+    r"|\b(je|de)\s+taper\s+(moet|gaat)\b", re.I)
+_VOORWAARDELIJK = re.compile(r"\b(als|mocht|zou|zouden|misschien|eventueel|wellicht|indien|tenzij)\b", re.I)
+
+
+def _zinnen(text: str) -> list:
+    return [z for z in re.split(r"(?<=[.!?])\s+", (text or "").strip()) if z.strip()]
+
+
+def plan_toezegging(text: str) -> bool:
+    """Kondigt deze tekst een concrete plan-/schemawijziging aan als besloten feit?"""
+    for zin in _zinnen(text):
+        if _PLAN_TOEZEGGING.search(zin) and not _VOORWAARDELIJK.search(zin):
+            return True
+    return False
+
 _ZWORD = {"hartslag": "hartslag", "tempo": "tempo"}
 
 
@@ -277,6 +304,16 @@ def validate_draft(text: str, *, is_running: bool = False, mandatory=None,
     #     Same-day feedback (`workout_is_today`, default True) mag het woord gewoon gebruiken.
     if not workout_is_today and _TODAY_WORD.search(low):
         return {"ok": False, "kind": "content", "detail": "relative_day:vandaag"}
+    # 5c. R3 — coachstem: nooit over 'de coach' praten alsof dat iemand anders is.
+    try:
+        import feedback_copy as _fcopy
+        if _fcopy.derde_persoon_coach(t):
+            return {"ok": False, "kind": "content", "detail": "coach_derde_persoon"}
+    except Exception:
+        pass                                             # module weg → deze regel niet fataal
+    # 5d. R3 — geen stellige toezegging over het plan/schema (COACH-AGENCY, nu ook getoetst).
+    if plan_toezegging(t):
+        return {"ok": False, "kind": "content", "detail": "plan_toezegging"}
     # 6. sporttaal: een RUN mag nooit een 'rit'/'ritje'/'fietsrit' heten (harde productregel)
     if is_running:
         if _RIT.search(t):

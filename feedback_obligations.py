@@ -374,6 +374,11 @@ def build(*, modality: str = "", shares: dict | None = None, planned_target_zone
     sections = [s for s in (zone_sec, div_sec, claim_sec, msg_sec, sig_sec) if s]
     if not sections:
         return {"prompt_block": "", "sections": []}
+    # R3 — dit blok zegt wat je niet mag OVERSLAAN of beweren; het is geen inhoudsopgave.
+    # Zonder die zin schreef het model bij drie actieve secties braaf drie alinea's, waarna
+    # één rommelige duurloop een verhandeling over voeding, taper én herstel opleverde.
     block = ("━━━ EVIDENCE-CONTRACT & VERPLICHTINGEN (deterministisch — bindend, ga hier niet "
-             "tegenin) ━━━\n" + "\n\n".join(sections))
+             "tegenin) ━━━\n" + "\n\n".join(sections)
+             + "\n\nDit zijn GRENZEN, geen inhoudsopgave: verwerk ze in één kort, gefocust bericht "
+               "(meestal 2 tot 5 zinnen) en schrijf geen aparte alinea per punt.")
     return {"prompt_block": block, "sections": sections}

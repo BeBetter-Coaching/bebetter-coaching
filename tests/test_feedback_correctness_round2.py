@@ -325,7 +325,10 @@ class TestGQualityGate:
         assert status == "REVIEW_REQUIRED"
         assert "gisteren" not in tekst.lower()
         assert ff.validate_draft(tekst, is_running=True)["ok"] is True
-        assert tekst.startswith("Dank je voor je bericht")     # athlete-first, geen data-lof vooraan
+        # R3: de opening noemt nu het kernpunt van de atleet. De GARANTIE is dezelfde als in
+        # R2 — athlete-first, geen data-lof vooraan — alleen niet langer één vaste zin.
+        assert tekst.split(".")[0].lower().startswith(("dank je", "je schrijft", "je vraagt"))
+        assert not tekst.lower().startswith("op hartslag")
 
     def test_terugval_prijst_de_hartslag_niet_automatisch(self):
         atomen = [fa._atom("fit", "Op hartslag bleef je netjes binnen het rustige bereik.",
@@ -333,14 +336,25 @@ class TestGQualityGate:
                   fa._atom("positive_close", "Goed gedaan.", "close", 10)]
         uit = fa.safe_fallback(atomen, NIET_FIT)
         assert "Goed gedaan" not in uit                        # geen automatische lof
-        assert uit.startswith("Dank je voor je bericht")
+        assert not uit.startswith("Op hartslag")               # athlete-first blijft
 
     def test_terugval_verzint_niets_en_gebruikt_alleen_eigen_materiaal(self):
+        """Elke zin komt uit materiaal dat de app BEZIT: een atoom, een verplichte feitzin, de
+        app-eigen opening, of een LETTERLIJK citaat uit het bericht van de atleet. R3 voegde dat
+        laatste toe; interpreteren of samenvatten mag nog steeds niet."""
         uit = fa.safe_fallback([fa._atom("fit", "Op hartslag bleef je rustig.", "plan_execution", 60)],
                                NIET_FIT, [{"sentence": _KNIE}])
-        for zin in [z.strip() for z in uit.split(". ") if z.strip()]:
-            assert zin.rstrip(".") in (fa._ACK_TEXT.rstrip("."), "Op hartslag bleef je rustig",
-                                       _KNIE.rstrip("."))
+        import re as _re
+        # 1. Alles tussen aanhalingstekens staat LETTERLIJK in het bericht van de atleet.
+        for citaat in _re.findall(r'"([^"]+)"', uit):
+            assert citaat.rstrip(".") in NIET_FIT, citaat
+        # 2. Wat overblijft is app-eigen materiaal: opening, atoom of verplichte feitzin.
+        rest = _re.sub(r'"[^"]*"', "", uit)
+        eigen = ("Je schrijft:", "Je vraagt:", "Dat neem ik mee.", "Laten we daar samen even naar kijken.",
+                 fa._ACK_TEXT, "Op hartslag bleef je rustig.", _KNIE)
+        for stuk in eigen:
+            rest = rest.replace(stuk, " ")
+        assert not rest.strip(), f"onbekend materiaal in de terugval: {rest!r}"
 
     def test_zonder_atomen_maar_met_bericht_blijft_er_een_neutrale_reactie(self, monkeypatch):
         """Niets bewijsbaars over de training (niet-run: geen atomen) én een afgekeurd concept.
@@ -402,13 +416,19 @@ class TestHGeenRegressie:
             assert term not in blok, term
 
     def test_vervolgreactie_krijgt_geen_feitelijke_ruggengraat_opgedrongen(self, monkeypatch):
-        """FOLLOW_UP_REPLY houdt zijn eigen contract: alleen de taal-guards, geen fact-pack."""
-        w = _workout("en nu?")
-        w["thread"] = [{"rol": "atleet", "tekst": "en nu?"}]
+        """FOLLOW_UP_REPLY houdt zijn eigen contract: alleen de taal-guards, geen fact-pack en
+        geen terugvalconcept. Getoetst op GEDRAG: een afgekeurde vervolgreactie blokkeert, want
+        er is geen atoom-beslissing om op terug te vallen."""
         bron = open(os.path.join(_ROOT, "pwa", "feedback_core.py")).read()
         blok = bron[bron.index("    _mandatory = ("):bron.index("    _GEN_STATUS[wid] = status")]
         assert 'if mode != FOLLOW_UP_REPLY else []' in blok
-        assert "if decision is not None:" in blok               # terugval alleen op de initiële analyse
+        w = _workout("en nu?")
+        # `van` (niet `rol`) bepaalt de spreker — coach eerst, atleet daarna = vervolgreactie.
+        w["thread"] = [{"van": "coach", "tekst": "Mooi gelopen."},
+                       {"van": "atleet", "tekst": "en nu?"}]
+        assert feedback_core.feedback_mode(w["thread"]) == feedback_core.FOLLOW_UP_REPLY
+        with pytest.raises(ValueError):
+            _genereer(monkeypatch, w, "Fijne rit gehad zo te horen.")   # RUN-als-'rit' → geblokkeerd
 
     def test_auto_safe_blijft_uitsluitend_uit_geregistreerde_atomen_bestaan(self, monkeypatch):
         d = _beslis(monkeypatch, _workout(""))

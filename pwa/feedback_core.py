@@ -687,21 +687,63 @@ def genereer(wid: str) -> str:
     # terug op een DETERMINISTISCH veilig concept uit materiaal dat de app zelf bezit (de atomen
     # van deze workout + de verplichte feitzinnen), athlete-first en zonder automatische lof.
     # Dat concept moet dezelfde validator halen; lukt dat niet, dan blokkeert het alsnog.
+    _atekst = _atleet_tekst(w)
+
+    def _bouw_terugval(citeer: bool, kern: str = "") -> str:
+        """Eén terugvalkandidaat die DEZELFDE validator moet halen, anders ""."""
+        if decision is None:
+            return ""
+        try:
+            import feedback_atoms as _fa2
+            kandidaat = _fa2.safe_fallback(decision.get("atoms") or [], _atekst,
+                                           _mandatory, citeer=citeer, kern=kern)
+            if not kandidaat:
+                return ""
+            _validate_or_block(w, kandidaat, mode)
+            return kandidaat
+        except Exception:
+            return ""
+
+    def _terugval() -> str:
+        """Het beste terugvalconcept dat de validator haalt. Eerst de eigen woorden van de
+        atleet (concreet), kandidaat voor kandidaat: de zin die zij/hij zelf schreef kan een
+        output-guard raken (een vraag over 'morgen' botst met de dagwoord-guard), en dan is de
+        volgende zin uit hetzelfde bericht nog altijd beter dan een generieke bedankzin.
+        Pas als geen enkele zin bruikbaar is, de neutrale erkenning."""
+        try:
+            import feedback_copy as _fc2
+            kandidaten = _fc2.kernpunten(_atekst)
+        except Exception:
+            kandidaten = []
+        for kern in kandidaten:
+            uit = _bouw_terugval(True, kern)
+            if uit:
+                return uit
+        return _bouw_terugval(False)
+
     try:
         _validate_or_block(w, tekst, mode)
     except ValueError:
-        terugval = ""
-        if decision is not None:
-            try:
-                import feedback_atoms as _fa2
-                terugval = _fa2.safe_fallback(decision.get("atoms") or [],
-                                              _atleet_tekst(w), _mandatory)
-                _validate_or_block(w, terugval, mode)
-            except Exception:
-                terugval = ""
+        # Citeren eerst: de eigen woorden van de atleet maken het terugvalconcept concreet.
+        # Raken die woorden zélf een guard (een vraag over 'morgen' botst met de dagwoord-
+        # guard), dan de neutrale variant. Pas als ook die faalt, blokkeert het alsnog.
+        terugval = _terugval()
         if not terugval:
             raise                                            # werkelijk niets betrouwbaars → blokkeer
         tekst, status = terugval, "REVIEW_REQUIRED"
+    else:
+        # Correctness Round 3 — MINIMUM USEFULNESS. Een concept kan de validator halen en tóch
+        # inhoudelijk leeg zijn: alleen 'dank je voor je bericht'. Dat is geen coachreactie op
+        # een atleet die net drie dingen meldde. Dan pakken we het terugvalconcept, dat het
+        # kernpunt van de atleet wél noemt. NOOIT blokkeren hierop: dat geeft een lege composer.
+        try:
+            import feedback_copy as _fc3
+            if _fc3.is_substantive(_atekst) and _fc3.is_generieke_erkenning(tekst):
+                beter = _terugval()
+                if beter and not _fc3.is_generieke_erkenning(beter):
+                    tekst, status = beter, "REVIEW_REQUIRED"
+        except Exception:
+            pass
     _GEN_STATUS[wid] = status
     return tekst
 
