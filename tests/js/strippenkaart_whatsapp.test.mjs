@@ -409,6 +409,18 @@ opslag.clear();
 }
 opslag.clear();
 {
+  // Kaart aangepast (10 → 20) terwijl de lijst open staat: het bericht noemt 'van je 10'
+  // en klopt dus niet meer → de lijst vervalt, net als bij een gewijzigde stand.
+  const drie = groep(3);
+  const r = await boek(drie, "e5b");
+  lijstAntwoord = { kaarten: naBatch(drie, r).map((k, i) => i === 0 ? { ...k, totaal: 20, rest: 20 - k.gebruikt } : k), cloud: true };
+  meldingen = [];
+  await m.laad();
+  ok(m.wa() === null && meldingen.some(x => /vervallen/.test(x.t)),
+     "E: kaartgrootte gewijzigd → berichtenlijst vervalt (bericht noemt het oude totaal)");
+}
+opslag.clear();
+{
   // Houdbaarheid: de volgende dag is een oude lijst geen opvolging meer.
   const drie = groep(3);
   const r = await boek(drie, "e6");

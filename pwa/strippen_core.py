@@ -186,6 +186,46 @@ def terug(naam: str) -> tuple[bool, str]:
     return intake_store.save_strippenkaarten(kaarten)
 
 
+# Kaartgroottes die de app kent (nieuwe kaart, bulkimport en nu ook achteraf aanpassen).
+KAART_GROOTTES = (10, 20)
+
+
+def kaart_grootte(naam: str, totaal, verwacht_totaal=None,
+                  verwacht_gebruikt=None) -> tuple[bool, str, dict]:
+    """Wijzig ALLEEN de kaartgrootte (`totaal`). `gebruikt`, `historie`, `laatste_batch`
+    en de rest van de kaart blijven exact staan, dus ook 'ongedaan maken' van de laatste
+    groepsafboeking blijft kloppen (die toetst `gebruikt`, niet `totaal`).
+
+    `verwacht_*` = de stand die de coach zag. Wijkt de server af (tweede tabblad, andere
+    coach, Streamlit), dan wordt er niets overschreven."""
+    try:
+        nieuw = int(totaal)
+    except (TypeError, ValueError):
+        nieuw = None
+    if nieuw not in KAART_GROOTTES:
+        return False, "Kies een kaart van 10 of 20 strippen.", {}
+    kaarten = intake_store.load_strippenkaarten()
+    k = kaarten.get(naam)
+    if not k:
+        return False, "Onbekende strippenkaart.", {"conflict": "onbekend"}
+    huidig, geb = int(k.get("totaal", 10)), int(k.get("gebruikt", 0))
+    if (verwacht_totaal is not None and int(verwacht_totaal) != huidig) or \
+            (verwacht_gebruikt is not None and int(verwacht_gebruikt) != geb):
+        return False, ("De kaart van " + naam + " is inmiddels gewijzigd. Niets aangepast — "
+                       "ververs en probeer opnieuw."), {"conflict": "stale"}
+    if nieuw == huidig:
+        return True, "", {"ongewijzigd": True, "kaart": _view(naam, k)}   # niets te schrijven
+    if geb > nieuw:
+        # Anders zou 'gebruikt' boven 'totaal' uitkomen en het saldo negatief worden.
+        return False, (f"{naam} heeft al {geb} strippen gebruikt; een kaart van {nieuw} "
+                       f"kan dat niet dragen."), {"conflict": "te_klein"}
+    k["totaal"] = nieuw
+    ok, err = intake_store.save_strippenkaarten(kaarten)
+    if not ok:
+        return False, err or "Opslaan mislukt.", {}
+    return True, "", {"kaart": _view(naam, k)}
+
+
 def verwijder(naam: str) -> tuple[bool, str]:
     kaarten = intake_store.load_strippenkaarten()
     if naam in kaarten:

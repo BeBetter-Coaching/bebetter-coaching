@@ -171,6 +171,13 @@ class BatchTerug(BaseModel):
     batch_id: str = ""
 
 
+class KaartGrootte(BaseModel):
+    totaal: int
+    # De stand die de coach zag — stale-detectie, zoals bij de groepsafboeking.
+    verwacht_totaal: Optional[int] = None
+    verwacht_gebruikt: Optional[int] = None
+
+
 class ImportText(BaseModel):
     text: str = ""
 
@@ -823,6 +830,12 @@ def afboeken(naam: str):
 def terug(naam: str):
     ok, err = core.terug(naam)
     return {"ok": ok, "err": err}
+
+
+@app.post("/api/kaarten/{naam}/grootte")      # alleen de kaartgrootte (10 ↔ 20), gebruikt blijft
+def kaart_grootte(naam: str, body: KaartGrootte):
+    ok, err, res = core.kaart_grootte(naam, body.totaal, body.verwacht_totaal, body.verwacht_gebruikt)
+    return {"ok": ok, "err": err, **(res or {})}
 
 
 @app.delete("/api/kaarten/{naam}")

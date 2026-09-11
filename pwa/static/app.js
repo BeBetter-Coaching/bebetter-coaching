@@ -2430,7 +2430,7 @@ function skWaStop() {
 }
 
 // De berichten zijn geschreven op de stand van DIE batch. Is een kaart sindsdien
-// geraakt (undo, 'strip terug', andere coach, Streamlit), dan noemt het bericht een
+// geraakt (undo, 'strip terug', kaart aangepast, andere coach, Streamlit), dan noemt het bericht een
 // saldo dat niet meer klopt: dan vervalt de lijst, liever dan een fout bericht klaar
 // te zetten. Draait na elke verse read — ook na een herstart uit WhatsApp.
 function skWaControleer() {
@@ -2438,7 +2438,7 @@ function skWaControleer() {
   if (skWa && Date.now() - (skWa.sinds || 0) >= SK_WA_TTL) skWa = null;
   if (skWa && !skWa.items.every(i => {
     const k = skKaarten.find(x => x.naam === i.naam);
-    return k && k.gebruikt === i.gebruikt;
+    return k && k.gebruikt === i.gebruikt && k.totaal === i.totaal;
   })) {
     skWa = null;
     melding("De stand is intussen gewijzigd — de berichtenlijst van de vorige afboeking is vervallen.");
@@ -2562,12 +2562,18 @@ function skDetail(naam) {
     + (hist.length
       ? `<p class="sk-d-h">Laatste afboekingen: ${hist.map(h => esc(nlDatum(h))).join(" · ")}</p>`
       : `<p class="sk-d-h">Nog niets afgeboekt.</p>`)
+    + skGrootteHtml(k)
     + `<div class="sk-d-acts">
          <button class="btn small ghost" data-terug type="button">Strip terug</button>
          <button class="btn small danger-ghost" data-del type="button">${ic("trash")} Kaart verwijderen</button>
        </div>`;
   box.hidden = false;
   if (knop) knop.setAttribute("aria-expanded", "true");
+  const g = $(".sk-d-seg", box);
+  if (g) g.addEventListener("click", e => {
+    const b = e.target.closest && e.target.closest("[data-grootte]");
+    if (b && !b.disabled) skGrootte(naam, +b.dataset.grootte);
+  });
   const t = $("[data-terug]", box);
   if (t) t.addEventListener("click", () => skKaartActie(naam, `/api/kaarten/${encodeURIComponent(naam)}/terug`, "POST"));
   const d = $("[data-del]", box);
@@ -2578,6 +2584,50 @@ function skDetail(naam) {
     });
     if (akkoord) skKaartActie(naam, `/api/kaarten/${encodeURIComponent(naam)}`, "DELETE");
   });
+}
+
+// ── Kaart aanpassen (10 ↔ 20) ──────────────────────────────────────────────
+// Alleen de kaartgrootte wijzigt. `gebruikt`, de historie en het undo-merkje van de laatste
+// groepsafboeking blijven staan — daarom NIET via skKaartActie, dat de uitkomstbalk (en
+// dus 'Ongedaan maken') wegruimt. Zelfde kaartgroottes als bij 'Nieuwe strippenkaart'.
+const SK_GROOTTES = [10, 20];
+
+function skGrootteHtml(k) {
+  const geb = k.gebruikt || 0;
+  const knoppen = SK_GROOTTES.map(g => `<button type="button" data-grootte="${g}"`
+    + ` class="${g === k.totaal ? "on" : ""}" aria-pressed="${g === k.totaal}"`
+    + `${geb > g ? " disabled" : ""}>${g}</button>`).join("");
+  const kanNiet = SK_GROOTTES.filter(g => geb > g);
+  return `<div class="sk-d-grootte"><span class="sk-d-gl">Kaart aanpassen</span>`
+    + `<span class="seg sk-d-seg" role="group" aria-label="Kaartgrootte">${knoppen}</span>`
+    + (kanNiet.length ? `<span class="sk-d-gh">Al ${geb} gebruikt, dus ${kanNiet.join("/")} kan niet.</span>` : "")
+    + `</div>`;
+}
+
+async function skGrootte(naam, g) {
+  const k = skKaarten.find(x => x.naam === naam);
+  if (!k || skBezig || !SK_GROOTTES.includes(g) || g === k.totaal) return;
+  if (k.gebruikt > g) {
+    return melding(`${naam} heeft al ${k.gebruikt} strippen gebruikt; een kaart van ${g} kan dat niet dragen.`, true);
+  }
+  const akkoord = await bevestigActie({
+    titel: "Kaart aanpassen",
+    tekst: `De kaart van ${naam} wordt ${g} strippen.`,
+    detail: `Gebruikt blijft ${k.gebruikt} · daarna ${g - k.gebruikt} over`,
+    bevestig: `${g} strippen`,
+  });
+  if (!akkoord) return;
+  // De stand die de coach zag: wijkt de server af, dan wordt er niets overschreven.
+  const r = await jpost(`/api/kaarten/${encodeURIComponent(naam)}/grootte`,
+    { totaal: g, verwacht_totaal: k.totaal, verwacht_gebruikt: k.gebruikt }).catch(() => null);
+  if (!r) return melding("Geen verbinding — kaart niet aangepast.", true);
+  if (!r.ok) { melding(r.err || "Aanpassen mislukt.", true); if (r.conflict) await laad(); return; }
+  if (r.kaart) skPasToe([r.kaart]);                  // serverantwoord → lokale stand
+  skTelling(); skBalk();
+  const rij = skRijen.get(naam), box = rij && $(".sk-detail", rij);
+  if (box) { box.hidden = true; skDetail(naam); }    // detail opnieuw, met de nieuwe grootte
+  melding(`Kaart van ${naam} is nu ${g} strippen: ${k.gebruikt}/${g}, ${k.rest} over.`);
+  skWaControleer();                                  // een open berichtenlijst noemt het oude totaal
 }
 
 async function skKaartActie(naam, url, method) {
