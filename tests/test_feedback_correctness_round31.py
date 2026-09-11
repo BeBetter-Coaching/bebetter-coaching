@@ -299,25 +299,15 @@ GEMELD_E = "Leuk dat ze haar vriendin een eerste 7 km heeft laten lopen."
 
 
 class TestEPerspectief:
-    def test_het_gemelde_geval_wordt_herkend(self):
-        assert fc.derde_persoon_atleet(GEMELD_E) is True
+    """De aanspreekvorm is een ROLCONTRACT in de systeemprompt. De fail-closed validatorregel
+    die R3.1 hier ook toevoegde is in de Fact-Guard (11 sep 2026) verwijderd: een patroon kan
+    niet bepalen waar 'ze'/'hij' naar verwijst en blokkeerde 'als ze [de kuiten] nog gespannen
+    zijn' — met een leeg terugvalconcept als gevolg. Zie tests/test_feedback_fact_guard.py."""
 
-    def test_directe_aanspreekvorm_is_gewoon_goed(self):
-        for goed in ("Leuk dat je met je vriendin haar eerste 7 km hebt gelopen.",
-                     "Mooi gelopen, lekker rustig gebleven.",
-                     "Je vriendin liep sterk, zij hield het tempo goed vast."):
-            assert fc.derde_persoon_atleet(goed) is False, goed
-            assert ff.validate_draft(goed, is_running=True)["ok"] is True, goed
-
-    def test_de_validator_houdt_het_tegen(self):
-        assert ff.validate_draft(GEMELD_E, is_running=True)["detail"] == "atleet_derde_persoon"
-
-    def test_de_coach_krijgt_alsnog_een_bruikbaar_concept(self, monkeypatch):
-        tekst, status = _genereer(monkeypatch, _workout(
-            "Vandaag met een vriendin gelopen, ging lekker.", leeg=True), GEMELD_E, builder=[])
-        assert status == "REVIEW_REQUIRED"
-        assert not fc.derde_persoon_atleet(tekst)
-        assert not fc.is_generieke_erkenning(tekst)
+    def test_de_validator_blokkeert_niet_meer_op_een_voornaamwoord(self):
+        for tekst in (GEMELD_E, "Leuk dat je met je vriendin haar eerste 7 km hebt gelopen.",
+                      "Je vriendin liep sterk, zij hield het tempo goed vast."):
+            assert ff.validate_draft(tekst, is_running=True)["ok"] is True, tekst
 
     def test_de_prompt_legt_de_aanspreekvorm_structureel_vast(self):
         for prompt in (ai_feedback.SYSTEM_PROMPT, ai_feedback._NONRUN_SYSTEM):

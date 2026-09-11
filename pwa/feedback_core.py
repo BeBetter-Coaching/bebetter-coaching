@@ -677,7 +677,7 @@ def genereer(wid: str) -> str:
         # De verplichte feitzinnen zijn APPLICATION-OWNED en worden verderop VERBATIM gevalideerd;
         # de opschoning mag ze dus niet wegdedupliceren (zie feedback_copy.clean_draft).
         cleaned = _fc.clean_draft(tekst, protected=[m.get("sentence", "") for m in _mandatory],
-                                  athlete_text=_atleet_tekst(w))
+                                  athlete_text=_atleet_tekst(w), is_running=_is_running(w))
         if cleaned:                                          # nooit naar leeg opschonen
             tekst = cleaned
     except Exception:
@@ -765,6 +765,12 @@ def last_generation_status(wid: str) -> str:
     return _GEN_STATUS.get(wid, "REVIEW_REQUIRED")
 
 
+def _is_running(w: dict) -> bool:
+    """Is dit een hardlooptraining? Eén bepaling voor de opschoning én de validator."""
+    sport = ((w.get("_fact_pack") or {}).get("sport") or {})
+    return bool(sport.get("is_running")) or (w.get("workout_type") == "run")
+
+
 def _validate_or_block(w: dict, tekst: str, mode: str) -> None:
     """Deterministische output-validatie (fail-closed) over EXACT de tekst die persistent/verstuurbaar
     wordt (na app-assemblage van de feitelijke ruggengraat). Op de INITIËLE analyse tellen de
@@ -775,8 +781,7 @@ def _validate_or_block(w: dict, tekst: str, mode: str) -> None:
     except Exception:
         return                                               # validator niet beschikbaar → niet blokkeren
     pack = w.get("_fact_pack") or {}
-    sport = pack.get("sport") or {}
-    is_running = bool(sport.get("is_running")) or (w.get("workout_type") == "run")
+    is_running = _is_running(w)
     initial = (mode != FOLLOW_UP_REPLY)
     mandatory = (pack.get("mandatory") or []) if initial else []
     forbidden = (pack.get("forbidden_claims") or []) if initial else []

@@ -62,7 +62,7 @@ def _key(sentence: str) -> str:
     return re.sub(r"\s+", " ", (sentence or "").lower()).strip(" .!?")
 
 
-def clean_draft(text: str, protected=(), athlete_text: str = "") -> str:
+def clean_draft(text: str, protected=(), athlete_text: str = "", is_running: bool = False) -> str:
     """Deterministische CopyQuality-opschoning. Schrapt systeemtaal/defensieve zinnen, ontdubbelt
     exact + semantisch (klacht/follow-up per onderwerp één keer), houdt de rest in volgorde.
 
@@ -83,6 +83,8 @@ def clean_draft(text: str, protected=(), athlete_text: str = "") -> str:
     # 'de coach' praat alsof dat iemand anders is, wordt hier al omgezet — vóór de dedupe,
     # zodat twee van zulke zinnen samen één blijven.
     text = naar_coachstem(text)
+    if is_running:
+        text = naar_looptaal(text, athlete_text)            # 'gereden' over een loop → 'gelopen'
     prot_exact = {_norm_ws(p) for p in (protected or []) if _norm_ws(p)}
     prot_loose = {_key(p) for p in (protected or []) if _key(p)}
     prot_areas = {a for a in (_complaint_area(p) for p in (protected or [])) if a is not None}
@@ -252,21 +254,29 @@ def klacht_ontkracht(tekst: str, gebied: str) -> bool:
     return False
 
 
-# ── Aanspreekvorm: de tekst gaat RECHTSTREEKS naar de atleet ─────────────────
-# Live: "Leuk dat ze haar vriendin een eerste 7 km heeft laten lopen." Het model beschreef
-# de atleet in de derde persoon omdat de context over haar gaat; het bericht gaat echter
-# NAAR haar toe. Derde persoon over een ECHTE derde ("je vriendin") blijft gewoon goed:
-# vandaar de eis dat er geen met `je/jouw` geïntroduceerde derde in dezelfde zin staat.
-_DERDE_SUBJECT = re.compile(r"(?<![\w])(ze|zij|hij)\s+\w", re.I)
-_EIGEN_DERDE = re.compile(r"\b(je|jouw|jullie)\s+[a-zà-ü]+\b", re.I)
+# ── Looptaal: een run is nooit 'gereden' of 'gefietst' ───────────────────────
+# Fact-Guard (11 sep 2026). Het voltooid deelwoord van rijden/fietsen is over een loop altijd
+# het verkeerde woord, en het lopen-equivalent is betekenisgelijk: 'netjes gereden' ->
+# 'netjes gelopen', 'uitgereden' -> 'uitgelopen'. Anders dan bij de aanspreekvorm valt hier dus
+# wél veilig te corrigeren. Niet corrigeren als de atleet zelf over fietsen praat (dezelfde
+# uitzondering als de validator) of als de zin een echte fietsactiviteit noemt.
+def naar_looptaal(text: str, athlete_text: str = "") -> str:
+    import feedback_facts as _ff
+    if _ff._CYCLING_CTX.search(athlete_text or ""):
+        return text
 
+    def _zin(z: str) -> str:
+        if not _ff.rijtaal_zonder_fiets(z):
+            return z
 
-def derde_persoon_atleet(text: str) -> bool:
-    """Spreekt deze tekst de geadresseerde aan als 'ze/zij/hij' in plaats van 'je'?"""
-    for zin in _sentences(text):
-        if _DERDE_SUBJECT.search(zin) and not _EIGEN_DERDE.search(zin):
-            return True
-    return False
+        def _vervang(m):
+            nieuw = m.group(1) + "gelopen"
+            return nieuw[:1].upper() + nieuw[1:] if m.group(0)[:1].isupper() else nieuw
+        return _ff._RIJ_PARTICIPE.sub(_vervang, z)
+    zinnen = _sentences(text or "")
+    if not any(_ff.rijtaal_zonder_fiets(z) for z in zinnen):
+        return text                                          # niets te doen → tekst onaangeroerd
+    return " ".join(_zin(z) for z in zinnen)
 
 
 # ── Coachstem: de tekst gaat NAMENS de coach naar de atleet ──────────────────

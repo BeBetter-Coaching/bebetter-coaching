@@ -226,7 +226,11 @@ def _claim_section(modality: str, numbered: dict, claimed: set, athlete_text: st
         return ""
     dominant = max(numbered, key=lambda z: numbered[z])
     totality = bool(_TOTALITY_RE.search(athlete_text or ""))
-    missed_material = sorted(material - claimed)
+    # Fact-Guard (11 sep 2026) — een intensiteitsclaim wordt alleen tegengesproken door een
+    # materieel deel BOVEN de claim. Een deel eronder is rustiger dan geclaimd: bij 'hoog z2'
+    # was de Z1-inloop (precies 1 km van 10 = de 10%-drempel) geen tegenspraak, maar het concept
+    # kreeg de opdracht hem te benoemen en de atleet niet te bevestigen.
+    missed_material = sorted(z for z in material - claimed if z > max(claimed))
     if dominant not in claimed:
         status = "CONTRADICTED"
     elif missed_material:

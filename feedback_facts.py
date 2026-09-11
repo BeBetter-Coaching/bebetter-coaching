@@ -40,6 +40,19 @@ _REL_DAY = re.compile(r"\b(gisteren|eergisteren|morgen|overmorgen)\b", re.I)
 _TODAY_WORD = re.compile(r"\bvandaag\b", re.I)
 _RIT = re.compile(r"\brit\b|\britje\b", re.I)
 _FIETSRIT = re.compile(r"\bfietsrit\w*", re.I)
+# Fact-Guard (11 sep 2026) — de sporttaalregel ving alleen het ZELFSTANDIG naamwoord ('rit'),
+# niet het werkwoord. 'Netjes gereden', 'uitgereden', 'goed gefietst' over een loop gingen door
+# elke laag heen: de promptregel verbiedt het, maar niets controleerde het. Voltooide
+# deelwoorden van rijden/fietsen (met voorvoegsel: uit-, door-, weg-) zijn over een run altijd
+# fout, tenzij de zin zelf een echte fietsactiviteit noemt.
+_RIJ_PARTICIPE = re.compile(r"\b([a-zà-ü]*?)(gereden|gefietst)\b", re.I)
+_FIETS_ONDERWERP = re.compile(
+    r"\b(fiets\w*|wieler\w*|wielren\w*|bike\w*|mtb|gravel\w*|spinning|zwift|mountainbike\w*)\b", re.I)
+
+
+def rijtaal_zonder_fiets(zin: str) -> bool:
+    """Beschrijft deze zin een loop als rijden/fietsen (en noemt ze geen echte fietsactiviteit)?"""
+    return bool(_RIJ_PARTICIPE.search(zin or "")) and not _FIETS_ONDERWERP.search(zin or "")
 # zone-gebonden percentage (athlete-facing verboden); losse '100% hersteld' blijft toegestaan.
 _ZONE_PCT = re.compile(r"(zone|z[1-5]|tempo|hartslag).{0,15}\d+\s*%|\d+\s*%.{0,15}(zone|z[1-5]|tempo|hartslag)", re.I)
 
@@ -202,8 +215,54 @@ _BLANKET_REASSURE = (r"precies (de bedoeling|goed|volgens plan|zoals gepland)|"
                      r"(gewoon|er)\s+goed\s+in|perfect uitgevoerd|helemaal op target|precies op target")
 
 
+# ── Fact-Guard (11 sep 2026): zoneclaims tegen de GEMETEN verdeling ─────────────
+# Live: een training volledig in Z1 kwam in het concept terug als Z2. De prompt gaf de juiste
+# labels (elke lap + het gemiddelde Z1), maar niets controleerde een zoneclaim in de output.
+# De verdeling van de hele training (`feedback_obligations.zone_shares`, dezelfde per-lap
+# classificatie) gaat nu als bronfeit mee, en een UITVOERINGSCLAIM over een zone die op
+# lapniveau aantoonbaar NIET is gehaald (aandeel 0) is een tegenspraak.
+#
+# Bewust smal, want een valse blokkade eindigt in een terugvalconcept (de R3.1-les):
+#   • alleen een bevestigende uitvoeringsclaim ('je bleef/zat/liep in Z2', 'de hele training
+#     in Z2'); niet over een blok/interval/strides (km-laps kunnen die niet weerleggen), niet
+#     over plan/doel/een volgende training, niet met een ontkenning of vergelijking
+#     ('niet in Z2', 'onder Z2', 'richting Z2'), en niet over de ándere modaliteit;
+#   • een bereik ('Z1-Z2', 'Z1/Z2') is geen claim op één zone;
+#   • citaten van de atleet tellen niet: dat is haar/zijn woord, niet dat van de coach.
+_ZC_VERB = (r"(?:zat|zaten|zit|zitten|gezeten|bleef|bleven|gebleven|liep|liepen|gelopen|kwam|kwamen|"
+            r"gekomen|uitgekomen|was|waren|geweest|lag|lagen|gelegen|hield|hielden|gehouden)")
+_ZC_TOTAAL = r"(?:de\s+hele|volledig\w*|helemaal)"
+_ZC_UITGESLOTEN = (r"\b(?:\w*blok\w*|interval\w*|herhaling\w*|stride\w*|versnelling\w*|sprint\w*|"
+                   r"\d{3,4}\s*m\b|\d{3}'?s\b|volgende|komende|straks|\w*plan\w*|bedoel\w*|schema|"
+                   r"doel\w*|moet|moeten|probeer\w*|houd|hou|blijf|blijft|niet|geen|nooit|onder|"
+                   r"beneden|boven|tussen|richting|naar|tot|t/m)\b")
+_ZC_ANDERE = {"hartslag": r"\b(?:tempo|pace)\b", "tempo": r"\b(?:hartslag|hf|bpm)\b"}
+
+
+def zone_claim_pattern(zone_distribution) -> str | None:
+    """Regex die een uitvoeringsclaim over een NIET-gehaalde zone vangt, of None als de verdeling
+    geen harde uitspraak toelaat (onbekend, <2 laps, of laps buiten de zonetabel)."""
+    zd = zone_distribution or {}
+    shares, modality = zd.get("shares") or {}, zd.get("modality")
+    if modality not in _ZC_ANDERE or not shares:
+        return None
+    if any(not str(k).startswith("Z") for k, p in shares.items() if p):
+        return None                                          # buiten de zones → geen harde uitspraak
+    gehaald = {int(str(k)[1:]) for k, p in shares.items() if str(k)[1:].isdigit() and p > 0}
+    niet = [z for z in range(1, 8) if z not in gehaald]
+    if not gehaald or not niet:
+        return None
+    zone = (r"(?<![-–/]\s)(?<![-–/])\b(?:z|zone)\s*(?:" + "|".join(map(str, niet)) + r")\b"
+            r"(?!\s*[-–/]\s*(?:z|zone)?\s*\d)")
+    kern = (rf"(?:{_ZC_VERB}[^.!?]{{0,50}}?{zone}|{zone}[^.!?]{{0,50}}?\b{_ZC_VERB}\b"
+            rf"|{_ZC_TOTAAL}[^.!?]{{0,40}}?{zone}|{zone}[^.!?]{{0,25}}?{_ZC_TOTAAL})")
+    return (rf"(?:^|(?<=[.!?])\s)(?![^.!?]*{_ZC_UITGESLOTEN})(?![^.!?]*{_ZC_ANDERE[modality]})"
+            rf"[^.!?]*?\b{kern}")
+
+
 def build_fact_pack(*, workout_type, divergence=None, block_sequence=None,
-                    recovery_contradiction=None, complaint_line=None) -> dict:
+                    recovery_contradiction=None, complaint_line=None,
+                    zone_distribution=None) -> dict:
     """Bouw de niet-persistente fact-pack: sportprofiel + de VERPLICHTE coach-zinnen (max een paar,
     door CODE gebouwd) + de deterministisch-checkbare VERBODEN tegenspraak-claims. Lege pack =
     schone case. De app voegt de verplichte zinnen zelf in (assemble_spine); de LLM kopieert ze niet."""
@@ -221,7 +280,13 @@ def build_fact_pack(*, workout_type, divergence=None, block_sequence=None,
         mandatory.append({"id": "block_sequence", "sentence": block_sequence})
     if complaint_line:
         mandatory.append({"id": "complaint", "sentence": complaint_line})
-    return {"sport": sport, "mandatory": mandatory, "forbidden_claims": forbidden}
+    # Bronfeit: de gemeten zoneverdeling van de hele training. Geen verplichte zin (geen extra
+    # copy); wél een verboden claim over een zone die aantoonbaar niet is gehaald.
+    zc = zone_claim_pattern(zone_distribution) if sport["is_running"] else None
+    if zc:
+        forbidden.append({"id": "zone_claim", "pattern": zc, "buiten_citaat": True})
+    return {"sport": sport, "mandatory": mandatory, "forbidden_claims": forbidden,
+            "zone_distribution": dict(zone_distribution) if zone_distribution else None}
 
 
 def assemble_spine(prose: str, pack: dict) -> str:
@@ -296,9 +361,10 @@ def validate_draft(text: str, *, is_running: bool = False, mandatory=None,
         s = _norm(m.get("sentence", ""))
         if s:
             scan = scan.replace(s, " ")
+    scan_zonder_citaat = _ZONDER_CITAAT.sub(" ", scan)
     for fc in (forbidden_claims or []):
         pat = fc.get("pattern")
-        if pat and re.search(pat, scan, re.I):
+        if pat and re.search(pat, scan_zonder_citaat if fc.get("buiten_citaat") else scan, re.I):
             return {"ok": False, "kind": "content", "detail": f"contradiction:{fc.get('id')}"}
     # 5. stale relatieve dag (v6). De regel bewaakt dat de COACH geen verouderde relatieve
     #    dag claimt. R3.1: een LETTERLIJK, toegeschreven citaat van de atleet ("Je vraagt:
@@ -324,23 +390,24 @@ def validate_draft(text: str, *, is_running: bool = False, mandatory=None,
     # 5d. R3 — geen stellige toezegging over het plan/schema (COACH-AGENCY, nu ook getoetst).
     if plan_toezegging(t):
         return {"ok": False, "kind": "content", "detail": "plan_toezegging"}
-    # 5e. R3.1 — de tekst gaat RECHTSTREEKS naar de atleet: nooit 'ze/zij/hij' over de
-    #     geadresseerde zelf ("Leuk dat ze haar vriendin ..."). Derde persoon over een ECHTE
-    #     derde ("je vriendin") blijft toegestaan. Anders dan bij de coachstem valt hier niets
-    #     te vervangen — de hele zin zou herschreven moeten worden — dus fail-closed; het
-    #     terugvalconcept vangt het op.
-    try:
-        import feedback_copy as _fcopy2
-        if _fcopy2.derde_persoon_atleet(t):
-            return {"ok": False, "kind": "content", "detail": "atleet_derde_persoon"}
-    except Exception:
-        pass
+    # (Fact-Guard, 11 sep 2026: de R3.1-regel 'atleet_derde_persoon' is hier weg. Hij blokkeerde
+    #  elke zin met ze/zij/hij zonder je/jouw, maar een patroon kan niet bepalen WAAR zo'n
+    #  voornaamwoord naar verwijst: "als ze [de kuiten] nog gespannen zijn" en "hij [de hartslag]
+    #  zakte naar 130" werden geblokkeerd en eindigden in een leeg terugvalconcept. Op 332 echte
+    #  coachreacties blokkeerde hij er 9 onterecht. De aanspreekvorm blijft een ROLCONTRACT in
+    #  de systeemprompt ('WIE JE AANSPREEKT'), niet een fail-closed regel.)
     # 6. sporttaal: een RUN mag nooit een 'rit'/'ritje'/'fietsrit' heten (harde productregel)
     if is_running:
         if _RIT.search(t):
             return {"ok": False, "kind": "sport", "detail": "rit"}
         if _FIETSRIT.search(t) and not _CYCLING_CTX.search(athlete_message or ""):
             return {"ok": False, "kind": "sport", "detail": "fietsrit"}
+        # …en ook niet 'gereden'/'gefietst' (zelfde uitzondering: de atleet praat zelf over
+        # fietsen). `feedback_copy.naar_looptaal` corrigeert dit al vóór de validatie; dit is
+        # het vangnet voor een pad dat die correctie niet raakt.
+        if not _CYCLING_CTX.search(athlete_message or "") and any(
+                rijtaal_zonder_fiets(z) for z in _zinnen(t)):
+            return {"ok": False, "kind": "sport", "detail": "gereden"}
     return {"ok": True, "kind": "", "detail": ""}
 
 

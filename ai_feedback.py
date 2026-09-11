@@ -772,12 +772,26 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
     # (kan-niet-komen/pijn/vraag) én signaalverplichting (actieve klacht bij relevante belasting →
     # neutrale check-in) niet worden genegeerd. Geen nieuwe fetch/store/AI. Schone case → leeg blok.
     obligations_section = ""
+    _ob_shares = {}
+    try:
+        import metric_authority as _ma
+        _authority = _ma.derive(_fs._planned_blocks(builder_steps_raw), plan_description,
+                                workout_data.get("workout_type"))
+    except Exception:
+        _authority = {}
     try:
         import feedback_obligations as _ob
         _ob_shares = (_ob.zone_shares(laps, athlete_zones_struct, _classified_is_pace)[0]
                       if _can_classify else {})
         _ob_targets = {int(b["target_zone"]) for b in (_block_assessment or {}).get("blocks", []) or []
                        if b.get("target_zone") and b.get("type") not in ("WARMUP", "REST", "COOLDOWN")}
+        # Fact-Guard — een doorlopende duurloop (één geplande stap, km-laps) geeft geen bruikbare
+        # blokkoppeling, en dus hierboven geen doelzone. De verplichtingen oordeelden dan zonder
+        # plananker: 'verspreid over meerdere zones' of een Z1-inloop als tegenspraak van een
+        # correcte Z2-loop. MetricAuthority kent die doelzone wél, uit hetzelfde geplande blok.
+        if not _ob_targets:
+            _ob_targets = set((_authority or {}).get(
+                "hr_target_zones" if athlete_zone_type == "hartslag" else "pace_target_zones") or [])
         _ob_msg = "\n".join([post_notes or ""] + [c for c in athlete_comments if c and c.strip()]).strip()
         _ob_diag = workout_data.get("_brein_diag") or {}
         # Correctness Round 2 — automatisch terugkerende klachtcontext volgt de CANONIEKE
@@ -810,8 +824,6 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
             # kwalificeren. De HR/tempo-divergentie-atom vuurt daarom ALLEEN bij een expliciet DUAAL
             # plan (pace-target én HR-target); bij HR- of pace-primair is er geen divergentie-oordeel.
             import metric_authority as _ma
-            _authority = _ma.derive(_fs._planned_blocks(builder_steps_raw), plan_description,
-                                    workout_data.get("workout_type"))
             _intent_txt = f"{workout_name} {plan_description}".lower()
             _easy_intent = any(k in _intent_txt for k in
                                ("herstel", "recovery", "rustig", "hersteldag", "regeneratie", "easy"))
@@ -856,10 +868,17 @@ def _build_workout_context(workout_data: dict) -> tuple[str, str]:
                        if (_can_classify and athlete_zone_type == "hartslag") else None)
         _complaint_relevant = bool(_ob_complaints) and bool(_ob_rpe_high or _ob_above or _ob_upcoming)
         _complaint_line = _ff.complaint_sentence(_ob_complaints) if _complaint_relevant else None
+        # Fact-Guard — de gemeten zoneverdeling van de hele training als bronfeit, zodat de
+        # validator een zoneclaim kan toetsen. Niet bij onvolledige sync of sub-km werkblokken in
+        # km-laps: dan is de lapverdeling geen betrouwbaar bewijs over de training.
+        _zone_dist = None
+        if _can_classify and _ob_shares and not _partial_sync and \
+                not _ff.km_lap_mismatch(_fs._planned_blocks(builder_steps_raw), laps):
+            _zone_dist = {"modality": athlete_zone_type, "shares": dict(_ob_shares)}
         _pack = _ff.build_fact_pack(
             workout_type=workout_data.get("workout_type"), divergence=_divergence,
             block_sequence=_block_seq, recovery_contradiction=_rec_contra,
-            complaint_line=_complaint_line)
+            complaint_line=_complaint_line, zone_distribution=_zone_dist)
         workout_data["_fact_pack"] = _pack                   # voor de fail-closed validator na generatie
         fact_section = _ff.fact_prompt_section(_pack)
     except Exception:
