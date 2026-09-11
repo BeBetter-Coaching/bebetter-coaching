@@ -9,8 +9,8 @@
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-400.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/sg-700.woff2">
-  <link rel="stylesheet" href="/static/styles.css?v=145a">
-  <link rel="stylesheet" href="/static/design-system.css?v=145a">
+  <link rel="stylesheet" href="/static/styles.css?v=146a">
+  <link rel="stylesheet" href="/static/design-system.css?v=146a">
 </head>
 <body>
   <!-- Iconen-sprite (lijn-iconen, werken offline) -->
@@ -176,6 +176,10 @@
          aanmaken/importeren staat eronder in een lade. Aantikken → sticky balk → klaar. -->
     <section class="view" data-view="strippen">
       <header class="appbar"><span class="pagehead"><h1>Strippenkaart</h1><p class="pagesub">Tik de aanwezigen aan en boek in één keer af.</p></span></header>
+      <!-- Twee fasen in dezelfde view, nooit tegelijk: de kaartenlijst (kiezen en
+           afboeken) of de berichten van de zojuist afgeboekte groep. Zo vervuilt een
+           tijdelijke berichtenlijst de lijst van dertig kaarten niet. -->
+      <div id="sk-kaarten" class="sk-fase">
       <label class="sk-zoek">
         <svg class="ic"><use href="#ic-search"/></svg>
         <input id="sk-q" type="search" placeholder="Zoek op naam" autocomplete="off"
@@ -188,6 +192,7 @@
           <button class="btn small ghost" id="sk-wis" type="button" hidden>Wissen</button>
         </span>
       </div>
+      <button id="sk-b-hervat" class="sk-b-hervat" type="button" hidden></button>
       <section id="lijst" class="sk-lijst" aria-label="Deelnemers"></section>
       <section class="panel sk-beheer">
         <button class="acc-toggle" data-target="nieuw"><svg class="ic"><use href="#ic-plus"/></svg> Nieuwe strippenkaart</button>
@@ -221,6 +226,18 @@
           <div id="b-preview"></div>
         </div>
       </section>
+      </div>
+      <section id="sk-berichten" class="sk-fase sk-berichten" hidden aria-labelledby="sk-b-titel">
+        <div class="sk-b-kop">
+          <span class="sk-b-kop-t">
+            <h2 id="sk-b-titel">WhatsApp na afboeken</h2>
+            <!-- Eerlijk over wat de app weet: wa.me opent WhatsApp, meer niet. -->
+            <p class="sk-b-uitleg">Tik een naam: WhatsApp opent met het bericht klaar. Versturen doe je zelf in WhatsApp.</p>
+          </span>
+          <button class="btn small ghost" id="sk-b-terug" type="button">Naar kaarten</button>
+        </div>
+        <ol id="sk-b-lijst" class="sk-b-lijst"></ol>
+      </section>
       <!-- Sticky binnen de scroller: die eindigt precies waar de onderbalk begint, dus
            overlap met de PWA-navigatie is uitgesloten door de LAYOUT, niet door een
            afgestelde hoogte (zie de fb-dock-les: vaste clearance loopt altijd mis). -->
@@ -229,6 +246,15 @@
              De uitkomst (met 'Ongedaan maken') verschijnt dus precies waar de duim
              net tikte, niet onderaan een lijst van dertig namen. -->
         <div id="sk-uitkomst" hidden></div>
+        <!-- Berichtenfase: teller en precies één vervolgactie onder de duim. -->
+        <div id="sk-b-bar" class="sk-b-bar" hidden>
+          <div class="sk-b-voortgang">
+            <span class="sk-b-teller" id="sk-b-teller" aria-live="polite"></span>
+            <progress class="sk-b-meter" id="sk-b-meter" max="1" value="0" aria-hidden="true"></progress>
+          </div>
+          <a class="btn sk-volgende" id="sk-volgende" target="_blank" rel="noopener"></a>
+          <button class="btn primary sk-af" id="sk-b-klaar" type="button" hidden>Klaar — terug naar kaarten</button>
+        </div>
         <div id="sk-bar-actie">
           <p class="sk-bar-let" id="sk-bar-let" hidden></p>
           <button class="btn primary sk-af" id="sk-af" type="button"></button>
@@ -462,6 +488,6 @@
   </nav>
 
 
-  <script src="/static/app.js?v=145a"></script>
+  <script src="/static/app.js?v=146a"></script>
 </body>
 </html>

@@ -139,6 +139,10 @@ const bevestigActie = async opts => { calls.push({ bevestig: opts }); return bev
 const skeleton = () => {}, bronStatus = () => {}, foutState = () => {};
 const leegState = (i, t) => `<div class="leeg">${t}</div>`;
 const haptic = () => {};
+// Eigen opslag-stub: de module mag nooit de echte (node-)localStorage raken.
+const _opslag = new Map();
+const localStorage = { getItem: k => (_opslag.has(k) ? _opslag.get(k) : null),
+  setItem: (k, v) => _opslag.set(k, String(v)), removeItem: k => _opslag.delete(k) };
 
 // ── De ECHTE module ─────────────────────────────────────────────────────────
 const bron = [
@@ -152,15 +156,15 @@ const bron = [
   sliceBetween("const KAART_BIJNA = 1;", '$("#n-add").addEventListener'),
   "return { laad, skTeken, skToggle, skZoek, skWis, skAllesZichtbaar, skAfboeken, skUndo,"
   + " skBalk, skTelling, skPasToe, skSorteer, skRijBinnen, skDetail,"
-  + " kaarten: () => skKaarten, sel: () => skSel, batch: () => skLaatsteBatch };",
+  + " kaarten: () => skKaarten, sel: () => skSel, batch: () => skLaatsteBatch, wa: () => skWa };",
 ].join("\n");
 
 const maak = new Function(
   "document", "navigator", "self", "api", "jpost", "melding", "enqueue", "bevestigActie",
-  "skeleton", "bronStatus", "foutState", "leegState", "haptic",
+  "skeleton", "bronStatus", "foutState", "leegState", "haptic", "localStorage",
   '"use strict";\n' + bron);
 const m = maak(document, navigator, self, api, jpost, melding, enqueue, bevestigActie,
-               skeleton, bronStatus, foutState, leegState, haptic);
+               skeleton, bronStatus, foutState, leegState, haptic, localStorage);
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 const kaart = (naam, totaal, gebruikt, tel = "0612345678") => ({
@@ -264,8 +268,12 @@ ok(els["#sk-uitkomst"].hidden === false
    && /1 strip afgeboekt bij 3 deelnemers/.test(els["#sk-uitkomst"].innerHTML),
    "E1: uitkomst met aantal", els["#sk-uitkomst"].innerHTML.slice(0, 80));
 ok(/data-undo/.test(els["#sk-uitkomst"].innerHTML), "G1: 'Ongedaan maken' staat er");
-ok((els["#sk-uitkomst"].innerHTML.match(/sk-wa-btn/g) || []).length === 2,
-   "E1: alleen deelnemers mét nummer krijgen een berichtknop");
+// De WhatsApp-acties staan sinds WhatsApp Flow v1 in de berichtenfase (eigen suite:
+// strippenkaart_whatsapp.test.mjs). Hier blijft de garantie: wie geen nummer heeft,
+// krijgt geen WhatsApp-actie; wie er wel een heeft, wel.
+ok(m.wa() && m.wa().items.filter(i => i.wa_link).map(i => i.naam).join(",") === "Anna Bos,Cas de Wit",
+   "E1: alleen deelnemers mét nummer krijgen een WhatsApp-actie",
+   m.wa() && m.wa().items.map(i => i.naam + ":" + !!i.wa_link).join(","));
 
 // C2 — dubbeltap: de tweede tik mag geen tweede request worden
 await laadMet(VIJF);

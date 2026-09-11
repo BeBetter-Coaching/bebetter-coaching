@@ -2049,6 +2049,18 @@ let skFilter = "";
 let skBezig = false;             // slot tegen dubbeltap/dubbelklik
 let skLaatsteBatch = null;       // {batch_id, aantal, deelnemers} zolang undo mag
 
+// WhatsApp-opvolging van de laatste batch (zie "WhatsApp na afboeken" hieronder).
+// `wa.me` OPENT alleen WhatsApp met een klaargezet bericht; of het daarna verstuurd
+// wordt, beslist de coach in WhatsApp en weet deze app niet. 'Geopend' is dus de
+// enige status die we kunnen vastleggen. 'Verzonden'/'afgeleverd' horen bij een bron
+// die dat werkelijk meldt (WhatsApp Business API-events) — die is er nog niet, dus die
+// statussen bestaan hier ook niet. Een latere WABA-koppeling voegt ze toe mét bron.
+const SK_WA_STATUS = { open: "nog te openen", geopend: "geopend" };
+const SK_WA_KEY = "bb_sk_wa";
+const SK_WA_TTL = 18 * 3600 * 1000;  // één trainingsdag; daarna is het geen opvolging meer
+let skWa = null;                 // {batch_id, sinds, modus, items:[{naam, rest, totaal, gebruikt, wa_link, status}]}
+let skWaSlot = 0;                // tijdstip van de laatste open-tik (dubbeltik ≠ tweede gesprek)
+
 const skActief = k => k.rest > 0;
 const skZichtbaar = naam => !skFilter || naam.toLowerCase().includes(skFilter);
 
@@ -2072,6 +2084,7 @@ async function laad() {
     if (!k || !skActief(k)) skSel.delete(n);
   });
   skTeken();
+  skWaControleer();
 }
 
 // ── Tekenen ─────────────────────────────────────────────────────────────────
@@ -2184,9 +2197,10 @@ function skBalk() {
   const bar = $("#sk-bar"); if (!bar) return;
   const n = skSel.size;
   const box = $("#sk-uitkomst");
-  // De balk is er zodra er íets te tonen is: een voorgenomen actie of de uitkomst
-  // van de vorige. Beide nooit tegelijk — na een geslaagde afboeking is de selectie leeg.
-  bar.hidden = n === 0 && !(box && !box.hidden);
+  // De balk is er zodra er íets te tonen is: een voorgenomen actie, de uitkomst van
+  // de vorige, of de berichtenfase. Actie en uitkomst nooit tegelijk — na een
+  // geslaagde afboeking is de selectie leeg.
+  bar.hidden = n === 0 && !(box && !box.hidden) && !(skWa && skWa.modus);
   const actie = $("#sk-bar-actie"); if (actie) actie.hidden = n === 0;
   if (!n) return;
   // Alleen wanneer het filter iets uit het zicht houdt, zegt de balk dat er ook
@@ -2216,9 +2230,13 @@ async function skAfboeken() {
   if (skBezig) return;                       // tweede tik van een dubbeltap valt hier stil
   const namen = [...skSel];
   if (!namen.length) return;
+  // Een nieuwe batch krijgt een nieuwe berichtenlijst. Staan er van de vorige nog
+  // berichten open, dan zegt de bevestiging dat vóórdat die lijst vervalt.
+  const openWa = skWaTeller(skWa).over;
   const akkoord = await bevestigActie({
     titel: `1 strip afboeken bij ${nlAantal(namen.length, "deelnemer", "deelnemers")}`,
-    tekst: "Bij iedereen hieronder gaat er één strip af.",
+    tekst: "Bij iedereen hieronder gaat er één strip af."
+      + (openWa ? ` Let op: van de vorige afboeking ${openWa === 1 ? "is 1 WhatsApp-bericht" : `zijn ${openWa} WhatsApp-berichten`} nog niet geopend — die lijst vervalt.` : ""),
     detail: namen.join(" · "),
     bevestig: "Afboeken",
     focusTerug: $("#sk-af"),
@@ -2251,6 +2269,7 @@ async function skAfboeken() {
   skVerversAlle(); skTelling();
   skLaatsteBatch = r;
   skUitkomst(r);                             // zet de balk zelf op de uitkomst-staat
+  skWaStart(r);                              // en daarna meteen de berichten van deze groep
   // Geen toast erbij: de balk zegt hetzelfde, staat op dezelfde plek als de knop die
   // net is ingedrukt, en de toast zou er bovenop komen te liggen.
   haptic(18);
@@ -2293,13 +2312,14 @@ function skVerbergUitkomst() {
 
 function skUitkomst(r) {
   const box = $("#sk-uitkomst"); if (!box) return;
-  const metNr = (r.deelnemers || []).filter(d => d.wa_link);
+  // De WhatsApp-acties staan niet meer hier maar in de berichtenfase (skWa*): vijftien
+  // losse knoppen in deze balk zeiden niet wie je al gehad had.
+  const zonderNr = (r.deelnemers || []).length > 0 && !(r.deelnemers || []).some(d => d.wa_link);
   box.innerHTML = `<div class="sk-uit is-success">
       <span class="sk-uit-t">1 strip afgeboekt bij ${esc(nlAantal(r.aantal, "deelnemer", "deelnemers"))}</span>
       <button class="btn small ghost" data-undo type="button">Ongedaan maken</button>
     </div>`
-    + (metNr.length ? `<div class="sk-wa">${metNr.map((d, i) =>
-      `<a class="btn small sk-wa-btn" href="${esc(d.wa_link)}" target="_blank" rel="noopener" data-wa="${i}">${ic("message")} ${esc(d.naam.split(" ")[0])}</a>`).join("")}</div>` : "");
+    + (zonderNr ? `<p class="sk-uit-nr">Geen telefoonnummer bekend, dus geen WhatsApp-bericht.</p>` : "");
   box.hidden = false;
   skBalk();                                  // balk blijft staan, nu met de uitkomst
   const undo = $("[data-undo]", box);
@@ -2308,17 +2328,217 @@ function skUitkomst(r) {
 
 async function skUndo() {
   if (!skLaatsteBatch || skBezig) return;
-  const id = skLaatsteBatch.batch_id;
+  const batch = skLaatsteBatch;
   skLaatsteBatch = null;                     // tweede tik vindt niets meer (ook server-side niet)
+  // Is WhatsApp al geopend, dan kan er een bericht met het nieuwe saldo verstuurd
+  // zijn. Terugdraaien mag nog steeds, maar niet zonder dat te zeggen.
+  const wa = skWa && skWa.batch_id === batch.batch_id ? skWaTeller(skWa).geopend : 0;
+  if (wa) {
+    const akkoord = await bevestigActie({
+      titel: "Afboeking ongedaan maken",
+      tekst: `Je hebt WhatsApp al geopend bij ${nlAantal(wa, "deelnemer", "deelnemers")}. `
+        + "Heb je dat bericht verstuurd, dan klopt het saldo daarin niet meer.",
+      bevestig: "Toch ongedaan maken",
+    });
+    if (!akkoord) { skLaatsteBatch = batch; return; }
+  }
+  const id = batch.batch_id;
   const undo = $("[data-undo]", $("#sk-uitkomst"));
   if (undo) undo.disabled = true;
   const r = await jpost("/api/kaarten/terugdraaien", { batch_id: id }).catch(() => null);
   if (!r) { melding("Geen verbinding — niets teruggedraaid.", true); await laad(); return; }
   skVerbergUitkomst();
   if (!r.ok) { melding(r.err || "Terugdraaien mislukt.", true); await laad(); return; }
+  // De berichten van een teruggedraaide batch noemen een saldo dat niet meer bestaat.
+  if (skWa && skWa.batch_id === id) skWaStop();
   skPasToe(r.kaarten);
   skTelling(); skBalk();
   melding(`Teruggedraaid bij ${nlAantal(r.aantal, "deelnemer", "deelnemers")}.`);
+}
+
+// ── WhatsApp na afboeken ────────────────────────────────────────────────────
+//   afboeken → berichtenlijst → per persoon WhatsApp openen → 'geopend' → teller
+//   `x van y geopend` → Volgende.
+// Nooit automatisch: elk gesprek opent alleen op een tik van de coach, één per tik.
+// Geen server-write: 'geopend' is tijdelijke werkstatus op dit toestel, per batch-id.
+// De teksten komen ongewijzigd van de server (`strippen_core.afboek_bericht`).
+
+// Nieuwe batch → schone lei. Dezelfde batch nog eens (idempotent herhaald antwoord)
+// → de voortgang blijft: dat is geen nieuwe afboeking.
+function skWaVan(r) {
+  if (skWa && skWa.batch_id === r.batch_id) return skWa;
+  const items = (r.deelnemers || []).map(d => ({
+    naam: d.naam, rest: d.rest, totaal: d.totaal, gebruikt: d.gebruikt,
+    wa_link: d.wa_link || "", status: "open",
+  })).sort((a, b) => a.naam.localeCompare(b.naam, "nl"));
+  return { batch_id: r.batch_id, sinds: Date.now(), modus: true, items };
+}
+
+const skWaTeOpenen = st => (st ? st.items.filter(i => i.wa_link) : []);
+
+function skWaTeller(st) {
+  const met = skWaTeOpenen(st);
+  const geopend = met.filter(i => i.status === "geopend").length;
+  return { totaal: met.length, geopend, over: met.length - geopend,
+           zonderNr: st ? st.items.length - met.length : 0 };
+}
+
+// De eerstvolgende in LIJSTVOLGORDE die nog niet geopend is — reeds geopende worden
+// overgeslagen, ook als je er eerder buiten de volgorde om een hebt aangetikt.
+const skWaVolgende = st => skWaTeOpenen(st).find(i => i.status !== "geopend") || null;
+
+function skWaBewaar() {
+  try {
+    if (skWa) localStorage.setItem(SK_WA_KEY, JSON.stringify(skWa));
+    else localStorage.removeItem(SK_WA_KEY);
+  } catch {}
+}
+
+// Houdbaarheid en stand worden niet hier maar in `skWaControleer` getoetst — één regel,
+// of de lijst nu uit het geheugen of uit de opslag komt.
+function skWaUitOpslag() {
+  try {
+    const st = JSON.parse(localStorage.getItem(SK_WA_KEY) || "null");
+    if (st && st.batch_id && Array.isArray(st.items)) return st;
+  } catch {}
+  return null;
+}
+
+function skWaStart(r) {
+  const st = skWaVan(r);
+  // Een batch zonder één telefoonnummer heeft geen berichten; de vorige lijst vervalt
+  // wel — hij hoort bij een andere batch.
+  skWa = skWaTeOpenen(st).length ? st : null;
+  if (skWa) skWa.modus = true;
+  skWaBewaar();
+  skWaTeken();
+  if (skWa) skWaNaarBoven();
+}
+
+function skWaStop() {
+  skWa = null;
+  skWaBewaar();
+  skWaTeken();
+}
+
+// De berichten zijn geschreven op de stand van DIE batch. Is een kaart sindsdien
+// geraakt (undo, 'strip terug', andere coach, Streamlit), dan noemt het bericht een
+// saldo dat niet meer klopt: dan vervalt de lijst, liever dan een fout bericht klaar
+// te zetten. Draait na elke verse read — ook na een herstart uit WhatsApp.
+function skWaControleer() {
+  if (!skWa) skWa = skWaUitOpslag();
+  if (skWa && Date.now() - (skWa.sinds || 0) >= SK_WA_TTL) skWa = null;
+  if (skWa && !skWa.items.every(i => {
+    const k = skKaarten.find(x => x.naam === i.naam);
+    return k && k.gebruikt === i.gebruikt;
+  })) {
+    skWa = null;
+    melding("De stand is intussen gewijzigd — de berichtenlijst van de vorige afboeking is vervallen.");
+  }
+  skWaBewaar();
+  skWaTeken();
+}
+
+function skWaModus(aan) {
+  if (!skWa) return;
+  // Wie teruggaat terwijl iedereen al geopend is, is klaar: niets meer om te hervatten.
+  if (!aan && skWaTeller(skWa).over === 0) return skWaStop();
+  skWa.modus = !!aan;
+  skWaBewaar();
+  skWaTeken();
+  if (aan) skWaNaarBoven();
+}
+
+// Bij het wisselen van fase kan de scroller nog diep in de kaartenlijst staan; de
+// berichtenlijst hoort vanaf zijn kop te beginnen.
+function skWaNaarBoven() {
+  const sc = $("#scroller");
+  if (sc && sc.scrollTo) sc.scrollTo({ top: 0 });
+}
+
+function skWaMarkeer(idx) {
+  const i = skWa && skWa.items[idx];
+  if (!i || !i.wa_link) return false;
+  i.status = "geopend";
+  skWaBewaar();                              // meteen: iOS kan de PWA in WhatsApp wegzetten
+  // Hertekenen pas NA deze tik. De browser volgt de href van het aangetikte anker pas
+  // als deze handler klaar is; direct hertekenen zou 'Volgende' al naar de volgende
+  // persoon laten wijzen voordat hij vertrekt.
+  setTimeout(skWaTeken, 0);
+  return true;
+}
+
+// Eén handler voor de rijen én 'Volgende'. Het anker opent WhatsApp zelf (gewone
+// link-activatie, zoals vóór deze build); hier wordt alleen de status bijgehouden.
+function skWaKlik(e) {
+  const a = e.target && e.target.closest && e.target.closest("[data-wa]");
+  if (!a || !skWa) return;
+  const nu = Date.now();
+  if (nu - skWaSlot < 800) { if (e.preventDefault) e.preventDefault(); return; }
+  skWaSlot = nu;
+  skWaMarkeer(+a.dataset.wa);
+  haptic(8);
+}
+
+function skWaSaldo(i) {
+  return i.rest <= 0 ? "laatste strip, kaart op" : `${i.rest} over`;
+}
+
+function skWaRij(i, idx, volgende) {
+  const geopend = i.status === "geopend";
+  const cls = "sk-b-rij" + (geopend ? " is-geopend" : "") + (i === volgende ? " is-volgende" : "");
+  const status = `<span class="sk-b-status">${esc(SK_WA_STATUS[geopend ? "geopend" : "open"])}</span>`;
+  return `<li class="${cls}"><a class="sk-b-open" href="${esc(i.wa_link)}" target="_blank" rel="noopener" data-wa="${idx}">
+      <span class="sk-b-stip" aria-hidden="true">${ic(geopend ? "check" : "message")}</span>
+      <span class="sk-mid"><span class="sk-naam">${esc(i.naam)}</span><span class="sk-sub">${esc(skWaSaldo(i))}</span></span>
+      ${status}</a></li>`;
+}
+
+function skWaTeken() {
+  const aan = !!(skWa && skWa.modus);
+  const t = skWaTeller(skWa);
+  const kaarten = $("#sk-kaarten"); if (kaarten) kaarten.hidden = aan;
+  const sec = $("#sk-berichten"); if (sec) sec.hidden = !aan;
+  const bbar = $("#sk-b-bar"); if (bbar) bbar.hidden = !aan;
+  // Buiten de berichtenfase blijft een onafgemaakte lijst bereikbaar met één tik.
+  const hervat = $("#sk-b-hervat");
+  if (hervat) {
+    hervat.hidden = !skWa || aan || t.over === 0;
+    hervat.innerHTML = skWa
+      ? `${ic("message")}<span class="sk-b-hervat-t">WhatsApp: ${t.geopend} van ${t.totaal} geopend</span>${ic("chevron")}`
+      : "";
+  }
+  skBalk();
+  if (!aan) return;
+  const volgende = skWaVolgende(skWa);
+  const lijst = $("#sk-b-lijst");
+  if (lijst) {
+    lijst.innerHTML = skWa.items.map((i, idx) => (i.wa_link ? skWaRij(i, idx, volgende) : "")).join("")
+      + skWa.items.filter(i => !i.wa_link).map(i =>
+        `<li class="sk-b-rij sk-b-geennr"><span class="sk-b-open">
+           <span class="sk-b-stip" aria-hidden="true">${ic("message")}</span>
+           <span class="sk-mid"><span class="sk-naam">${esc(i.naam)}</span><span class="sk-sub">${esc(skWaSaldo(i))} · geen telefoonnummer</span></span>
+         </span></li>`).join("");
+  }
+  const teller = $("#sk-b-teller");
+  // Eén regel op 375px. Wie geen nummer heeft staat als eigen rij onderaan de lijst;
+  // de teller telt alleen wie je kúnt openen, anders is de eindstaat onbereikbaar.
+  if (teller) {
+    teller.textContent = `${t.geopend} van ${t.totaal} geopend`
+      + (t.over ? ` · nog ${t.over}` : " · iedereen gehad");
+  }
+  const meter = $("#sk-b-meter");
+  if (meter) { meter.max = Math.max(1, t.totaal); meter.value = t.geopend; }
+  const vk = $("#sk-volgende"), klaar = $("#sk-b-klaar");
+  if (vk) {
+    vk.hidden = !volgende;
+    if (volgende) {
+      vk.href = volgende.wa_link;
+      vk.dataset.wa = String(skWa.items.indexOf(volgende));
+      vk.innerHTML = `${ic("message")}<span class="sk-volgende-t">${t.geopend ? "Volgende" : "Open WhatsApp"}: ${esc(volgende.naam)}</span>`;
+    }
+  }
+  if (klaar) klaar.hidden = !!volgende;
 }
 
 // ── Detail per persoon (secundair, standaard dicht) ─────────────────────────
@@ -2383,8 +2603,16 @@ function skBind() {
     if (document.visibilityState !== "visible") return;
     const weg = Date.now() - sinds; sinds = Date.now();
     if (weg > 20000 && huidigeView === "strippen" && !skBezig) laad();
+    // Terug uit WhatsApp: de aangetikte persoon staat al op 'geopend' (in de klik
+    // vastgelegd), dit tekent alleen bij als een gepauzeerde timer nog niet liep.
+    else if (skWa && skWa.modus) skWaTeken();
   });
   const wis = $("#sk-wis"); if (wis) wis.addEventListener("click", skWis);
+  const bl = $("#sk-b-lijst"); if (bl) bl.addEventListener("click", skWaKlik);
+  const vk = $("#sk-volgende"); if (vk) vk.addEventListener("click", skWaKlik);
+  const terug = $("#sk-b-terug"); if (terug) terug.addEventListener("click", () => skWaModus(false));
+  const hervat = $("#sk-b-hervat"); if (hervat) hervat.addEventListener("click", () => skWaModus(true));
+  const klaar = $("#sk-b-klaar"); if (klaar) klaar.addEventListener("click", skWaStop);
 }
 skBind();
 

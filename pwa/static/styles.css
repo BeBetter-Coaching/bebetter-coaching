@@ -324,8 +324,58 @@ textarea{resize:vertical}
   color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
 .sk-uit .btn{min-height:40px}
 .sk-uit-t{font-size:13.5px;font-weight:600;min-width:0}
-.sk-wa{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.sk-wa-btn{background:var(--wa);border-color:var(--wa);color:#04310f}
+.sk-uit-nr{margin:6px 2px 0;font-size:12px;color:var(--muted)}
+
+/* ── WhatsApp na afboeken — de berichtenfase ─────────────────────────────
+   Vervangt de kaartenlijst zolang hij open staat (nooit ernaast: dertig kaarten plus
+   vijftien berichten is precies het overzicht dat kwijtraakt). Eén rij = één persoon =
+   één anker naar wa.me. Een geopende rij blijft op zijn plek staan en dimt: wie
+   terugkomt uit WhatsApp ziet waar hij was, er schuift niets. */
+.sk-b-hervat{display:flex;align-items:center;gap:10px;width:100%;min-height:46px;margin-top:8px;
+  padding:10px 13px;border-radius:12px;font:inherit;font-size:13.5px;font-weight:600;
+  text-align:left;cursor:pointer;color:var(--text);background:var(--card2);
+  border:1px solid var(--wa)}
+.sk-b-hervat .ic{width:18px;height:18px;flex:0 0 auto}
+.sk-b-hervat .ic:first-child{color:var(--wa)}
+.sk-b-hervat-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sk-b-kop{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:12px 0 4px}
+.sk-b-kop-t{min-width:0}
+.sk-b-kop h2{margin:0;font-size:16px;font-weight:700}
+.sk-b-uitleg{margin:3px 0 0;font-size:12.5px;color:var(--muted);line-height:1.4}
+.sk-b-kop .btn{flex:0 0 auto;min-height:40px}
+
+.sk-b-lijst{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.sk-b-rij{border:1px solid var(--border);border-radius:14px;overflow:hidden;
+  background:linear-gradient(180deg,#0E2547,#0C2144);transition:border-color .14s ease,opacity .14s ease}
+.sk-b-open{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px 12px;
+  color:var(--text);text-decoration:none}
+.sk-b-open:focus-visible{outline:2px solid var(--acc);outline-offset:-3px}
+.sk-b-stip{width:30px;height:30px;flex:0 0 auto;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;background:var(--wa);color:#04310f}
+.sk-b-stip .ic{width:16px;height:16px;stroke-width:2.4}
+.sk-b-status{flex:0 0 auto;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;
+  color:var(--muted);border:1px solid var(--border);white-space:nowrap}
+/* De volgende in de rij: dezelfde accentrand als een geselecteerde kaart. */
+.sk-b-rij.is-volgende{border-color:var(--wa)}
+.sk-b-rij.is-geopend{opacity:.6}
+.sk-b-rij.is-geopend .sk-b-stip{background:none;border:2px solid var(--ds-success);color:var(--ds-success)}
+.sk-b-rij.is-geopend .sk-b-status{color:var(--ds-success);border-color:var(--ds-success-bd);
+  background:var(--ds-success-bg)}
+.sk-b-geennr{opacity:.55}
+.sk-b-geennr .sk-b-stip{background:none;border:2px solid var(--border);color:var(--muted)}
+
+/* In de sticky balk: teller + voortgang, en daaronder ÉÉN actie. */
+.sk-b-voortgang{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.sk-b-teller{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
+.sk-b-meter{appearance:none;-webkit-appearance:none;width:100%;height:6px;border:0;border-radius:999px;
+  background:var(--border);overflow:hidden}
+.sk-b-meter::-webkit-progress-bar{background:var(--border);border-radius:999px}
+.sk-b-meter::-webkit-progress-value{background:var(--wa);border-radius:999px}
+.sk-b-meter::-moz-progress-bar{background:var(--wa);border-radius:999px}
+.sk-volgende{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:52px;
+  font-size:16px;text-decoration:none;background:var(--wa);border-color:var(--wa);color:#04310f}
+.sk-volgende .ic{width:18px;height:18px;flex:0 0 auto}
+.sk-volgende-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* Sticky actiebalk. Zit IN de scroller, die precies eindigt waar de onderbalk
    begint → overlap met de PWA-navigatie is uitgesloten door de LAYOUT, niet door een
@@ -335,8 +385,12 @@ textarea{resize:vertical}
    een getal op dat bij de eerste layoutwijziging scheefloopt. In plaats daarvan
    verlengt de balk zijn eigen bodempadding met exact diezelfde variabele en trekt hij
    die met een negatieve marge weer van de layout af: de achtergrond loopt altijd door
-   tot de onderbalk, en het overschot knipt de scroller zelf weg. */
-.sk-bar{position:sticky;bottom:0;z-index:3;
+   tot de onderbalk, en het overschot knipt de scroller zelf weg.
+   `bottom` staat op dezelfde negatieve waarde: een sticky element pint op de rand van
+   de scroller MIN diens padding. Met `bottom:0` stopte de balk daardoor zodra de lijst
+   langer was dan het scherm steeds 20px boven de onderbalk en scrolde de lijst
+   eronderdoor zichtbaar mee (gemeten 11 sep: balk-onderrand 736, onderbalk 756). */
+.sk-bar{position:sticky;bottom:calc(-1 * var(--scroll-pad-b));z-index:3;
   margin:14px -16px calc(-1 * var(--scroll-pad-b));
   padding:10px 16px calc(12px + var(--scroll-pad-b));
   background:var(--card2);border-top:1px solid var(--border);
@@ -363,7 +417,7 @@ textarea{resize:vertical}
   .sk-lijst{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 }
 @media (prefers-reduced-motion:reduce){
-  .sk-rij,.sk-vink,.sk-meer .ic{transition:none}
+  .sk-rij,.sk-vink,.sk-meer .ic,.sk-b-rij{transition:none}
 }
 
 /* ── Atleet-detail ────────────────────────────────────────────────────────── */
@@ -540,7 +594,10 @@ button.dagstat:hover{border-color:var(--acc);transform:translateY(-2px)}
     grid-template-rows:100vh;height:100vh}
   .sidebar{display:flex}          /* zijbalk aan  */
   .bottomnav{display:none}        /* onderbalk uit */
-  #scroller{padding:0 40px calc(32px)}
+  /* Via de variabele, niet als los getal: de sticky Strippenkaart-balk compenseert
+     precies deze bodempadding (.sk-bar), dus er mag maar één waarde bestaan. */
+  :root{--scroll-pad-b:32px}
+  #scroller{padding:0 40px var(--scroll-pad-b)}
   .view{max-width:860px;margin:0 auto}
   .appbar{padding-top:26px}
   /* Meer ademruimte: dashboard/snelacties benutten de bredere kolom */
