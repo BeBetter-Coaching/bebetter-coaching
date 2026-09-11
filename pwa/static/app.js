@@ -320,8 +320,15 @@ function openAthleteModule(view, user_key) {
 // fallback leest de sidebar de bare hash en valt elke module terug op zijn eigen onthouden
 // atleet → Workspace=X ↔ Dossier=Y-divergentie (B1). Route blijft primair; dit is puur een
 // reconciliatie van de GETOONDE atleet, geen tweede athlete-store.
+// 'Meer' is (op mobiel de enige weg naar Dossier/Schema) een doorgangsmenu met een kale
+// route (`#meer`) en geen eigen atleet. Zonder doorgifte las Meer → Dossier/Schema die
+// kale hash en schreef een kale doelroute: op het scherm nog de juiste atleet, na refresh
+// weg. Daarom onthoudt Meer bij het OPENEN de context van de pagina waar je vandaan kwam
+// (dezelfde resolutie als de zijbalk) en geeft die door; de route blijft de waarheid.
+let _meerKey = "";
 function _shownAthleteKey(view) {
   try {
+    if (view === "meer") return _meerKey;
     if (view === "workspace") return wsSel || "";
     if (view === "dossier") return dcSel || "";
     if (view === "schema") return (typeof sbState !== "undefined" && sbState && sbState.key) ? sbState.key : "";
@@ -348,6 +355,7 @@ function openModuleFromNav(view) {
   // (voorkomt de B1-divergentie tussen onthouden per-module atleten).
   let key = activeAthleteKey() || _shownAthleteKey(huidigeView);
   if (key && key.indexOf("nieuw:") === 0) key = "";          // identity-guard (pre-link intake)
+  if (view === "meer") _meerKey = key;                         // context gaat mee door het menu
   // Workspace-doel met actieve atleet → eigen entry (openWorkspace); overige athlete-views →
   // generieke openAthleteModule. Zo dragen Workspace en Dossier dezelfde geselecteerde atleet mee.
   if (key && view === "workspace") openWorkspace(key);
