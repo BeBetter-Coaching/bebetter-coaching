@@ -209,9 +209,12 @@ class DocGen(BaseModel):
 
 
 # ── Health: lichtgewicht, geen login, geen data — houdt Render Free wakker ───
+# `build` = de commit van de draaiende release, zodat ook een server-only release
+# van buiten te verifiëren is. Render zet RENDER_GIT_COMMIT zelf bij elke deploy;
+# ontbreekt die (lokaal, andere hosting), dan eerlijk "unknown".
 @app.get("/healthz")
 def healthz():
-    return {"ok": True}
+    return {"ok": True, "build": os.environ.get("RENDER_GIT_COMMIT", "").strip() or "unknown"}
 
 
 # ── Inlog-API (eigen scherm; zet/leest de sessie-cookie) ────────────────────
