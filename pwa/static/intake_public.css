@@ -1,0 +1,88 @@
+/* Publiek intakeformulier — eigen, scrollende webpagina.
+   Laadt BEWUST niet styles.css: dat is de app-schil (body = vaste 640px-kolom met
+   overflow:hidden, en vanaf 900px een raster met een 250px-zijbalkkolom). Daarin werd
+   dit formulier op desktop in die smalle kolom geperst. Tokens en lettertype komen uit
+   design-system.css, dezelfde huisstijl als de app en de weekendpagina. */
+
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body.pub{margin:0;min-height:100vh;color:var(--ds-text);
+  font-family:"Space Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(90% 60% at 85% -10%, rgba(94,230,235,.12), transparent 60%),
+    radial-gradient(70% 50% at -10% 20%, rgba(46,134,193,.14), transparent 60%),
+    var(--ds-canvas);background-attachment:fixed}
+
+.pub-page{max-width:820px;margin:0 auto;
+  padding:calc(20px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right))
+    calc(40px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+
+/* ── Kop ───────────────────────────────────────────────────────────────── */
+.pub-head{padding:18px 2px 22px}
+.pub-logo{display:block;height:34px;width:auto}
+.pub-eyebrow{margin:26px 0 6px;font-size:var(--ds-t-xs);font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ds-accent)}
+.pub-head h1{margin:0;font-size:clamp(30px,7vw,46px);line-height:1.05;font-weight:700;letter-spacing:-.02em}
+.pub-head .sub{margin:14px 0 0;max-width:620px;font-size:clamp(15px,2.2vw,17px);color:var(--ds-text-2)}
+
+/* ── Secties ───────────────────────────────────────────────────────────── */
+#f{display:grid;gap:14px}
+fieldset{margin:0;min-width:0;padding:18px;border:1px solid var(--ds-border);border-radius:var(--ds-r-lg);
+  background:linear-gradient(168deg,var(--ds-s2),var(--ds-s1));box-shadow:var(--ds-e1)}
+@media (min-width:640px){fieldset{padding:22px 24px}}
+legend{float:left;width:100%;padding:0;margin:0 0 14px;font-size:var(--ds-t-xs);font-weight:700;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ds-accent)}
+legend + *{clear:left}
+
+label{display:block;font-size:13.5px;font-weight:600;color:var(--ds-text-2);margin:0 0 14px}
+fieldset > :last-child{margin-bottom:0}
+.lbl{display:block;font-size:13.5px;font-weight:600;color:var(--ds-text-2);margin:0 0 8px}
+
+input:not([type="checkbox"]),select,textarea{display:block;width:100%;margin-top:6px;background:var(--ds-canvas);
+  border:1px solid var(--ds-border);color:var(--ds-text);border-radius:var(--ds-r-sm);
+  padding:12px 13px;font:inherit;font-size:16px;font-weight:400;min-height:48px}
+textarea{resize:vertical;line-height:1.5;min-height:84px}
+select{appearance:none;-webkit-appearance:none;padding-right:38px;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%237F97BC' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center}
+input::placeholder,textarea::placeholder{color:#6d82a3}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--ds-accent);outline-offset:1px;border-color:transparent}
+
+/* Twee velden naast elkaar op tablet/desktop, onder elkaar op de telefoon */
+.grid2{display:grid;gap:0 16px}
+@media (min-width:640px){.grid2{grid-template-columns:1fr 1fr;align-items:end}}
+
+.checks{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.checks label{display:inline-flex;align-items:center;gap:8px;margin:0;padding:9px 14px;min-height:44px;cursor:pointer;
+  font-weight:500;color:var(--ds-text);background:var(--ds-canvas);border:1px solid var(--ds-border);border-radius:var(--ds-r-pill)}
+.checks label:has(input:checked){border-color:var(--ds-accent);background:var(--ds-accent-soft)}
+input[type="checkbox"]{width:20px;height:20px;margin:0;flex:0 0 auto;accent-color:var(--ds-accent)}
+
+/* ── Versturen ─────────────────────────────────────────────────────────── */
+.pub-verstuur{padding:18px;border-radius:var(--ds-r-lg);border:1px solid rgba(94,230,235,.28);
+  background:linear-gradient(168deg,var(--ds-s2),var(--ds-s1))}
+@media (min-width:640px){.pub-verstuur{display:flex;align-items:center;gap:18px;padding:18px 24px}}
+.bevestig{display:flex;align-items:flex-start;gap:11px;margin:0;font-size:14.5px;color:var(--ds-text);cursor:pointer;flex:1}
+.bevestig input{margin-top:1px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:50px;padding:12px 22px;border-radius:var(--ds-r-sm);
+  border:1px solid #2E86C1;background:#2E86C1;color:#fff;font:inherit;font-size:15.5px;font-weight:600;cursor:pointer;
+  width:100%;margin-top:14px}
+@media (min-width:640px){.btn{width:auto;margin-top:0;flex:0 0 auto}}
+.btn:hover{filter:brightness(1.08)}
+.btn:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.btn:disabled{opacity:.5;cursor:not-allowed;filter:none}
+
+/* ── Meldingen en eindschermen ─────────────────────────────────────────── */
+.msg{position:sticky;top:calc(10px + env(safe-area-inset-top));z-index:5;max-width:788px;margin:12px auto 0;
+  padding:12px 16px;border-radius:var(--ds-r-sm);background:var(--ds-s3);border:1px solid var(--ds-accent);
+  box-shadow:var(--ds-e2);font-size:14.5px}
+.msg.err{border-color:var(--ds-critical-bd);background:#3a1c19}
+@media (max-width:820px){.msg{margin:12px 16px 0}}
+
+.pub-dank{max-width:520px;margin:18vh auto 0;padding:32px 24px;text-align:center;border-radius:var(--ds-r-lg);
+  border:1px solid var(--ds-border);background:linear-gradient(168deg,var(--ds-s2),var(--ds-s1))}
+.pub-dank h2{margin:0 0 10px;font-size:26px;color:var(--ds-accent)}
+.pub-dank p{margin:0;font-size:15.5px;line-height:1.6;color:var(--ds-text-2)}
+@media (max-width:560px){.pub-dank{margin:12vh 16px 0}}

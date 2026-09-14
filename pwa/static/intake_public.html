@@ -3,17 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0A1B33">
+  <meta name="theme-color" content="#081527">
   <title>BeBetter · Intakeformulier</title>
   <link rel="apple-touch-icon" href="/static/icon-192.png">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/design-system.css?v=in1">
+  <link rel="stylesheet" href="/static/intake_public.css?v=in1">
 </head>
 <body class="pub">
   <div id="msg" class="msg" hidden></div>
 
-  <div id="app" hidden>
+  <div id="app" class="pub-page" hidden>
     <header class="pub-head">
-      <img src="/static/icon-192.png" alt="BeBetter Coaching" class="pub-logo">
+      <img src="/static/logo.png" alt="BeBetter Coaching" class="pub-logo" width="900" height="355">
+      <p class="pub-eyebrow">BeBetter Coaching</p>
       <h1>Intakeformulier</h1>
       <p class="sub" id="welkom">Leuk dat je met ons gaat trainen! Vul dit even in, dan stellen we
         jouw schema precies op jou af. Alleen je naam en je doel zijn verplicht; de rest helpt ons,
@@ -90,8 +93,10 @@
         <label>Nog iets dat we moeten weten?<textarea name="notities" rows="2"></textarea></label>
       </fieldset>
 
-      <label class="bevestig"><input type="checkbox" id="bevestig"> Ja, ik ben klaar en wil mijn intake verzenden</label>
-      <button class="btn primary big" type="submit">Verstuur intake</button>
+      <div class="pub-verstuur">
+        <label class="bevestig"><input type="checkbox" id="bevestig"> Ja, ik ben klaar en wil mijn intake verzenden</label>
+        <button class="btn primary big" type="submit">Verstuur intake</button>
+      </div>
     </form>
   </div>
 
