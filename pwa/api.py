@@ -1130,6 +1130,7 @@ class WeekendInschrijving(BaseModel):
     naam: str = ""
     email: str = ""
     telefoon: str = ""
+    betaalkeuze: str = ""                 # aanbetaling | volledig
     # Strikt: alleen een echte `true` is een expliciete bevestiging (geen "yes"/1).
     bevestig_deelname: StrictBool = False
     akkoord_voorwaarden: StrictBool = False
@@ -1210,6 +1211,27 @@ def weekend_instellingen(request: Request, body: WeekendInstellingen):
 @app.post("/api/weekend/beheer/inschrijving-open")
 def weekend_open(request: Request, body: WeekendOpen):
     return _weekend_beheer(request, lambda wie: weekend.inschrijving_open_zetten(body.open, wie))
+
+
+class WeekendVerzoek(BaseModel):
+    fase: str = ""                        # aanbetaling | volledig | rest
+    verstuurd: StrictBool = True
+
+
+class WeekendDeadlines(BaseModel):
+    deadline_eerste: str = ""             # 'YYYY-MM-DDTHH:MM' (Nederlandse tijd)
+    deadline_rest: str = ""               # 'YYYY-MM-DD' (tot einde van die dag)
+
+
+# Vóór de algemene statusroute hieronder: anders zou `{veld}` = "verzoek" die route raken.
+@app.post("/api/weekend/beheer/inschrijvingen/{iid}/verzoek")
+def weekend_verzoek(request: Request, iid: str, body: WeekendVerzoek):
+    return _weekend_beheer(request, lambda wie: weekend.verzoek_markeren(iid, body.fase, body.verstuurd, wie))
+
+
+@app.post("/api/weekend/beheer/deadlines")
+def weekend_deadlines(request: Request, body: WeekendDeadlines):
+    return _weekend_beheer(request, lambda wie: weekend.deadlines_opslaan(body.model_dump(), wie))
 
 
 @app.post("/api/weekend/beheer/inschrijvingen/{iid}/{veld}")   # veld = inschrijfstatus | betaalstatus

@@ -8,9 +8,9 @@
   <title>Weekendbeheer · BeBetter Coaching</title>
   <link rel="icon" href="/static/icon-192.png">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
-  <link rel="stylesheet" href="/static/design-system.css?v=wk1">
-  <link rel="stylesheet" href="/static/weekend.css?v=wk1">
-  <link rel="stylesheet" href="/static/weekend_beheer.css?v=wk1">
+  <link rel="stylesheet" href="/static/design-system.css?v=wk3">
+  <link rel="stylesheet" href="/static/weekend.css?v=wk3">
+  <link rel="stylesheet" href="/static/weekend_beheer.css?v=wk3">
 </head>
 <body class="wk">
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -18,11 +18,15 @@
       <symbol id="ic-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></symbol>
       <symbol id="ic-ext" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
       <symbol id="ic-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9.5" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
-      <symbol id="ic-open" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9.5" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.7-1.5"/></symbol>
       <symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14-4"/><path d="M4 5v3h3"/><path d="M4 13a8 8 0 0 0 14 4"/><path d="M20 19v-3h-3"/></symbol>
       <symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="m6 7 1 13h10l1-13"/></symbol>
       <symbol id="ic-euro" viewBox="0 0 24 24"><path d="M17 6.5A6 6 0 1 0 17 18"/><path d="M4.5 10.5H13"/><path d="M4.5 14H12"/></symbol>
       <symbol id="ic-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16.5 5.3a3.2 3.2 0 0 1 0 5.4"/><path d="M18.5 20c0-2.6-1-4.2-2.6-4.9"/></symbol>
+      <symbol id="ic-alert" viewBox="0 0 24 24"><path d="M12 4 21 20H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></symbol>
+      <symbol id="ic-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-11"/></symbol>
+      <symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+      <symbol id="ic-message" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.5 7.2L4 20l.8-4.5A8 8 0 1 1 20 12z"/></symbol>
+      <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></symbol>
     </defs>
   </svg>
 
@@ -66,28 +70,110 @@
       </div>
     </header>
 
+    <nav class="wb-tabs" aria-label="Weekendbeheer">
+      <a href="#dashboard" data-tab="dashboard">Dashboard</a>
+      <a href="#inschrijvingen" data-tab="inschrijvingen">Inschrijvingen <span class="wb-tab-n" id="wb-tab-n"></span></a>
+      <a href="#instellingen" data-tab="instellingen">Instellingen</a>
+    </nav>
+
     <div class="wb-toast" id="wb-toast" role="status" aria-live="polite" hidden></div>
 
-    <div class="wb-top">
-      <!-- 1. Inschrijving open/dicht -->
-      <section class="wk-card" aria-labelledby="wb-h-status">
-        <h2 class="wk-h" id="wb-h-status"><svg class="wk-ic"><use href="#ic-lock"/></svg> Openbare inschrijving</h2>
-        <div class="wb-status">
-          <span class="wb-chip" id="wb-open-chip"></span>
-          <p class="wb-status-uitleg" id="wb-open-uitleg"></p>
-        </div>
-        <p class="wk-melding is-attention" id="wb-ontbreekt" hidden></p>
-        <div class="wb-acts">
-          <button class="wk-btn" id="wb-open-btn" type="button"></button>
-          <a class="wk-btn wb-ghost" href="/weekend?test=1" target="_blank" rel="noopener">Formulier testen <svg class="wk-ic"><use href="#ic-ext"/></svg></a>
-          <a class="wk-btn wb-ghost" href="/weekend" target="_blank" rel="noopener">Openbare pagina <svg class="wk-ic"><use href="#ic-ext"/></svg></a>
-        </div>
-        <p class="wb-hint">Testen werkt ook als de inschrijving dicht is: alleen met een beheersessie, en inschrijvingen worden als test gemarkeerd.</p>
-      </section>
+    <!-- ════ DASHBOARD ════ -->
+    <section class="wb-view" id="wb-v-dashboard" aria-labelledby="wb-h-dash">
+      <h2 class="wb-sr" id="wb-h-dash">Dashboard</h2>
+      <div class="wb-filters">
+        <span class="wb-chip" id="wb-d-open"></span>
+        <label class="wk-check wb-toggle"><input type="checkbox" class="wb-met-test"> <span>Testinschrijvingen meenemen</span></label>
+        <button class="wk-btn small wb-ververs" type="button"><svg class="wk-ic"><use href="#ic-refresh"/></svg> Verversen</button>
+      </div>
+      <p class="wk-melding is-attention" id="wb-d-hint" hidden></p>
 
-      <!-- 2. Kosten en voorwaarden (alleen wat deelnemers zien) -->
-      <section class="wk-card" aria-labelledby="wb-h-kosten">
-        <h2 class="wk-h" id="wb-h-kosten"><svg class="wk-ic"><use href="#ic-euro"/></svg> Deelnemerskosten &amp; voorwaarden</h2>
+      <div class="wb-deadlines" id="wb-d-deadlines"></div>
+      <div class="wb-kpis" id="wb-d-kpis"></div>
+
+      <div class="wb-charts">
+        <section class="wk-card wb-chart" aria-labelledby="wb-c-geld-h">
+          <h3 class="wk-h" id="wb-c-geld-h">Geld</h3>
+          <div id="wb-c-geld"></div>
+        </section>
+        <section class="wk-card wb-chart" aria-labelledby="wb-c-status-h">
+          <h3 class="wk-h" id="wb-c-status-h">Betaalstatus</h3>
+          <div id="wb-c-status"></div>
+        </section>
+        <section class="wk-card wb-chart" aria-labelledby="wb-c-keuze-h">
+          <h3 class="wk-h" id="wb-c-keuze-h">Betaalkeuze</h3>
+          <div id="wb-c-keuze"></div>
+        </section>
+      </div>
+
+      <div class="wb-acties">
+        <section class="wk-card" aria-labelledby="wb-a-versturen-h">
+          <h3 class="wk-h" id="wb-a-versturen-h"><svg class="wk-ic"><use href="#ic-message"/></svg> Betaalverzoek nog sturen <span class="wb-h-n" id="wb-a-versturen-n"></span></h3>
+          <div class="wb-alijst" id="wb-a-versturen"></div>
+        </section>
+        <section class="wk-card" aria-labelledby="wb-a-wachten-h">
+          <h3 class="wk-h" id="wb-a-wachten-h"><svg class="wk-ic"><use href="#ic-clock"/></svg> Verstuurd, wacht op betaling <span class="wb-h-n" id="wb-a-wachten-n"></span></h3>
+          <div class="wb-alijst" id="wb-a-wachten"></div>
+        </section>
+      </div>
+
+      <section class="wk-card wb-chart wb-tijd" aria-labelledby="wb-c-tijd-h">
+        <h3 class="wk-h" id="wb-c-tijd-h">Inschrijvingen in de tijd</h3>
+        <div id="wb-c-tijd"></div>
+      </section>
+    </section>
+
+    <!-- ════ INSCHRIJVINGEN ════ -->
+    <section class="wb-view" id="wb-v-inschrijvingen" hidden aria-labelledby="wb-h-lijst">
+      <h2 class="wb-sr" id="wb-h-lijst">Inschrijvingen</h2>
+      <div class="wb-filters">
+        <label class="wb-zoek"><svg class="wk-ic"><use href="#ic-search"/></svg><span class="wb-sr">Zoeken</span>
+          <input type="search" id="wb-zoek" placeholder="Zoek op naam, e-mail of telefoon" autocomplete="off"></label>
+        <div class="wb-seg" id="wb-lijst-filter" role="group" aria-label="Filter">
+          <button type="button" data-f="alle" class="on">Alle</button>
+          <button type="button" data-f="actie">Actie nodig</button>
+          <button type="button" data-f="laat">Te laat</button>
+          <button type="button" data-f="geannuleerd">Geannuleerd</button>
+        </div>
+        <label class="wk-check wb-toggle"><input type="checkbox" class="wb-met-test"> <span>Tests tonen</span></label>
+      </div>
+      <div class="wb-rijen" id="wb-rijen"></div>
+    </section>
+
+    <!-- ════ INSTELLINGEN ════ -->
+    <section class="wb-view" id="wb-v-instellingen" hidden aria-labelledby="wb-h-inst">
+      <h2 class="wb-sr" id="wb-h-inst">Instellingen</h2>
+      <div class="wb-top">
+        <section class="wk-card" aria-labelledby="wb-h-status">
+          <h3 class="wk-h" id="wb-h-status"><svg class="wk-ic"><use href="#ic-lock"/></svg> Openbare inschrijving</h3>
+          <div class="wb-status">
+            <span class="wb-chip" id="wb-open-chip"></span>
+            <p class="wb-status-uitleg" id="wb-open-uitleg"></p>
+          </div>
+          <p class="wk-melding is-attention" id="wb-ontbreekt" hidden></p>
+          <div class="wb-acts">
+            <button class="wk-btn" id="wb-open-btn" type="button"></button>
+            <a class="wk-btn wb-ghost" href="/weekend?test=1" target="_blank" rel="noopener">Formulier testen <svg class="wk-ic"><use href="#ic-ext"/></svg></a>
+            <a class="wk-btn wb-ghost" href="/weekend" target="_blank" rel="noopener">Openbare pagina <svg class="wk-ic"><use href="#ic-ext"/></svg></a>
+          </div>
+          <p class="wb-hint">Testen werkt ook als de inschrijving dicht is: alleen met een beheersessie, en inschrijvingen worden als test gemarkeerd.</p>
+        </section>
+
+        <section class="wk-card" aria-labelledby="wb-h-deadlines">
+          <h3 class="wk-h" id="wb-h-deadlines"><svg class="wk-ic"><use href="#ic-clock"/></svg> Betaaldeadlines</h3>
+          <p class="wb-hint wb-hint-top">Hiermee ziet het dashboard wie te laat is en komt de datum in het WhatsApp-bericht. Deelnemers zien dit niet; voor hen staan de datums in de betaaltermijn.</p>
+          <form id="wb-deadlines" novalidate>
+            <label class="wk-field">Aanbetaling of volledig bedrag, uiterlijk
+              <input type="datetime-local" name="eerste"></label>
+            <label class="wk-field">Restbetaling, uiterlijk (tot het einde van die dag)
+              <input type="date" name="rest"></label>
+            <button class="wk-btn primary" type="submit">Deadlines opslaan</button>
+          </form>
+        </section>
+      </div>
+
+      <section class="wk-card wb-kosten-card" aria-labelledby="wb-h-kosten">
+        <h3 class="wk-h" id="wb-h-kosten"><svg class="wk-ic"><use href="#ic-euro"/></svg> Deelnemerskosten &amp; voorwaarden</h3>
         <p class="wb-hint wb-hint-top">Alleen wat deelnemers te zien krijgen. Geen interne begroting of kostenopbouw invullen.</p>
         <form id="wb-kosten" novalidate>
           <div class="wb-2">
@@ -97,28 +183,17 @@
               <input name="aanbetaling" inputmode="decimal" placeholder="Nog niet vastgesteld" autocomplete="off"></label>
           </div>
           <label class="wk-field">Betaaltermijn
-            <textarea name="betaaltermijn" rows="2" maxlength="1000" placeholder="Nog niet vastgesteld"></textarea></label>
+            <textarea name="betaaltermijn" rows="4" maxlength="1000" placeholder="Nog niet vastgesteld"></textarea></label>
           <label class="wk-field">Voorwaarden
-            <textarea name="voorwaarden" rows="6" maxlength="20000" placeholder="Nog niet vastgesteld"></textarea></label>
+            <textarea name="voorwaarden" rows="10" maxlength="20000" placeholder="Nog niet vastgesteld"></textarea></label>
           <p class="wb-versie" id="wb-versie"></p>
           <button class="wk-btn primary" type="submit" id="wb-kosten-btn">Opslaan als nieuwe versie</button>
         </form>
       </section>
-    </div>
-
-    <!-- 3. Inschrijvingen -->
-    <section class="wb-lijst" aria-labelledby="wb-h-lijst">
-      <div class="wb-lijst-kop">
-        <h2 class="wk-h" id="wb-h-lijst"><svg class="wk-ic"><use href="#ic-users"/></svg> Inschrijvingen</h2>
-        <div class="wb-lijst-acts">
-          <label class="wk-check wb-toggle"><input type="checkbox" id="wb-toon-test"> <span>Testinschrijvingen tonen</span></label>
-          <button class="wk-btn small" id="wb-ververs" type="button"><svg class="wk-ic"><use href="#ic-refresh"/></svg> Verversen</button>
-        </div>
-      </div>
-      <div class="wb-tellers" id="wb-tellers"></div>
-      <div class="wb-rijen" id="wb-rijen"></div>
     </section>
   </main>
+
+  <div class="wb-tip" id="wb-tip" role="tooltip" hidden></div>
 
   <dialog class="wb-dialog" id="wb-dialog">
     <form method="dialog">
@@ -131,6 +206,6 @@
     </form>
   </dialog>
 
-  <script src="/static/weekend_beheer.js?v=wk1"></script>
+  <script src="/static/weekend_beheer.js?v=wk3"></script>
 </body>
 </html>

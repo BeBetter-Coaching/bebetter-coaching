@@ -22,8 +22,8 @@ function sliceFrom(header) {
   }
   throw new Error("unbalanced: " + header);
 }
-const { parseEuroCent, centNaarInvoer } = new Function(
-  `${sliceFrom("function parseEuroCent(")}\n${sliceFrom("function centNaarInvoer(")}\nreturn { parseEuroCent, centNaarInvoer };`)();
+const { parseEuroCent, centNaarInvoer, niceMax, pct } = new Function(
+  `${sliceFrom("function parseEuroCent(")}\n${sliceFrom("function centNaarInvoer(")}\n${sliceFrom("function niceMax(")}\n${sliceFrom("function pct(")}\nreturn { parseEuroCent, centNaarInvoer, niceMax, pct };`)();
 
 const failures = [];
 const eq = (a, b, n) => { if (!Object.is(a, b)) failures.push(`${n}: ${String(a)} !== ${String(b)}`); };
@@ -50,8 +50,15 @@ for (const cent of [0, 7, 1999, 24900, 24950, 124950]) {
 eq(centNaarInvoer(null), "", "null → leeg veld");
 eq(centNaarInvoer(24900), "249", "hele euro's zonder ,00");
 
+// Dashboard-as: hele, nette bovengrens ≥ de waarde; percentages zonder delen door nul.
+for (const [n, max] of [[0, 1], [1, 1], [3, 3], [5, 5], [6, 10], [8, 10], [21, 30], [49, 50], [51, 75]]) {
+  eq(niceMax(n), max, `niceMax(${n})`);
+}
+eq(pct(1, 8), 13, "pct afgerond");
+eq(pct(3, 0), 0, "pct zonder totaal");
+
 if (failures.length) {
   console.error("FAIL weekend_beheer:\n  " + failures.join("\n  "));
   process.exit(1);
 }
-console.log("ok weekend_beheer (" + 21 + " checks)");
+console.log("ok weekend_beheer");

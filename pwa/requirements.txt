@@ -10,3 +10,4 @@ pillow>=10.0.0
 anthropic>=0.28.0
 # Face ID / passkeys (WebAuthn) — server-side verificatie van de biometrie
 webauthn>=2.0.0
+tzdata

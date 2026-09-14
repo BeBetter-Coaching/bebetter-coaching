@@ -97,3 +97,134 @@
 .wb-dialog::backdrop{background:rgba(3,9,20,.66)}
 .wb-dialog h2{margin:0 0 8px;font-size:18px}
 .wb-dialog p{margin:0 0 16px;color:var(--ds-text-2)}
+
+/* ═══ Dashboard-indeling (tabs · filters · deadlines · KPI's · grafieken · acties) ═══ */
+:root{--wb-track:rgba(58,165,176,.16);--wb-surface:#0F2650}
+.wb-view{margin-top:4px}
+.wb-tabs{position:sticky;top:calc(0px + env(safe-area-inset-top));z-index:8;display:flex;gap:4px;margin:0 0 14px;padding:4px;
+  background:rgba(8,21,39,.86);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  border:1px solid var(--ds-border);border-radius:var(--ds-r-md)}
+.wb-tabs a{flex:1;text-align:center;padding:10px 8px;border-radius:10px;color:var(--ds-text-2);font-weight:600;font-size:14px;
+  text-decoration:none;min-height:42px;display:flex;align-items:center;justify-content:center;gap:5px}
+.wb-tabs a:hover{color:var(--ds-text)}
+.wb-tabs a[aria-current="page"]{background:var(--ds-s3);color:var(--ds-text);box-shadow:inset 0 -2px 0 var(--ds-accent)}
+.wb-tabs a:focus-visible{outline:2px solid var(--ds-accent);outline-offset:1px}
+.wb-tab-n{font-size:12.5px;color:var(--ds-text-3);font-weight:500}
+
+.wb-filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:0 0 14px}
+.wb-filters .wb-ververs{margin-left:auto}
+.wb-zoek{position:relative;flex:1 1 240px;display:block}
+.wb-zoek .wk-ic{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ds-text-3)}
+.wb-zoek input{width:100%;min-height:44px;padding:10px 12px 10px 38px;background:var(--ds-canvas);border:1px solid var(--ds-border);
+  border-radius:var(--ds-r-sm);color:var(--ds-text);font:inherit;font-size:16px}
+.wb-seg{display:inline-flex;flex-wrap:wrap;background:var(--ds-s1);border:1px solid var(--ds-border);border-radius:var(--ds-r-sm);padding:3px;gap:2px}
+.wb-seg button{background:none;border:0;color:var(--ds-text-2);font:inherit;font-size:13.5px;font-weight:600;padding:8px 11px;border-radius:8px;cursor:pointer;min-height:36px}
+.wb-seg button.on{background:var(--ds-s3);color:var(--ds-text)}
+input[type="date"],input[type="datetime-local"]{color-scheme:dark}
+
+/* Deadlines */
+.wb-deadlines{display:grid;gap:10px;margin:0 0 12px}
+@media (min-width:700px){.wb-deadlines{grid-template-columns:1fr 1fr}}
+.wb-dl{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:11px 14px;border-radius:var(--ds-r-md);
+  background:var(--ds-s1);border:1px solid var(--ds-border);border-left:3px solid var(--tone)}
+.wb-dl-lbl{width:100%;font-size:var(--ds-t-xs);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3)}
+.wb-dl-wanneer{font-weight:600}
+.wb-dl-wanneer a{color:var(--ds-accent)}
+.wb-dl-open{margin-left:auto;font-size:13px;color:var(--ds-text-2);display:inline-flex;align-items:center;gap:5px}
+.wb-dl.is-critical .wb-dl-open .wk-ic{color:var(--ds-critical)}
+
+/* KPI-rij */
+.wb-kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px}
+@media (min-width:900px){.wb-kpis{grid-template-columns:repeat(4,1fr)}}
+.wb-kpi{display:flex;flex-direction:column;gap:2px;padding:14px 15px;border-radius:var(--ds-r-md);min-width:0;
+  background:linear-gradient(168deg,var(--ds-s2),var(--ds-s1));border:1px solid var(--ds-border)}
+.wb-kpi.is-critical,.wb-kpi.is-attention{border-color:var(--tone-bd)}
+.wb-kpi-lbl{font-size:12.5px;color:var(--ds-text-3);font-weight:600}
+.wb-kpi-val{font-size:28px;font-weight:700;line-height:1.15;letter-spacing:-.01em}
+@media (min-width:900px){.wb-kpi-val{font-size:32px}}
+.wb-kpi-sub{font-size:12.5px;color:var(--ds-text-2);display:flex;align-items:center;gap:5px}
+.wb-kpi.is-critical .wb-kpi-sub .wk-ic{color:var(--ds-critical)}
+
+/* Grafiekkaarten */
+.wb-charts{display:grid;gap:12px;margin:0 0 14px}
+@media (min-width:700px){.wb-charts{grid-template-columns:1fr 1fr}}
+@media (min-width:1000px){.wb-charts{grid-template-columns:repeat(3,1fr)}}
+.wb-chart .wk-h{margin-bottom:12px}
+.wb-leeg-klein{margin:0;color:var(--ds-text-3);font-size:14px;display:flex;align-items:center;gap:7px}
+.wb-leeg-klein .wk-ic{color:var(--ds-success)}
+.wb-chart-noot{margin:10px 0 0;font-size:12px;color:var(--ds-text-3)}
+
+.wb-leg{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px;font-size:13.5px}
+.wb-leg li{display:grid;grid-template-columns:12px 1fr auto auto;align-items:center;gap:9px}
+.wb-leg li.is-nul{color:var(--ds-text-3)}
+.wb-leg-l{color:var(--ds-text-2);min-width:0}
+.wb-leg-n{font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+.wb-leg-p{color:var(--ds-text-3);font-variant-numeric:tabular-nums;min-width:3.2em;text-align:right}
+.wb-sw{display:inline-block;width:12px;height:12px;border-radius:3px;flex:0 0 auto}
+.wb-sw.is-track{background:var(--wb-track);box-shadow:inset 0 0 0 1px rgba(58,165,176,.35)}
+.wb-sw.is-leeg{background:none;box-shadow:inset 0 0 0 1px var(--ds-border)}
+
+.wb-geld-kop{margin:0 0 8px;font-size:14px;color:var(--ds-text-2)}
+.wb-geld-kop b{font-size:22px;color:var(--ds-text);margin-right:4px}
+.wb-meter{height:14px;border-radius:4px;background:var(--wb-track);overflow:hidden}
+.wb-meter span{display:block;height:100%;background:#5EE6EB;border-radius:4px 0 0 4px;min-width:0}
+
+.wb-donut-wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.wb-donut-wrap .wb-leg{flex:1 1 150px;margin:0}
+.wb-donut{flex:0 0 auto;overflow:visible}
+.wb-seg{transition:opacity var(--ds-fast)}
+.wb-seg-hit{cursor:default;outline:none}
+.wb-donut:has(.wb-seg-hit:hover) .wb-seg,.wb-donut:has(.wb-seg-hit:focus-visible) .wb-seg{opacity:.55}
+.wb-donut .wb-seg:has(+ .wb-seg-hit:hover),.wb-donut .wb-seg:has(+ .wb-seg-hit:focus-visible){opacity:1}
+.wb-donut-val{fill:var(--ds-text);font-size:20px;font-weight:700}
+.wb-donut-lbl{fill:var(--ds-text-3);font-size:11px;font-weight:600}
+
+.wb-split{display:flex;gap:2px;height:28px}
+.wb-split-seg{padding:7px 0;background:var(--kleur);background-clip:content-box;outline:none;cursor:default}
+.wb-split-seg:first-child{border-radius:4px 0 0 4px;clip-path:inset(7px 0 7px 0 round 4px 0 0 4px)}
+.wb-split-seg:last-child{clip-path:inset(7px 0 7px 0 round 0 4px 4px 0)}
+.wb-split-seg:only-child{clip-path:inset(7px 0 7px 0 round 4px)}
+.wb-split-seg:hover,.wb-split-seg:focus-visible{filter:brightness(1.15)}
+.wb-split.is-leeg span{flex:1;margin:7px 0;border-radius:4px;background:var(--wb-track)}
+
+/* Instroomlijn */
+.wb-tijd{margin:0 0 14px}
+.wb-lijn{display:block;max-width:100%;overflow:visible}
+.wb-grid{stroke:rgba(255,255,255,.07);stroke-width:1}
+.wb-as{fill:var(--ds-text-3);font-size:11px;font-variant-numeric:tabular-nums}
+.wb-eind{fill:var(--ds-text);font-size:12px;font-weight:700}
+.wb-kruis{stroke:rgba(255,255,255,.35);stroke-width:1}
+.wb-hit{cursor:crosshair}
+
+/* Actielijsten */
+.wb-acties{display:grid;gap:12px;margin:0 0 14px}
+@media (min-width:900px){.wb-acties{grid-template-columns:1fr 1fr;align-items:start}}
+.wb-h-n{color:var(--ds-text-2);letter-spacing:0}
+.wb-alijst{display:grid;gap:10px}
+.wb-a{padding:12px 13px;border-radius:var(--ds-r-md);background:var(--ds-well);border:1px solid var(--ds-hairline)}
+.wb-a.is-laat{border-color:var(--ds-critical-bd)}
+.wb-a-kop{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.wb-a-kop h4{margin:0;font-size:15.5px;margin-right:auto;overflow-wrap:anywhere}
+.wb-a-wat{margin:4px 0 0;font-size:14px;color:var(--ds-text-2)}
+.wb-a-wat b{color:var(--ds-text)}
+.wb-a-meta{margin:4px 0 0;font-size:12.5px;color:var(--ds-text-3)}
+.wb-a-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.wb-a-acts .wk-btn{min-height:40px}
+.wk-btn.primary-soft{background:var(--ds-accent-soft);border-color:rgba(94,230,235,.4);color:var(--ds-text)}
+.wb-keuze{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ds-text-2)}
+.wb-tag .wk-ic{width:12px;height:12px;vertical-align:-2px}
+
+/* Inschrijvingenkaart: keuze + volgende stap */
+.wb-rij-keuze{margin:-2px 0 6px}
+.wb-volgende{margin:0 0 10px;padding:8px 11px;border-radius:var(--ds-r-sm);background:var(--ds-accent-soft);font-size:13.5px;color:var(--ds-text-2)}
+.wb-volgende b{color:var(--ds-text)}
+.wb-volgende.is-klaar{background:var(--ds-success-bg);display:flex;align-items:center;gap:6px}
+.wb-volgende.is-klaar .wk-ic{color:var(--ds-success)}
+.wb-lbl-klein{display:block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ds-text-3)}
+.wb-kosten-card{margin-top:14px}
+
+/* Tooltip */
+.wb-tip{position:fixed;z-index:50;pointer-events:none;display:flex;flex-direction:column;gap:1px;padding:7px 10px;
+  border-radius:8px;background:#061426;border:1px solid var(--ds-border);box-shadow:var(--ds-e2);font-size:12.5px;max-width:240px}
+.wb-tip strong{font-size:14px;color:var(--ds-text)}
+.wb-tip span{color:var(--ds-text-3)}

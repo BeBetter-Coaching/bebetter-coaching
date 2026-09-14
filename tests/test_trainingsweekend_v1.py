@@ -99,7 +99,7 @@ def _vaststellen(prijs=24900, aanbetaling=5000, termijn="Fictieve betaaltermijn 
 
 def _deelnemer(**extra):
     d = {"naam": "Fictieve Deelnemer", "email": "fictief@example.com", "telefoon": "06 12345678",
-         "bevestig_deelname": True, "akkoord_voorwaarden": True}
+         "betaalkeuze": "aanbetaling", "bevestig_deelname": True, "akkoord_voorwaarden": True}
     d.update(extra)
     return d
 
@@ -331,6 +331,9 @@ class TestKostenEnVoorwaarden:
         assert a["betaaltermijn"] == "Fictieve betaaltermijn (test)" and len(a["voorwaarden_sha256"]) == 64
         assert datetime.fromisoformat(a["geaccepteerd_op"]).tzinfo is not None
         assert (rec["inschrijfstatus"], rec["betaalstatus"], rec["test"]) == ("ingeschreven", "open", False)
+        assert rec["betaalkeuze"] == a["betaalkeuze"] == "aanbetaling"
+        W.inschrijven(_deelnemer(email="volledig@example.com", betaalkeuze="volledig", voorwaarden_versie=1))
+        assert W.beheer_overzicht()["tellingen"]["betaalkeuze"] == {"aanbetaling": 1, "volledig": 1}
         # Beheer wijzigt daarna de kosten: wat de deelnemer accepteerde blijft staan.
         W.inschrijving_open_zetten(False, "Jip")
         _vaststellen(prijs=29900)
@@ -345,7 +348,8 @@ class TestKostenEnVoorwaarden:
         assert store.writes == writes
 
     @pytest.mark.parametrize("veld,waarde", [("bevestig_deelname", False), ("akkoord_voorwaarden", False),
-                                             ("email", "geen-email"), ("telefoon", "123"), ("naam", " ")])
+                                             ("email", "geen-email"), ("telefoon", "123"), ("naam", " "),
+                                             ("betaalkeuze", ""), ("betaalkeuze", "gratis")])
     def test_expliciete_bevestiging_en_geldige_gegevens_verplicht(self, store, veld, waarde):
         _vaststellen()
         W.inschrijving_open_zetten(True, "Jip")
@@ -511,3 +515,137 @@ class TestInschrijfVangrail:
         assert _fout(lambda: W.inschrijven(_deelnemer(email="extra@example.com", voorwaarden_versie=1))).status == 429
         monkeypatch.setattr(W, "_klok", lambda: start + timedelta(hours=24, seconds=1))
         W.inschrijven(_deelnemer(email="extra@example.com", voorwaarden_versie=1))
+
+
+# ══ Dashboard + betaalopvolging (14 sep 2026) ═══════════════════════════════
+from urllib.parse import unquote                          # noqa: E402
+
+_SEPT15 = datetime(2026, 9, 15, 10, 0, tzinfo=timezone.utc)
+
+
+class TestDashboard:
+    def _open(self, monkeypatch, moment=_SEPT15):
+        monkeypatch.setattr(W, "_klok", lambda: moment)
+        _vaststellen(prijs=36000, aanbetaling=18000)
+        W.inschrijving_open_zetten(True, "Jip")
+
+    def _in(self, store, email, keuze="aanbetaling", naam="Anna Fictief", test=False):
+        W.inschrijven(_deelnemer(naam=naam, email=email, betaalkeuze=keuze, voorwaarden_versie=1),
+                      test=test, door="Tim" if test else "")
+        return next(k for k, v in store.data["inschrijvingen"].items() if v["email"] == email)
+
+    def _dash(self, met_test=False):
+        return W.beheer_overzicht()["dashboard"]["met_test" if met_test else "echt"]
+
+    def test_volgende_betaalstap_volgt_keuze_en_status(self, store, monkeypatch):
+        self._open(monkeypatch)
+        a = self._in(store, "a@example.com", "aanbetaling", "Anna Fictief")
+        b = self._in(store, "b@example.com", "volledig", "Bram Fictief")
+        d = self._dash()
+        stappen = {x["id"]: (x["fase"], x["bedrag_cent"]) for x in d["acties"]["versturen"]}
+        assert stappen == {a: ("aanbetaling", 18000), b: ("volledig", 36000)}
+        assert d["betaalkeuze"] == {"aanbetaling": 1, "volledig": 1, "onbekend": 0}
+        W.status_zetten(a, "betaalstatus", "aanbetaling", "open", "Tim")
+        W.status_zetten(b, "betaalstatus", "betaald", "open", "Tim")
+        d = self._dash()
+        assert [(x["id"], x["fase"], x["bedrag_cent"]) for x in d["acties"]["versturen"]] == [(a, "rest", 18000)]
+        assert d["geld"] == {"toegezegd_cent": 72000, "ontvangen_cent": 54000, "open_cent": 18000, "te_laat_cent": 0}
+        assert d["betaalstatus"] == {"open": 0, "aanbetaling": 1, "betaald": 1, "terugbetaald": 0}
+        rij = next(r for r in W.beheer_overzicht()["inschrijvingen"] if r["id"] == b)
+        assert rij["actie"] is None                        # volledig betaald: niets meer te doen
+
+    def test_geannuleerd_telt_nergens_mee(self, store, monkeypatch):
+        self._open(monkeypatch)
+        a = self._in(store, "a@example.com")
+        W.status_zetten(a, "inschrijfstatus", "geannuleerd", "ingeschreven", "Jip")
+        d = self._dash()
+        assert d["aantal"] == {"actief": 0, "geannuleerd": 1, "test": 0}
+        assert d["acties"]["versturen"] == [] and d["geld"]["toegezegd_cent"] == 0
+
+    def test_verzoek_verstuurd_verhuist_naar_wachten_en_terug(self, store, monkeypatch):
+        self._open(monkeypatch)
+        a = self._in(store, "a@example.com")
+        W.verzoek_markeren(a, "aanbetaling", True, "Tim")
+        d = self._dash()
+        assert d["acties"]["versturen"] == [] and d["acties"]["wachten"][0]["verzoek"]["door"] == "Tim"
+        writes = store.writes
+        W.verzoek_markeren(a, "aanbetaling", True, "Jip")  # nogmaals: geen dubbele write, eerste melder blijft
+        assert store.writes == writes and self._dash()["acties"]["wachten"][0]["verzoek"]["door"] == "Tim"
+        W.verzoek_markeren(a, "aanbetaling", False, "Jip")
+        assert len(self._dash()["acties"]["versturen"]) == 1
+        assert [h["veld"] for h in store.data["inschrijvingen"][a]["historie"]] == ["betaalverzoek", "betaalverzoek"]
+        assert _fout(lambda: W.verzoek_markeren(a, "iets", True, "Jip")).status == 400
+        # Na ontvangst van de aanbetaling staat de restbetaling weer bij 'nog sturen'.
+        W.verzoek_markeren(a, "aanbetaling", True, "Tim")
+        W.status_zetten(a, "betaalstatus", "aanbetaling", "open", "Tim")
+        (stap,) = self._dash()["acties"]["versturen"]
+        assert stap["fase"] == "rest" and stap["verzoek"] is None
+
+    def test_te_laat_rekent_in_nederlandse_tijd_en_niet_voor_late_inschrijvers(self, store, monkeypatch):
+        self._open(monkeypatch)
+        a = self._in(store, "a@example.com")
+        W.deadlines_opslaan({"deadline_eerste": "2026-09-23T20:00", "deadline_rest": "2026-11-29"}, "Jip")
+        # 20:00 in september = 18:00 UTC (zomertijd).
+        monkeypatch.setattr(W, "_klok", lambda: datetime(2026, 9, 23, 17, 59, tzinfo=timezone.utc))
+        assert self._dash()["acties"]["versturen"][0]["te_laat"] is False
+        laat = datetime(2026, 9, 23, 18, 1, tzinfo=timezone.utc)
+        monkeypatch.setattr(W, "_klok", lambda: laat)
+        c = self._in(store, "c@example.com", naam="Cas Fictief")   # schreef zich pas NA de deadline in
+        d = self._dash()
+        status = {x["id"]: x["te_laat"] for x in d["acties"]["versturen"]}
+        assert status == {a: True, c: False}
+        assert d["geld"]["te_laat_cent"] == 18000
+        eerste = d["deadlines"][0]
+        assert (eerste["verlopen"], eerste["open"], eerste["te_laat"], eerste["tekst"]) == \
+            (True, 2, 1, "woensdag 23 september 20:00")
+        assert d["deadlines"][1]["tekst"] == "zondag 29 november" and d["deadlines"][1]["verlopen"] is False
+
+    def test_deadlines_valideren_en_nooit_openbaar(self, store, monkeypatch):
+        self._open(monkeypatch)
+        assert _fout(lambda: W.deadlines_opslaan({"deadline_eerste": "23-09-2026 20:00"}, "Jip")).status == 400
+        assert _fout(lambda: W.deadlines_opslaan({"deadline_eerste": "2026-09-23T20:00",
+                                                   "deadline_rest": "2026-09-01"}, "Jip")).status == 400
+        W.deadlines_opslaan({"deadline_eerste": "2026-09-23T20:00", "deadline_rest": "2026-11-29"}, "Jip")
+        W.reset_cache()
+        tekst = _c().get("/api/weekend").text
+        assert "2026-09-23" not in tekst and "deadline" not in tekst
+
+    def test_whatsapp_bericht_met_bedrag_en_deadline(self, store, monkeypatch):
+        self._open(monkeypatch)
+        self._in(store, "a@example.com", naam="Anna Fictief")
+        W.deadlines_opslaan({"deadline_eerste": "2026-09-23T20:00", "deadline_rest": ""}, "Jip")
+        (stap,) = self._dash()["acties"]["versturen"]
+        assert stap["wa_link"].startswith("https://wa.me/31612345678?text=")
+        bericht = unquote(stap["wa_link"].split("text=", 1)[1])
+        assert bericht.startswith("Hoi Anna!") and "de aanbetaling van € 180,00" in bericht
+        assert "vóór woensdag 23 september 20:00" in bericht
+
+    def test_instroom_is_cumulatief_per_dag(self, store, monkeypatch):
+        self._open(monkeypatch)
+        self._in(store, "a@example.com")
+        self._in(store, "b@example.com")
+        monkeypatch.setattr(W, "_klok", lambda: _SEPT15 + timedelta(days=2))
+        self._in(store, "c@example.com")
+        assert self._dash()["tijdlijn"] == [{"datum": "2026-09-15", "aantal": 2, "cumulatief": 2},
+                                            {"datum": "2026-09-17", "aantal": 1, "cumulatief": 3}]
+
+    def test_tests_alleen_in_de_testweergave(self, store, monkeypatch):
+        self._open(monkeypatch)
+        self._in(store, "echt@example.com")
+        self._in(store, "test@example.com", test=True)
+        assert self._dash()["aantal"]["actief"] == 1
+        assert self._dash(met_test=True)["aantal"] == {"actief": 2, "geannuleerd": 0, "test": 1}
+
+    def test_verzoek_en_deadlines_via_api_als_tim(self, store, slot, monkeypatch):
+        self._open(monkeypatch)
+        a = self._in(store, "a@example.com")
+        tim = _token("Tim", "tim-wachtwoord")
+        r = _c().post(f"/api/weekend/beheer/inschrijvingen/{a}/verzoek", headers=tim,
+                      json={"fase": "aanbetaling", "verstuurd": True})
+        assert r.status_code == 200                        # niet opgeslokt door de statusroute
+        assert store.data["inschrijvingen"][a]["verzoeken"]["aanbetaling"]["door"] == "Tim"
+        r = _c().post("/api/weekend/beheer/deadlines", headers=tim,
+                      json={"deadline_eerste": "2026-09-23T20:00", "deadline_rest": "2026-11-29"})
+        assert r.status_code == 200 and r.json()["instellingen"]["deadline_rest"] == "2026-11-29"
+        assert _c().post(f"/api/weekend/beheer/inschrijvingen/{a}/verzoek",
+                         json={"fase": "aanbetaling", "verstuurd": True}).status_code == 401

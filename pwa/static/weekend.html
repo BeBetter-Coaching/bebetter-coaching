@@ -8,8 +8,8 @@
   <title>Trainingsweekend · BeBetter Coaching</title>
   <link rel="icon" href="/static/icon-192.png">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
-  <link rel="stylesheet" href="/static/design-system.css?v=wk1">
-  <link rel="stylesheet" href="/static/weekend.css?v=wk1">
+  <link rel="stylesheet" href="/static/design-system.css?v=wk2">
+  <link rel="stylesheet" href="/static/weekend.css?v=wk2">
 </head>
 <body class="wk">
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -69,7 +69,7 @@
           <h2 class="wk-h" id="wk-h-mee"><svg class="wk-ic"><use href="#ic-bag"/></svg> Praktisch</h2>
           <ul class="wk-list">
             <li><svg class="wk-ic"><use href="#ic-check"/></svg> Neem je eigen handdoeken mee.</li>
-            <li><svg class="wk-ic"><use href="#ic-check"/></svg> Keukenlinnen is aanwezig.</li>
+            <li><svg class="wk-ic"><use href="#ic-check"/></svg> Bedlinnen is aanwezig.</li>
           </ul>
         </section>
 
@@ -106,8 +106,20 @@
             <label class="wk-field">E-mailadres
               <input name="email" type="email" autocomplete="email" inputmode="email" required maxlength="254"></label>
             <label class="wk-field">Telefoonnummer
-              <input name="telefoon" type="tel" autocomplete="tel" inputmode="tel" required maxlength="30"></label>
+              <input name="telefoon" type="tel" autocomplete="tel" inputmode="tel" required maxlength="30" aria-describedby="wk-tel-hint">
+              <span class="wk-field-hint" id="wk-tel-hint">Het betaalverzoek sturen we via WhatsApp naar dit nummer.</span></label>
             <label class="wk-hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+
+            <fieldset class="wk-keuze">
+              <legend>Hoe wil je betalen?</legend>
+              <label class="wk-optie"><input type="radio" name="betaalkeuze" value="aanbetaling">
+                <span><span class="wk-optie-titel">Aanbetaling nu, rest later</span>
+                  <span class="wk-optie-sub" id="wk-optie-aanbetaling"></span></span></label>
+              <label class="wk-optie"><input type="radio" name="betaalkeuze" value="volledig">
+                <span><span class="wk-optie-titel">Volledig bedrag in één keer</span>
+                  <span class="wk-optie-sub" id="wk-optie-volledig"></span></span></label>
+              <p class="wk-field-hint">De uiterste betaaldata staan bij Kosten &amp; betaling.</p>
+            </fieldset>
 
             <label class="wk-check"><input type="checkbox" name="bevestig_deelname">
               <span>Ik schrijf me definitief in voor het trainingsweekend van vrijdag 29 januari t/m maandag 1 februari 2027.</span></label>
@@ -131,6 +143,6 @@
     <footer class="wk-foot">BeBetter Coaching</footer>
   </main>
 
-  <script src="/static/weekend.js?v=wk1"></script>
+  <script src="/static/weekend.js?v=wk2"></script>
 </body>
 </html>

@@ -18,14 +18,22 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import math
 import re
 import threading
 import time
 import unicodedata
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import intake_store
+from strippen_core import wa_link             # zelfde wa.me-opbouw als de strippenkaart
+
+try:
+    from zoneinfo import ZoneInfo
+    _AMS = ZoneInfo("Europe/Amsterdam")
+except Exception:                             # zonder tz-database: CET als benadering (tzdata staat in requirements)
+    _AMS = timezone(timedelta(hours=1))
 
 # Deelnemersinformatie die vaststaat. Alles wat nog niet vaststaat, staat hier NIET.
 EVENEMENT = {
@@ -33,8 +41,19 @@ EVENEMENT = {
     "locatie": "Vakantiehuis de Kraanvogels",
     "aankomst": {"datum": "2027-01-29", "tekst": "Vrijdag 29 januari 2027", "tijd": "vanaf 15.30 uur"},
     "vertrek": {"datum": "2027-02-01", "tekst": "Maandag 1 februari 2027", "tijd": "om 10.00 uur"},
-    "praktisch": ["Neem je eigen handdoeken mee.", "Keukenlinnen is aanwezig."],
+    "praktisch": ["Neem je eigen handdoeken mee.", "Bedlinnen is aanwezig."],
 }
+
+# Hoe de deelnemer betaalt; het betaalverzoek zelf gaat (buiten de app) via WhatsApp.
+BETAALKEUZE = {"aanbetaling": "Aanbetaling + restbetaling", "volledig": "Volledig bedrag in één keer"}
+
+# Welke betaling er per inschrijving NU openstaat (afgeleid, nooit apart opgeslagen).
+BETAALFASE = {"aanbetaling": "Aanbetaling", "volledig": "Volledig bedrag", "rest": "Restbetaling"}
+_DAGEN = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
+_MAANDEN = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus",
+            "september", "oktober", "november", "december"]
+_DEADLINE_EERSTE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
+_DEADLINE_REST = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 GESLOTEN_TEKST = "Inschrijving opent binnenkort — definitieve informatie volgt"
 
@@ -113,7 +132,9 @@ def _normaliseer(raw: dict) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     inst = {"inschrijving_open": False, "deelnemersprijs_cent": None, "aanbetaling_cent": None,
             "betaaltermijn": "", "voorwaarden": "", "voorwaarden_versie": 0,
-            "vastgesteld_op": "", "vastgesteld_door": "", "open_gewijzigd_op": "", "open_gewijzigd_door": ""}
+            "vastgesteld_op": "", "vastgesteld_door": "", "open_gewijzigd_op": "", "open_gewijzigd_door": "",
+            # Alleen voor beheer (dashboard + WhatsApp-bericht); nooit in de openbare API.
+            "deadline_eerste": "", "deadline_rest": ""}
     inst.update(raw.get("instellingen") or {})
     return {"instellingen": inst,
             "versies": dict(raw.get("versies") or {}),
@@ -270,11 +291,13 @@ def valideer_deelnemer(raw: dict) -> dict:
     cijfers = sum(c.isdigit() for c in telefoon)
     if len(telefoon) > 30 or not _TELEFOON_TEKENS.match(telefoon or "x") or not 8 <= cijfers <= 15:
         raise WeekendFout("Vul een geldig telefoonnummer in.")
+    if raw.get("betaalkeuze") not in BETAALKEUZE:
+        raise WeekendFout("Kies of je de aanbetaling of het volledige bedrag betaalt.")
     if raw.get("bevestig_deelname") is not True:
         raise WeekendFout("Bevestig dat je je definitief inschrijft.")
     if raw.get("akkoord_voorwaarden") is not True:
         raise WeekendFout("Ga akkoord met de kosten en voorwaarden om je in te schrijven.")
-    return {"naam": naam, "email": email, "telefoon": telefoon}
+    return {"naam": naam, "email": email, "telefoon": telefoon, "betaalkeuze": raw["betaalkeuze"]}
 
 
 def inschrijven(raw: dict, *, test: bool = False, door: str = "") -> dict:
@@ -317,6 +340,7 @@ def inschrijven(raw: dict, *, test: bool = False, door: str = "") -> dict:
             "akkoord": {
                 "deelnemersprijs_cent": inst.get("deelnemersprijs_cent"),
                 "aanbetaling_cent": inst.get("aanbetaling_cent"),
+                "betaalkeuze": deelnemer["betaalkeuze"],
                 "betaaltermijn": inst.get("betaaltermijn") or "",
                 "voorwaarden_versie": versie,
                 "voorwaarden_sha256": _voorwaarden_hash(inst.get("voorwaarden") or ""),
@@ -327,14 +351,154 @@ def inschrijven(raw: dict, *, test: bool = False, door: str = "") -> dict:
         _schrijf(staat)
         a = staat["inschrijvingen"][iid]["akkoord"]
         return {"ok": True, "ingeschreven_op": op, "test": bool(test),
-                "akkoord": {k: a[k] for k in ("deelnemersprijs_cent", "aanbetaling_cent",
+                "akkoord": {k: a[k] for k in ("deelnemersprijs_cent", "aanbetaling_cent", "betaalkeuze",
                                               "betaaltermijn", "voorwaarden_versie")}}
+
+
+# ── Betaalopvolging (afgeleid voor dashboard en lijst) ──────────────────────
+def _deadline(inst: dict, sleutel: str):
+    """'eerste' = aanbetaling óf volledig bedrag (datum + tijd); 'rest' = restbetaling (einde van de dag)."""
+    waarde = inst.get(f"deadline_{sleutel}") or ""
+    try:
+        dt = datetime.fromisoformat(waarde) if waarde else None
+    except ValueError:
+        return None
+    if dt is None:
+        return None
+    if sleutel == "rest":
+        dt = dt.replace(hour=23, minute=59, second=59)
+    return dt.replace(tzinfo=_AMS)
+
+
+def _deadline_tekst(dt, met_tijd: bool) -> str:
+    if dt is None:
+        return ""
+    lokaal = dt.astimezone(_AMS)
+    tekst = f"{_DAGEN[lokaal.weekday()]} {lokaal.day} {_MAANDEN[lokaal.month - 1]}"
+    return f"{tekst} {lokaal:%H:%M}" if met_tijd else tekst
+
+
+def _euro_tekst(cent) -> str:
+    return "" if cent is None else f"€ {cent // 100},{cent % 100:02d}"
+
+
+def betaalfase(rec: dict):
+    """Welke betaling staat nu open? None = niets (betaald, terugbetaald of geannuleerd)."""
+    if rec.get("inschrijfstatus") == "geannuleerd":
+        return None
+    status = rec.get("betaalstatus")
+    if status == "open":
+        return "volledig" if rec.get("betaalkeuze") == "volledig" else "aanbetaling"
+    if status == "aanbetaling":
+        return "rest"
+    return None
+
+
+def _fase_bedrag(rec: dict, fase: str):
+    a = rec.get("akkoord") or {}
+    prijs, aan = a.get("deelnemersprijs_cent"), a.get("aanbetaling_cent")
+    if fase == "volledig":
+        return prijs
+    if fase == "aanbetaling":
+        return aan
+    return prijs - aan if prijs is not None and aan is not None else None
+
+
+def _ontvangen_cent(rec: dict) -> int:
+    a = rec.get("akkoord") or {}
+    if rec.get("betaalstatus") == "aanbetaling":
+        return a.get("aanbetaling_cent") or 0
+    if rec.get("betaalstatus") == "betaald":
+        return a.get("deelnemersprijs_cent") or 0
+    return 0
+
+
+def betaalactie(rec: dict, inst: dict, nu: datetime):
+    """De volgende betaalstap voor één inschrijving, met deadline, 'te laat' en WhatsApp-link."""
+    fase = betaalfase(rec)
+    if fase is None:
+        return None
+    sleutel = "rest" if fase == "rest" else "eerste"
+    dl = _deadline(inst, sleutel)
+    try:
+        ingeschreven = datetime.fromisoformat(rec.get("ingeschreven_op") or "")
+    except ValueError:
+        ingeschreven = None
+    # Wie zich pas NA de deadline inschreef, is niet 'te laat'.
+    te_laat = bool(dl and nu > dl and (ingeschreven is None or ingeschreven < dl))
+    bedrag = _fase_bedrag(rec, fase)
+    dl_tekst = _deadline_tekst(dl, met_tijd=sleutel == "eerste")
+    voornaam = (rec.get("naam") or "").split(" ")[0]
+    wat = {"aanbetaling": "de aanbetaling", "volledig": "het volledige bedrag", "rest": "de restbetaling"}[fase]
+    bericht = (f"Hoi {voornaam}! Wat leuk dat je meegaat naar het trainingsweekend in Vakantiehuis de Kraanvogels. "
+               f"Hierbij het betaalverzoek voor {wat}"
+               + (f" van {_euro_tekst(bedrag)}" if bedrag is not None else "")
+               + (f", graag betalen vóór {dl_tekst}" if dl_tekst else "") + ".")
+    return {"fase": fase, "label": BETAALFASE[fase], "bedrag_cent": bedrag,
+            "deadline": dl.isoformat() if dl else "", "deadline_tekst": dl_tekst, "te_laat": te_laat,
+            "verzoek": (rec.get("verzoeken") or {}).get(fase), "wa_link": wa_link(rec.get("telefoon") or "", bericht)}
+
+
+def dashboard(staat: dict, met_test: bool = False) -> dict:
+    """Wat beheer moet weten en doen: aantallen, geld, betaalverdeling, deadlines, acties, instroom."""
+    nu = _klok()
+    inst = staat["instellingen"]
+    rijen = [r for r in staat["inschrijvingen"].values() if met_test or not r.get("test")]
+    actief = [r for r in rijen if r.get("inschrijfstatus") != "geannuleerd"]
+    acties = []
+    for r in actief:
+        a = betaalactie(r, inst, nu)
+        if a:
+            acties.append({"id": r.get("id"), "naam": r.get("naam"), "telefoon": r.get("telefoon"),
+                           "test": bool(r.get("test")), "betaalkeuze": r.get("betaalkeuze") or "",
+                           "betaalstatus": r.get("betaalstatus"), **a})
+    acties.sort(key=lambda a: (not a["te_laat"], a["deadline"] or "9999", (a["naam"] or "").lower()))
+    toegezegd = sum((r.get("akkoord") or {}).get("deelnemersprijs_cent") or 0 for r in actief)
+    ontvangen = sum(_ontvangen_cent(r) for r in actief)
+    te_laat_cent = sum(a["bedrag_cent"] or 0 for a in acties if a["te_laat"])
+
+    def deadline_info(sleutel: str) -> dict:
+        dl = _deadline(inst, sleutel)
+        fasen = ("rest",) if sleutel == "rest" else ("aanbetaling", "volledig")
+        open_ = [a for a in acties if a["fase"] in fasen]
+        return {"sleutel": sleutel, "label": "Restbetaling" if sleutel == "rest" else "Aanbetaling of volledig bedrag",
+                "ingesteld": dl is not None, "tekst": _deadline_tekst(dl, met_tijd=sleutel == "eerste"),
+                "dagen": math.ceil((dl - nu).total_seconds() / 86400) if dl else None,
+                "verlopen": bool(dl and nu > dl), "open": len(open_), "te_laat": sum(1 for a in open_ if a["te_laat"])}
+
+    per_dag: dict = {}
+    for r in rijen:
+        try:
+            dag = datetime.fromisoformat(r.get("ingeschreven_op") or "").astimezone(_AMS).date().isoformat()
+        except ValueError:
+            continue
+        per_dag[dag] = per_dag.get(dag, 0) + 1
+    tijdlijn, cum = [], 0
+    for dag in sorted(per_dag):
+        cum += per_dag[dag]
+        tijdlijn.append({"datum": dag, "aantal": per_dag[dag], "cumulatief": cum})
+
+    return {
+        "met_test": met_test,
+        "aantal": {"actief": len(actief), "geannuleerd": len(rijen) - len(actief),
+                   "test": sum(1 for r in rijen if r.get("test"))},
+        "geld": {"toegezegd_cent": toegezegd, "ontvangen_cent": ontvangen, "open_cent": toegezegd - ontvangen,
+                 "te_laat_cent": te_laat_cent},
+        "betaalstatus": {k: sum(1 for r in actief if r.get("betaalstatus") == k) for k in BETAALSTATUS},
+        "betaalkeuze": {**{k: sum(1 for r in actief if r.get("betaalkeuze") == k) for k in BETAALKEUZE},
+                        "onbekend": sum(1 for r in actief if r.get("betaalkeuze") not in BETAALKEUZE)},
+        "deadlines": [deadline_info("eerste"), deadline_info("rest")],
+        "acties": {"versturen": [a for a in acties if not a["verzoek"]],
+                   "wachten": [a for a in acties if a["verzoek"]]},
+        "tijdlijn": tijdlijn,
+    }
 
 
 # ── Beheer ──────────────────────────────────────────────────────────────────
 def beheer_overzicht(staat: dict | None = None) -> dict:
     staat = staat if staat is not None else _lees_vers()
     inst = staat["instellingen"]
+    nu = _klok()
     rijen = sorted(staat["inschrijvingen"].values(), key=lambda r: r.get("ingeschreven_op", ""), reverse=True)
     echt = [r for r in rijen if not r.get("test")]
     tel = lambda veld, labels: {k: sum(1 for r in echt if r.get(veld) == k) for k in labels}  # noqa: E731
@@ -345,11 +509,14 @@ def beheer_overzicht(staat: dict | None = None) -> dict:
         "ontbreekt": ontbrekende_kosten(inst),
         "versies": [{"versie": int(k), **{f: v.get(f) for f in ("vastgesteld_op", "vastgesteld_door")}}
                     for k, v in sorted(staat["versies"].items(), key=lambda kv: int(kv[0]))],
-        "inschrijvingen": copy.deepcopy(rijen),
+        "inschrijvingen": [{**copy.deepcopy(r), "actie": betaalactie(r, inst, nu)} for r in rijen],
         "tellingen": {"totaal": len(echt), "test": len(rijen) - len(echt),
                       "inschrijfstatus": tel("inschrijfstatus", INSCHRIJFSTATUS),
-                      "betaalstatus": tel("betaalstatus", BETAALSTATUS)},
-        "labels": {"inschrijfstatus": INSCHRIJFSTATUS, "betaalstatus": BETAALSTATUS},
+                      "betaalstatus": tel("betaalstatus", BETAALSTATUS),
+                      "betaalkeuze": tel("betaalkeuze", BETAALKEUZE)},
+        "labels": {"inschrijfstatus": INSCHRIJFSTATUS, "betaalstatus": BETAALSTATUS, "betaalkeuze": BETAALKEUZE,
+                   "betaalfase": BETAALFASE},
+        "dashboard": {"echt": dashboard(staat, False), "met_test": dashboard(staat, True)},
         "gesloten_tekst": GESLOTEN_TEKST,
     }
 
@@ -389,4 +556,49 @@ def testinschrijving_verwijderen(iid: str) -> dict:
             raise WeekendFout("Een echte inschrijving verwijder je niet; zet de inschrijfstatus op Geannuleerd.", 409)
         del staat["inschrijvingen"][iid]
         _schrijf(staat)
+        return beheer_overzicht(staat)
+
+
+def verzoek_markeren(iid: str, fase: str, verstuurd: bool, door: str) -> dict:
+    """Leg vast dat het WhatsApp-betaalverzoek voor een fase is verstuurd (of trek dat in).
+    Handmatig: wa.me OPENT alleen WhatsApp, of er echt verstuurd is weet alleen beheer."""
+    if fase not in BETAALFASE:
+        raise WeekendFout("Onbekende betaalfase.")
+    with _LOCK:
+        staat = _lees_vers()
+        rec = staat["inschrijvingen"].get(iid)
+        if rec is None:
+            raise WeekendFout("Inschrijving niet gevonden.", 404)
+        verzoeken = rec.setdefault("verzoeken", {})
+        if bool(verstuurd) != (fase in verzoeken):
+            op = _nu()
+            if verstuurd:
+                verzoeken[fase] = {"op": op, "door": door}
+            else:
+                del verzoeken[fase]
+            rec.setdefault("historie", []).append({"veld": "betaalverzoek", "van": "" if verstuurd else fase,
+                                                   "naar": fase if verstuurd else "", "door": door, "op": op})
+            _schrijf(staat)
+        return beheer_overzicht(staat)
+
+
+def deadlines_opslaan(body: dict, door: str) -> dict:
+    """Beheerdeadlines: 'YYYY-MM-DDTHH:MM' (eerste betaling) en 'YYYY-MM-DD' (restbetaling), of leeg."""
+    eerste = str(body.get("deadline_eerste") or "").strip()
+    rest = str(body.get("deadline_rest") or "").strip()
+    try:
+        if eerste and not (_DEADLINE_EERSTE.match(eerste) and datetime.fromisoformat(eerste)):
+            raise ValueError
+        if rest and not (_DEADLINE_REST.match(rest) and datetime.fromisoformat(rest)):
+            raise ValueError
+    except ValueError:
+        raise WeekendFout("Vul geldige deadlines in (datum en tijd, en een datum).")
+    if eerste and rest and rest < eerste[:10]:
+        raise WeekendFout("De restbetaling kan niet vóór de eerste betaling vallen.")
+    with _LOCK:
+        staat = _lees_vers()
+        inst = staat["instellingen"]
+        if (inst.get("deadline_eerste"), inst.get("deadline_rest")) != (eerste, rest):
+            inst.update(deadline_eerste=eerste, deadline_rest=rest, deadlines_door=door, deadlines_op=_nu())
+            _schrijf(staat)
         return beheer_overzicht(staat)
