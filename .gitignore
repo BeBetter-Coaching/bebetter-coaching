@@ -49,3 +49,6 @@ bebetter-athlete-canvas-review-*/
 bebetter-fable-northstar-review-*/
 bebetter-workspace-closure-*/
 COMMIT.txt
+
+# Trainingsweekend: lokale store (fictieve testdata)
+.weekend_kraanvogels.json

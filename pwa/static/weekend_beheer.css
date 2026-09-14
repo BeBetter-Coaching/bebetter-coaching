@@ -1,0 +1,99 @@
+/* Weekendbeheer — bovenop weekend.css (zelfde tokens en primitives). */
+.wb-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.wb-ghost{background:none}
+.wb-hint{font-size:12.5px;color:var(--ds-text-3);margin:12px 0 0}
+.wb-hint-top{margin:-6px 0 14px}
+
+/* ── Login ─────────────────────────────────────────────────────────────── */
+.wb-login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.wb-login-card{width:100%;max-width:360px;text-align:center;background:linear-gradient(180deg,#123457,#0E2547);
+  border:1px solid #24486f;border-radius:20px;padding:30px 24px;box-shadow:var(--ds-e3)}
+.wb-login-card h1{margin:6px 0 4px;font-size:21px}
+.wb-login-logo{display:block;margin:0 auto 8px;width:150px;height:auto}
+.wb-who-list{display:grid;gap:10px;margin-top:10px}
+.wb-who{display:flex;align-items:center;gap:12px;min-height:52px;padding:10px 14px;border-radius:12px;
+  background:var(--ds-s1);border:1px solid var(--ds-border);color:var(--ds-text);font:inherit;font-size:16px;
+  font-weight:600;cursor:pointer;text-align:left}
+.wb-who:hover,.wb-who:focus-visible{border-color:var(--ds-accent);outline:none}
+.wb-av{width:32px;height:32px;border-radius:50%;background:var(--ds-accent);color:#04222b;font-weight:700;
+  display:flex;align-items:center;justify-content:center}
+#wb-pw{display:grid;gap:10px;text-align:left}
+#wb-pw .wk-field{margin:0}
+.wb-login-err{color:var(--ds-critical);font-size:14px;margin:12px 0 0}
+
+/* ── Kopbalk ───────────────────────────────────────────────────────────── */
+.wb-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:0 0 18px}
+.wb-bar-id{display:flex;align-items:center;gap:12px;min-width:0}
+.wb-bar-id h1{margin:0;font-size:22px;line-height:1.2}
+.wb-bar-id p{margin:2px 0 0;font-size:13px}
+.wb-bar-logo{flex:0 0 auto;height:26px;width:auto}
+.wb-bar-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.wb-wie{font-size:13px;color:var(--ds-text-2)}
+
+.wb-toast{position:sticky;top:calc(8px + env(safe-area-inset-top));z-index:10;margin:0 0 12px;padding:11px 14px;
+  border-radius:var(--ds-r-sm);background:var(--ds-s3);border:1px solid var(--ds-border);box-shadow:var(--ds-e2);font-size:14px}
+.wb-toast.is-critical{border-color:var(--ds-critical-bd);background:#3a1c19}
+
+/* ── Bovenste twee panelen ─────────────────────────────────────────────── */
+.wb-top{display:grid;gap:14px}
+@media (min-width:900px){.wb-top{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);align-items:start;gap:18px}}
+.wb-status{display:flex;flex-direction:column;gap:8px;margin:0 0 12px}
+.wb-status-uitleg{margin:0;color:var(--ds-text-2)}
+.wb-chip{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:var(--ds-r-pill);
+  font-size:12.5px;font-weight:700;letter-spacing:.02em;color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.wb-chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.wb-acts{display:flex;flex-wrap:wrap;gap:8px}
+.wb-acts .wk-btn{flex:1 1 auto}
+.wb-2{display:grid;gap:0 12px}
+@media (min-width:520px){.wb-2{grid-template-columns:1fr 1fr}}
+.wk-field textarea{display:block;width:100%;margin-top:6px;background:var(--ds-canvas);border:1px solid var(--ds-border);
+  color:var(--ds-text);border-radius:var(--ds-r-sm);padding:12px 13px;font:inherit;font-size:16px;resize:vertical;line-height:1.5}
+.wk-field select{display:block;width:100%;margin-top:6px;background:var(--ds-canvas);border:1px solid var(--ds-border);
+  color:var(--ds-text);border-radius:var(--ds-r-sm);padding:10px 12px;font:inherit;font-size:15px;min-height:44px}
+.wb-versie{font-size:13px;color:var(--ds-text-3);margin:0 0 10px}
+
+/* ── Lijst ─────────────────────────────────────────────────────────────── */
+.wb-lijst{margin-top:26px}
+.wb-lijst-kop{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px}
+.wb-lijst-kop .wk-h{margin:0}
+.wb-lijst-acts{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.wb-toggle{margin:0}
+.wb-tellers{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 28px;margin:0 0 16px}
+.wb-tgroep{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:0 1 auto;max-width:100%}
+.wb-tgroep-lbl{width:100%;font-size:var(--ds-t-xs);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-text-3)}
+.wb-teller{display:inline-flex;align-items:baseline;gap:6px;padding:5px 10px;border-radius:var(--ds-r-pill);
+  background:var(--ds-s1);border:1px solid var(--ds-border);font-size:12.5px;color:var(--ds-text-2);white-space:nowrap}
+.wb-teller b{font-size:15px;color:var(--ds-text);font-variant-numeric:tabular-nums}
+
+.wb-rijen{display:grid;gap:12px}
+@media (min-width:900px){.wb-rijen{grid-template-columns:1fr 1fr}}
+.wb-rij{background:linear-gradient(168deg,var(--ds-s2),var(--ds-s1));border:1px solid var(--ds-border);
+  border-radius:var(--ds-r-lg);padding:16px;min-width:0}
+.wb-rij.is-test{border-style:dashed;border-color:var(--ds-attention-bd)}
+.wb-rij.is-geannuleerd{opacity:.72}
+.wb-rij-kop{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 6px}
+.wb-rij-kop h3{margin:0;font-size:17px;min-width:0;overflow-wrap:anywhere;margin-right:auto}
+.wb-tag{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:var(--ds-r-pill);
+  color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-bd)}
+.wb-contact{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px;color:var(--ds-text-2);margin:0 0 10px}
+.wb-contact span{overflow-wrap:anywhere}
+.wb-akkoord{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0 0 12px;padding:10px 12px;font-size:13px;
+  background:var(--ds-well);border:1px solid var(--ds-hairline);border-radius:var(--ds-r-md)}
+.wb-akkoord dt{color:var(--ds-text-3)}
+.wb-akkoord dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.wb-statussen{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:440px){.wb-statussen{grid-template-columns:1fr}}   /* 'Aanbetaling ontvangen' past niet in een halve telefoonbreedte */
+.wb-statussen .wk-field{margin:0}
+.wb-rij-voet{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}
+.wb-historie{font-size:12.5px;color:var(--ds-text-3)}
+.wb-historie summary{cursor:pointer;min-height:32px;display:flex;align-items:center}
+.wb-historie ul{margin:4px 0 0;padding-left:18px}
+.wb-weg{color:var(--ds-text-3)}
+.wb-weg:hover{color:var(--ds-critical);border-color:var(--ds-critical-bd)}
+.wb-leeg{padding:22px;text-align:center;color:var(--ds-text-3);border:1px dashed var(--ds-border);border-radius:var(--ds-r-lg)}
+
+.wb-dialog{max-width:420px;width:calc(100% - 32px);border:1px solid var(--ds-border);border-radius:var(--ds-r-lg);
+  background:var(--ds-s2);color:var(--ds-text);padding:20px;box-shadow:var(--ds-e3)}
+.wb-dialog::backdrop{background:rgba(3,9,20,.66)}
+.wb-dialog h2{margin:0 0 8px;font-size:18px}
+.wb-dialog p{margin:0 0 16px;color:var(--ds-text-2)}

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#081527">
+  <meta name="robots" content="noindex">
+  <title>Weekendbeheer · BeBetter Coaching</title>
+  <link rel="icon" href="/static/icon-192.png">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/design-system.css?v=wk1">
+  <link rel="stylesheet" href="/static/weekend.css?v=wk1">
+  <link rel="stylesheet" href="/static/weekend_beheer.css?v=wk1">
+</head>
+<body class="wk">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="ic-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></symbol>
+      <symbol id="ic-ext" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+      <symbol id="ic-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9.5" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+      <symbol id="ic-open" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9.5" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.7-1.5"/></symbol>
+      <symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14-4"/><path d="M4 5v3h3"/><path d="M4 13a8 8 0 0 0 14 4"/><path d="M20 19v-3h-3"/></symbol>
+      <symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="m6 7 1 13h10l1-13"/></symbol>
+      <symbol id="ic-euro" viewBox="0 0 24 24"><path d="M17 6.5A6 6 0 1 0 17 18"/><path d="M4.5 10.5H13"/><path d="M4.5 14H12"/></symbol>
+      <symbol id="ic-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16.5 5.3a3.2 3.2 0 0 1 0 5.4"/><path d="M18.5 20c0-2.6-1-4.2-2.6-4.9"/></symbol>
+    </defs>
+  </svg>
+
+  <!-- Inloggen: Jip/Remco met het bestaande coachwachtwoord, Tim met zijn weekendwachtwoord -->
+  <div id="wb-login" class="wb-login" hidden>
+    <form class="wb-login-card" id="wb-login-form">
+      <img src="/static/logo.png" alt="BeBetter Coaching" width="900" height="355" class="wb-login-logo">
+      <h1>Weekendbeheer</h1>
+      <div id="wb-who">
+        <p class="wk-muted">Wie ben je?</p>
+        <div class="wb-who-list">
+          <button type="button" class="wb-who" data-wie="Jip"><span class="wb-av">J</span>Jip</button>
+          <button type="button" class="wb-who" data-wie="Remco"><span class="wb-av">R</span>Remco</button>
+          <button type="button" class="wb-who" data-wie="Tim"><span class="wb-av">T</span>Tim</button>
+        </div>
+      </div>
+      <div id="wb-pw" hidden>
+        <p class="wk-muted" id="wb-as"></p>
+        <label class="wk-field"><span class="wb-sr">Wachtwoord</span>
+          <input id="wb-pass" type="password" autocomplete="current-password" placeholder="Wachtwoord"></label>
+        <button class="wk-btn primary" id="wb-login-btn" type="submit">Inloggen</button>
+        <button class="wk-btn small wb-ghost" id="wb-login-back" type="button">‹ Ander account</button>
+      </div>
+      <p class="wb-login-err" id="wb-login-err" role="alert" hidden></p>
+    </form>
+  </div>
+
+  <main class="wk-page wb-page" id="wb-app" hidden>
+    <header class="wb-bar">
+      <div class="wb-bar-id">
+        <img src="/static/logo.png" alt="" width="900" height="355" class="wb-bar-logo">
+        <div>
+          <h1>Weekendbeheer</h1>
+          <p class="wk-muted">Vakantiehuis de Kraanvogels · 29 jan – 1 feb 2027</p>
+        </div>
+      </div>
+      <div class="wb-bar-acts">
+        <a class="wk-btn small wb-ghost" id="wb-naar-app" href="/" hidden><svg class="wk-ic"><use href="#ic-back"/></svg> Coach-app</a>
+        <span class="wb-wie" id="wb-wie"></span>
+        <button class="wk-btn small" id="wb-uitloggen" type="button">Uitloggen</button>
+      </div>
+    </header>
+
+    <div class="wb-toast" id="wb-toast" role="status" aria-live="polite" hidden></div>
+
+    <div class="wb-top">
+      <!-- 1. Inschrijving open/dicht -->
+      <section class="wk-card" aria-labelledby="wb-h-status">
+        <h2 class="wk-h" id="wb-h-status"><svg class="wk-ic"><use href="#ic-lock"/></svg> Openbare inschrijving</h2>
+        <div class="wb-status">
+          <span class="wb-chip" id="wb-open-chip"></span>
+          <p class="wb-status-uitleg" id="wb-open-uitleg"></p>
+        </div>
+        <p class="wk-melding is-attention" id="wb-ontbreekt" hidden></p>
+        <div class="wb-acts">
+          <button class="wk-btn" id="wb-open-btn" type="button"></button>
+          <a class="wk-btn wb-ghost" href="/weekend?test=1" target="_blank" rel="noopener">Formulier testen <svg class="wk-ic"><use href="#ic-ext"/></svg></a>
+          <a class="wk-btn wb-ghost" href="/weekend" target="_blank" rel="noopener">Openbare pagina <svg class="wk-ic"><use href="#ic-ext"/></svg></a>
+        </div>
+        <p class="wb-hint">Testen werkt ook als de inschrijving dicht is: alleen met een beheersessie, en inschrijvingen worden als test gemarkeerd.</p>
+      </section>
+
+      <!-- 2. Kosten en voorwaarden (alleen wat deelnemers zien) -->
+      <section class="wk-card" aria-labelledby="wb-h-kosten">
+        <h2 class="wk-h" id="wb-h-kosten"><svg class="wk-ic"><use href="#ic-euro"/></svg> Deelnemerskosten &amp; voorwaarden</h2>
+        <p class="wb-hint wb-hint-top">Alleen wat deelnemers te zien krijgen. Geen interne begroting of kostenopbouw invullen.</p>
+        <form id="wb-kosten" novalidate>
+          <div class="wb-2">
+            <label class="wk-field">Deelnemersprijs (€)
+              <input name="prijs" inputmode="decimal" placeholder="Nog niet vastgesteld" autocomplete="off"></label>
+            <label class="wk-field">Aanbetaling (€)
+              <input name="aanbetaling" inputmode="decimal" placeholder="Nog niet vastgesteld" autocomplete="off"></label>
+          </div>
+          <label class="wk-field">Betaaltermijn
+            <textarea name="betaaltermijn" rows="2" maxlength="1000" placeholder="Nog niet vastgesteld"></textarea></label>
+          <label class="wk-field">Voorwaarden
+            <textarea name="voorwaarden" rows="6" maxlength="20000" placeholder="Nog niet vastgesteld"></textarea></label>
+          <p class="wb-versie" id="wb-versie"></p>
+          <button class="wk-btn primary" type="submit" id="wb-kosten-btn">Opslaan als nieuwe versie</button>
+        </form>
+      </section>
+    </div>
+
+    <!-- 3. Inschrijvingen -->
+    <section class="wb-lijst" aria-labelledby="wb-h-lijst">
+      <div class="wb-lijst-kop">
+        <h2 class="wk-h" id="wb-h-lijst"><svg class="wk-ic"><use href="#ic-users"/></svg> Inschrijvingen</h2>
+        <div class="wb-lijst-acts">
+          <label class="wk-check wb-toggle"><input type="checkbox" id="wb-toon-test"> <span>Testinschrijvingen tonen</span></label>
+          <button class="wk-btn small" id="wb-ververs" type="button"><svg class="wk-ic"><use href="#ic-refresh"/></svg> Verversen</button>
+        </div>
+      </div>
+      <div class="wb-tellers" id="wb-tellers"></div>
+      <div class="wb-rijen" id="wb-rijen"></div>
+    </section>
+  </main>
+
+  <dialog class="wb-dialog" id="wb-dialog">
+    <form method="dialog">
+      <h2 id="wb-dialog-titel"></h2>
+      <p id="wb-dialog-tekst"></p>
+      <div class="wb-acts">
+        <button class="wk-btn" value="nee">Annuleren</button>
+        <button class="wk-btn primary" value="ja" id="wb-dialog-ja">Bevestigen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/weekend_beheer.js?v=wk1"></script>
+</body>
+</html>

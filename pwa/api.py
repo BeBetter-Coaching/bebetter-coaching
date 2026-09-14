@@ -20,13 +20,14 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 
 import strippen_core as core
 import dossier_core as dossier
@@ -43,6 +44,7 @@ import home_core
 import coach_read
 import athlete_read                       # Canonical Athlete Read Layer v1 — invalidatie na writes
 import webauthn_core
+import weekend_core as weekend
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _STATIC = os.path.join(_HERE, "static")
@@ -80,6 +82,32 @@ _COOKIE = "bb_session"
 # gebruikersnaam te typen; de sessie onthoudt het, zodat acties toegeschreven
 # kunnen worden (bv. wie welke notitie schreef).
 _COACHES = ["Jip", "Remco"]
+# Trainingsweekend: Tim beheert ALLEEN het weekend. Hij heeft een eigen wachtwoord
+# (het gedeelde coachwachtwoord zou volledige toegang geven) en zijn sessie komt op
+# de server nergens anders dan de weekendpaden — zie `_login` hieronder.
+_WEEKEND_ALLEEN = ["Tim"]
+_WEEKEND_TIM_PASSWORD = os.environ.get("WEEKEND_TIM_PASSWORD", "")
+
+
+def _weekend_sleutel() -> str:
+    """Bindt een weekendsessie aan het HUIDIGE weekendwachtwoord: wijzig of wis
+    WEEKEND_TIM_PASSWORD en elke bestaande weekendsessie is direct ongeldig, zonder
+    dat de coaches opnieuw hoeven in te loggen."""
+    if not _WEEKEND_TIM_PASSWORD:
+        return ""
+    return hmac.new(_SESSION_SECRET, b"weekend:" + _WEEKEND_TIM_PASSWORD.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def _rol(claims: dict) -> str:
+    """'coach' = volledige PWA · 'weekend' = alleen weekendbeheer · '' = geen toegang.
+    Afgeleid uit de server-side lijsten (+ weekendsleutel), nooit uit een rol die de client meestuurt."""
+    user = claims.get("u")
+    if user in _COACHES:
+        return "coach"
+    sleutel = _weekend_sleutel()
+    if user in _WEEKEND_ALLEEN and sleutel and hmac.compare_digest(str(claims.get("k", "")), sleutel):
+        return "weekend"
+    return ""
 
 
 def _b64nopad(raw: bytes) -> str:
@@ -92,8 +120,8 @@ def _unb64nopad(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-def _sign_session(user: str) -> str:
-    body = _b64nopad(json.dumps({"u": user, "exp": time.time() + _SESSION_DAGEN * 86400}).encode())
+def _sign_session(user: str, **extra) -> str:
+    body = _b64nopad(json.dumps({"u": user, "exp": time.time() + _SESSION_DAGEN * 86400, **extra}).encode())
     sig = hmac.new(_SESSION_SECRET, body.encode(), hashlib.sha256).hexdigest()
     return f"{body}.{sig}"
 
@@ -119,15 +147,21 @@ def _token_of(request: Request) -> str:
     return request.cookies.get(_COOKIE, "")
 
 
-def _session_user(request: Request):
-    """Welke coach is ingelogd (uit de geldige sessie), of None."""
+def _session_claims(request: Request) -> dict:
+    """De inhoud van een geldige sessie ({u, exp, …}), of {}."""
     token = _token_of(request)
     if not _valid_session(token):
-        return None
+        return {}
     try:
-        return json.loads(_unb64nopad(token.rsplit(".", 1)[0])).get("u")
+        data = json.loads(_unb64nopad(token.rsplit(".", 1)[0]))
+        return data if isinstance(data, dict) else {}
     except Exception:
-        return None
+        return {}
+
+
+def _session_user(request: Request):
+    """Welke coach is ingelogd (uit de geldige sessie), of None."""
+    return _session_claims(request).get("u")
 
 
 def _is_public(path: str) -> bool:
@@ -137,17 +171,33 @@ def _is_public(path: str) -> bool:
                 "/api/login", "/api/me", "/api/coaches", "/api/webauthn/available",
                 "/api/webauthn/auth/options", "/api/webauthn/auth/verify"):
         return True
+    # Trainingsweekend: de twee pagina-schillen (bevatten geen data), de openbare info
+    # (whitelist, zonder deelnemers) en het inschrijven. Beheer-API's staan hier NIET.
+    if path in ("/weekend", "/weekend/beheer", "/api/weekend", "/api/weekend/inschrijven"):
+        return True
     return (path == "/intake"
             or path.startswith("/api/intake/public")
             or path.startswith("/static/"))
 
 
+def _is_weekend_beheer_pad(path: str) -> bool:
+    """Wat een weekend-only sessie (Tim) bovenop de publieke paden mag: weekendbeheer + uitloggen."""
+    return (path == "/api/logout" or path == "/api/weekend/beheer"
+            or path.startswith("/api/weekend/beheer/"))
+
+
 @app.middleware("http")
 async def _login(request: Request, call_next):
-    if _APP_PASSWORD and not _is_public(request.url.path):
-        if not _valid_session(_token_of(request)):
+    path = request.url.path
+    if _APP_PASSWORD and not _is_public(path):
+        rol = _rol(_session_claims(request))
+        if not rol:
             # Geen browser-popup meer: nette 401; de app toont zelf het inlogscherm.
+            # Ook een geldig ondertekende sessie van een onbekende gebruiker komt er niet in.
             return JSONResponse({"err": "auth"}, status_code=401)
+        if rol == "weekend" and not _is_weekend_beheer_pad(path):
+            # Deny-by-default: elke andere (ook toekomstige) route is dicht voor weekendbeheer.
+            return JSONResponse({"err": "geen toegang"}, status_code=403)
     return await call_next(request)
 
 
@@ -223,8 +273,8 @@ class Login(BaseModel):
     password: str = ""
 
 
-def _login_resp(wie: str):
-    token = _sign_session(wie)
+def _login_resp(wie: str, **extra):
+    token = _sign_session(wie, **extra)
     # token ook in de body: de app bewaart 'm in localStorage en stuurt 'm als
     # Authorization-header mee (cookie blijft voor browser-gebruik).
     resp = JSONResponse({"ok": True, "wie": wie, "token": token})
@@ -243,17 +293,70 @@ def api_coaches():
 def api_me(request: Request):
     """Ingelogd? En als wie? Het inlogscherm/app checkt dit bij het opstarten."""
     if not _APP_PASSWORD:                                   # lokaal: geen slot
-        return {"ingelogd": True, "wie": ""}
-    wie = _session_user(request)
-    return {"ingelogd": bool(wie), "wie": wie or ""}
+        return {"ingelogd": True, "wie": "", "rol": "coach"}
+    claims = _session_claims(request)
+    rol = _rol(claims)
+    return {"ingelogd": bool(rol), "wie": claims.get("u", "") if rol else "", "rol": rol}
+
+
+# ── Pogingenlimiet op wachtwoord-inloggen ───────────────────────────────────
+# Geteld per WACHTWOORD, niet per IP: achter de proxy van de hosting is het IP niet
+# betrouwbaar, en een verkeerd toegewezen IP zou iedereen tegelijk buitensluiten.
+# Jip en Remco delen één wachtwoord → één teller. Tijdens een blokkade wordt óók het
+# juiste wachtwoord geweigerd (anders loopt raden gewoon door). Bestaande sessies en
+# Face ID/passkeys blijven werken. In het geheugen: een herstart zet de tellers op nul.
+_LOGIN_LIMIETEN = ((5, 15 * 60), (20, 24 * 3600))       # (max. fouten, venster in seconden)
+_LOGIN_FOUTEN: dict = {}
+_LOGIN_LOCK = threading.Lock()
+_klok = time.monotonic
+
+
+def _login_teller(wie: str) -> str:
+    return "coach" if wie in _COACHES else wie
+
+
+def _login_wachttijd(teller: str) -> int:
+    """Seconden tot er weer een wachtwoord geprobeerd mag worden (0 = nu)."""
+    nu = _klok()
+    with _LOGIN_LOCK:
+        fouten = [t for t in _LOGIN_FOUTEN.get(teller, []) if nu - t < _LOGIN_LIMIETEN[-1][1]]
+        _LOGIN_FOUTEN[teller] = fouten
+        wacht = 0.0
+        for maximum, venster in _LOGIN_LIMIETEN:
+            recent = [t for t in fouten if nu - t < venster]
+            if len(recent) >= maximum:
+                wacht = max(wacht, recent[-maximum] + venster - nu)   # tot er weer één uit het venster valt
+        return int(wacht) + 1 if wacht > 0 else 0
+
+
+def _nl_wachttijd(sec: int) -> str:
+    minuten = -(-sec // 60)
+    if minuten >= 120:
+        return f"{-(-minuten // 60)} uur"
+    return "1 minuut" if minuten == 1 else f"{minuten} minuten"
 
 
 @app.post("/api/login")
 def api_login(body: Login):
     if not _APP_PASSWORD:                                   # lokaal: geen slot
         return _login_resp(body.wie or _COACHES[0])
+    if body.wie not in _COACHES and body.wie not in _WEEKEND_ALLEEN:
+        return JSONResponse({"ok": False, "err": "Onjuist wachtwoord."}, status_code=401)
+    teller = _login_teller(body.wie)
+    wacht = _login_wachttijd(teller)
+    if wacht:
+        return JSONResponse({"ok": False, "err": f"Te veel mislukte pogingen. Probeer het over {_nl_wachttijd(wacht)} opnieuw."},
+                            status_code=429, headers={"Retry-After": str(wacht)})
     if body.wie in _COACHES and secrets.compare_digest(body.password or "", _APP_PASSWORD):
+        _LOGIN_FOUTEN.pop(teller, None)
         return _login_resp(body.wie)
+    # Weekendbeheer: eigen wachtwoord; zonder ingesteld wachtwoord kan dit account niet in.
+    if (body.wie in _WEEKEND_ALLEEN and _WEEKEND_TIM_PASSWORD
+            and secrets.compare_digest(body.password or "", _WEEKEND_TIM_PASSWORD)):
+        _LOGIN_FOUTEN.pop(teller, None)
+        return _login_resp(body.wie, k=_weekend_sleutel())
+    with _LOGIN_LOCK:
+        _LOGIN_FOUTEN.setdefault(teller, []).append(_klok())
     return JSONResponse({"ok": False, "err": "Onjuist wachtwoord."}, status_code=401)
 
 
@@ -1017,6 +1120,117 @@ def intake_public_submit(body: PubliekeIntake):
         return {"ok": False, "err": "Deze link is niet (meer) geldig. Vraag je coach om een nieuwe."}
     ok, err = intake.public_submit(body.velden, body.resume)
     return {"ok": ok, "err": err}
+
+
+# ── Trainingsweekend (openbare pagina + afgeschermd beheer) ─────────────────
+_GEEN_CACHE = {"Cache-Control": "no-store"}
+
+
+class WeekendInschrijving(BaseModel):
+    naam: str = ""
+    email: str = ""
+    telefoon: str = ""
+    # Strikt: alleen een echte `true` is een expliciete bevestiging (geen "yes"/1).
+    bevestig_deelname: StrictBool = False
+    akkoord_voorwaarden: StrictBool = False
+    voorwaarden_versie: Optional[int] = None
+    test: bool = False
+    website: str = ""                     # honeypot
+
+
+class WeekendInstellingen(BaseModel):
+    deelnemersprijs_cent: Optional[int] = None
+    aanbetaling_cent: Optional[int] = None
+    betaaltermijn: str = ""
+    voorwaarden: str = ""
+    verwacht_versie: Optional[int] = None
+
+
+class WeekendOpen(BaseModel):
+    open: bool = False
+
+
+class WeekendStatus(BaseModel):
+    waarde: str = ""
+    verwacht: str = ""
+
+
+def _weekend_beheerder(request: Request):
+    """Wie mag het weekend beheren? Naast de middleware óók in de handler gecontroleerd,
+    omdat /api/weekend en /api/weekend/inschrijven publiek zijn (testmodus)."""
+    if not _APP_PASSWORD:                                   # lokaal: geen slot (zoals de rest)
+        return _session_user(request) or "lokaal"
+    claims = _session_claims(request)
+    return claims.get("u") if _rol(claims) else None     # coach of (geldige) weekendsessie
+
+
+def _weekend_json(fn):
+    try:
+        return JSONResponse(fn(), headers=_GEEN_CACHE)
+    except weekend.WeekendFout as e:
+        return JSONResponse({"ok": False, "err": e.err, **{k: v for k, v in e.extra.items() if k != "detail"}},
+                            status_code=e.status, headers=_GEEN_CACHE)
+
+
+def _weekend_beheer(request: Request, fn):
+    wie = _weekend_beheerder(request)
+    if not wie:
+        return JSONResponse({"err": "geen toegang"}, status_code=403, headers=_GEEN_CACHE)
+    return _weekend_json(lambda: fn(wie))
+
+
+@app.get("/api/weekend")                                   # PUBLIEK — whitelist, nooit deelnemers
+def weekend_info(request: Request, test: int = 0):
+    # `?test=1` telt alleen met een beheersessie; voor iedereen anders is het een gewone (dichte) pagina.
+    testmodus = bool(test) and bool(_weekend_beheerder(request))
+    return _weekend_json(lambda: weekend.publieke_info(testmodus=testmodus))
+
+
+@app.post("/api/weekend/inschrijven")                      # PUBLIEK — dicht zolang de inschrijving dicht is
+def weekend_inschrijven(request: Request, body: WeekendInschrijving):
+    door = ""
+    if body.test:
+        door = _weekend_beheerder(request)
+        if not door:
+            return JSONResponse({"ok": False, "err": weekend.GESLOTEN_TEKST}, status_code=403,
+                                headers=_GEEN_CACHE)
+    return _weekend_json(lambda: weekend.inschrijven(body.model_dump(), test=body.test, door=door))
+
+
+@app.get("/api/weekend/beheer")
+def weekend_beheer(request: Request):
+    return _weekend_beheer(request, lambda wie: {**weekend.beheer_overzicht(), "wie": wie})
+
+
+@app.post("/api/weekend/beheer/instellingen")
+def weekend_instellingen(request: Request, body: WeekendInstellingen):
+    return _weekend_beheer(request, lambda wie: weekend.instellingen_opslaan(body.model_dump(), wie))
+
+
+@app.post("/api/weekend/beheer/inschrijving-open")
+def weekend_open(request: Request, body: WeekendOpen):
+    return _weekend_beheer(request, lambda wie: weekend.inschrijving_open_zetten(body.open, wie))
+
+
+@app.post("/api/weekend/beheer/inschrijvingen/{iid}/{veld}")   # veld = inschrijfstatus | betaalstatus
+def weekend_status(request: Request, iid: str, veld: str, body: WeekendStatus):
+    return _weekend_beheer(request, lambda wie: weekend.status_zetten(iid, veld, body.waarde, body.verwacht, wie))
+
+
+@app.delete("/api/weekend/beheer/inschrijvingen/{iid}")        # alleen testinschrijvingen
+def weekend_test_weg(request: Request, iid: str):
+    return _weekend_beheer(request, lambda wie: weekend.testinschrijving_verwijderen(iid))
+
+
+@app.get("/weekend")
+def weekend_pagina():
+    return FileResponse(os.path.join(_STATIC, "weekend.html"))
+
+
+@app.get("/weekend/beheer")
+def weekend_beheer_pagina():
+    # Alleen de schil + inlogscherm; alle data komt via de afgeschermde beheer-API.
+    return FileResponse(os.path.join(_STATIC, "weekend_beheer.html"))
 
 
 # ── PWA-shell + static ──────────────────────────────────────────────────────

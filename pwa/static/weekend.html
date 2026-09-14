@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#081527">
+  <meta name="robots" content="noindex">
+  <title>Trainingsweekend · BeBetter Coaching</title>
+  <link rel="icon" href="/static/icon-192.png">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/design-system.css?v=wk1">
+  <link rel="stylesheet" href="/static/weekend.css?v=wk1">
+</head>
+<body class="wk">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="ic-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></symbol>
+      <symbol id="ic-in" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M14 4h5v16h-5"/></symbol>
+      <symbol id="ic-out" viewBox="0 0 24 24"><path d="M14 17l5-5-5-5"/><path d="M19 12H7"/><path d="M10 4H5v16h5"/></symbol>
+      <symbol id="ic-house" viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/></symbol>
+      <symbol id="ic-bag" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="2.5"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></symbol>
+      <symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+      <symbol id="ic-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-11"/></symbol>
+      <symbol id="ic-alert" viewBox="0 0 24 24"><path d="M12 4 21 20H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></symbol>
+    </defs>
+  </svg>
+
+  <div class="wk-testbalk" id="wk-testbalk" hidden role="status">
+    <svg class="wk-ic"><use href="#ic-alert"/></svg>
+    <span><b>Testmodus</b> — alleen zichtbaar voor weekendbeheer. Inschrijvingen worden als test opgeslagen.</span>
+  </div>
+
+  <main class="wk-page">
+    <header class="wk-hero">
+      <div class="wk-brand">
+        <img src="/static/logo.png" alt="BeBetter Coaching" class="wk-logo" width="900" height="355">
+      </div>
+      <p class="wk-eyebrow">Trainingsweekend</p>
+      <h1 class="wk-title">Vakantiehuis<br>de Kraanvogels</h1>
+      <p class="wk-dates">29 januari – 1 februari 2027</p>
+    </header>
+
+    <div class="wk-grid">
+      <div class="wk-info">
+        <section class="wk-card" aria-labelledby="wk-h-wanneer">
+          <h2 class="wk-h" id="wk-h-wanneer"><svg class="wk-ic"><use href="#ic-cal"/></svg> Wanneer</h2>
+          <div class="wk-moments">
+            <div class="wk-moment">
+              <span class="wk-moment-ic"><svg class="wk-ic"><use href="#ic-in"/></svg></span>
+              <span><span class="wk-lbl">Aankomst</span>
+                <span class="wk-strong">Vrijdag 29 januari 2027</span>
+                <span class="wk-sub">vanaf 15.30 uur</span></span>
+            </div>
+            <div class="wk-moment">
+              <span class="wk-moment-ic"><svg class="wk-ic"><use href="#ic-out"/></svg></span>
+              <span><span class="wk-lbl">Vertrek</span>
+                <span class="wk-strong">Maandag 1 februari 2027</span>
+                <span class="wk-sub">om 10.00 uur</span></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="wk-card" aria-labelledby="wk-h-waar">
+          <h2 class="wk-h" id="wk-h-waar"><svg class="wk-ic"><use href="#ic-house"/></svg> Waar</h2>
+          <p class="wk-strong">Vakantiehuis de Kraanvogels</p>
+        </section>
+
+        <section class="wk-card" aria-labelledby="wk-h-mee">
+          <h2 class="wk-h" id="wk-h-mee"><svg class="wk-ic"><use href="#ic-bag"/></svg> Praktisch</h2>
+          <ul class="wk-list">
+            <li><svg class="wk-ic"><use href="#ic-check"/></svg> Neem je eigen handdoeken mee.</li>
+            <li><svg class="wk-ic"><use href="#ic-check"/></svg> Keukenlinnen is aanwezig.</li>
+          </ul>
+        </section>
+
+        <section class="wk-card" id="wk-kosten" hidden aria-labelledby="wk-h-kosten">
+          <h2 class="wk-h" id="wk-h-kosten">Kosten &amp; betaling</h2>
+          <dl class="wk-bedragen">
+            <div><dt>Deelnemersprijs</dt><dd id="wk-prijs"></dd></div>
+            <div><dt>Aanbetaling</dt><dd id="wk-aanbetaling"></dd></div>
+          </dl>
+          <p class="wk-lbl">Betaaltermijn</p>
+          <p class="wk-pre" id="wk-termijn"></p>
+          <details class="wk-voorwaarden">
+            <summary>Voorwaarden <span class="wk-versie" id="wk-versie"></span></summary>
+            <div class="wk-pre" id="wk-voorwaarden-tekst"></div>
+          </details>
+        </section>
+      </div>
+
+      <aside class="wk-side">
+        <section class="wk-card wk-inschrijf" aria-labelledby="wk-h-inschrijven">
+          <h2 class="wk-h" id="wk-h-inschrijven">Inschrijven</h2>
+
+          <div id="wk-laden" class="wk-muted">Laden…</div>
+
+          <div id="wk-gesloten" class="wk-gesloten" hidden>
+            <span class="wk-gesloten-ic"><svg class="wk-ic"><use href="#ic-clock"/></svg></span>
+            <p id="wk-gesloten-tekst"></p>
+          </div>
+
+          <form id="wk-form" novalidate hidden>
+            <p class="wk-melding is-critical" id="wk-fout" role="alert" hidden></p>
+            <label class="wk-field">Naam
+              <input name="naam" autocomplete="name" required maxlength="120"></label>
+            <label class="wk-field">E-mailadres
+              <input name="email" type="email" autocomplete="email" inputmode="email" required maxlength="254"></label>
+            <label class="wk-field">Telefoonnummer
+              <input name="telefoon" type="tel" autocomplete="tel" inputmode="tel" required maxlength="30"></label>
+            <label class="wk-hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+
+            <label class="wk-check"><input type="checkbox" name="bevestig_deelname">
+              <span>Ik schrijf me definitief in voor het trainingsweekend van vrijdag 29 januari t/m maandag 1 februari 2027.</span></label>
+            <label class="wk-check"><input type="checkbox" name="akkoord_voorwaarden">
+              <span id="wk-akkoord-tekst">Ik ga akkoord met de kosten en voorwaarden.</span></label>
+
+            <p class="wk-melding is-attention" id="wk-onvolledig" hidden></p>
+            <button class="wk-btn primary" type="submit" id="wk-verstuur">Definitief inschrijven</button>
+          </form>
+
+          <div id="wk-dank" class="wk-dank" hidden>
+            <span class="wk-dank-ic"><svg class="wk-ic"><use href="#ic-check"/></svg></span>
+            <h3>Je inschrijving is opgeslagen</h3>
+            <p class="wk-muted" id="wk-dank-tekst"></p>
+            <dl class="wk-samenvatting" id="wk-samenvatting"></dl>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <footer class="wk-foot">BeBetter Coaching</footer>
+  </main>
+
+  <script src="/static/weekend.js?v=wk1"></script>
+</body>
+</html>

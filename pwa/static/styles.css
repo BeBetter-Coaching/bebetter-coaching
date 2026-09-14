@@ -98,6 +98,7 @@ body{display:flex;flex-direction:column;max-width:640px;margin:0 auto;overflow:h
   padding:13px 15px;margin:9px 0;cursor:pointer;color:var(--text)}
 .listcard:hover{border-color:var(--acc)}
 .listcard:active{transform:scale(.99)}
+a.listcard{text-decoration:none}          /* Trainingsweekend-ingang is een link, geen view */
 /* A5: het intake-aantal reist mee naar de Praktijk-lade (zelfde .nav-badge-bron,
    maar in de kaartflow i.p.v. absoluut boven een onderbalk-icoon). */
 .listcard .lc-badge{position:static;top:auto;left:auto;flex:0 0 auto;margin-left:auto}

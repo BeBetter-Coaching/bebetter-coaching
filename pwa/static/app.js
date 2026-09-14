@@ -193,6 +193,8 @@ $("#uitloggen")?.addEventListener("click", async () => {
   try {
     const me = await fetch("/api/me", { headers: authHeaders() }).then(r => r.json());
     if (!me.ingelogd) { toonLogin(); return; }
+    // Weekend-only account (Tim): de server weigert hier elke coach-API; stuur door naar zijn pagina.
+    if (me.rol === "weekend") { location.replace("/weekend/beheer"); return; }
     ingelogdeCoach = me.wie || "";
     const w = $("#wie-ingelogd");
     if (w) w.textContent = ingelogdeCoach ? `Ingelogd als ${ingelogdeCoach}.` : "Ingelogd.";

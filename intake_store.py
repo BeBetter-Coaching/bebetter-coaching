@@ -106,6 +106,28 @@ def _save_json(file_path: str, local_file: str, data: dict, message: str) -> tup
         return False, str(e)
 
 
+def _load_json_strict(file_path: str, local_file: str) -> dict:
+    """Zoals `_load_json`, maar een LEESFOUT is een fout (exception), geen lege dict.
+
+    `_load_json` geeft bij een haperende GitHub-read stil `{}` terug. Voor een store
+    waarin een write de hele inhoud vervangt (inschrijvingen) betekent dat: één
+    haperende read + één write = alle bestaande data weg. Wie hierop leest, schrijft
+    dus alleen na een aantoonbaar gelukte read. Een ontbrekend bestand is wél `{}`.
+    """
+    token = _gh_token()
+    if token:
+        resp = requests.get(_api_url(file_path), headers=_gh_headers(token), timeout=10)
+        if resp.status_code == 200:
+            return json.loads(base64.b64decode(resp.json()["content"]).decode("utf-8"))
+        if resp.status_code == 404:
+            return {}
+        raise RuntimeError(f"GitHub API: {resp.status_code}")
+    if not os.path.exists(local_file):
+        return {}
+    with open(local_file) as f:
+        return json.load(f)
+
+
 def is_cloud_backed() -> bool:
     """True als data in GitHub wordt opgeslagen (permanent)."""
     return bool(_gh_token())
@@ -876,3 +898,22 @@ def save_laatste_intake(athlete_key: str, intake: dict) -> tuple[bool, str]:
     data[athlete_key] = bewaard
     return _save_json("laatste_intakes.json", _LAATSTE_INTAKE_LOCAL, data,
                       "Update laatste intake via app")
+
+
+# ---------------------------------------------------------------------------
+# Trainingsweekend (PWA-module): instellingen + inschrijvingen in één bestand.
+# Staat bewust los van intakes/atleten: een weekenddeelnemer is geen coachingatleet.
+# ---------------------------------------------------------------------------
+
+_WEEKEND_LOCAL = (os.environ.get("BEBETTER_WEEKEND_LOCAL")
+                  or os.path.join(_BASE_DIR, ".weekend_kraanvogels.json"))
+
+
+def load_weekend() -> dict:
+    """Strikt: een leesfout gooit, zodat een write nooit op een lege read volgt."""
+    return _load_json_strict("weekend_kraanvogels.json", _WEEKEND_LOCAL)
+
+
+def save_weekend(data: dict) -> tuple[bool, str]:
+    return _save_json("weekend_kraanvogels.json", _WEEKEND_LOCAL, data,
+                      "Update trainingsweekend via app")
